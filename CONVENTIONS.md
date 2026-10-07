@@ -36,7 +36,7 @@ Next.js **16.4** (App Router, Turbopack, React 19.3). APIs differ from older ver
 - Every state change writes `audit(tx, { actorUserId, action: "<area>.<verb>", entityType, entityId, waqfId, ip, userAgent, before, after })`.
 - Notify users with `notify(userId, templateKey, vars, { waqfId, link, tx })` (templates in `src/server/seed/data/system.ts`; if a key is missing, notify is a no-op — list needed templates in your report).
 - Regulatory consequences: call `emitWaqfEvent(tx, { waqfId, event, date, refId })` and after profile changes `syncWaqfObligations(tx, waqfId)` (`@/server/modules/compliance/events`).
-- Numbers: `nextNumber(tx, "REQ")` → `REQ-000123` (prefixes: WQF, REQ, INV, CTR, MTG, RES, CMP, TSK, DOC, AST).
+- Numbers: `nextNumber(tx, "REQ")` → `REQ-000123` (prefixes: WQF, REQ, INV, CTR, MTG, RES, CMP, TSK, DOC, AST, RPT).
 - `redirect()` inside actions is fine (toState rethrows Next errors).
 
 ## UI kit (`@/components/ui`, `@/components/ui/form`)

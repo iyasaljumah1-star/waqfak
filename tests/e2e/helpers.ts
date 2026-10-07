@@ -30,7 +30,7 @@ export async function login(page: Page, phone: string) {
 }
 
 // ── Demo accounts (created by `npm run db:seed-demo`; credentials in storage/demo-credentials.json) ──
-import { readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { generate } from "otplib";
 
 type DemoUser = { id: string; phone: string; email?: string; password?: string | null; totpSecret?: string | null; name: string };
@@ -38,9 +38,27 @@ export type DemoCreds = { waqfs: { A: string; B: string; C: string }; users: Rec
 export const demo = (): DemoCreds => JSON.parse(readFileSync("storage/demo-credentials.json", "utf8"));
 
 /** Logs in as a demo user. Staff: email + password + TOTP. Clients: phone + on-screen OTP. */
-export async function loginAs(page: Page, key: string) {
+export async function loginAs(page: Page, key: string, opts: { fresh?: boolean } = {}) {
   const u = demo().users[key];
   if (!u) throw new Error(`unknown demo user ${key}`);
+  // Reuse a recent session to stay under OTP/login rate limits shared by all specs.
+  const cache = `storage/.e2e-auth/${key}.json`;
+  if (!opts.fresh && existsSync(cache) && Date.now() - statSync(cache).mtimeMs < 8 * 60_000) {
+    await page.context().addCookies(JSON.parse(readFileSync(cache, "utf8")));
+    await page.goto("/app");
+    if (!/\/login/.test(page.url())) {
+      writeFileSync(cache, JSON.stringify(await page.context().cookies()));
+      return u;
+    }
+    await page.context().clearCookies();
+  }
+  await freshLogin(page, u);
+  mkdirSync("storage/.e2e-auth", { recursive: true });
+  writeFileSync(cache, JSON.stringify(await page.context().cookies()));
+  return u;
+}
+
+async function freshLogin(page: Page, u: DemoUser) {
   if (u.password && u.totpSecret) {
     await page.goto("/login");
     await page.getByRole("tab", { name: "البريد وكلمة المرور" }).click();
@@ -54,5 +72,4 @@ export async function loginAs(page: Page, key: string) {
   } else {
     await login(page, u.phone);
   }
-  return u;
 }

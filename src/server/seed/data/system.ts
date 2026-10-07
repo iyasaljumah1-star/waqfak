@@ -40,6 +40,8 @@ export const NOTIFICATION_TEMPLATES = [
   { key: "document.expiring", titleAr: "وثيقة تقترب من الانتهاء: {title}", bodyAr: "تنتهي في {date}", severity: "important" as const, channels: ["in_app", "email"] },
   { key: "invitation", titleAr: "دعوة للانضمام إلى ملف وقف", bodyAr: "دُعيت إلى {waqf} بصفة {role}", severity: "info" as const, channels: ["in_app", "sms"] },
   { key: "security.new_login", titleAr: "دخول جديد إلى حسابك", bodyAr: "من {device} في {time}. إن لم يكن أنت فغيّر بيانات الدخول فورًا.", severity: "critical" as const, channels: ["in_app", "email"], locked: true },
+  { key: "invitation.accepted", titleAr: "قُبلت دعوتك", bodyAr: "{name} انضم إلى {waqf} بصفة {role}", severity: "info" as const, channels: ["in_app"] },
+  { key: "assessment.reviewed", titleAr: "روجع تقييم وقفك من مختص", bodyAr: "{waqf}: الدرجة {score} — {status}", severity: "info" as const, channels: ["in_app", "email"] },
   { key: "assessment.ready", titleAr: "نتيجة تقييم وقفك جاهزة", bodyAr: "{waqf}: الدرجة {score} — {status}", severity: "info" as const, channels: ["in_app", "email"] },
 ];
 

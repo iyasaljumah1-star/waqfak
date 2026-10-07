@@ -130,8 +130,10 @@ body {
   border-radius: 4px;
 }
 
-a {
-  color: inherit;
+@layer base {
+  a {
+    color: inherit;
+  }
 }
 
 .prose-waqf {

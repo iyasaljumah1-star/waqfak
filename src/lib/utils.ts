@@ -35,14 +35,22 @@ export function daysUntil(iso: string | null | undefined): number | null {
   return Math.round((d.getTime() - today.getTime()) / 86_400_000);
 }
 
+/** Arabic count agreement for days: 2 → يومين، 3–10 → أيام، 11+ → يومًا. */
+export function daysAr(n: number): string {
+  if (n === 1) return "يوم واحد";
+  if (n === 2) return "يومين";
+  if (n >= 3 && n <= 10) return `${n} أيام`;
+  return `${n} يومًا`;
+}
+
 export function relDays(iso: string | null | undefined): string {
   const n = daysUntil(iso);
   if (n === null) return "بلا موعد محدد";
   if (n === 0) return "اليوم";
   if (n === 1) return "غدًا";
   if (n === -1) return "فات أمس";
-  if (n < 0) return `متأخر ${Math.abs(n)} يومًا`;
-  return `بعد ${n} يومًا`;
+  if (n < 0) return `متأخر ${daysAr(Math.abs(n))}`;
+  return `بعد ${daysAr(n)}`;
 }
 
 export const SIZE_LABEL: Record<string, string> = { large: "كبير", medium: "متوسط", small: "صغير", direct_benefit: "ذو انتفاع مباشر" };

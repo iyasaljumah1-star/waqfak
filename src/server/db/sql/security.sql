@@ -138,3 +138,11 @@ END $$;
 DROP TRIGGER IF EXISTS minutes_lock ON minutes;
 CREATE TRIGGER minutes_lock BEFORE UPDATE OR DELETE ON minutes
   FOR EACH ROW EXECUTE FUNCTION protect_locked_minutes();
+
+-- notifications are personal: even rows without a waqf are visible only to their recipient (system context excepted).
+DROP POLICY IF EXISTS notif_owner_sel ON notifications;
+DROP POLICY IF EXISTS notif_owner_upd ON notifications;
+DROP POLICY IF EXISTS notif_owner_del ON notifications;
+CREATE POLICY notif_owner_sel ON notifications AS RESTRICTIVE FOR SELECT TO waqfak_app USING (app_current_user() IS NULL OR user_id = app_current_user());
+CREATE POLICY notif_owner_upd ON notifications AS RESTRICTIVE FOR UPDATE TO waqfak_app USING (app_current_user() IS NULL OR user_id = app_current_user());
+CREATE POLICY notif_owner_del ON notifications AS RESTRICTIVE FOR DELETE TO waqfak_app USING (app_current_user() IS NULL OR user_id = app_current_user());
