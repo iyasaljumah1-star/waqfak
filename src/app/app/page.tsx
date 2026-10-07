@@ -82,16 +82,18 @@ export default async function Dashboard() {
                     <div className="min-w-0">
                       <h3 className="mb-2 text-[13px] font-medium text-muted">الالتزامات القادمة</h3>
                       {obl.length ? (
-                        <ul className="space-y-2">
+                        <ul className="space-y-3">
                           {obl.map((o) => (
-                            <li key={o.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
-                              <span className="min-w-0 flex-1 basis-60 font-medium">{o.title}</span>
+                            <li key={o.id} className="flex items-start justify-between gap-3">
+                              <span className="min-w-0">
+                                <span className="block font-medium">{o.title}</span>
+                                {o.dueOn ? <span className="block text-[13px] text-muted">{fmtBoth(o.dueOn)}</span> : null}
+                              </span>
                               {o.status === "overdue" || o.status === "due_soon" ? (
-                                <Badge tone={OBLIGATION_STATUS_TONE[o.status]}>{relDays(o.dueOn)}</Badge>
+                                <span className="shrink-0"><Badge tone={OBLIGATION_STATUS_TONE[o.status]}>{relDays(o.dueOn)}</Badge></span>
                               ) : (
-                                <span className="text-sm">{o.dueImmediately && !o.dueOn ? "فوري" : relDays(o.dueOn)}</span>
+                                <span className="shrink-0 text-sm">{o.dueImmediately && !o.dueOn ? "فوري" : relDays(o.dueOn)}</span>
                               )}
-                              {o.dueOn ? <span className="w-full text-[13px] text-muted">{fmtBoth(o.dueOn)}</span> : null}
                             </li>
                           ))}
                         </ul>

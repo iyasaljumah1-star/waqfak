@@ -177,3 +177,15 @@ describe("billing", () => {
     expect(fillTemplate("عقد {{number}} مع {{ client_name }}{{missing}}", { number: "CTR-000001", client_name: "س" })).toBe("عقد CTR-000001 مع س");
   });
 });
+
+import { agingBucket } from "../src/server/modules/billing/calc";
+describe("receivables aging", () => {
+  it("buckets by days past due", () => {
+    expect(agingBucket(null, "2026-10-07")).toBe("current");
+    expect(agingBucket("2026-10-07", "2026-10-07")).toBe("current");
+    expect(agingBucket("2026-10-06", "2026-10-07")).toBe("d1_30");
+    expect(agingBucket("2026-09-07", "2026-10-07")).toBe("d1_30");
+    expect(agingBucket("2026-09-06", "2026-10-07")).toBe("d31_60");
+    expect(agingBucket("2026-07-01", "2026-10-07")).toBe("d90p");
+  });
+});

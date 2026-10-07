@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Download, FileText, LinkIcon } from "lucide-react";
 import { Logo } from "@/components/brand";
 import { buttonClass } from "@/components/ui";
+import { ANCHOR_PRIMARY_FIX } from "@/components/documents/bits";
 import { fmtDateTime } from "@/lib/utils";
 import { viewShare, type ShareState } from "@/server/modules/documents/share";
 import { docTypeLabel, fmtBytes } from "@/server/modules/documents/labels";
@@ -43,7 +44,7 @@ export default async function SharePage({ params }: { params: Promise<{ token: s
                   <p className="mt-1 text-[15px] text-muted">{docTypeLabel(info.docType)} · {fmtBytes(info.sizeBytes)}</p>
                 </div>
               </div>
-              <a href={`/s/${encodeURIComponent(token)}/file`} rel="noreferrer" className={buttonClass("primary", "lg", "mt-6 w-full")}>
+              <a href={`/s/${encodeURIComponent(token)}/file`} rel="noreferrer" className={buttonClass("primary", "lg", `mt-6 w-full ${ANCHOR_PRIMARY_FIX}`)}>
                 <Download aria-hidden className="size-5" /> نزّل الوثيقة
               </a>
               <p className="mt-4 text-[13px] leading-6 text-muted">

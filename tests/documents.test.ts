@@ -6,10 +6,18 @@ import { crc32, deflateSync } from "node:zlib";
 import { afterAll, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
+// keep the expiry-reminder test free of outbound messages (in-app notifications are rolled back)
+vi.mock("../src/server/adapters/messaging", () => ({ sendEmail: vi.fn(async () => undefined), sendSms: vi.fn(async () => undefined) }));
 
-import { builtinScan, MAX_UPLOAD_BYTES, scanFile, sniffFile, registerScanner } from "../src/server/adapters/scan";
+import { builtinScan, MAX_UPLOAD_BYTES, scanFile, sniffFile, registerScanner, UPLOAD_KINDS } from "../src/server/adapters/scan";
 import { decryptBuffer, encryptBuffer, newDataKey, sha256, unwrapDataKey } from "../src/server/lib/crypto";
 import { assertKey, LocalDiskStorage, newStorageKey } from "../src/server/adapters/storage";
+import { evaluateChecklist, lastFiscalYearEnd, type ChecklistDoc } from "../src/server/modules/documents/checklist";
+import { canSeeDocumentSync, documentExpiryReminders } from "../src/server/modules/documents/core";
+import { ROLES } from "../src/server/authz/catalog";
+import { withSystem } from "../src/server/db";
+import * as schema from "../src/server/db/schema";
+import { and, eq, inArray } from "drizzle-orm";
 
 // ───────────── fixtures ─────────────
 const pdf = (body = "") =>
@@ -80,9 +88,20 @@ describe("sniffFile (real type vs claimed extension)", () => {
     expect(await sniffFile(docx(), "a.docx")).toMatchObject({ ok: true, kind: "docx" });
     expect(await sniffFile(docx(), "a.xlsx")).toMatchObject({ ok: false, code: "mismatch" });
   });
-  it("accepts UTF-8 text only as .txt and refuses binary noise", async () => {
-    expect(await sniffFile(Buffer.from("ملاحظات الناظر\nسطر ثانٍ"), "n.txt")).toMatchObject({ ok: true, kind: "txt" });
-    expect(await sniffFile(Buffer.from([0, 1, 2, 3, 250, 251, 252]), "n.txt")).toMatchObject({ ok: false, code: "unsupported" });
+  it("refuses plain text from users (not in the allowlist) but allows it for server-side ingestion", async () => {
+    expect(await sniffFile(Buffer.from("ملاحظات الناظر\nسطر ثانٍ"), "n.txt")).toMatchObject({ ok: false, code: "unsupported" });
+    expect(await sniffFile(Buffer.from("ملاحظات الناظر\nسطر ثانٍ"), "n.txt", ["pdf", "txt"])).toMatchObject({ ok: true, kind: "txt" });
+    expect(await sniffFile(Buffer.from([0, 1, 2, 3, 250, 251, 252]), "n.txt", ["txt"])).toMatchObject({ ok: false, code: "unsupported" });
+  });
+  it("accepts every allowlisted kind and nothing else", async () => {
+    expect(UPLOAD_KINDS).toEqual(["pdf", "png", "jpg", "webp", "docx", "xlsx"]);
+    const xlsx = zip({ "[Content_Types].xml": ct("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml").replace("/word/document.xml", "/xl/workbook.xml"), "xl/workbook.xml": "<workbook/>" });
+    expect(await sniffFile(xlsx, "book.xlsx")).toMatchObject({ ok: true, kind: "xlsx" });
+    const jpg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0x10, 0x4a, 0x46, 0x49, 0x46, 0, 1, 1, 0, 0, 1, 0, 1, 0, 0, 0xff, 0xd9]);
+    expect(await sniffFile(jpg, "scan.jpeg")).toMatchObject({ ok: true, kind: "jpg" });
+    const gif = Buffer.from("GIF89a\x01\x00\x01\x00\x00\x00\x00;", "latin1");
+    expect(await sniffFile(gif, "a.gif")).toMatchObject({ ok: false, code: "unsupported" });
+    expect(await sniffFile(Buffer.from("#!/bin/sh\nrm -rf /\n"), "run.sh")).toMatchObject({ ok: false, code: "unsupported" });
   });
   it("refuses unsupported types, empty files, oversize files and missing extensions", async () => {
     expect(await sniffFile(zip({ "a.txt": "x" }), "a.zip")).toMatchObject({ ok: false, code: "unsupported" });
@@ -178,4 +197,130 @@ describe("local storage adapter", () => {
     expect(() => assertKey("../../etc/passwd")).toThrow();
     expect(() => assertKey("w/../../x")).toThrow();
   });
+});
+
+// ───────────── confidentiality gate ─────────────
+describe("canSeeDocumentSync (applied after RLS)", () => {
+  const W = "11111111-1111-4111-8111-111111111111";
+  const perms = (role: string) => new Set<string>(ROLES[role].permissions);
+  const doc = (c: "internal" | "confidential" | "secret", extra: Partial<{ waqfId: string | null; ownerUserId: string; requestId: string | null }> = {}) =>
+    ({ waqfId: W, ownerUserId: "owner", requestId: null, confidentiality: c, ...extra });
+  it("maps internal / confidential / secret to documents.view / view_confidential / view_secret", () => {
+    const nazir = { userId: "n", perms: perms("nazir") };
+    const member = { userId: "m", perms: perms("board_member") };
+    const committee = { userId: "c", perms: perms("committee_member") };
+    expect([doc("internal"), doc("confidential"), doc("secret")].map((d) => canSeeDocumentSync(nazir, d))).toEqual([true, true, true]);
+    expect([doc("internal"), doc("confidential"), doc("secret")].map((d) => canSeeDocumentSync(member, d))).toEqual([true, true, false]);
+    expect([doc("internal"), doc("confidential"), doc("secret")].map((d) => canSeeDocumentSync(committee, d))).toEqual([true, false, false]);
+  });
+  it("denies beneficiary-only members, viewers and no access", () => {
+    expect(canSeeDocumentSync({ userId: "b", perms: perms("beneficiary") }, doc("internal"))).toBe(false);
+    expect(canSeeDocumentSync({ userId: "v", perms: perms("viewer") }, doc("internal"))).toBe(false);
+    expect(canSeeDocumentSync(null, doc("internal"))).toBe(false);
+  });
+  it("uploading a waqf document does not grant the uploader access by ownership", () => {
+    expect(canSeeDocumentSync({ userId: "owner", perms: new Set() }, doc("internal"))).toBe(false);
+  });
+  it("personal documents: owner only; request parties for non-secret request documents", () => {
+    const personal = doc("secret", { waqfId: null, ownerUserId: "u1" });
+    expect(canSeeDocumentSync({ userId: "u1", perms: new Set() }, personal)).toBe(true);
+    expect(canSeeDocumentSync({ userId: "u2", perms: new Set(["documents.view_secret"]) }, personal)).toBe(false);
+    const req = doc("confidential", { waqfId: null, ownerUserId: "u1", requestId: "r1" });
+    expect(canSeeDocumentSync({ userId: "staff", perms: new Set(), requestParty: true }, req)).toBe(true);
+    expect(canSeeDocumentSync({ userId: "staff", perms: new Set(), requestParty: false }, req)).toBe(false);
+    expect(canSeeDocumentSync({ userId: "staff", perms: new Set(), requestParty: true }, { ...req, confidentiality: "secret" })).toBe(false);
+  });
+});
+
+// ───────────── required-document checklist ─────────────
+describe("required-document checklist", () => {
+  const today = "2026-10-07";
+  let n = 0;
+  const d = (docType: string, extra: Partial<ChecklistDoc> = {}): ChecklistDoc => ({
+    id: `d${++n}`, docType, title: docType, status: "active", expiresOn: null, issuedOn: null, createdAt: new Date("2026-01-15T10:00:00Z"), visible: true, ...extra,
+  });
+  const run = (docs: ChecklistDoc[], over: Partial<Parameters<typeof evaluateChecklist>[0]> = {}) =>
+    Object.fromEntries(evaluateChecklist({ today, fiscalYearEnd: "12-31", docs, realEstateAssets: [], hasAnyAssets: false, ...over }).map((i) => [i.key, i.state]));
+
+  it("lists all six required documents as missing for an empty waqf", () => {
+    expect(run([])).toEqual({ waqf_deed: "missing", registration_certificate: "missing", nazara_deed: "missing", ownership_deed: "missing", financial_statement: "missing", bo_register: "missing" });
+  });
+  it("marks present, expiring, expired and quarantined documents", () => {
+    const r = run([d("waqf_deed"), d("registration_certificate", { expiresOn: "2026-10-30" }), d("nazara_deed", { expiresOn: "2026-09-01" }), d("bo_register", { status: "quarantine" })]);
+    expect(r).toMatchObject({ waqf_deed: "ok", registration_certificate: "expiring", nazara_deed: "expired", bo_register: "pending" });
+  });
+  it("prefers a renewed certificate over the expired one and ignores rejected files", () => {
+    const r = run([d("registration_certificate", { expiresOn: "2025-01-01" }), d("registration_certificate", { expiresOn: "2028-01-01" }), d("waqf_deed", { status: "rejected" })]);
+    expect(r).toMatchObject({ registration_certificate: "ok", waqf_deed: "missing" });
+  });
+  it("ownership deeds follow the real-estate assets", () => {
+    expect(run([], { realEstateAssets: [{ id: "a", covered: true }, { id: "b", covered: false }], hasAnyAssets: true }).ownership_deed).toBe("partial");
+    expect(run([], { realEstateAssets: [{ id: "a", covered: false }], hasAnyAssets: true }).ownership_deed).toBe("missing");
+    expect(run([d("ownership_deed")], { realEstateAssets: [{ id: "a", covered: true }], hasAnyAssets: true }).ownership_deed).toBe("ok");
+    expect(run([], { hasAnyAssets: true }).ownership_deed).toBe("ok"); // cash-only waqf
+  });
+  it("financial statements must cover the last completed fiscal year (with a grace period)", () => {
+    expect(lastFiscalYearEnd("2026-10-07", "12-31")).toBe("2025-12-31");
+    expect(lastFiscalYearEnd("2026-10-07", "06-30")).toBe("2026-06-30");
+    expect(run([d("financial_statement", { issuedOn: "2026-03-30" })]).financial_statement).toBe("ok");
+    expect(run([d("financial_statement", { issuedOn: "2025-03-30" })]).financial_statement).toBe("outdated");
+    expect(run([d("financial_statement", { issuedOn: "2025-03-30" })], { today: "2026-02-01" }).financial_statement).toBe("due");
+    expect(run([d("financial_statement", { issuedOn: "2025-03-30" })], { fiscalYearEnd: "06-30" }).financial_statement).toBe("due");
+  });
+  it("does not link documents the viewer may not see", () => {
+    const items = evaluateChecklist({ today, fiscalYearEnd: "12-31", docs: [d("bo_register", { visible: false })], realEstateAssets: [], hasAnyAssets: false });
+    expect(items.find((i) => i.key === "bo_register")).toMatchObject({ state: "ok", doc: { visible: false } });
+  });
+});
+
+// ───────────── expiry reminders (daily job), against the dev database, rolled back ─────────────
+const creds = (() => {
+  try {
+    return JSON.parse(readFileSync("storage/demo-credentials.json", "utf8")) as { waqfs: Record<"A" | "B" | "C", string>; users: Record<string, { id: string }> };
+  } catch {
+    return null;
+  }
+})();
+
+describe.skipIf(!creds || !process.env.DATABASE_URL)("documentExpiryReminders", () => {
+  class Rollback extends Error {}
+  const plusDays = (n: number) => {
+    const t = new Date(new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Riyadh" }).format(new Date()) + "T12:00:00Z");
+    t.setUTCDate(t.getUTCDate() + n);
+    return t.toISOString().slice(0, 10);
+  };
+
+  it("notifies authorised recipients once per threshold and respects confidentiality", async () => {
+    const A = creds!.waqfs.A;
+    const C = creds!.waqfs.C;
+    const nazir = creds!.users.nazir.id;
+    const chair = creds!.users.chair.id;
+    const out = await withSystem(async (tx) => {
+      const mk = (waqfId: string, owner: string, title: string, confidentiality: "internal" | "secret", expiresOn: string) =>
+        tx.insert(schema.documents).values({ waqfId, ownerUserId: owner, docType: "permission", title, confidentiality, status: "active", expiresOn }).returning({ id: schema.documents.id }).then((r) => r[0].id);
+      const a = await mk(A, nazir, "اختبار تذكير الانتهاء", "internal", plusDays(25));
+      const c = await mk(C, chair, "اختبار سري جدًا", "secret", plusDays(5));
+      const far = await mk(A, nazir, "اختبار بعيد الانتهاء", "internal", plusDays(200));
+      await documentExpiryReminders(tx);
+      const notes = await tx.select({ userId: schema.notifications.userId, title: schema.notifications.titleAr }).from(schema.notifications)
+        .where(and(eq(schema.notifications.type, "document.expiring"), inArray(schema.notifications.userId, [nazir, chair])));
+      const logs = await tx.select({ id: schema.auditLogs.entityId, after: schema.auditLogs.after }).from(schema.auditLogs)
+        .where(and(eq(schema.auditLogs.action, "documents.expiry_reminder"), inArray(schema.auditLogs.entityId, [a, c, far])));
+      await documentExpiryReminders(tx); // second run: nothing new for these documents
+      const logs2 = await tx.select({ id: schema.auditLogs.entityId }).from(schema.auditLogs)
+        .where(and(eq(schema.auditLogs.action, "documents.expiry_reminder"), inArray(schema.auditLogs.entityId, [a, c, far])));
+      throw new Rollback(JSON.stringify({ a, c, far, notes, logs, logs2: logs2.length }));
+    }).catch((e) => {
+      if (e instanceof Rollback) return JSON.parse(e.message);
+      throw e;
+    });
+    expect(out.notes.some((n: { userId: string; title: string }) => n.userId === nazir && n.title.includes("اختبار تذكير الانتهاء"))).toBe(true);
+    expect(out.notes.some((n: { title: string }) => n.title.includes("اختبار سري جدًا"))).toBe(false); // nobody on C holds view_secret
+    expect(out.notes.some((n: { title: string }) => n.title.includes("اختبار بعيد الانتهاء"))).toBe(false);
+    const byDoc = Object.fromEntries(out.logs.map((l: { id: string; after: { threshold: number; recipients: number } }) => [l.id, l.after]));
+    expect(byDoc[out.a]).toMatchObject({ threshold: 30 });
+    expect(byDoc[out.c]).toMatchObject({ threshold: 7, recipients: 0 });
+    expect(byDoc[out.far]).toBeUndefined();
+    expect(out.logs2).toBe(out.logs.length);
+  }, 30_000);
 });

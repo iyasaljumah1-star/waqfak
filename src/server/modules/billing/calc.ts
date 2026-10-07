@@ -43,3 +43,14 @@ export function fillTemplate(body: string, vars: Record<string, string | number 
     return v === null || v === undefined ? "" : String(v);
   });
 }
+
+export type AgingBucket = "current" | "d1_30" | "d31_60" | "d61_90" | "d90p";
+export const AGING_LABEL: Record<AgingBucket, string> = { current: "غير مستحقة بعد", d1_30: "متأخرة 1–30 يومًا", d31_60: "31–60 يومًا", d61_90: "61–90 يومًا", d90p: "أكثر من 90 يومًا" };
+
+/** Pure: aging bucket for an unpaid invoice by days past due. */
+export function agingBucket(dueOn: string | null, today: string): AgingBucket {
+  if (!dueOn || dueOn >= today) return "current";
+  const days = Math.round((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${dueOn}T00:00:00Z`)) / 86_400_000);
+  return days <= 30 ? "d1_30" : days <= 60 ? "d31_60" : days <= 90 ? "d61_90" : "d90p";
+}
+

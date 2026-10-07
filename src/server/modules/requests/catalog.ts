@@ -57,7 +57,7 @@ export function priceFor(svc: { pricingModel: string; basePrice: string | null }
   return svc.basePrice ? Number(svc.basePrice) : null;
 }
 
-export const PRICE_UNKNOWN = "يُحدد السعر بعد دراسة الطلب";
+export const PRICE_UNKNOWN = "عرض سعر بعد الدراسة";
 export const PRICING_LABEL: Record<string, string> = {
   free: "مجانية", fixed: "سعر ثابت", subscription: "اشتراك", hourly: "بالساعة", percentage: "نسبة", quote: "بعرض سعر",
 };

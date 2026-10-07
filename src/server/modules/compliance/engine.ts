@@ -311,6 +311,14 @@ export async function resyncAll(tx: Tx, actor: string | null = null) {
   return total;
 }
 
+/**
+ * Public entry point for the admin obligation editor: after creating/editing/retiring an obligation definition,
+ * call `await resyncAllWaqfs(tx)` inside the same transaction so every waqf picks up the change (scenario 6:
+ * an admin-added obligation with a JSON-logic `rule` in applies_to applies with no code change).
+ * Run it under a context that can see all waqfs (staff global access or system) — RLS limits it otherwise.
+ */
+export const resyncAllWaqfs = (tx: Tx, actor: string | null = null) => resyncAll(tx, actor);
+
 /** Moves open instances between upcoming / due_soon / overdue according to today's date. */
 export async function recomputeStatuses(tx: Tx, today = todayISO()) {
   const rows = await tx.select().from(obligationInstances).where(inArray(obligationInstances.status, [...OPEN_STATUSES]));

@@ -23,18 +23,35 @@ const minimalPdf = (label: string) =>
     "latin1",
   );
 
-async function storageKeyOf(docId: string, version: number) {
+/** Runs one query with global access (test assertions only). */
+async function sysQuery<T = Record<string, unknown>>(text: string, params: unknown[] = []): Promise<T[]> {
   const c = new Client({ connectionString: process.env.DATABASE_URL });
   await c.connect();
   try {
     await c.query("begin");
     await c.query("select set_config('app.global_access','on',true)");
-    const r = await c.query("select storage_key from document_versions where document_id = $1 and version = $2", [docId, version]);
+    const r = await c.query(text, params);
     await c.query("commit");
-    return r.rows[0]?.storage_key as string;
+    return r.rows as T[];
   } finally {
     await c.end();
   }
+}
+
+async function storageKeyOf(docId: string, version: number) {
+  const rows = await sysQuery<{ storage_key: string }>("select storage_key from document_versions where document_id = $1 and version = $2", [docId, version]);
+  return rows[0]?.storage_key;
+}
+
+async function docIdByTitle(waqfId: string, title: string) {
+  const rows = await sysQuery<{ id: string }>("select id from documents where waqf_id = $1 and title = $2 and archived_at is null order by created_at limit 1", [waqfId, title]);
+  if (!rows[0]) throw new Error(`demo document not found: ${title} (run the documents demo seed)`);
+  return rows[0].id;
+}
+
+async function deniedCount(docId: string, userId: string, since: Date) {
+  const rows = await sysQuery<{ n: string }>("select count(*) n from document_access_log where document_id = $1 and user_id = $2 and action = 'denied' and at >= $3", [docId, userId, since]);
+  return Number(rows[0].n);
 }
 
 const shotsDir = "/tmp/claude-0/shots";
@@ -87,6 +104,7 @@ test.describe.serial("secure document vault", () => {
     await link.click();
     await page.waitForURL(/\/documents\/[0-9a-f-]{36}$/);
     docId = page.url().split("/").pop()!;
+    await expect(page.getByRole("heading", { level: 1, name: title })).toBeVisible({ timeout: 30_000 });
 
     // inline preview (iframe → API)
     const frame = page.locator(`iframe[data-src*="/api/files/${docId}"]`);
@@ -206,5 +224,135 @@ test.describe.serial("secure document vault", () => {
     await p2.goto("/s/invalid-token-for-screenshot-000000");
     await p2.screenshot({ path: `${shotsDir}/docs-share-invalid-${info.project.name}.png` });
     await anon.close();
+  });
+});
+
+test.describe.serial("document access control", () => {
+  const D = () => demo();
+  let deedA = "";
+  let secretA = "";
+  let deedB = "";
+  const since = new Date(Date.now() - 5_000);
+
+  test.beforeAll(async () => {
+    deedA = await docIdByTitle(D().waqfs.A, "صك وقف النور التعليمي (تجريبي)");
+    secretA = await docIdByTitle(D().waqfs.A, "كشف الحساب البنكي — سبتمبر (تجريبي)");
+    deedB = await docIdByTitle(D().waqfs.B, "صك وقف آل سالم الأهلي (تجريبي)");
+  });
+
+  test("outsider gets 404 on another waqf's file and cannot open its documents page; attempt is logged", async ({ browser }) => {
+    const page = await sessionPage(browser, "outsider");
+    for (const url of [`/api/files/${deedA}`, `/api/files/${deedA}?disposition=inline`]) {
+      const res = await page.request.get(url);
+      expect(res.status()).toBe(404);
+      expect(res.headers()["content-type"]).toContain("application/json");
+    }
+    await page.goto(`/app/w/${D().waqfs.A}/documents`);
+    await expect(page).not.toHaveURL(/\/documents/);
+    const up = await page.request.post("/api/files", { multipart: { waqfId: D().waqfs.A, file: { name: "x.pdf", mimeType: "application/pdf", buffer: minimalPdf("x") } } });
+    expect(up.status()).toBe(404);
+    expect(await deniedCount(deedA, D().users.outsider.id, since)).toBeGreaterThanOrEqual(2);
+    await page.context().close();
+  });
+
+  test("members of another waqf get 404 both ways; attempts are logged", async ({ browser }) => {
+    const waqif = await sessionPage(browser, "waqif"); // founder + nazir of B
+    expect((await waqif.request.get(`/api/files/${deedA}`)).status()).toBe(404);
+    expect((await waqif.request.get(`/api/files/${deedB}`)).status()).toBe(200); // own waqf works
+    const chair = await sessionPage(browser, "chair"); // board of C
+    expect((await chair.request.get(`/api/files/${deedB}`)).status()).toBe(404);
+    expect((await chair.request.get(`/api/files/${deedA}?disposition=inline`)).status()).toBe(404);
+    expect(await deniedCount(deedA, D().users.waqif.id, since)).toBeGreaterThanOrEqual(1);
+    expect(await deniedCount(deedB, D().users.chair.id, since)).toBeGreaterThanOrEqual(1);
+    await waqif.context().close();
+    await chair.context().close();
+  });
+
+  test("beneficiary-only member cannot list, download or upload waqf documents", async ({ browser }) => {
+    const page = await sessionPage(browser, "beneficiary"); // beneficiary of B only
+    const res = await page.request.get(`/api/files/${deedB}`);
+    expect(res.status()).toBe(403);
+    expect((await res.json()).error).toContain("صلاحية");
+    await page.goto(`/app/w/${D().waqfs.B}/documents`);
+    await expect(page).toHaveURL(new RegExp(`/app/b/${D().waqfs.B}`));
+    await page.goto(`/app/w/${D().waqfs.B}/documents/${deedB}`);
+    await expect(page).not.toHaveURL(/\/documents\//);
+    const up = await page.request.post("/api/files", { multipart: { waqfId: D().waqfs.B, file: { name: "x.pdf", mimeType: "application/pdf", buffer: minimalPdf("x") } } });
+    expect(up.status()).toBe(403);
+    expect(await deniedCount(deedB, D().users.beneficiary.id, since)).toBeGreaterThanOrEqual(1);
+    await page.context().close();
+  });
+
+  test("staff: only the assigned employee can download, and never secret documents", async ({ browser }) => {
+    const emp2 = await sessionPage(browser, "emp2"); // assigned on C only
+    expect((await emp2.request.get(`/api/files/${deedA}`)).status()).toBe(404);
+    expect(await deniedCount(deedA, D().users.emp2.id, since)).toBeGreaterThanOrEqual(1);
+    await emp2.context().close();
+
+    const emp1 = await sessionPage(browser, "emp1"); // assigned on A
+    const ok = await emp1.request.get(`/api/files/${deedA}`);
+    expect(ok.status()).toBe(200);
+    expect(ok.headers()["content-type"]).toBe("application/pdf");
+    expect((await emp1.request.get(`/api/files/${secretA}`)).status()).toBe(403);
+    expect(await deniedCount(secretA, D().users.emp1.id, since)).toBeGreaterThanOrEqual(1);
+    await emp1.context().close();
+  });
+
+  test("personal documents use the owner's scope only", async ({ browser }) => {
+    const outsider = await sessionPage(browser, "outsider");
+    const up = await outsider.request.post("/api/files", { multipart: { title: "هوية شخصية (تجريبي)", docType: "id_document", file: { name: "id.pdf", mimeType: "application/pdf", buffer: minimalPdf("personal") } } });
+    expect(up.status()).toBe(201);
+    const { id } = await up.json();
+    const [row] = await sysQuery<{ waqf_id: string | null; storage_key: string }>("select d.waqf_id, v.storage_key from documents d join document_versions v on v.document_id = d.id where d.id = $1", [id]);
+    expect(row.waqf_id).toBeNull();
+    expect(row.storage_key).toMatch(new RegExp(`^u/${D().users.outsider.id}/`));
+    expect((await outsider.request.get(`/api/files/${id}`)).status()).toBe(200);
+    const nazir = await sessionPage(browser, "nazir");
+    expect((await nazir.request.get(`/api/files/${id}`)).status()).toBe(403);
+    expect(await deniedCount(id, D().users.nazir.id, since)).toBe(1);
+    await outsider.context().close();
+    await nazir.context().close();
+  });
+
+  test("required-documents checklist shows what is missing and prefills the upload", async ({ browser, viewport }) => {
+    const page = await sessionPage(browser, "nazir", viewport);
+    await page.goto(`/app/w/${D().waqfs.A}/documents`);
+    const list = page.getByTestId("required-docs");
+    await expect(list.locator("li")).toHaveCount(6);
+    await expect(list.locator("li[data-state=ok]").filter({ hasText: "صك الوقف" }).first()).toBeVisible();
+    const owner = list.locator("li").filter({ hasText: "صكوك ملكية الأصول" });
+    await expect(owner).not.toHaveAttribute("data-state", "ok");
+    await owner.getByRole("link", { name: "ارفع" }).click();
+    await expect(page).toHaveURL(/upload=ownership_deed/, { timeout: 20_000 });
+    await expect(page.locator("select[name=docType]")).toHaveValue("ownership_deed");
+
+    const b = await sessionPage(browser, "waqif", viewport);
+    await b.goto(`/app/w/${D().waqfs.B}/documents`);
+    await expect(b.getByTestId("required-docs").locator("li").filter({ hasText: "شهادة تسجيل الوقف" })).toHaveAttribute("data-state", "expired");
+    await b.context().close();
+  });
+
+  test("share links honour max uses and expiry", async ({ browser, viewport }) => {
+    const page = await sessionPage(browser, "nazir", viewport);
+    await page.goto(`/app/w/${D().waqfs.A}/documents/${deedA}`);
+    await page.getByLabel("مرات التنزيل").fill("1");
+    await page.getByRole("button", { name: "أنشئ رابط مشاركة" }).click();
+    const path1 = new URL(await page.getByTestId("share-url").inputValue()).pathname;
+    const token1 = path1.split("/").pop()!;
+    // the token itself is never stored
+    expect(await sysQuery("select 1 from document_shares where token_hash = $1", [token1])).toHaveLength(0);
+    const anon = await pwRequest.newContext({ baseURL: test.info().project.use.baseURL });
+    expect((await anon.get(`${path1}/file`, { maxRedirects: 0 })).status()).toBe(200);
+    expect((await anon.get(`${path1}/file`, { maxRedirects: 0 })).status()).toBe(303);
+    expect(await (await anon.get(path1)).text()).toContain("استُنفد عدد مرات التنزيل");
+
+    await page.reload();
+    await page.getByRole("button", { name: "أنشئ رابط مشاركة" }).click();
+    const path2 = new URL(await page.getByTestId("share-url").inputValue()).pathname;
+    await sysQuery("update document_shares set expires_at = now() - interval '1 minute' where document_id = $1 and uses = 0 and revoked_at is null", [deedA]);
+    expect((await anon.get(`${path2}/file`, { maxRedirects: 0 })).status()).toBe(303);
+    expect(await (await anon.get(path2)).text()).toContain("انتهت صلاحية هذا الرابط");
+    expect((await anon.get("/s/not-a-real-token-000000000000/file", { maxRedirects: 0 })).status()).toBe(303);
+    await anon.dispose();
   });
 });

@@ -10,6 +10,7 @@
  *   - satisfiedWhen  JSON-logic: when true for the waqf facts, an instance is created/kept as done
  *                    (e.g. OB-REG-01 is satisfied once the waqf is registered).
  */
+import { deflateRawSync } from "node:zlib";
 import { fiscalYearEnd, lastFiscalYearEnd, addDays, daysBetween, type ISODate, type OffsetUnit } from "../../engines/dates";
 import { isApplicable, penaltyBand, statusFor, type ObligationDef } from "../../engines/compliance";
 import { test as testLogic, type Logic } from "../../engines/logic";
@@ -165,6 +166,12 @@ export function configOf(row: Pick<ObligationRow, "appliesTo" | "code">): Obliga
  */
 export const CODE_DEFAULTS: Record<string, Partial<ObligationConfig>> = {
   "OB-REG-01": { closesOn: ["registration"], satisfiedWhen: { "!!": { var: "registered" } } },
+  "OB-REG-03": { closesOn: [{ event: "cert_expiry", scope: "other_periods" }] },
+  "OB-DON-01": { closesOn: [{ event: "donation_license_expiry", scope: "other_periods" }] },
+  "OB-PRD-01": { closesOn: ["portfolio_certificate"] },
+  "OB-PRD-02": { closesOn: ["portfolio_created"] },
+  "OB-FIN-02": { closesOn: [{ event: "statements_final", scope: "earliest_open" }] },
+  "OB-FIN-03": { closesOn: [{ event: "statements_final", scope: "earliest_open" }] },
 };
 
 export function rowToDef(row: ObligationRow): ObligationDef {
@@ -469,3 +476,94 @@ export function parseManual(note: string | null | undefined): { title: string; d
   return null;
 }
 export const MANUAL_CODE = "OB-MAN-00";
+
+// ───────────── ZIP (store/deflate, no dependencies) ─────────────
+
+let CRC_TABLE: Uint32Array | null = null;
+export function crc32(buf: Uint8Array): number {
+  if (!CRC_TABLE) {
+    CRC_TABLE = new Uint32Array(256);
+    for (let n = 0; n < 256; n++) {
+      let c = n;
+      for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+      CRC_TABLE[n] = c >>> 0;
+    }
+  }
+  let c = 0xffffffff;
+  for (let i = 0; i < buf.length; i++) c = CRC_TABLE[(c ^ buf[i]) & 0xff] ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
+}
+
+/**
+ * Builds a ZIP archive (PKZIP 2.0, UTF-8 names via flag bit 11). Entries are deflated with node:zlib
+ * when that makes them smaller, stored otherwise. Enough for export bundles; no ZIP64 (keep < 4 GB).
+ */
+export function buildZip(files: { name: string; data: Uint8Array | string }[], now = new Date()): Buffer {
+  const dosTime = ((now.getHours() << 11) | (now.getMinutes() << 5) | Math.floor(now.getSeconds() / 2)) & 0xffff;
+  const dosDate = (((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate()) & 0xffff;
+  const locals: Buffer[] = [];
+  const centrals: Buffer[] = [];
+  let offset = 0;
+  for (const f of files) {
+    const name = Buffer.from(f.name, "utf8");
+    const raw = typeof f.data === "string" ? Buffer.from(f.data, "utf8") : Buffer.from(f.data);
+    const crc = crc32(raw);
+    const deflated = deflateRawSync(raw);
+    const useDeflate = deflated.length < raw.length;
+    const body = useDeflate ? deflated : raw;
+    const method = useDeflate ? 8 : 0;
+    const lh = Buffer.alloc(30);
+    lh.writeUInt32LE(0x04034b50, 0);
+    lh.writeUInt16LE(20, 4);
+    lh.writeUInt16LE(0x0800, 6);
+    lh.writeUInt16LE(method, 8);
+    lh.writeUInt16LE(dosTime, 10);
+    lh.writeUInt16LE(dosDate, 12);
+    lh.writeUInt32LE(crc, 14);
+    lh.writeUInt32LE(body.length, 18);
+    lh.writeUInt32LE(raw.length, 22);
+    lh.writeUInt16LE(name.length, 26);
+    lh.writeUInt16LE(0, 28);
+    locals.push(lh, name, body);
+    const ch = Buffer.alloc(46);
+    ch.writeUInt32LE(0x02014b50, 0);
+    ch.writeUInt16LE(20, 4);
+    ch.writeUInt16LE(20, 6);
+    ch.writeUInt16LE(0x0800, 8);
+    ch.writeUInt16LE(method, 10);
+    ch.writeUInt16LE(dosTime, 12);
+    ch.writeUInt16LE(dosDate, 14);
+    ch.writeUInt32LE(crc, 16);
+    ch.writeUInt32LE(body.length, 20);
+    ch.writeUInt32LE(raw.length, 24);
+    ch.writeUInt16LE(name.length, 28);
+    ch.writeUInt32LE(offset, 42);
+    centrals.push(ch, name);
+    offset += 30 + name.length + body.length;
+  }
+  const cd = Buffer.concat(centrals);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(files.length, 8);
+  end.writeUInt16LE(files.length, 10);
+  end.writeUInt32LE(cd.length, 12);
+  end.writeUInt32LE(offset, 16);
+  return Buffer.concat([...locals, cd, end]);
+}
+
+// ───────────── Risk register ─────────────
+
+export const RISK_CATEGORIES = ["legal", "market", "liquidity", "operational", "governance", "reputational", "asset"] as const;
+export const RISK_STATUSES = ["open", "mitigating", "accepted", "closed"] as const;
+export const RISK_CATEGORY_AR: Record<string, string> = {
+  legal: "نظامي وقانوني", market: "سوقي", liquidity: "سيولة", operational: "تشغيلي", governance: "حوكمة", reputational: "سمعة", asset: "أصول",
+};
+export const RISK_STATUS_AR: Record<string, string> = { open: "مفتوح", mitigating: "قيد المعالجة", accepted: "مقبول", closed: "مغلق" };
+export const RISK_LEVEL_AR = ["", "منخفض", "متوسط", "مرتفع"];
+
+/** Score = impact × likelihood (1–9) → band used for colour and ordering. */
+export function riskBand(impact: number, likelihood: number): { score: number; band: "high" | "medium" | "low"; label: string } {
+  const score = impact * likelihood;
+  const band = score >= 6 ? "high" : score >= 3 ? "medium" : "low";
+  return { score, band, label: band === "high" ? "مرتفع" : band === "medium" ? "متوسط" : "منخفض" };
+}

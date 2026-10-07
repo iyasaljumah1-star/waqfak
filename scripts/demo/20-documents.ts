@@ -1,7 +1,8 @@
 /**
  * Demo documents (fictional, marked "(تجريبي)"): a few encrypted files per demo waqf covering
  * approval states, confidentiality levels and expiry badges (expired, 25 and 50 days ahead).
- * Idempotent: skips a waqf that already has these demo documents.
+ * Waqf A deliberately misses some required documents (ownership deeds) so the checklist shows gaps.
+ * Idempotent: skips any document whose title already exists in that waqf.
  */
 import { and, eq, inArray } from "drizzle-orm";
 import type { Tx } from "../../src/server/db";
@@ -62,8 +63,18 @@ export default async function demoDocuments(tx: Tx, ctx: DemoCtx) {
         { docType: "registration_certificate", title: "شهادة تسجيل الوقف (تجريبي)", number: "DEMO-REG-001", issuer: "الهيئة العامة للأوقاف (تجريبي)", issuedOn: "2023-05-02", expiresOn: day(25), approval: "approved", caption: "DEMO - Registration certificate", file: "registration-demo.pdf" },
         { docType: "lease", title: "عقد إيجار المبنى التعليمي (تجريبي)", number: "DEMO-L-17", issuer: "منصة إيجار (تجريبي)", issuedOn: day(-320), expiresOn: day(50), approval: "none", caption: "DEMO - Lease contract", file: "lease-demo.pdf" },
         { docType: "permission", title: "إذن صيانة المبنى (تجريبي)", issuer: "البلدية (تجريبي)", issuedOn: day(-400), expiresOn: day(-12), caption: "DEMO - Maintenance permit", file: "permit-demo.pdf" },
+        { docType: "nazara_deed", title: "صك نظارة وقف النور (تجريبي)", number: "DEMO-NZ-001", issuer: "محكمة تجريبية", issuedOn: "2023-03-14", issuedOnHijri: "1444/08/22", approval: "approved", caption: "DEMO - Nazara deed", file: "nazara-deed-demo.pdf" },
+        { docType: "bo_register", title: "سجل المستفيد الحقيقي (تجريبي)", issuedOn: day(-90), confidentiality: "confidential", approval: "approved", caption: "DEMO - Beneficial owner register", file: "bo-register-demo.pdf" },
         { docType: "financial_statement", title: "القوائم المالية 2025 (تجريبي)", issuer: "مراجع خارجي (تجريبي)", issuedOn: "2026-03-30", confidentiality: "confidential", approval: "in_review", caption: "DEMO - Financial statements 2025", file: "fs-2025-demo.pdf" },
         { docType: "bank_statement", title: "كشف الحساب البنكي — سبتمبر (تجريبي)", confidentiality: "secret", caption: "DEMO - Bank statement", file: "bank-demo.pdf" },
+      ],
+    },
+    {
+      waqfId: ctx.waqfs.B,
+      owner: ctx.users.waqif,
+      docs: [
+        { docType: "waqf_deed", title: "صك وقف آل سالم الأهلي (تجريبي)", number: "DEMO-4412-207", issuer: "محكمة تجريبية", issuedOn: "2024-01-10", issuedOnHijri: "1445/06/28", approval: "none", caption: "DEMO - Family waqf deed", file: "family-waqf-deed-demo.pdf" },
+        { docType: "registration_certificate", title: "شهادة تسجيل وقف آل سالم (تجريبي)", number: "DEMO-REG-207", issuer: "الهيئة العامة للأوقاف (تجريبي)", issuedOn: "2024-02-01", expiresOn: day(-5), approval: "none", caption: "DEMO - Registration certificate (expired)", file: "registration-b-demo.pdf" },
       ],
     },
     {
@@ -78,13 +89,14 @@ export default async function demoDocuments(tx: Tx, ctx: DemoCtx) {
 
   for (const p of plan) {
     const existing = await tx
-      .select({ id: s.documents.id })
+      .select({ title: s.documents.title })
       .from(s.documents)
-      .where(and(eq(s.documents.waqfId, p.waqfId), inArray(s.documents.title, p.docs.map((d) => d.title))))
-      .limit(1);
-    if (existing.length) continue;
+      .where(and(eq(s.documents.waqfId, p.waqfId), inArray(s.documents.title, p.docs.map((d) => d.title))));
+    const have = new Set(existing.map((e) => e.title));
+    const todo = p.docs.filter((d) => !have.has(d.title));
+    if (!todo.length) continue;
     const key = await keyFor(tx, p.waqfId);
-    for (const d of p.docs) {
+    for (const d of todo) {
       const data = demoPdf(d.caption);
       const enc = encryptBuffer(data, key);
       const storageKey = newStorageKey({ waqfId: p.waqfId, userId: p.owner });

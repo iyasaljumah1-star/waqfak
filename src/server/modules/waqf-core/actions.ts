@@ -439,34 +439,80 @@ export async function revokeDelegation(_: ActionState, fd: FormData): Promise<Ac
 }
 
 // ───────────── Waqf profile ─────────────
-const profileSchema = z.object({
-  waqfId: z.uuid(),
-  fiscalYearEnd: fiscalEnd,
-  assetBand: z.union([z.literal(""), ASSET_BAND]).optional().transform((v) => v || null),
-  collectsDonations: flag,
-  hasForeignParty: flag,
-  hasBeneficiariesAbroad: flag,
-  hasActiveLitigation: flag,
-});
+const nun = z
+  .string()
+  .trim()
+  .optional()
+  .transform((v) => (v ? v.replace(/\s/g, "") : null))
+  .refine((v) => v === null || /^7\d{9}$/.test(v), "الرقم الوطني الموحد من 10 أرقام ويبدأ بـ 7.");
 
+const profileSchema = z
+  .object({
+    waqfId: z.uuid(),
+    name: z.string().trim().min(5, "اكتب اسم الوقف كما في الصك.").max(200),
+    deedNo: optText(60),
+    deedDate: optDate,
+    deedDateHijri: optText(40),
+    documentedOn: optDate,
+    registeredOn: optDate,
+    registrationExpiresOn: optDate,
+    nationalUnifiedNumber: nun,
+    legalType: z.enum(["public", "private", "joint"], { error: "اختر نوع الوقف." }),
+    nazirMode: z.enum(["founder", "individual", "board", "legal_entity", "gaa", "vacant"], { error: "اختر صيغة النظارة." }),
+    fiscalYearEnd: fiscalEnd,
+    assetBand: z.union([z.literal(""), ASSET_BAND]).optional().transform((v) => v || null),
+    collectsDonations: flag,
+    hasForeignParty: flag,
+    hasBeneficiariesAbroad: flag,
+    hasActiveLitigation: flag,
+  })
+  .superRefine((d, ctx) => {
+    const t = todayIso();
+    for (const k of ["deedDate", "documentedOn", "registeredOn"] as const)
+      if (d[k] && d[k]! > t) ctx.addIssue({ code: "custom", path: [k], message: "التاريخ لا يكون في المستقبل." });
+    if (d.documentedOn && d.registeredOn && d.registeredOn < d.documentedOn)
+      ctx.addIssue({ code: "custom", path: ["registeredOn"], message: "تاريخ التسجيل لا يسبق تاريخ التوثيق." });
+    if (d.registeredOn && !d.documentedOn && !d.deedNo)
+      ctx.addIssue({ code: "custom", path: ["documentedOn"], message: "الوقف المسجّل لدى الهيئة يكون موثّقًا: أدخل تاريخ التوثيق أو رقم الصك." });
+    if (d.registrationExpiresOn && d.registeredOn && d.registrationExpiresOn <= d.registeredOn)
+      ctx.addIssue({ code: "custom", path: ["registrationExpiresOn"], message: "تاريخ الانتهاء يلي تاريخ التسجيل." });
+  });
+
+const PRE_REGISTERED = ["idea", "draft", "documenting", "documented"];
+
+/**
+ * Edits the waqf core profile (identity, deed, classification and the flags that drive obligations).
+ * Date changes emit regulatory events; every save re-syncs standing obligations.
+ */
 export async function updateWaqfProfile(_: ActionState, fd: FormData): Promise<ActionState> {
   const r = parseForm(profileSchema, fd);
-  if ("state" in r) return r.state;
+  if ("state" in r) return keep(r.state, fd);
   const d = r.data;
-  return waqfAction(
+  const res = await waqfAction(
     d.waqfId,
     "waqf.edit",
     async ({ auth, access, tx, ip, userAgent }) => {
       const w = access.waqf;
-      const before = {
-        fiscalYearEnd: w.fiscalYearEnd, sizeClass: w.sizeClass, collectsDonations: w.collectsDonations, hasForeignParty: w.hasForeignParty,
-        hasBeneficiariesAbroad: w.hasBeneficiariesAbroad, hasActiveLitigation: w.hasActiveLitigation,
-      };
       let sizeClass = w.sizeClass;
       if (d.assetBand && !w.sizeClassLocked) sizeClass = deriveSizeClass({ asset_band: d.assetBand, direct_benefit: w.directBenefit ? "yes" : "no" });
-      const after = {
+      // Status only moves forward from the pre-registration states; later states (active, suspended…) are not touched here.
+      let status = w.status;
+      if (PRE_REGISTERED.includes(w.status)) {
+        if (d.registeredOn) status = "registered";
+        else if ((d.documentedOn || d.deedNo) && w.status !== "documented") status = "documented";
+      }
+      const stage = Math.max(w.stage, d.registeredOn ? 3 : d.documentedOn ? 2 : 1);
+      const before = {
+        name: w.name, deedNo: w.deedNo, deedDate: w.deedDate, deedDateHijri: w.deedDateHijri, documentedOn: w.documentedOn, registeredOn: w.registeredOn,
+        registrationExpiresOn: w.registrationExpiresOn, nationalUnifiedNumber: w.nationalUnifiedNumber, legalType: w.legalType, nazirMode: w.nazirMode,
+        fiscalYearEnd: w.fiscalYearEnd, sizeClass: w.sizeClass, collectsDonations: w.collectsDonations, hasForeignParty: w.hasForeignParty,
+        hasBeneficiariesAbroad: w.hasBeneficiariesAbroad, hasActiveLitigation: w.hasActiveLitigation, status: w.status, stage: w.stage,
+      };
+      const after: typeof before = {
+        name: d.name, deedNo: d.deedNo, deedDate: d.deedDate, deedDateHijri: d.deedDateHijri, documentedOn: d.documentedOn, registeredOn: d.registeredOn,
+        registrationExpiresOn: d.registrationExpiresOn, nationalUnifiedNumber: d.nationalUnifiedNumber, legalType: d.legalType, nazirMode: d.nazirMode,
         fiscalYearEnd: d.fiscalYearEnd, sizeClass, collectsDonations: d.collectsDonations, hasForeignParty: d.hasForeignParty,
-        hasBeneficiariesAbroad: d.hasBeneficiariesAbroad, hasActiveLitigation: d.hasActiveLitigation,
+        hasBeneficiariesAbroad: d.hasBeneficiariesAbroad, hasActiveLitigation: d.hasActiveLitigation, status, stage,
       };
       const changed = (Object.keys(after) as (keyof typeof after)[]).filter((k) => before[k] !== after[k]);
       if (!changed.length) return { ok: true, message: "لا تغيير على ملف الوقف." };
@@ -475,14 +521,33 @@ export async function updateWaqfProfile(_: ActionState, fd: FormData): Promise<A
         actorUserId: auth.user.id, action: "waqf.profile_updated", entityType: "waqf", entityId: w.id, waqfId: w.id, ip, userAgent,
         before: Object.fromEntries(changed.map((k) => [k, before[k]])), after: Object.fromEntries(changed.map((k) => [k, after[k]])),
       });
+      const t = todayIso();
+      const timeline: (typeof waqfTimelineEvents.$inferInsert)[] = [];
+      if (changed.includes("documentedOn") && d.documentedOn) {
+        timeline.push({ waqfId: w.id, type: "documented", occurredOn: d.documentedOn, title: "توثيق صك الوقف", details: d.deedNo ? `رقم الصك ${d.deedNo}` : null, stage: 2, createdBy: auth.user.id });
+        await emitWaqfEvent(tx, { waqfId: w.id, event: "documentation", date: d.documentedOn, actorUserId: auth.user.id });
+      }
+      if (changed.includes("registeredOn") && d.registeredOn) {
+        timeline.push({ waqfId: w.id, type: "registered", occurredOn: d.registeredOn, title: "تسجيل الوقف لدى الهيئة العامة للأوقاف", details: d.nationalUnifiedNumber ? `الرقم الوطني الموحد ${d.nationalUnifiedNumber}` : null, stage: 2, createdBy: auth.user.id });
+        await emitWaqfEvent(tx, { waqfId: w.id, event: "registration", date: d.registeredOn, actorUserId: auth.user.id });
+      }
+      if (changed.includes("registrationExpiresOn") && d.registrationExpiresOn)
+        await emitWaqfEvent(tx, { waqfId: w.id, event: "cert_expiry", date: d.registrationExpiresOn, actorUserId: auth.user.id });
       if (changed.includes("sizeClass"))
-        await emitWaqfEvent(tx, { waqfId: w.id, event: "material_change", date: todayIso(), meta: { kind: "assets", from: before.sizeClass, to: sizeClass }, actorUserId: auth.user.id });
+        await emitWaqfEvent(tx, { waqfId: w.id, event: "material_change", date: t, meta: { kind: "assets", from: before.sizeClass, to: sizeClass }, actorUserId: auth.user.id });
+      if (changed.includes("nazirMode")) {
+        timeline.push({ waqfId: w.id, type: "nazara_changed", occurredOn: t, title: "تغيير صيغة النظارة", details: null, stage: w.stage, createdBy: auth.user.id });
+        await emitWaqfEvent(tx, { waqfId: w.id, event: "material_change", date: t, meta: { kind: "nazara", from: before.nazirMode, to: d.nazirMode }, actorUserId: auth.user.id });
+      }
+      if (timeline.length) await tx.insert(waqfTimelineEvents).values(timeline);
       await syncWaqfObligations(tx, w.id);
       const lockedNote = d.assetBand && w.sizeClassLocked ? " فئة الحجم مثبّتة من الإدارة فلم تتغير." : "";
-      return { ok: true, message: `حُفظ ملف الوقف وأُعيد حساب الالتزامات.${lockedNote}` };
+      return { ok: true, message: `حُفظ ملف الوقف وأُعيد حساب الالتزامات.${lockedNote}`, data: { saved: true } };
     },
-    [`/app/w/${d.waqfId}`, `/app/w/${d.waqfId}/settings`],
+    [`/app/w/${d.waqfId}`, `/app/w/${d.waqfId}/settings`, "/app", "/app/waqfs"],
   );
+  if (res.ok && res.data?.saved) redirect(`/app/w/${d.waqfId}?saved=1`);
+  return keep(res, fd);
 }
 
 // ───────────── Accept / decline an invitation (token-authorized) ─────────────

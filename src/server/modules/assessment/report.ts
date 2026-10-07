@@ -56,8 +56,8 @@ export function assessmentReportHtml(b: ResultBundle, opts: { generatedAt?: Date
     <dl class="kv">
       <dt>رقم التقييم</dt><dd class="tabular">${esc(b.number)}</dd>
       <dt>نوع التقييم</dt><dd>${b.row.kind === "deep" ? "معمّق" : "سريع"}${b.row.reviewedAt ? " — روجع من مختص" : ""}</dd>
-      <dt>تاريخ الحساب</dt><dd>${esc(gregorian(computed))} م — ${esc(hijri(computed))} هـ</dd>
-      <dt>تاريخ إصدار التقرير</dt><dd>${esc(gregorian(now))} م — ${esc(hijri(now))} هـ</dd>
+      <dt>تاريخ الحساب</dt><dd>${esc(gregorian(computed))} م — ${esc(hijri(computed))}</dd>
+      <dt>تاريخ إصدار التقرير</dt><dd>${esc(gregorian(now))} م — ${esc(hijri(now))}</dd>
     </dl>
     <p class="small muted" style="margin-top:6mm">تشخيص استرشادي مبني على إجابات المستخدم، وليس فتوى ولا رأيًا قانونيًا ملزمًا.</p>
   </div>
@@ -104,7 +104,7 @@ export function assessmentReportHtml(b: ResultBundle, opts: { generatedAt?: Date
 </section>`;
 
   const recs = `
-<section class="page-break">
+<section>
   <h2>التوصيات وخطة العمل</h2>
   ${[1, 2, 3].map((w) => {
     const items = active.filter((r) => r.wave === w);

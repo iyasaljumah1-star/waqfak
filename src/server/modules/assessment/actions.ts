@@ -7,7 +7,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { withContext } from "../../db";
 import {
-  actionPlans, assessmentAnswers, assessmentResults, assessments, axisScores, criticalFlags, needs, recommendations, reportShares, reports, tasks,
+  actionPlans, assessmentAnswers, assessmentResults, assessments, axisScores, criticalFlags, needs, recommendations, reportShares, reports, tasks, waqfs,
 } from "../../db/schema";
 import { getAuth, loadWaqfAccess, requireAuth } from "../../authz/context";
 import { randomToken, sha256 } from "../../lib/crypto";
@@ -20,7 +20,7 @@ import { parseForm, toState, UserError, userAction } from "../_shared";
 import type { ActionState } from "@/lib/utils";
 import { ANON_DB, anonCookieName, isUuid, resolveAssessment, setAnonCookie } from "./access";
 import { computeAndPersist } from "./compute";
-import { isAnswered, isISODate, MATURITY_OPTIONS, prefillFromWaqf, waveDueDate } from "./facts";
+import { isAnswered, isISODate, MATURITY_OPTIONS, prefillFromWaqf, STATUS_VIEW, waveDueDate } from "./facts";
 import { activeBankVersionId, assessmentNumber, loadBank, parseReview } from "./queries";
 
 const resultPath = (id: string, signedIn: boolean) => (signedIn ? `/app/assessments/${id}` : `/assessment/${id}/result`);
@@ -409,8 +409,54 @@ export async function markReviewed(_prev: ActionState, fd: FormData): Promise<Ac
     await audit(tx, { actorUserId: auth.user.id, action: "assessment.reviewed", entityType: "assessment", entityId: v.row.id, waqfId: v.row.waqfId, ip, userAgent, before: { status: v.row.status }, after: { status: "published", reviewedAt: now } });
     if (v.row.userId) {
       const { notify } = await import("../notify");
-      await notify(v.row.userId, "assessment.ready", { waqf: "تقييمك المعمّق", score: "روجع من مختص", status: "اطلع على ملاحظات المراجع" }, { waqfId: v.row.waqfId, link: `/app/assessments/${v.row.id}`, tx });
+      const [res] = await tx.select({ overall: assessmentResults.overallScore, status: assessmentResults.status }).from(assessmentResults).where(eq(assessmentResults.assessmentId, v.row.id)).limit(1);
+      const [w] = v.row.waqfId ? await tx.select({ name: waqfs.name }).from(waqfs).where(eq(waqfs.id, v.row.waqfId)).limit(1) : [];
+      await notify(v.row.userId, "assessment.ready", {
+        waqf: `${w?.name ?? v.row.waqfLabel ?? "تقييمك المعمّق"} (روجع من مختص)`,
+        score: res ? Math.round(Number(res.overall)) : "—",
+        status: res ? STATUS_VIEW[res.status]?.label ?? res.status : "—",
+      }, { waqfId: v.row.waqfId, link: `/app/assessments/${v.row.id}`, tx });
     }
     return { ok: true, message: "اعتمدنا المراجعة؛ تظهر النتيجة الآن للعميل بعلامة «روجع من مختص»." };
   }, { perm: "staff.assessment_review", revalidate: ["/admin/assessments", `/admin/assessments/${String(fd.get("id"))}`] });
+}
+
+const EVIDENCE = ["declared", "document", "verified"] as const;
+
+/**
+ * Reviewer adjustment: records the evidence level of each answer (declared / backed by a document / verified
+ * by the reviewer) and recomputes. Evidence raises the result's confidence; answers themselves stay as the
+ * client gave them. Dismissals and manual recommendations survive the recompute.
+ */
+export async function saveEvidence(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  return userAction(async ({ auth, tx, ip, userAgent }) => {
+    const v = await reviewTarget(String(fd.get("id") ?? ""));
+    const current = await tx.select({ code: assessmentAnswers.questionCode, ev: assessmentAnswers.evidenceLevel }).from(assessmentAnswers).where(eq(assessmentAnswers.assessmentId, v.row.id));
+    const was = new Map(current.map((c) => [c.code, c.ev]));
+    const changes: Record<string, { from: string; to: string }> = {};
+    for (const [k, val] of fd.entries()) {
+      const m = /^ev_(.+)$/.exec(k);
+      if (!m || typeof val !== "string" || !(EVIDENCE as readonly string[]).includes(val)) continue;
+      const prev = was.get(m[1]);
+      if (!prev || prev === val) continue;
+      changes[m[1]] = { from: prev, to: val };
+      await tx
+        .update(assessmentAnswers)
+        .set({ evidenceLevel: val as (typeof EVIDENCE)[number], verifiedBy: val === "declared" ? null : auth.user.id })
+        .where(and(eq(assessmentAnswers.assessmentId, v.row.id), eq(assessmentAnswers.questionCode, m[1])));
+    }
+    if (!Object.keys(changes).length) return { ok: true, message: "لم تتغير درجة الإثبات لأي إجابة." };
+    await audit(tx, { actorUserId: auth.user.id, action: "assessment.evidence", entityType: "assessment", entityId: v.row.id, waqfId: v.row.waqfId, ip, userAgent, after: changes });
+    const r = await computeAndPersist(tx, v.row.id, { userId: auth.user.id, ip, userAgent });
+    return { ok: true, message: `حدّثنا الإثبات لـ${Object.keys(changes).length} إجابة وأعدنا الحساب: الدرجة ${Math.round(r.overallScore)}.` };
+  }, { perm: "staff.assessment_review", revalidate: [`/admin/assessments/${String(fd.get("id"))}`] });
+}
+
+/** Recomputes with the current bank, rules, licenses and waqf profile (e.g. after a license or profile change). */
+export async function recomputeAssessment(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  return userAction(async ({ auth, tx, ip, userAgent }) => {
+    const v = await reviewTarget(String(fd.get("id") ?? ""));
+    const r = await computeAndPersist(tx, v.row.id, { userId: auth.user.id, ip, userAgent });
+    return { ok: true, message: `أعدنا الحساب: الدرجة ${Math.round(r.overallScore)}، ${r.flags} علامة، ${r.recommendations} توصية.` };
+  }, { perm: "staff.assessment_review", revalidate: [`/admin/assessments/${String(fd.get("id"))}`] });
 }

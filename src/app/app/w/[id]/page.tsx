@@ -3,7 +3,8 @@ import { ArrowLeft, ClipboardList, Gauge, History, Users } from "lucide-react";
 import { Alert, Badge, DefinitionList, EmptyState, Panel, Steps } from "@/components/ui";
 import { ActionLink } from "@/components/portal/action-link";
 import { JOURNEY_STAGES, OBLIGATION_STATUS_LABEL, REQUEST_STATUS_LABEL, RESULT_STATUS_LABEL, RESULT_STATUS_TONE } from "@/components/portal/labels";
-import { cn, fmtBoth, fmtDate, fmtNumber, relDays } from "@/lib/utils";
+import { WaqfProfileForm } from "@/components/portal/waqf-profile-form";
+import { cn, fmtBoth, fmtDate, fmtNumber, relDays, SIZE_LABEL } from "@/lib/utils";
 import { requireAuth, waqfCan } from "@/server/authz/context";
 import { roleName } from "@/server/authz/catalog";
 import { waqfAccess, waqfOverview } from "@/server/modules/waqf-core/queries";
@@ -22,8 +23,9 @@ function SectionLink({ href, children }: { href: string; children: React.ReactNo
   );
 }
 
-export default async function WaqfOverview({ params }: { params: Promise<{ id: string }> }) {
+export default async function WaqfOverview({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ edit?: string; saved?: string }> }) {
   const { id } = await params;
+  const sp = await searchParams;
   const auth = await requireAuth({ next: `/app/w/${id}` });
   const access = await waqfAccess(auth, id);
   const w = access.waqf;
@@ -40,9 +42,14 @@ export default async function WaqfOverview({ params }: { params: Promise<{ id: s
   // People listed as beneficiaries are only shown to roles that may see the beneficiary register.
   const members = data.members.filter((m) => m.roleKey !== "beneficiary" || can("beneficiaries.view"));
   const totalObl = OBL_ORDER.reduce((n, k) => n + (data.oblCounts[k] ?? 0), 0);
+  const editing = sp.edit === "1" && can("waqf.edit");
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Riyadh" }).format(new Date());
 
   return (
     <div className="space-y-6">
+      {sp.saved === "1" ? (
+        <Alert tone="ok" title="حُفظ ملف الوقف">أعدنا حساب الالتزامات النظامية ومواعيدها وفق البيانات الجديدة، وسُجّل التعديل في سجل العمليات.</Alert>
+      ) : null}
       {data.overdue.length ? (
         <Alert tone="critical" title={`${fmtNumber(data.overdue.length)} التزام نظامي فات موعده`}>
           <ul className="mt-1 space-y-1">
@@ -58,7 +65,33 @@ export default async function WaqfOverview({ params }: { params: Promise<{ id: s
 
       <div className="grid gap-6 2xl:grid-cols-[minmax(0,1fr)_22rem]">
         <div className="min-w-0 space-y-6">
-          <Panel title="بيانات أساسية" actions={can("deed.view") ? <SectionLink href={`${base}/deed`}>الوثيقة والشروط</SectionLink> : null}>
+          {editing ? (
+            <Panel id="profile" title="تعديل ملف الوقف" description="ما تحفظه هنا يحدد الالتزامات النظامية ومواعيدها، ويُسجَّل في سجل العمليات.">
+              <WaqfProfileForm
+                waqfId={id}
+                today={today}
+                cancelHref={base}
+                sizeLabel={w.sizeClass ? SIZE_LABEL[w.sizeClass] : "غير محددة"}
+                sizeLocked={w.sizeClassLocked}
+                values={{
+                  name: w.name, deedNo: w.deedNo, deedDate: w.deedDate, deedDateHijri: w.deedDateHijri, documentedOn: w.documentedOn, registeredOn: w.registeredOn,
+                  registrationExpiresOn: w.registrationExpiresOn, nationalUnifiedNumber: w.nationalUnifiedNumber, legalType: w.legalType, nazirMode: w.nazirMode,
+                  fiscalYearEnd: w.fiscalYearEnd, collectsDonations: w.collectsDonations, hasForeignParty: w.hasForeignParty,
+                  hasBeneficiariesAbroad: w.hasBeneficiariesAbroad, hasActiveLitigation: w.hasActiveLitigation,
+                }}
+              />
+            </Panel>
+          ) : (
+          <Panel
+            id="profile"
+            title="بيانات أساسية"
+            actions={
+              <>
+                {can("deed.view") ? <SectionLink href={`${base}/deed`}>الوثيقة والشروط</SectionLink> : null}
+                {can("waqf.edit") ? <ActionLink href={`${base}?edit=1#profile`} variant="secondary" size="sm">تعديل</ActionLink> : null}
+              </>
+            }
+          >
             <DefinitionList
               items={[
                 { label: "الرقم الداخلي", value: <span dir="ltr" className="tabular">{w.internalNumber}</span> },
@@ -79,14 +112,15 @@ export default async function WaqfOverview({ params }: { params: Promise<{ id: s
               {can("documents.view") ? <SectionLink href={`${base}/documents`}>الوثائق</SectionLink> : null}
               {can("assets.view") ? <SectionLink href={`${base}/assets`}>الأصول</SectionLink> : null}
               {can("governance.view") ? <SectionLink href={`${base}/governance`}>الحوكمة</SectionLink> : null}
-              {can("waqf.edit") && can("waqf.members.manage") ? <SectionLink href={`${base}/settings`}>تعديل الإعدادات</SectionLink> : null}
+              {can("waqf.members.manage") ? <SectionLink href={`${base}/settings`}>الأعضاء والإعدادات</SectionLink> : null}
             </div>
           </Panel>
+          )}
 
           {can("compliance.view") ? (
             <Panel title="الامتثال" description="حالة الالتزامات النظامية المترتبة على هذا الوقف." actions={<SectionLink href={`${base}/compliance`}>كل الالتزامات</SectionLink>}>
               {totalObl ? (
-                <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-md border border-line bg-line sm:grid-cols-5">
+                <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-md border border-line bg-line sm:grid-cols-5 [&>div:last-child]:col-span-2 sm:[&>div:last-child]:col-span-1">
                   {OBL_ORDER.map((k) => {
                     const n = data.oblCounts[k] ?? 0;
                     const hot = k === "overdue" && n > 0;

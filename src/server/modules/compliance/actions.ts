@@ -1,7 +1,8 @@
 "use server";
 import { and, eq, inArray, sql } from "drizzle-orm";
+import { redirect } from "next/navigation";
 import { z } from "zod";
-import { documentLinks, documents, obligationEvents, obligationInstances, obligations, penaltySchedule, reports, violations } from "../../db/schema";
+import { documentLinks, documents, obligationEvents, obligationInstances, obligations, penaltySchedule, reports, riskRegister, violations, waqfMemberships } from "../../db/schema";
 import { audit, nextNumber } from "../../lib/audit";
 import { randomToken } from "../../lib/crypto";
 import { todayISO } from "../../engines/dates";
@@ -9,7 +10,7 @@ import { UserError, parseForm, waqfAction } from "../_shared";
 import type { ActionState } from "@/lib/utils";
 import { emitWaqfEvent } from "./events";
 import { MANUAL_OBLIGATION } from "./manual";
-import { NA_MARK, OPEN_STATUSES, nextStatus, MANUAL_CODE } from "./pure";
+import { NA_MARK, OPEN_STATUSES, nextStatus, MANUAL_CODE, RISK_CATEGORIES, RISK_STATUSES } from "./pure";
 import { buildAnnualSnapshot, buildBoSnapshot, buildCsvSnapshot, type ReportPackage } from "./reports";
 import "./engine"; // registers the engine handler for emitWaqfEvent
 
@@ -37,7 +38,7 @@ export async function completeInstance(_prev: ActionState, fd: FormData): Promis
   const r = parseForm(completeSchema, fd);
   if ("state" in r) return r.state;
   const { waqfId, instanceId, documentId, note } = r.data;
-  return waqfAction(
+  const res = await waqfAction(
     waqfId,
     "compliance.manage",
     async ({ auth, tx, ip, userAgent }) => {
@@ -58,6 +59,9 @@ export async function completeInstance(_prev: ActionState, fd: FormData): Promis
     },
     paths(waqfId),
   );
+  // Committed: the item has left the "open" list, so show it where it now lives, with a confirmation.
+  if (res.ok) redirect(`/app/w/${waqfId}/compliance?view=done&ok=completed#i-${instanceId}`);
+  return res;
 }
 
 const waiveSchema = z.object({ waqfId: uuid, instanceId: uuid, reason: z.string().trim().min(10, "اكتب سبب الإعفاء (10 أحرف على الأقل).").max(500, "السبب أطول من 500 حرف.") });
@@ -66,7 +70,7 @@ export async function waiveInstance(_prev: ActionState, fd: FormData): Promise<A
   const r = parseForm(waiveSchema, fd);
   if ("state" in r) return r.state;
   const { waqfId, instanceId, reason } = r.data;
-  return waqfAction(
+  const res = await waqfAction(
     waqfId,
     "compliance.manage",
     async ({ auth, tx, ip, userAgent }) => {
@@ -79,6 +83,9 @@ export async function waiveInstance(_prev: ActionState, fd: FormData): Promise<A
     },
     paths(waqfId),
   );
+  // Committed: the item has left the "open" list, so show it where it now lives, with a confirmation.
+  if (res.ok) redirect(`/app/w/${waqfId}/compliance?view=closed&ok=waived#i-${instanceId}`);
+  return res;
 }
 
 const reopenSchema = z.object({ waqfId: uuid, instanceId: uuid, reason: z.string().trim().max(500).optional().default("") });
@@ -254,5 +261,53 @@ export async function revokeReport(_prev: ActionState, fd: FormData): Promise<Ac
       return { ok: true, message: "أُلغيت الحزمة ولن تكون متاحة للتنزيل." };
     },
     `/app/w/${waqfId}/reports`,
+  );
+}
+
+// ───────────── Risk register (risks.manage) ─────────────
+
+const level = z.coerce.number().int().min(1, "اختر من 1 إلى 3.").max(3, "اختر من 1 إلى 3.");
+const riskSchema = z.object({
+  waqfId: uuid,
+  riskId: z.union([uuid, z.literal("")]).optional().default(""),
+  title: z.string().trim().min(5, "صف الخطر في 5 أحرف على الأقل.").max(200, "الوصف أطول من 200 حرف."),
+  category: z.enum(RISK_CATEGORIES, "اختر فئة الخطر."),
+  impact: level,
+  likelihood: level,
+  treatment: z.string().trim().max(1000, "خطة المعالجة أطول من 1000 حرف.").optional().default(""),
+  ownerUserId: z.union([uuid, z.literal("")]).optional().default(""),
+  reviewOn: z.union([isoDate, z.literal("")]).optional().default(""),
+  status: z.enum(RISK_STATUSES, "اختر حالة صحيحة.").optional().default("open"),
+});
+
+/** Creates or updates a risk in the waqf's register. */
+export async function saveRisk(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const r = parseForm(riskSchema, fd);
+  if ("state" in r) return r.state;
+  const d = r.data;
+  return waqfAction(
+    d.waqfId,
+    "risks.manage",
+    async ({ auth, tx, ip, userAgent }) => {
+      if (d.ownerUserId) {
+        const [m] = await tx.select({ id: waqfMemberships.id }).from(waqfMemberships).where(and(eq(waqfMemberships.waqfId, d.waqfId), eq(waqfMemberships.userId, d.ownerUserId), eq(waqfMemberships.status, "active"))).limit(1);
+        if (!m) throw new UserError("مالك الخطر يجب أن يكون عضوًا نشطًا في الوقف.");
+      }
+      const values = {
+        title: d.title, category: d.category, impact: d.impact, likelihood: d.likelihood, treatment: d.treatment || null,
+        ownerUserId: d.ownerUserId || null, reviewOn: d.reviewOn || null, status: d.status,
+      };
+      if (d.riskId) {
+        const [before] = await tx.select().from(riskRegister).where(and(eq(riskRegister.id, d.riskId), eq(riskRegister.waqfId, d.waqfId))).limit(1);
+        if (!before) throw new UserError("الخطر غير موجود في سجل هذا الوقف.");
+        await tx.update(riskRegister).set({ ...values, updatedBy: auth.user.id }).where(eq(riskRegister.id, d.riskId));
+        await audit(tx, { actorUserId: auth.user.id, action: "risks.update", entityType: "risk", entityId: d.riskId, waqfId: d.waqfId, ip, userAgent, before: { title: before.title, impact: before.impact, likelihood: before.likelihood, status: before.status }, after: values });
+        return { ok: true, message: "حُدّث الخطر." };
+      }
+      const [row] = await tx.insert(riskRegister).values({ waqfId: d.waqfId, ...values, createdBy: auth.user.id }).returning({ id: riskRegister.id });
+      await audit(tx, { actorUserId: auth.user.id, action: "risks.create", entityType: "risk", entityId: row.id, waqfId: d.waqfId, ip, userAgent, after: values });
+      return { ok: true, message: "أُضيف الخطر إلى السجل." };
+    },
+    `/app/w/${d.waqfId}/risks`,
   );
 }

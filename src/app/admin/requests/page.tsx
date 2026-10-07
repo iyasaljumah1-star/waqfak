@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { Inbox } from "lucide-react";
-import { Badge, DataTable, EmptyState, PageHeader, Panel } from "@/components/ui";
+import { Badge, buttonClass, DataTable, EmptyState, PageHeader, Panel } from "@/components/ui";
 import { ConflictBadge, PRIORITY_LABEL, SlaBadge, StatusBadge } from "@/components/requests/bits";
 import { cn } from "@/lib/utils";
 import { requireStaff } from "@/server/authz/context";
@@ -10,7 +11,8 @@ import { QUEUE_TABS, queueCounts, staffQueue, type QueueTab } from "@/server/mod
 export const metadata: Metadata = { title: "الطلبات" };
 
 export default async function StaffQueue({ searchParams }: { searchParams: Promise<{ tab?: string; q?: string }> }) {
-  const auth = await requireStaff("staff.requests.assigned");
+  const auth = await requireStaff("admin.access");
+  if (!auth.perms.has("staff.requests.assigned") && !auth.perms.has("admin.requests.all")) redirect("/admin?denied=1");
   const sp = await searchParams;
   const ops = auth.perms.has("admin.requests.all");
   const tabs = QUEUE_TABS.filter((t) => !t.opsOnly || ops);
@@ -27,7 +29,7 @@ export default async function StaffQueue({ searchParams }: { searchParams: Promi
       <nav aria-label="تبويبات الطلبات" className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-1">
         {tabs.map((t) => (
           <Link key={t.key} href={qs(t.key)} aria-current={t.key === tab ? "page" : undefined}
-            className={cn("inline-flex shrink-0 items-center gap-1.5 rounded-md px-3 py-1.5 text-[15px]", t.key === tab ? "bg-ink text-white dark:text-[#0f141c]" : "border border-line bg-surface hover:bg-surface-2")}>
+            className={buttonClass(t.key === tab ? "primary" : "secondary", "sm", "shrink-0 gap-1.5")}>
             {t.label}
             {counts[t.key] !== undefined ? <span className={cn("tabular rounded-full px-1.5 text-[12px]", t.key === tab ? "bg-white/20" : "bg-surface-2 text-muted")}>{counts[t.key]}</span> : null}
           </Link>

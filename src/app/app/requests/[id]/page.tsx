@@ -18,9 +18,9 @@ import { INVOICE_STATUS_LABEL, INVOICE_STATUS_TONE } from "@/server/modules/bill
 
 export const metadata: Metadata = { title: "تفاصيل الطلب" };
 
-export default async function RequestPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ created?: string }> }) {
+export default async function RequestPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ created?: string; signed?: string }> }) {
   const { id } = await params;
-  const { created } = await searchParams;
+  const { created, signed } = await searchParams;
   const auth = await requireAuth({ next: `/app/requests/${id}` });
   const d = await requestDetail(auth, id, "client");
   if (!d) notFound();
@@ -45,6 +45,7 @@ export default async function RequestPage({ params, searchParams }: { params: Pr
       />
 
       {created ? <Alert tone="ok" title="أُرسل طلبك">سيُسند لمختص ويُفرز خلال 5 أيام عمل. ارفع المستندات المطلوبة الآن لتسريع العمل.</Alert> : null}
+      {signed && contract.clientSigned ? <Alert tone="ok" title="تم توقيع العقد">حُفظ توقيعك مع بصمة نص العقد. تصدر الفاتورة بعد ذلك وتصلك في «الفواتير».</Alert> : null}
       {r.conflictCheck === "blocked" ? (
         <Alert tone="critical" title="الطلب موقوف لتعارض في الاستقلال">
           <p className="whitespace-pre-line">{r.conflictNote}</p>

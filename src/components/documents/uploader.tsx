@@ -8,15 +8,19 @@ import { cn } from "@/lib/utils";
 import { CONF_OPTIONS, DOC_TYPE_OPTIONS, type Confidentiality } from "@/server/modules/documents/labels";
 
 const MAX_BYTES = 15 * 1024 * 1024;
-const EXTS = ["pdf", "png", "jpg", "jpeg", "webp", "docx", "xlsx", "txt"];
+// Mirrors UPLOAD_KINDS in server/adapters/scan.ts (the server re-checks the real type from the bytes).
+const EXTS = ["pdf", "png", "jpg", "jpeg", "webp", "docx", "xlsx"];
 const ACCEPT = EXTS.map((e) => `.${e}`).join(",");
-const TYPES_TEXT = "PDF، صور PNG وJPEG وWebP، Word (docx)، Excel (xlsx)، نص (txt)";
+const TYPES_TEXT = "PDF، صور PNG وJPEG وWebP، Word (docx)، Excel (xlsx)";
 
 export type DocumentUploaderProps = {
   waqfId?: string | null;
   requestId?: string | null;
   link?: { entityType: string; entityId: string };
+  /** Fixed document type (hides the type field). */
   docType?: string;
+  /** Preselected document type (the field stays editable). */
+  defaultDocType?: string;
   defaultTitle?: string;
   confidentiality?: Confidentiality;
   compact?: boolean;
@@ -38,7 +42,7 @@ function validate(f: File): string | null {
 const sizeText = (n: number) => (n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))} ك.ب` : `${(n / 1024 / 1024).toFixed(1)} م.ب`);
 
 export function DocumentUploader(props: DocumentUploaderProps) {
-  const { waqfId, requestId, link, docType, defaultTitle, confidentiality, compact, onUploaded, documentId } = props;
+  const { waqfId, requestId, link, docType, defaultDocType, defaultTitle, confidentiality, compact, onUploaded, documentId } = props;
   const router = useRouter();
   const uid = useId();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -132,7 +136,7 @@ export function DocumentUploader(props: DocumentUploaderProps) {
           {!docType ? (
             <label className="block space-y-1">
               <span className="text-[14px] font-medium">النوع</span>
-              <select name="docType" defaultValue="other" className="block h-11 w-full rounded-md border border-line-strong bg-surface px-3 text-[15px] focus:border-ink focus:outline-none focus:ring-2 focus:ring-ink/20">
+              <select name="docType" defaultValue={defaultDocType ?? "other"} key={defaultDocType ?? "other"} className="block h-11 w-full rounded-md border border-line-strong bg-surface px-3 text-[15px] focus:border-ink focus:outline-none focus:ring-2 focus:ring-ink/20">
                 {DOC_TYPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </label>

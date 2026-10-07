@@ -10,7 +10,7 @@ import { canSeeDocumentSync } from "@/server/modules/documents/service";
 import { ACCESS_ACTION_LABEL, ENTITY_LABEL, SCAN_LABEL, STATUS_LABEL, docTypeLabel, fmtBytes } from "@/server/modules/documents/labels";
 import { Alert, Badge, DataTable, DefinitionList, PageHeader, Panel, buttonClass } from "@/components/ui";
 import { DocumentUploader } from "@/components/documents/uploader";
-import { ApprovalBadge, ConfBadge, Expiry, Issued } from "@/components/documents/bits";
+import { ANCHOR_PRIMARY_FIX, ApprovalBadge, ConfBadge, Expiry, Issued } from "@/components/documents/bits";
 import { DocumentPreview } from "@/components/documents/preview";
 import { ApproveForm, ArchiveForm, MetaForm, RevokeShareForm, ShareForm } from "@/components/documents/forms";
 import { fmtDate, fmtDateTime } from "@/lib/utils";
@@ -90,7 +90,7 @@ export default async function DocumentDetailPage({ params }: { params: Promise<{
               <a href={fileUrl(undefined, true)} target="_blank" rel="noopener" className={buttonClass("secondary")}>
                 <ExternalLink aria-hidden className="size-4" /> افتح
               </a>
-              <a href={fileUrl()} className={buttonClass("primary")}>
+              <a href={fileUrl()} className={buttonClass("primary", "md", ANCHOR_PRIMARY_FIX)}>
                 <Download aria-hidden className="size-4" /> نزّل
               </a>
             </>

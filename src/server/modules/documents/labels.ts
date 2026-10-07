@@ -4,7 +4,7 @@ import type { Tone } from "@/components/ui";
 export const DOC_TYPES = [
   "waqf_deed", "nazara_deed", "registration_certificate", "ownership_deed", "lease", "contract", "power_of_attorney",
   "resolution", "minutes", "financial_statement", "bank_statement", "valuation", "policy", "regulation",
-  "official_letter", "judgment", "permission", "id_document", "deliverable", "other",
+  "official_letter", "judgment", "permission", "id_document", "bo_register", "deliverable", "other",
 ] as const;
 export type DocType = (typeof DOC_TYPES)[number];
 
@@ -27,6 +27,7 @@ export const DOC_TYPE_LABEL: Record<DocType, string> = {
   judgment: "حكم قضائي",
   permission: "إذن أو تصريح",
   id_document: "وثيقة هوية",
+  bo_register: "سجل المستفيد الحقيقي",
   deliverable: "مخرج خدمة",
   other: "أخرى",
 };
@@ -74,3 +75,26 @@ export function fmtBytes(n: number) {
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} ك.ب`;
   return `${(n / 1024 / 1024).toFixed(1)} م.ب`;
 }
+
+// ───────────── Required documents per waqf ─────────────
+
+export type RequiredDocKey = "waqf_deed" | "registration_certificate" | "nazara_deed" | "ownership_deed" | "financial_statement" | "bo_register";
+
+/** The core documents every registered waqf should hold in its vault (checklist on the documents page). */
+export const REQUIRED_DOCS: { key: RequiredDocKey; label: string; why: string }[] = [
+  { key: "waqf_deed", label: "صك الوقف", why: "يثبت إنشاء الوقف وشروط الواقف، وهو أساس كل تصرف في الوقف." },
+  { key: "registration_certificate", label: "شهادة تسجيل الوقف", why: "تثبت تسجيل الوقف لدى الهيئة العامة للأوقاف، ولها تاريخ انتهاء يلزم تجديده." },
+  { key: "nazara_deed", label: "صك النظارة", why: "يحدد الناظر وصلاحياته، ويُطلب عند التعامل مع الجهات والبنوك." },
+  { key: "ownership_deed", label: "صكوك ملكية الأصول", why: "تثبت ملكية الوقف لعقاراته وأصوله المسجلة." },
+  { key: "financial_statement", label: "القوائم المالية لآخر سنة مالية", why: "تُعد سنويًا وتُحفظ للرجوع إليها عند المراجعة والإفصاح." },
+  { key: "bo_register", label: "سجل المستفيد الحقيقي", why: "يحدد الأشخاص الطبيعيين المسيطرين على الوقف وفق معايير المستفيد الحقيقي." },
+];
+
+export type ChecklistState = "ok" | "pending" | "expiring" | "expired" | "partial" | "outdated" | "due" | "missing";
+export const CHECKLIST_LABEL: Record<ChecklistState, string> = {
+  ok: "مكتملة", pending: "قيد الفحص", expiring: "تقترب من الانتهاء", expired: "منتهية", partial: "ناقصة جزئيًا",
+  outdated: "غير محدّثة", due: "مستحقة قريبًا", missing: "ناقصة",
+};
+export const CHECKLIST_TONE: Record<ChecklistState, Tone> = {
+  ok: "ok", pending: "warn", expiring: "warn", expired: "critical", partial: "warn", outdated: "fine", due: "info", missing: "critical",
+};

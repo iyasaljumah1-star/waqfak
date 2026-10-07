@@ -38,3 +38,9 @@ export function Issued({ on, hijri }: { on: string | null; hijri: string | null 
     </span>
   );
 }
+
+/**
+ * Workaround: globals.css sets `a { color: inherit }` outside a cascade layer, which beats Tailwind's
+ * `text-white` on <a> styled as a primary button. Append to buttonClass("primary") on anchors until fixed upstream.
+ */
+export const ANCHOR_PRIMARY_FIX = "text-white! dark:text-[#0f141c]!";

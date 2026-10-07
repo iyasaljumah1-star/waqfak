@@ -6,7 +6,7 @@ import { ActionForm, PrintButton } from "@/components/requests/forms";
 import { fmtBoth, fmtDate, fmtDateTime, fmtSAR } from "@/lib/utils";
 import { requireAuth } from "@/server/authz/context";
 import { startCheckout } from "@/server/modules/billing/actions";
-import { INVOICE_STATUS_LABEL, INVOICE_STATUS_TONE, PAYMENT_STATUS_LABEL, PROVIDER_LABEL } from "@/server/modules/billing/access";
+import { EINVOICE_STATUS_LABEL, INVOICE_STATUS_LABEL, INVOICE_STATUS_TONE, PAYMENT_STATUS_LABEL, PROVIDER_LABEL } from "@/server/modules/billing/access";
 import { invoiceView } from "@/server/modules/billing/queries";
 
 export const metadata: Metadata = { title: "فاتورة" };
@@ -95,9 +95,9 @@ export default async function InvoicePage({ params, searchParams }: { params: Pr
             <thead>
               <tr className="border-b border-line-strong text-[13px] text-muted">
                 <th scope="col" className="py-2 text-start font-medium">البيان</th>
-                <th scope="col" className="w-14 py-2 text-center font-medium">الكمية</th>
-                <th scope="col" className="w-28 py-2 text-end font-medium">سعر الوحدة</th>
-                <th scope="col" className="w-28 py-2 text-end font-medium">المبلغ</th>
+                <th scope="col" className="w-10 py-2 text-center font-medium sm:w-14">الكمية</th>
+                <th scope="col" className="hidden w-28 py-2 text-end font-medium sm:table-cell">سعر الوحدة</th>
+                <th scope="col" className="w-24 py-2 text-end font-medium sm:w-28">المبلغ</th>
               </tr>
             </thead>
             <tbody>
@@ -105,7 +105,7 @@ export default async function InvoicePage({ params, searchParams }: { params: Pr
                 <tr key={i} className="border-b border-line align-top">
                   <td className="py-2 pe-2">{l.description}</td>
                   <td className="tabular py-2 text-center">{l.qty}</td>
-                  <td className="tabular py-2 text-end">{fmtSAR(l.unit)}</td>
+                  <td className="tabular hidden py-2 text-end sm:table-cell">{fmtSAR(l.unit)}</td>
                   <td className="tabular py-2 text-end">{fmtSAR(l.total)}</td>
                 </tr>
               ))}
@@ -121,9 +121,9 @@ export default async function InvoicePage({ params, searchParams }: { params: Pr
         </dl>
 
         <footer className="mt-6 space-y-1 border-t border-line pt-3 text-[12px] text-muted">
-          {inv.einvoiceStatus === "not_submitted" ? (
-            <p>لم تُرسل هذه الفاتورة إلى منصة الفوترة الإلكترونية (فاتورة) بعد؛ الربط مع هيئة الزكاة والضريبة والجمارك بانتظار استكمال التسجيل.</p>
-          ) : <p>حالة الفوترة الإلكترونية: {inv.einvoiceStatus}</p>}
+          {inv.einvoiceStatus === "pending" || inv.einvoiceStatus === "pending_integration" ? (
+            <p data-testid="einvoice-status">لم تُرسل هذه الفاتورة إلى منصة الفوترة الإلكترونية (فاتورة) بعد؛ الربط مع هيئة الزكاة والضريبة والجمارك بانتظار استكمال التسجيل.</p>
+          ) : <p data-testid="einvoice-status">حالة الفوترة الإلكترونية: {EINVOICE_STATUS_LABEL[inv.einvoiceStatus] ?? inv.einvoiceStatus}</p>}
           {!v.vatNumber ? <p>الرقم الضريبي للشركة قيد التسجيل.</p> : null}
           {inv.status === "paid" ? <p>سُددت بتاريخ {fmtDate(inv.paidOn)}.</p> : null}
         </footer>

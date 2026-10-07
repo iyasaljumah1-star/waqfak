@@ -42,7 +42,7 @@ export async function issueInvoice(_: ActionState, fd: FormData): Promise<Action
     const [row] = await c.tx.insert(invoices).values({
       number, userId: rc.req.requesterUserId, waqfId: rc.req.waqfId, billedToName: w?.name ?? client?.name ?? "العميل", requestId: id, contractId: cs.contract?.id ?? null,
       subtotal: t.subtotal.toFixed(2), discount: "0", vatRate: String(vatRate), vat: t.vat.toFixed(2), total: t.total.toFixed(2), status: "issued",
-      issuedOn: today, dueOn: addDays(today, 14), einvoiceStatus: zatca ? "pending_integration" : "not_submitted",
+      issuedOn: today, dueOn: addDays(today, 14), einvoiceStatus: zatca ? "queued" : "pending",
       lines: [{ description: `${rc.service.nameAr} (${rc.service.code}) — طلب ${rc.req.number}`, qty: 1, unit: t.subtotal, total: t.subtotal }], createdBy: c.auth.user.id,
     }).returning({ id: invoices.id });
     await logEvent(c.tx, rc.req, c.auth.user.id, `صدرت الفاتورة ${number} بإجمالي ${fmtSAR(t.total)}`);
@@ -145,7 +145,7 @@ export async function markPaidManual(_: ActionState, fd: FormData): Promise<Acti
     await c.tx.update(invoices).set({ status: "paid", paidOn: d.paidOn, updatedBy: c.auth.user.id }).where(eq(invoices.id, inv.id));
     await audit(c.tx, { actorUserId: c.auth.user.id, action: "billing.mark_paid_manual", entityType: "invoice", entityId: inv.id, waqfId: inv.waqfId, ip: c.ip, userAgent: c.userAgent, before: { status: inv.status }, after: { status: "paid", reference: d.reference, paidOn: d.paidOn, paymentId: p.id } });
     return { ok: true, message: `سُجلت الفاتورة ${inv.number} مدفوعة.` };
-  }, { perm: "admin.finance", revalidate: ["/admin/finance", `/app/billing/${d.invoiceId}`, "/app/billing"] });
+  }, { perm: "admin.finance", revalidate: ["/admin/finance", `/admin/finance/${d.invoiceId}`, `/app/billing/${d.invoiceId}`, "/app/billing"] });
 }
 
 const voidSchema = z.object({
@@ -170,12 +170,12 @@ export async function cancelInvoice(_: ActionState, fd: FormData): Promise<Actio
       await c.tx.insert(invoices).values({
         number: creditNumber, userId: inv.userId, waqfId: inv.waqfId, billedToName: inv.billedToName, requestId: inv.requestId, contractId: inv.contractId,
         subtotal: neg(inv.subtotal), discount: "0", vatRate: inv.vatRate, vat: neg(inv.vat), total: neg(inv.total), status: "credit_note", issuedOn: todayISO(),
-        einvoiceStatus: inv.einvoiceStatus === "not_submitted" ? "not_submitted" : "pending_integration",
+        einvoiceStatus: inv.einvoiceStatus === "queued" ? "queued" : "pending",
         lines: [{ description: `إشعار دائن عن الفاتورة ${inv.number} — السبب: ${d.reason}`, qty: 1, unit: -Number(inv.subtotal), total: -Number(inv.subtotal) }], createdBy: c.auth.user.id,
       });
     }
     await c.tx.update(invoices).set({ status: "void", updatedBy: c.auth.user.id }).where(eq(invoices.id, inv.id));
     await audit(c.tx, { actorUserId: c.auth.user.id, action: d.mode === "credit" ? "billing.credit_note" : "billing.void", entityType: "invoice", entityId: inv.id, waqfId: inv.waqfId, ip: c.ip, userAgent: c.userAgent, before: { status: inv.status }, after: { status: "void", reason: d.reason, creditNote: creditNumber } });
     return { ok: true, message: creditNumber ? `أُلغيت الفاتورة وصدر الإشعار الدائن ${creditNumber}.` : "أُلغيت الفاتورة." };
-  }, { perm: "admin.finance", revalidate: ["/admin/finance", "/app/billing"] });
+  }, { perm: "admin.finance", revalidate: ["/admin/finance", `/admin/finance/${d.invoiceId}`, "/app/billing"] });
 }

@@ -6,8 +6,7 @@ import { read } from "@/server/modules/_shared";
 import { listWaqfDocuments, parseFilters } from "@/server/modules/documents/queries";
 import { CONF_OPTIONS, DOC_TYPES, DOC_TYPE_OPTIONS, EXPIRING_SOON_DAYS, docTypeLabel } from "@/server/modules/documents/labels";
 import { Badge, ButtonLink, DataTable, EmptyState, PageHeader, Panel, buttonClass } from "@/components/ui";
-import { DocumentUploader } from "@/components/documents/uploader";
-import { ApprovalBadge, ConfBadge, Expiry, Issued } from "@/components/documents/bits";
+import { ANCHOR_PRIMARY_FIX, ApprovalBadge, ConfBadge, DocumentUploader, Expiry, Issued, RequiredDocuments } from "@/components/documents";
 import { daysUntil } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "الوثائق" };
@@ -19,7 +18,9 @@ export default async function DocumentsPage({ params, searchParams }: { params: 
   const { id } = await params;
   const auth = await requireAuth({ next: `/app/w/${id}/documents` });
   const access = await requireWaqf(auth, id, "documents.view");
-  const f = parseFilters(await searchParams);
+  const sp = await searchParams;
+  const f = parseFilters(sp);
+  const uploadType = typeof sp.upload === "string" && (DOC_TYPES as readonly string[]).includes(sp.upload) ? sp.upload : undefined;
   const docs = await read(auth, (tx) => listWaqfDocuments(tx, id, { userId: auth.user.id, perms: access.perms }, f));
   const canUpload = waqfCan(access, "documents.upload");
   const filtered = !!(f.type || f.conf || f.expiring || f.q || f.archived);
@@ -41,7 +42,7 @@ export default async function DocumentsPage({ params, searchParams }: { params: 
         title="الوثائق"
         description="وثائق الوقف محفوظة مشفّرة، ويطّلع عليها كل عضو بحسب درجة سريتها."
         crumbs={[{ href: `/app/w/${id}`, label: access.waqf.name }, { label: "الوثائق" }]}
-        actions={canUpload ? <a href="#upload" className={buttonClass("primary", "md", "2xl:hidden")}>رفع وثيقة</a> : undefined}
+        actions={canUpload ? <a href="#upload" className={buttonClass("primary", "md", `2xl:hidden ${ANCHOR_PRIMARY_FIX}`)}>رفع وثيقة</a> : undefined}
       />
 
       <div className="grid gap-6 2xl:grid-cols-[minmax(0,1fr)_340px]">
@@ -83,6 +84,8 @@ export default async function DocumentsPage({ params, searchParams }: { params: 
               </div>
             </div>
           </form>
+
+          {!filtered ? <RequiredDocuments waqfId={id} /> : null}
 
           {!filtered && docs.length ? (
             <p className="flex flex-wrap items-center gap-2 text-[15px] text-muted">
@@ -143,7 +146,7 @@ export default async function DocumentsPage({ params, searchParams }: { params: 
           <aside id="upload" className="scroll-mt-20">
             <div className="2xl:sticky 2xl:top-20">
               <Panel title="رفع وثيقة" description="يُفحص الملف ويُشفّر قبل حفظه.">
-                <DocumentUploader waqfId={id} />
+                <DocumentUploader waqfId={id} defaultDocType={uploadType} />
               </Panel>
             </div>
           </aside>

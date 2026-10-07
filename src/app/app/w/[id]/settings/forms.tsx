@@ -3,10 +3,9 @@
 import { useActionState, useState } from "react";
 import { Copy } from "lucide-react";
 import { Checkbox, Field, FormMessage, Input, Select, SubmitButton, Textarea } from "@/components/ui/form";
-import { ASSET_BANDS } from "@/components/portal/labels";
 import { initialState, type ActionState } from "@/lib/utils";
 import {
-  changeMemberRole, createDelegation, endMembership, inviteMember, revokeDelegation, revokeInvitation, updateWaqfProfile,
+  changeMemberRole, createDelegation, endMembership, inviteMember, revokeDelegation, revokeInvitation,
 } from "@/server/modules/waqf-core/actions";
 
 type Opt = { value: string; label: string };
@@ -124,8 +123,8 @@ export function DelegationForm({ waqfId, perms, today }: { waqfId: string; perms
     <form key={s.error ? JSON.stringify(v) : s.ok ? "ok" : "f"} action={a} className="space-y-4">
       <input type="hidden" name="waqfId" value={waqfId} />
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="رقم جوال الوكيل" name="phone" required hint="إن لم يكن مسجّلًا نرسل إليه دعوة، وتبدأ الوكالة عند قبوله." error={fe.phone}>
-          <Input name="phone" type="tel" inputMode="tel" dir="ltr" placeholder="05XXXXXXXX" className="text-start" required defaultValue={v.phone as string} error={fe.phone} />
+        <Field label="رقم جوال الوكيل" name="dl-phone" required hint="إن لم يكن مسجّلًا نرسل إليه دعوة، وتبدأ الوكالة عند قبوله." error={fe.phone}>
+          <Input name="phone" id="dl-phone" aria-describedby={fe.phone ? "dl-phone-error" : "dl-phone-hint"} type="tel" inputMode="tel" dir="ltr" placeholder="05XXXXXXXX" className="text-start" required defaultValue={v.phone as string} error={fe.phone} />
         </Field>
         <Field label="رقم الوكالة" name="poaNo" required hint="كما في صك الوكالة الصادر من الجهة المختصة." error={fe.poaNo}>
           <Input name="poaNo" dir="ltr" className="text-start" required defaultValue={v.poaNo as string} error={fe.poaNo} />
@@ -171,44 +170,6 @@ export function RevokeDelegationForm({ waqfId, delegationId }: { waqfId: string;
       <input type="hidden" name="delegationId" value={delegationId} />
       <SubmitButton size="sm" variant="ghost" className="text-critical" pendingText="…">إلغاء الوكالة</SubmitButton>
       <Inline state={s} />
-    </form>
-  );
-}
-
-export function WaqfProfileForm({
-  waqfId, fiscalYearEnd, flags, sizeLabel, sizeLocked,
-}: {
-  waqfId: string;
-  fiscalYearEnd: string;
-  flags: { collectsDonations: boolean; hasForeignParty: boolean; hasBeneficiariesAbroad: boolean; hasActiveLitigation: boolean };
-  sizeLabel: string;
-  sizeLocked: boolean;
-}) {
-  const [s, a] = useActionState(updateWaqfProfile, initialState);
-  return (
-    <form action={a} className="space-y-4">
-      <input type="hidden" name="waqfId" value={waqfId} />
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="نهاية السنة المالية" name="fiscalYearEnd" hint="الشهر-اليوم، مثل 12-31." error={s.fieldErrors?.fiscalYearEnd}>
-          <Input name="fiscalYearEnd" dir="ltr" className="text-start" defaultValue={fiscalYearEnd} maxLength={5} error={s.fieldErrors?.fiscalYearEnd} />
-        </Field>
-        <Field
-          label="القيمة التقديرية للأصول"
-          name="assetBand"
-          hint={sizeLocked ? `فئة الحجم (${sizeLabel}) مثبّتة من الإدارة ولا تتغير من هنا.` : `الفئة الحالية: ${sizeLabel}. اختر شريحة جديدة إن تغيرت قيمة الأصول.`}
-          error={s.fieldErrors?.assetBand}
-        >
-          <Select name="assetBand" placeholder="بدون تغيير" disabled={sizeLocked} options={ASSET_BANDS.map((b) => ({ value: b.value, label: b.label }))} />
-        </Field>
-      </div>
-      <div className="space-y-1">
-        <Checkbox name="collectsDonations" defaultChecked={flags.collectsDonations} label="يجمع الوقف تبرعات من الغير" />
-        <Checkbox name="hasForeignParty" defaultChecked={flags.hasForeignParty} label="أحد أطرافه غير سعودي أو مقيم خارج المملكة" />
-        <Checkbox name="hasBeneficiariesAbroad" defaultChecked={flags.hasBeneficiariesAbroad} label="له مستفيدون خارج المملكة" />
-        <Checkbox name="hasActiveLitigation" defaultChecked={flags.hasActiveLitigation} label="عليه أو له دعوى قضائية قائمة" />
-      </div>
-      <FormMessage state={s} />
-      <SubmitButton>احفظ وأعد حساب الالتزامات</SubmitButton>
     </form>
   );
 }

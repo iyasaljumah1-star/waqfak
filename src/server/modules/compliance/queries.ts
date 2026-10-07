@@ -3,7 +3,7 @@ import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { Tx } from "../../db";
 import {
   documentLinks, documents, obligationEvents, obligationInstances, obligations, penaltySchedule, regulatoryReferences,
-  regulatoryRequirements, reports, users, violations, waqfMemberships, waqfs,
+  regulatoryRequirements, reports, riskRegister, users, violations, waqfMemberships, waqfs,
 } from "../../db/schema";
 import { rolePermissionMap } from "../../authz/context";
 import { todayISO } from "../../engines/dates";
@@ -34,7 +34,7 @@ export async function listWaqfInstances(tx: Tx, waqfId: string, opts: { perms?: 
     .leftJoin(regulatoryRequirements, eq(regulatoryRequirements.id, obligations.requirementId))
     .leftJoin(regulatoryReferences, eq(regulatoryReferences.id, regulatoryRequirements.referenceId))
     .where(eq(obligationInstances.waqfId, waqfId))
-    .orderBy(asc(sql`${obligationInstances.dueOn} nulls last`), asc(obligations.code));
+    .orderBy(sql`${obligationInstances.dueOn} asc nulls last`, asc(obligations.code));
   const ids = rows.map((r) => r.i.id);
   const events = ids.length
     ? await tx.select({ e: obligationEvents, actor: users.fullName }).from(obligationEvents).leftJoin(users, eq(users.id, obligationEvents.actorUserId)).where(inArray(obligationEvents.instanceId, ids)).orderBy(asc(obligationEvents.at))
@@ -151,7 +151,7 @@ export async function calendarItems(tx: Tx, waqfIds: string[]) {
     .innerJoin(obligations, eq(obligations.id, obligationInstances.obligationId))
     .innerJoin(waqfs, eq(waqfs.id, obligationInstances.waqfId))
     .where(inArray(obligationInstances.waqfId, waqfIds))
-    .orderBy(asc(sql`${obligationInstances.dueOn} nulls last`));
+    .orderBy(sql`${obligationInstances.dueOn} asc nulls last`);
   const manualIds = rows.filter((r) => r.obligationType === "manual").map((r) => r.id);
   const notes = manualIds.length
     ? await tx.select({ id: obligationEvents.instanceId, note: obligationEvents.note }).from(obligationEvents).where(and(inArray(obligationEvents.instanceId, manualIds), eq(obligationEvents.action, "created")))
@@ -197,4 +197,25 @@ export async function listReports(tx: Tx, waqfId: string) {
     .where(and(eq(reports.waqfId, waqfId), inArray(reports.kind, ["annual", "gaa_package", "compliance"])))
     .orderBy(desc(reports.generatedAt))
     .limit(50);
+}
+
+// ───────────── Risk register ─────────────
+
+export async function listRisks(tx: Tx, waqfId: string) {
+  return tx
+    .select({ r: riskRegister, owner: users.fullName })
+    .from(riskRegister)
+    .leftJoin(users, eq(users.id, riskRegister.ownerUserId))
+    .where(eq(riskRegister.waqfId, waqfId))
+    .orderBy(asc(sql`case when ${riskRegister.status} = 'closed' then 1 else 0 end`), desc(sql`${riskRegister.impact} * ${riskRegister.likelihood}`), asc(riskRegister.title));
+}
+
+/** Active members of the waqf (risk owners). */
+export async function waqfMemberOptions(tx: Tx, waqfId: string) {
+  const rows = await tx
+    .selectDistinct({ id: users.id, name: users.fullName })
+    .from(waqfMemberships)
+    .innerJoin(users, eq(users.id, waqfMemberships.userId))
+    .where(and(eq(waqfMemberships.waqfId, waqfId), eq(waqfMemberships.status, "active")));
+  return rows.sort((a, b) => (a.name ?? "").localeCompare(b.name ?? "", "ar"));
 }

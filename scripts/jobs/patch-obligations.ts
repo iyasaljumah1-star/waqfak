@@ -16,18 +16,9 @@ import { eq, sql } from "drizzle-orm";
 import { withSystem } from "../../src/server/db";
 import { obligations } from "../../src/server/db/schema";
 import { MANUAL_OBLIGATION } from "../../src/server/modules/compliance/manual";
+import { CODE_DEFAULTS } from "../../src/server/modules/compliance/pure";
 
-export const OBLIGATION_PATCH: Record<string, Record<string, unknown>> = {
-  "OB-REG-01": { closesOn: ["registration"], satisfiedWhen: { "!!": { var: "registered" } } },
-  "OB-REG-03": { closesOn: [{ event: "cert_expiry", scope: "other_periods" }] },
-  "OB-DON-01": { closesOn: [{ event: "donation_license_expiry", scope: "other_periods" }] },
-  "OB-PRD-01": { closesOn: ["portfolio_certificate"] },
-  "OB-PRD-02": { closesOn: ["portfolio_created"] },
-  "OB-FIN-02": { closesOn: [{ event: "statements_final", scope: "earliest_open" }] },
-  "OB-FIN-03": { closesOn: [{ event: "statements_final", scope: "earliest_open" }] },
-};
-
-
+export const OBLIGATION_PATCH: Record<string, Record<string, unknown>> = CODE_DEFAULTS;
 
 async function main() {
   await withSystem(async (tx) => {

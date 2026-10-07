@@ -25,7 +25,8 @@ export const metadata: Metadata = { title: "طلب — مساحة العمل" };
 
 export default async function StaffRequest({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const auth = await requireStaff("staff.requests.assigned");
+  const auth = await requireStaff("admin.access");
+  if (!auth.perms.has("staff.requests.assigned") && !auth.perms.has("admin.requests.all")) notFound();
   const d = await requestDetail(auth, id, "staff");
   if (!d) notFound();
   const { rc, stages, events, notes, deliverables, docs, contract, invoices, names } = d;

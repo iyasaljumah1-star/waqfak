@@ -41,6 +41,11 @@ export async function loadInvoice(tx: Tx, id: string) {
 export const INVOICE_STATUS_LABEL: Record<string, string> = { issued: "مستحقة", paid: "مدفوعة", void: "ملغاة", overdue: "متأخرة", credit_note: "إشعار دائن" };
 export const INVOICE_STATUS_TONE: Record<string, "ok" | "warn" | "critical" | "neutral" | "info"> = { issued: "warn", paid: "ok", void: "neutral", overdue: "critical", credit_note: "info" };
 export const PAYMENT_STATUS_LABEL: Record<string, string> = { initiated: "بدأت", paid: "ناجحة", failed: "مرفوضة", refunded: "مستردة" };
+/** ZATCA e-invoicing status. Flag einvoice.zatca off → "pending" (not sent; integration not live). */
+export const EINVOICE_STATUS_LABEL: Record<string, string> = {
+  pending: "بانتظار الربط مع منصة فاتورة", pending_integration: "بانتظار الربط مع منصة فاتورة", queued: "في قائمة الإرسال إلى منصة فاتورة",
+  reported: "مُبلّغ عنها", cleared: "معتمدة", rejected: "مرفوضة من المنصة",
+};
 export const PROVIDER_LABEL: Record<string, string> = { sandbox: "بيئة تجريبية", bank_transfer: "تحويل بنكي", moyasar: "ميسر", hyperpay: "هايبر باي" };
 
 /** Display status: issued + past due → overdue. */

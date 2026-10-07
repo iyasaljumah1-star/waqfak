@@ -1,5 +1,6 @@
 "use server";
 
+import { redirect } from "next/navigation";
 import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { contracts, contractSignatures, contractTemplates, users } from "@/server/db/schema";
@@ -125,6 +126,7 @@ export async function signContract(_: ActionState, fd: FormData): Promise<Action
     const { revalidatePath } = await import("next/cache");
     for (const p of reval(reqId)) revalidatePath(p);
   }
+  if (res.ok && reqId) redirect(`/app/requests/${reqId}?signed=1#contract`);
   return res;
 }
 

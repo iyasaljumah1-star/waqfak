@@ -32,8 +32,15 @@ export const FILE_KINDS: Record<FileKind, { mime: string; exts: string[]; label:
   txt: { mime: "text/plain", exts: ["txt"], label: "نص" },
 };
 
+/**
+ * Kinds accepted from users over POST /api/files. "txt" is not in the allowlist: it exists only for
+ * documents generated server-side (ingestUpload called directly, e.g. demo evidence).
+ */
+export const UPLOAD_KINDS: readonly FileKind[] = ["pdf", "png", "jpg", "webp", "docx", "xlsx"];
+export const UPLOAD_TYPES_TEXT = "PDF وPNG وJPEG وWebP وWord (docx) وExcel (xlsx)";
+
 /** For <input accept>. */
-export const ACCEPT_ATTR = Object.values(FILE_KINDS).flatMap((k) => [k.mime, ...k.exts.map((e) => `.${e}`)]).join(",");
+export const ACCEPT_ATTR = UPLOAD_KINDS.flatMap((k) => [FILE_KINDS[k].mime, ...FILE_KINDS[k].exts.map((e) => `.${e}`)]).join(",");
 
 export const kindFromMime = (mime: string): FileKind | null =>
   (Object.entries(FILE_KINDS).find(([, v]) => v.mime === mime)?.[0] as FileKind | undefined) ?? null;
@@ -61,7 +68,11 @@ export function looksLikeText(buf: Buffer) {
   return ctrl === 0;
 }
 
-export async function sniffFile(buf: Buffer, originalName: string): Promise<SniffResult> {
+/**
+ * Detects the real type from the bytes and checks it against the claimed extension and the allowlist.
+ * `allow` defaults to UPLOAD_KINDS (user uploads); server-side callers may widen it.
+ */
+export async function sniffFile(buf: Buffer, originalName: string, allow: readonly FileKind[] = UPLOAD_KINDS): Promise<SniffResult> {
   if (!buf.length) return { ok: false, code: "empty", message: "الملف فارغ. اختر ملفًا يحتوي على بيانات." };
   if (buf.length > MAX_UPLOAD_BYTES) return { ok: false, code: "too_large", message: "حجم الملف أكبر من 15 ميغابايت. اضغط الملف أو قسّمه ثم أعد الرفع." };
   const ext = extOf(originalName);
@@ -70,11 +81,14 @@ export async function sniffFile(buf: Buffer, originalName: string): Promise<Snif
   let kind: FileKind | null = null;
   if (ft) {
     kind = (Object.entries(FILE_KINDS).find(([, v]) => v.mime === ft.mime)?.[0] as FileKind | undefined) ?? null;
-    if (!kind) return { ok: false, code: "unsupported", message: "نوع الملف غير مقبول. الأنواع المقبولة: PDF وPNG وJPEG وWebP وWord (docx) وExcel (xlsx) والنص." };
-  } else if (looksLikeText(buf)) {
+    if (!kind || !allow.includes(kind)) return { ok: false, code: "unsupported", message: `نوع الملف غير مقبول. الأنواع المقبولة: ${UPLOAD_TYPES_TEXT}.` };
+  } else if (allow.includes("txt") && looksLikeText(buf)) {
     kind = "txt";
+  } else if (looksLikeText(buf) && allow.some((k) => FILE_KINDS[k].exts.includes(ext))) {
+    // e.g. HTML or script renamed to .pdf
+    return { ok: false, code: "mismatch", message: `محتوى الملف لا يطابق امتداده (‎.${ext}). ارفع الملف الأصلي دون تغيير امتداده.` };
   } else {
-    return { ok: false, code: "unsupported", message: "تعذر التعرف على نوع الملف. الأنواع المقبولة: PDF وPNG وJPEG وWebP وWord (docx) وExcel (xlsx) والنص." };
+    return { ok: false, code: "unsupported", message: `تعذر التعرف على نوع الملف أو أنه غير مقبول. الأنواع المقبولة: ${UPLOAD_TYPES_TEXT}.` };
   }
   if (!FILE_KINDS[kind].exts.includes(ext)) {
     // A text body under a non-.txt name (e.g. HTML renamed to .pdf) lands here too.

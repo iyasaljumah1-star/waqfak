@@ -77,6 +77,20 @@ export async function buildAnnualSnapshot(tx: Tx, waqfId: string, perms: Set<str
   const verifiedDates = bos.map((b) => b.verifiedOn).filter((x): x is string => !!x).sort();
   const nextDue = bos.map((b) => b.nextDue).filter((x): x is string => !!x).sort();
   const visibleDocs = docs.filter((d) => perms.has(CONF_PERM[d.confidentiality] ?? "documents.view_secret"));
+  const inFyDocs = (d: (typeof docs)[number]) => !!d.issuedOn && d.issuedOn >= fy.start && d.issuedOn <= addDays(fy.end, 180);
+  const has = (t: string, fyOnly = false) => docs.some((d) => d.docType === t && (!fyOnly || inFyDocs(d)));
+  const instDone = (codes: string[]) => inFy.some((i) => codes.includes(i.code) && i.status === "done");
+  const sizeLarge = waqf.sizeClass === "large" || waqf.sizeClass === "medium";
+  // Checklist of what a GAA annual submission normally needs (export aid; presence in the vault, not content review).
+  const checklist = [
+    { label: "صك الوقف", ok: has("waqf_deed"), note: "صورة الصك الساري" },
+    { label: "شهادة تسجيل الوقف سارية", ok: has("registration_certificate") && (!waqf.registrationExpiresOn || waqf.registrationExpiresOn >= today), note: waqf.registrationExpiresOn ? `تنتهي ${waqf.registrationExpiresOn}` : "تاريخ الانتهاء غير مسجل" },
+    { label: sizeLarge ? "القوائم المالية المدققة للسنة" : "القوائم المالية أو التقرير المالي للسنة", ok: has("financial_statement", true) || instDone(["OB-FIN-02", "OB-FIN-03"]), note: "صادرة خلال السنة المالية أو بعدها بستة أشهر" },
+    ...(sizeLarge ? [{ label: "الموازنة التقديرية المعتمدة", ok: instDone(["OB-FIN-01"]), note: "الالتزام OB-FIN-01" }] : []),
+    { label: "كشف صرف الغلة للمستحقين", ok: instDone(["OB-DIS-01"]) || has("bank_statement", true), note: "الالتزام OB-DIS-01 أو كشف بنكي" },
+    { label: "التحقق السنوي من المستفيد الحقيقي", ok: instDone(["OB-BO-02"]) || (!!verifiedDates.at(-1) && verifiedDates.at(-1)! >= fy.start), note: "معايير المستفيد الحقيقي" },
+    { label: "قرارات ومحاضر النظارة خلال السنة", ok: has("resolution", true) || has("minutes", true), note: "قرار أو محضر صادر خلال السنة" },
+  ];
   const count = (rows: { status: string; n: number }[], ss: string[]) => rows.filter((r) => ss.includes(r.status)).reduce((a, r) => a + r.n, 0);
 
   return {
@@ -99,6 +113,7 @@ export async function buildAnnualSnapshot(tx: Tx, waqfId: string, perms: Set<str
         referencePending: i.reference.pending, penalty: i.penalty?.text ?? null, evidence: i.documents.filter((d) => !d.hidden).map((d) => d.title),
       })),
     },
+    checklist,
     documents: visibleDocs.map((d) => ({ title: d.title, number: d.number, docType: d.docType, issuedOn: d.issuedOn, expiresOn: d.expiresOn, confidentiality: d.confidentiality })),
     documentsHidden: docs.length - visibleDocs.length,
     governance: {
@@ -279,7 +294,12 @@ export function annualHtml(s: AnnualSnapshot, meta: { number: string; verificati
     ["قرارات معتمدة أو منفذة", `<span class="tabular">${s.governance.resolutionsApproved}</span>`],
   ])}
 
-  <h2>٦. فهرس الوثائق</h2>
+  <h2>٦. قائمة تدقيق القوائم والوثائق</h2>
+  <table><thead><tr><th>البند</th><th>متوفر في المنصة</th><th>ملاحظة</th></tr></thead><tbody>
+  ${(s.checklist ?? []).map((c) => `<tr><td>${esc(c.label)}</td><td><span class="tag ${c.ok ? "ok" : "critical"}">${c.ok ? "متوفر" : "ناقص"}</span></td><td class="small muted">${esc(c.note)}</td></tr>`).join("")}
+  </tbody></table>
+
+  <h2>٧. فهرس الوثائق</h2>
   ${
     s.documents.length
       ? `<table><thead><tr><th>العنوان</th><th>الرقم</th><th>الإصدار</th><th>الانتهاء</th></tr></thead><tbody>${s.documents
@@ -290,7 +310,7 @@ export function annualHtml(s: AnnualSnapshot, meta: { number: string; verificati
   ${s.documentsHidden ? `<p class="small muted">استُبعدت ${s.documentsHidden} وثيقة لا يملك معدّ الحزمة صلاحية الاطلاع عليها.</p>` : ""}
 
   <div class="page-break"></div>
-  <h2>٧. إقرار الناظر</h2>
+  <h2>٨. إقرار الناظر</h2>
   <div class="naskh" style="font-size:12.5pt">
     <p>أقرّ أنا الموقّع أدناه، بصفتي ناظرًا على «${esc(w.name)}»، بأن البيانات الواردة في هذه الحزمة صحيحة ومطابقة لسجلات الوقف حتى تاريخ إعدادها،
     وبأني اطلعت على حالة الالتزامات النظامية للسنة المالية المنتهية في ${esc(gregorian(s.fy.end))} (${esc(hijri(s.fy.end))})،

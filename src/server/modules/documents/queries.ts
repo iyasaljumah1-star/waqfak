@@ -1,9 +1,10 @@
 import "server-only";
 import { and, asc, desc, eq, ilike, inArray, isNotNull, isNull, lte, or, type SQL } from "drizzle-orm";
 import type { Tx } from "../../db";
-import { documentAccessLog, documentLinks, documents, documentShares, documentVersions, users } from "../../db/schema";
+import { assets, documentAccessLog, documentLinks, documents, documentShares, documentVersions, users, waqfs } from "../../db/schema";
 import { canSeeDocumentSync, type DocAccess, type DocRow } from "./service";
-import { CONFIDENTIALITY, DOC_TYPES, EXPIRING_SOON_DAYS } from "./labels";
+import { CONFIDENTIALITY, DOC_TYPES, EXPIRING_SOON_DAYS, REQUIRED_DOCS } from "./labels";
+import { evaluateChecklist, type ChecklistItem } from "./checklist";
 
 export type DocFilters = { type?: string; conf?: string; expiring?: boolean; q?: string; archived?: boolean };
 
@@ -96,4 +97,39 @@ export async function userName(tx: Tx, id: string | null) {
   if (!id) return null;
   const [u] = await tx.select({ n: users.fullName }).from(users).where(eq(users.id, id)).limit(1);
   return u?.n ?? null;
+}
+
+/**
+ * Required-document checklist for one waqf. Presence is computed over all of the waqf's documents
+ * (RLS-scoped), but a document is only linked for the user when it passes the confidentiality gate.
+ */
+export async function requiredDocumentsChecklist(tx: Tx, waqfId: string, access: DocAccess): Promise<ChecklistItem[]> {
+  const types = REQUIRED_DOCS.map((r) => r.key);
+  const [[waqf], docs, assetRows, links] = await Promise.all([
+    tx.select({ fye: waqfs.fiscalYearEnd }).from(waqfs).where(eq(waqfs.id, waqfId)).limit(1),
+    tx.select().from(documents).where(and(eq(documents.waqfId, waqfId), isNull(documents.archivedAt), inArray(documents.docType, types))),
+    tx.select({ id: assets.id, category: assets.category, ownershipDocumentId: assets.ownershipDocumentId }).from(assets).where(and(eq(assets.waqfId, waqfId), isNull(assets.archivedAt))),
+    tx
+      .select({ entityId: documentLinks.entityId, documentId: documentLinks.documentId })
+      .from(documentLinks)
+      .innerJoin(documents, eq(documents.id, documentLinks.documentId))
+      .where(and(eq(documentLinks.waqfId, waqfId), eq(documentLinks.entityType, "asset"), eq(documents.docType, "ownership_deed"), eq(documents.status, "active"), isNull(documents.archivedAt))),
+  ]);
+  // An asset's ownershipDocumentId may point to any active document (whatever its type).
+  const refIds = [...new Set(assetRows.map((a) => a.ownershipDocumentId).filter((x): x is string => !!x))];
+  const activeIds = new Set(
+    refIds.length
+      ? (await tx.select({ id: documents.id }).from(documents).where(and(inArray(documents.id, refIds), eq(documents.status, "active"), isNull(documents.archivedAt)))).map((d) => d.id)
+      : [],
+  );
+  const linkedAssets = new Set(links.map((l) => l.entityId));
+  return evaluateChecklist({
+    today: new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Riyadh" }).format(new Date()),
+    fiscalYearEnd: waqf?.fye ?? "12-31",
+    docs: docs.map((d) => ({ id: d.id, docType: d.docType, title: d.title, status: d.status, expiresOn: d.expiresOn, issuedOn: d.issuedOn, createdAt: d.createdAt, visible: canSeeDocumentSync(access, d) })),
+    realEstateAssets: assetRows
+      .filter((a) => a.category === "real_estate")
+      .map((a) => ({ id: a.id, covered: linkedAssets.has(a.id) || (!!a.ownershipDocumentId && activeIds.has(a.ownershipDocumentId)) })),
+    hasAnyAssets: assetRows.length > 0,
+  });
 }

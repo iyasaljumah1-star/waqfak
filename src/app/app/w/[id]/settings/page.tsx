@@ -6,7 +6,8 @@ import { requireAuth, waqfCan } from "@/server/authz/context";
 import { PERMISSIONS, roleName } from "@/server/authz/catalog";
 import { AGENT_CEILING, INVITABLE_ROLES, PROTECTED_ROLES } from "@/server/modules/waqf-core/constants";
 import { waqfAccess, waqfSettingsData } from "@/server/modules/waqf-core/queries";
-import { DelegationForm, EndMembershipForm, InviteForm, MemberRoleForm, RevokeDelegationForm, RevokeInvitationForm, WaqfProfileForm } from "./forms";
+import { ActionLink } from "@/components/portal/action-link";
+import { DelegationForm, EndMembershipForm, InviteForm, MemberRoleForm, RevokeDelegationForm, RevokeInvitationForm } from "./forms";
 
 export const metadata = { title: "الأعضاء والإعدادات" };
 
@@ -151,14 +152,12 @@ export default async function WaqfSettings({ params }: { params: Promise<{ id: s
       </Panel>
 
       {waqfCan(access, "waqf.edit") ? (
-        <Panel id="profile" title="ملف الوقف" description="هذه البيانات تحدد الالتزامات النظامية ومواعيدها؛ نعيد حسابها عند الحفظ.">
-          <WaqfProfileForm
-            waqfId={id}
-            fiscalYearEnd={w.fiscalYearEnd}
-            sizeLabel={w.sizeClass ? SIZE_LABEL[w.sizeClass] : "غير محددة"}
-            sizeLocked={w.sizeClassLocked}
-            flags={{ collectsDonations: w.collectsDonations, hasForeignParty: w.hasForeignParty, hasBeneficiariesAbroad: w.hasBeneficiariesAbroad, hasActiveLitigation: w.hasActiveLitigation }}
-          />
+        <Panel id="profile" title="ملف الوقف" description="الاسم والصك والتواريخ والتصنيف والأوضاع التي تُحسب منها الالتزامات النظامية.">
+          <p className="mb-3 text-[15px]">
+            فئة الحجم الحالية: <span className="font-medium">{w.sizeClass ? SIZE_LABEL[w.sizeClass] : "غير محددة"}</span> · نهاية السنة المالية{" "}
+            <span dir="ltr" className="tabular">{w.fiscalYearEnd}</span>
+          </p>
+          <ActionLink href={`/app/w/${id}?edit=1#profile`} variant="secondary" size="sm">عدّل ملف الوقف</ActionLink>
         </Panel>
       ) : null}
     </div>
