@@ -1,0 +1,147 @@
+/**
+ * Seeds reference data (idempotent): roles & permissions, assessment bank, rules, obligations, penalties,
+ * references & requirements, services, packages, templates, settings, feature flags, holidays, content.
+ * Runs with the owner role (bypasses RLS). Demo data is separate: scripts/seed-demo.ts.
+ */
+import "dotenv/config";
+import { eq, sql } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { Pool } from "pg";
+import * as s from "../src/server/db/schema";
+import { PERMISSIONS, ROLES } from "../src/server/authz/catalog";
+import { AXES, FLAG_DEFS, QUESTIONS } from "../src/server/seed/data/assessment";
+import { NEEDS, RULES } from "../src/server/seed/data/rules";
+import { CATEGORIES, PACKAGES, SERVICES, WORKFLOWS } from "../src/server/seed/data/services";
+import { HOLIDAYS, OBLIGATIONS, PENALTIES, PENALTY_NOTE, REFERENCES, REQUIREMENTS } from "../src/server/seed/data/compliance";
+import { CONTRACT_TEMPLATES, FEATURE_FLAGS, NOTIFICATION_TEMPLATES, SETTINGS } from "../src/server/seed/data/system";
+import { ARTICLES, FAQS, GLOSSARY } from "../src/server/seed/data/content";
+
+const pool = new Pool({ connectionString: process.env.DATABASE_OWNER_URL });
+const db = drizzle(pool, { schema: s, casing: "snake_case" });
+
+async function seedRoles() {
+  for (const [key, [nameAr, domain]] of Object.entries(PERMISSIONS)) {
+    await db.insert(s.permissions).values({ key, nameAr, domain }).onConflictDoUpdate({ target: s.permissions.key, set: { nameAr, domain } });
+  }
+  const perms = await db.select().from(s.permissions);
+  const pid = new Map(perms.map((p) => [p.key, p.id]));
+  for (const [key, r] of Object.entries(ROLES)) {
+    const [role] = await db.insert(s.roles).values({ key, nameAr: r.nameAr, scope: r.scope }).onConflictDoUpdate({ target: s.roles.key, set: { nameAr: r.nameAr, scope: r.scope } }).returning();
+    // Only fill permissions for a role the first time (admin edits must survive re-seeding).
+    const existing = await db.select().from(s.rolePermissions).where(eq(s.rolePermissions.roleId, role.id));
+    if (existing.length === 0) {
+      await db.insert(s.rolePermissions).values(r.permissions.map((p) => ({ roleId: role.id, permissionId: pid.get(p)! })));
+    }
+  }
+}
+
+async function seedAssessment() {
+  const [existing] = await db.select().from(s.questionBankVersions).where(eq(s.questionBankVersions.version, 1));
+  if (existing) return;
+  const [ver] = await db.insert(s.questionBankVersions).values({ version: 1, status: "published", publishedAt: new Date(), notes: "الإصدار الأول المبني على ملفات المشروع" }).returning();
+  await db.insert(s.assessmentAxes).values(AXES.map((a, i) => ({ bankVersionId: ver.id, code: a.code, nameAr: a.nameAr, description: a.description, weightSmall: String(a.weightSmall), weightMedium: String(a.weightMedium), weightLarge: String(a.weightLarge), position: i + 1 })));
+  await db.insert(s.assessmentQuestions).values(QUESTIONS.map((q, i) => ({
+    bankVersionId: ver.id, code: q.code, axisCode: q.axisCode, textAr: q.textAr, helpAr: q.helpAr ?? null, answerType: q.answerType,
+    options: q.options ?? null, weight: q.weight, referenceText: q.referenceText ?? null, criticalFlagCode: q.criticalFlagCode ?? null,
+    criticalWhen: q.criticalWhen ?? null, showIf: q.showIf ?? null, factKey: q.factKey ?? null, depth: q.depth ?? "basic", position: i + 1,
+  })));
+}
+
+async function seedFlagsRules() {
+  for (const f of FLAG_DEFS) {
+    await db.insert(s.criticalFlagDefs).values({ ...f, penaltyCode: f.penaltyCode ?? null, axisCode: f.axisCode ?? null }).onConflictDoUpdate({ target: s.criticalFlagDefs.code, set: { titleAr: f.titleAr, referenceText: f.referenceText } });
+  }
+  for (const n of NEEDS) await db.insert(s.needs).values(n).onConflictDoNothing();
+  for (const r of RULES) {
+    await db.insert(s.recommendationRules).values({
+      code: r.code, version: 1, status: "published", titleAr: r.titleAr, condition: r.condition, needCode: r.needCode, severity: r.severity,
+      urgencyDays: r.urgencyDays, leverage: String(r.leverage ?? 1), reasonAr: r.reasonAr, whyItMattersAr: r.whyItMattersAr ?? null,
+      reference: r.reference ?? null, serviceCodes: r.serviceCodes, suppressIf: r.suppressIf ?? null, selfServiceHintAr: r.selfServiceHintAr ?? null, publishedAt: new Date(),
+    }).onConflictDoNothing();
+  }
+}
+
+async function seedCompliance() {
+  for (const r of REFERENCES) {
+    await db.insert(s.regulatoryReferences).values({ ...r, bindingLevel: r.bindingLevel, verificationStatus: r.verificationStatus, lastVerifiedOn: r.verificationStatus === "verified" ? "2026-10-07" : null } as typeof s.regulatoryReferences.$inferInsert).onConflictDoNothing();
+  }
+  const refs = await db.select().from(s.regulatoryReferences);
+  const refId = new Map(refs.map((r) => [r.code, r.id]));
+  for (const q of REQUIREMENTS) {
+    await db.insert(s.regulatoryRequirements).values({
+      code: q.code, referenceId: refId.get(q.ref) ?? null, article: q.article ?? null, title: q.title, implementedAs: q.implementedAs,
+      featureArea: q.featureArea, status: q.status ?? "implemented", verificationStatus: (q.verificationStatus as "verified" | "pending_verification") ?? "verified", exclusionReason: q.exclusionReason ?? null,
+    }).onConflictDoNothing();
+  }
+  const reqs = await db.select().from(s.regulatoryRequirements);
+  const reqId = new Map(reqs.map((r) => [r.code, r.id]));
+  for (const o of OBLIGATIONS) {
+    await db.insert(s.obligations).values({
+      code: o.code, titleAr: o.titleAr, referenceText: o.ref, requirementId: o.req ? reqId.get(o.req) ?? null : null,
+      authority: o.authority as "gaa", obligationType: o.type, triggerEvent: o.trigger, offsetValue: o.value, offsetUnit: o.unit,
+      recurrence: o.recurrence ?? "none", appliesTo: o.appliesTo ?? {}, severity: o.severity, requiredAction: o.action, evidenceRequired: o.evidence ?? null,
+      penaltyCode: o.penalty ?? null, defaultAssigneeRole: o.assignee ?? "nazir", reminderOffsetsDays: o.reminders ?? [30, 7, 1],
+      status: "published", verificationStatus: o.verification ?? "verified", notes: o.notes ?? null,
+    }).onConflictDoNothing();
+  }
+  for (const p of PENALTIES) {
+    await db.insert(s.penaltySchedule).values({ ...p, largeText: null, mediumText: null, smallText: null, maxFine: 500000, notes: PENALTY_NOTE, verificationStatus: "pending_verification" }).onConflictDoNothing();
+  }
+  for (const [day, name] of HOLIDAYS) await db.insert(s.holidays).values({ day, name }).onConflictDoNothing();
+}
+
+async function seedServices() {
+  for (const c of CATEGORIES) await db.insert(s.serviceCategories).values(c).onConflictDoNothing();
+  const cats = await db.select().from(s.serviceCategories);
+  const catId = new Map(cats.map((c) => [c.code, c.id]));
+  for (const w of WORKFLOWS) await db.insert(s.workflowTemplates).values(w).onConflictDoNothing();
+  let pos = 0;
+  for (const x of SERVICES) {
+    await db.insert(s.services).values({
+      code: x.code, categoryId: catId.get(x.cat)!, nameAr: x.nameAr, summary: x.summary, outputs: x.outputs, pricingModel: x.pricingModel,
+      basePrice: null, slaDays: x.slaDays ?? null, departmentKey: x.dept, regulatoryRestrictions: x.restriction ?? null,
+      conflictRule: x.conflictRule ?? "none", requiresLicenseKey: x.license ?? null, workflowTemplateCode: x.workflow ?? (x.pricingModel === "hourly" ? "opinion" : "standard"),
+      audiences: x.audiences, stage: x.stage ?? null, requiredDocuments: x.docs ?? [], position: pos++,
+    }).onConflictDoNothing();
+  }
+  const svcs = await db.select().from(s.services);
+  const sid = new Map(svcs.map((x) => [x.code, x.id]));
+  for (const p of PACKAGES) {
+    const [pkg] = await db.insert(s.packages).values({ code: p.code, nameAr: p.nameAr, description: p.description, audience: p.audience, targetSizeClasses: p.targetSizeClasses, position: p.position, isClosed: p.isClosed ?? false }).onConflictDoNothing().returning();
+    if (pkg) await db.insert(s.packageItems).values(p.services.map((c) => ({ packageId: pkg.id, serviceId: sid.get(c)! })));
+  }
+}
+
+async function seedSystem() {
+  for (const t of NOTIFICATION_TEMPLATES) await db.insert(s.notificationTemplates).values(t).onConflictDoNothing();
+  for (const c of CONTRACT_TEMPLATES) await db.insert(s.contractTemplates).values(c).onConflictDoNothing();
+  for (const [key, value, description] of SETTINGS) await db.insert(s.settings).values({ key, value, description }).onConflictDoNothing();
+  for (const f of FEATURE_FLAGS) await db.insert(s.featureFlags).values(f).onConflictDoNothing();
+}
+
+async function seedContent() {
+  for (const a of ARTICLES) {
+    await db.insert(s.contentItems).values({ ...a, status: "published", publishedAt: new Date(), lastVerifiedAt: "2026-10-07" }).onConflictDoNothing();
+  }
+  const existingFaq = await db.select({ c: sql<number>`count(*)` }).from(s.faqs);
+  if (Number(existingFaq[0].c) === 0 && FAQS.length) await db.insert(s.faqs).values(FAQS.map((f, i) => ({ ...f, position: i })));
+  for (const g of GLOSSARY) await db.insert(s.glossaryTerms).values(g).onConflictDoNothing();
+}
+
+async function main() {
+  await seedRoles();
+  await seedAssessment();
+  await seedFlagsRules();
+  await seedCompliance();
+  await seedServices();
+  await seedSystem();
+  await seedContent();
+  await pool.end();
+  console.log("reference data seeded");
+}
+
+main().catch(async (e) => {
+  console.error(e);
+  await pool.end();
+  process.exit(1);
+});

@@ -1,0 +1,261 @@
+@import "tailwindcss";
+
+/* ───────────── Waqfak design tokens ─────────────
+   Ink (حبر الصك) carries the voice; the seal gold (ذهب الختم) appears once per view at most;
+   olive marks sustainability/positive states. Status colors never carry meaning alone (always icon + word). */
+:root {
+  --ink: #1f2e4d;
+  --ink-hover: #2a3c62;
+  --ink-soft: #e7ebf3;
+  --seal: #a8823a;
+  --seal-soft: #f5eedf;
+  --olive: #5b7746;
+  --olive-soft: #e9efe3;
+  --stone: #eef0ec;
+  --surface: #ffffff;
+  --surface-2: #f7f8f6;
+  --line: #dadfd6;
+  --line-strong: #c3c9bf;
+  --text: #1c1d1f;
+  --muted: #55595f;
+  --critical: #b3261e;
+  --critical-soft: #fbeceb;
+  --fine: #a85d00;
+  --fine-soft: #fdf1e2;
+  --warn: #7d6400;
+  --warn-soft: #fbf5d9;
+  --ok: #2e7d32;
+  --ok-soft: #e8f3e8;
+  --info: #2d5ba8;
+  --info-soft: #e8eef9;
+  --focus: #2d5ba8;
+  --shadow: 0 1px 2px rgb(31 46 77 / 0.06), 0 4px 16px rgb(31 46 77 / 0.06);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ink: #9fb3d9;
+    --ink-hover: #b6c6e4;
+    --ink-soft: #1d2638;
+    --seal: #d1aa5f;
+    --seal-soft: #2c2618;
+    --olive: #9cbb84;
+    --olive-soft: #1e2a1a;
+    --stone: #121519;
+    --surface: #171a1f;
+    --surface-2: #1c2026;
+    --line: #2b3038;
+    --line-strong: #3a414b;
+    --text: #e8eaed;
+    --muted: #a3a9b2;
+    --critical: #ef8a83;
+    --critical-soft: #3a1d1b;
+    --fine: #f0aa5c;
+    --fine-soft: #36260f;
+    --warn: #e2c85b;
+    --warn-soft: #332c10;
+    --ok: #86c98a;
+    --ok-soft: #17291a;
+    --info: #8fb0ea;
+    --info-soft: #182439;
+    --focus: #8fb0ea;
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 4px 16px rgb(0 0 0 / 0.25);
+  }
+}
+
+@theme inline {
+  --color-ink: var(--ink);
+  --color-ink-hover: var(--ink-hover);
+  --color-ink-soft: var(--ink-soft);
+  --color-seal: var(--seal);
+  --color-seal-soft: var(--seal-soft);
+  --color-olive: var(--olive);
+  --color-olive-soft: var(--olive-soft);
+  --color-stone: var(--stone);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-critical: var(--critical);
+  --color-critical-soft: var(--critical-soft);
+  --color-fine: var(--fine);
+  --color-fine-soft: var(--fine-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --font-sans: "IBM Plex Sans Arabic", system-ui, sans-serif;
+  --font-naskh: "Noto Naskh Arabic", "IBM Plex Sans Arabic", serif;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --shadow-card: var(--shadow);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.7;
+  font-feature-settings: "kern";
+  text-rendering: optimizeLegibility;
+}
+
+/* Arabic text: generous line height; numbers aligned in tables */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+.naskh {
+  font-family: var(--font-naskh);
+  line-height: 1.9;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+a {
+  color: inherit;
+}
+
+.prose-waqf {
+  max-width: 68ch;
+  line-height: 1.95;
+}
+.prose-waqf h2 {
+  font-family: var(--font-naskh);
+  font-size: 1.45rem;
+  font-weight: 700;
+  margin: 2rem 0 0.75rem;
+  color: var(--ink);
+}
+.prose-waqf h3 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 1.5rem 0 0.5rem;
+}
+.prose-waqf p {
+  margin: 0 0 1rem;
+}
+.prose-waqf ul,
+.prose-waqf ol {
+  margin: 0 0 1rem;
+  padding-inline-start: 1.25rem;
+}
+.prose-waqf ul {
+  list-style: disc;
+}
+.prose-waqf ol {
+  list-style: decimal;
+}
+.prose-waqf li {
+  margin-bottom: 0.35rem;
+}
+.prose-waqf a {
+  color: var(--info);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.prose-waqf table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0;
+  font-size: 0.95rem;
+}
+.prose-waqf th,
+.prose-waqf td {
+  border-bottom: 1px solid var(--line);
+  padding: 0.5rem;
+  text-align: start;
+  vertical-align: top;
+}
+.prose-waqf blockquote {
+  border-inline-start: 3px solid var(--seal);
+  padding-inline-start: 1rem;
+  color: var(--muted);
+  font-family: var(--font-naskh);
+}
+
+/* Deed paper: ruled lines that recall a صك */
+.deed-paper {
+  background-color: var(--surface);
+  background-image: repeating-linear-gradient(to bottom, transparent 0 34px, var(--line) 34px 35px);
+}
+
+/* Motion: one orchestrated moment (the seal), short UI transitions, respect reduced motion */
+@keyframes seal-press {
+  0% { transform: scale(1.35) rotate(-14deg); opacity: 0; }
+  60% { transform: scale(0.94) rotate(-6deg); opacity: 1; }
+  100% { transform: scale(1) rotate(-8deg); opacity: 1; }
+}
+.seal-press {
+  animation: seal-press 700ms cubic-bezier(0.2, 0.8, 0.2, 1) 300ms both;
+}
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+.fade-in {
+  animation: fade-in 200ms ease-out both;
+}
+@keyframes draw-in {
+  from { stroke-dashoffset: var(--len, 600); }
+  to { stroke-dashoffset: 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg, var(--surface-2), var(--line), var(--surface-2));
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+  border-radius: 6px;
+}
+@keyframes shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
+@view-transition {
+  navigation: auto;
+}
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 200ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after,
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  body {
+    background: #fff;
+    color: #000;
+  }
+}
