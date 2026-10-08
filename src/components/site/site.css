@@ -1,0 +1,8 @@
+/*
+ * Public-site scoped fix: globals.css ships `a { color: inherit }` outside any cascade layer (Tailwind v4 emits
+ * the custom `@layer base` block unlayered), which overrides every layered text-color utility on links.
+ * `revert-layer` hands the color back to the layered rules (utilities, then preflight's `inherit`).
+ */
+[data-site] a[class] {
+  color: revert-layer;
+}
