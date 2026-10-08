@@ -4,10 +4,13 @@ import { redirect } from "next/navigation";
 import { cache } from "react";
 import { withContext, withSystem, type DbContext, type Tx } from "../db";
 import {
+  breakGlassAccess,
   delegations, permissions, rolePermissions, roles, serviceRequests, userRoles, waqfMemberships, waqfs,
 } from "../db/schema";
 import { readSession, type SessionRow, type UserRow } from "../auth/session";
 import { ROLES, STAFF_ASSIGNED_WAQF_PERMS, type Permission } from "./catalog";
+
+const BREAK_GLASS_PERMS: Permission[] = ["waqf.view", "deed.view", "assets.view", "finance.view", "finance.summary", "statements.view", "beneficiaries.view", "governance.view", "documents.view", "compliance.view", "assessment.view", "requests.view", "audit.view_waqf"];
 
 // ───────────── role → permission map (DB is the source of truth; cached briefly) ─────────────
 let roleCache: { at: number; map: Map<string, Set<string>> } | null = null;
@@ -145,7 +148,20 @@ export async function loadWaqfAccess(tx: Tx, auth: Auth, waqfId: string): Promis
       for (const p of STAFF_ASSIGNED_WAQF_PERMS) perms.add(p);
     }
   }
-  const viaGlobal = auth.globalAccess && perms.size === 0;
+  // Approved, unexpired break-glass grant → read-only access (every view is audited by the admin module).
+  let viaBreakGlass = false;
+  if (auth.isStaff && perms.size === 0) {
+    const [bg] = await tx
+      .select({ id: breakGlassAccess.id })
+      .from(breakGlassAccess)
+      .where(and(eq(breakGlassAccess.waqfId, waqfId), eq(breakGlassAccess.userId, auth.user.id), eq(breakGlassAccess.status, "approved"), gte(breakGlassAccess.expiresAt, now)))
+      .limit(1);
+    if (bg) {
+      viaBreakGlass = true;
+      for (const p of BREAK_GLASS_PERMS) perms.add(p);
+    }
+  }
+  const viaGlobal = (auth.globalAccess && perms.size === 0) || viaBreakGlass;
   if (auth.globalAccess) for (const p of STAFF_ASSIGNED_WAQF_PERMS) perms.add(p);
   if (perms.size === 0) return null;
   const isBeneficiaryOnly = activeRoles.length > 0 && activeRoles.every((r) => r === "beneficiary") && !isStaffAssigned && !auth.globalAccess;

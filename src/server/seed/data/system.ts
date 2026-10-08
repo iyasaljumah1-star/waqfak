@@ -43,6 +43,14 @@ export const NOTIFICATION_TEMPLATES = [
   { key: "invitation.accepted", titleAr: "قُبلت دعوتك", bodyAr: "{name} انضم إلى {waqf} بصفة {role}", severity: "info" as const, channels: ["in_app"] },
   { key: "assessment.reviewed", titleAr: "روجع تقييم وقفك من مختص", bodyAr: "{waqf}: الدرجة {score} — {status}", severity: "info" as const, channels: ["in_app", "email"] },
   { key: "assessment.ready", titleAr: "نتيجة تقييم وقفك جاهزة", bodyAr: "{waqf}: الدرجة {score} — {status}", severity: "info" as const, channels: ["in_app", "email"] },
+  { key: "task.assigned", titleAr: "مهمة جديدة مسندة إليك: {title}", bodyAr: "{waqf} — الموعد {due}", severity: "important" as const, channels: ["in_app", "email"] },
+  { key: "task.comment", titleAr: "تعليق جديد على مهمة: {title}", bodyAr: "افتح المهمة للاطلاع على التعليق.", severity: "info" as const, channels: ["in_app"] },
+  { key: "breakglass.requested", titleAr: "طلب وصول طارئ بانتظار اعتمادك", bodyAr: "{name} يطلب وصولًا طارئًا إلى الوقف {waqf}.", severity: "important" as const, channels: ["in_app", "email"] },
+  { key: "breakglass.approved", titleAr: "اعتُمد وصولك الطارئ", bodyAr: "الوقف {waqf} — لمدة {hours} ساعة. كل اطلاع مسجّل.", severity: "important" as const, channels: ["in_app"] },
+  { key: "breakglass.waqf_notice", titleAr: "فُتح وصول طارئ على ملف وقفك", bodyAr: "{waqf} — لمدة {hours} ساعة لأغراض الدعم. يمكنك مراجعة سجل العمليات.", severity: "critical" as const, channels: ["in_app", "email"], locked: true },
+  { key: "security.mfa_reset", titleAr: "أُعيد ضبط التحقق بخطوتين في حسابك", bodyAr: "تم ذلك في {time} من فريق الدعم. إن لم تطلبه فتواصل معنا فورًا.", severity: "critical" as const, channels: ["in_app", "email", "sms"], locked: true },
+  { key: "privacy.request_closed", titleAr: "أُغلق طلبك المتعلق ببياناتك", bodyAr: "الحالة: {status}. {note}", severity: "info" as const, channels: ["in_app", "email"] },
+  { key: "contact.new", titleAr: "رسالة تواصل جديدة: {topic}", bodyAr: "من {name}", severity: "info" as const, channels: ["in_app"] },
 ];
 
 const SERVICE_CONTRACT = `# عقد تقديم خدمة رقم {{number}}

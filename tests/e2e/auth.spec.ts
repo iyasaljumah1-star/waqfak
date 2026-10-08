@@ -3,8 +3,9 @@ import { login, signup } from "./helpers";
 
 test("sign up, log out, log back in", async ({ page }) => {
   const phone = await signup(page, "سارة الاختبار");
-  await expect(page.getByText("سارة الاختبار")).toBeVisible();
-  await page.getByRole("button", { name: "خروج" }).click();
+  await expect(page.getByText("سارة الاختبار").first()).toBeVisible();
+  await page.getByRole("button", { name: "خروج" }).first().click();
+  await page.waitForURL((u) => !u.pathname.startsWith("/app"));
   await page.goto("/app");
   await expect(page).toHaveURL(/\/login/);
   await login(page, phone);

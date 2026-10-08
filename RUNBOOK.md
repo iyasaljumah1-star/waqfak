@@ -1,0 +1,90 @@
+# دليل التشغيل والنشر والصيانة — «وقفك»
+
+## 1) النشر على خادم (الطريقة الموصى بها)
+
+**المتطلبات:**
+- خادم Linux (Ubuntu 22.04 أو 24.04): 2 vCPU، و4 GB ذاكرة، و40 GB قرص. يُفضَّل أن يكون في مركز بيانات داخل المملكة، مراعاةً لنظام حماية البيانات الشخصية.
+- سجل DNS من نوع A لـ`waqfak.sa` يشير إلى عنوان الخادم، وسجل آخر لـ`www.waqfak.sa`.
+- المنفذان 80 و443 مفتوحان.
+
+**الخطوات:**
+
+```bash
+git clone <repo> /srv/waqfak && cd /srv/waqfak
+bash deploy/install.sh
+```
+
+يقوم سكربت التثبيت بما يلي:
+1. يثبّت Docker إن لم يكن موجودًا.
+2. يسألك عن النطاق وبريد شهادات TLS.
+3. يولّد كل الأسرار في `.env` بصلاحية 600.
+4. يبني الصور ويشغّل الخدمات: القاعدة، ثم الترحيل والبيانات المرجعية، ثم التطبيق، ثم المهام اليومية، ثم النسخ الاحتياطي، ثم Caddy. يصدر Caddy شهادة HTTPS تلقائيًا من Let's Encrypt.
+
+**بعد التثبيت:**
+1. أنشئ أول مدير (تُعرض بياناته مرة واحدة فقط، ولا توجد أي كلمة مرور افتراضية في الكود):
+   ```bash
+   docker compose run --rm migrate npx tsx --conditions=react-server scripts/bootstrap-admin.ts \
+     --email admin@waqfak.sa --phone 05XXXXXXXX --name "اسم المدير"
+   ```
+2. أضف «TOTP secret» إلى تطبيق مصادقة، واحفظ رموز الاستعادة خارج الخادم.
+3. سجّل الدخول من `/login` بتبويب «البريد وكلمة المرور»، ثم غيّر كلمة المرور من `/app/security`.
+4. من لوحة الإدارة، افتح «الإعدادات والتراخيص» وأدخل بيانات الشركة: السجل التجاري، والرقم الضريبي، وأرقام التراخيص وتواريخها.
+
+**لتشغيل نسخة عرض (staging) ببيانات تجريبية:**
+```bash
+docker compose run --rm migrate npm run db:seed-demo
+```
+اضبط `DEMO_SHOW_OTP=true` في هذه البيئة فقط. بيانات الدخول التجريبية تُكتب داخل الحاوية في `storage/demo-credentials.json`.
+
+## 2) الإعدادات الخارجية (في `.env`، ثم `docker compose up -d`)
+
+| الخدمة | المتغيرات | الحالة دون إعداد |
+|---|---|---|
+| الرسائل النصية | `SMS_PROVIDER=taqnyat\|unifonic\|msegat`، `SMS_API_KEY`، `SMS_SENDER` (و`SMS_USERNAME` لـ msegat) | تُحفظ الرسائل في «الرسائل الصادرة». لا يمكن الدخول بالجوال إلا إذا كان `DEMO_SHOW_OTP=true` |
+| البريد | `EMAIL_PROVIDER=smtp`، `SMTP_URL=smtps://user:pass@host:465`، `EMAIL_FROM` | يُحفظ البريد في «الرسائل الصادرة» |
+| تخزين الوثائق | `STORAGE_PROVIDER=s3` مع `S3_*` | قرص الخادم (حجم Docker)، والوثائق مشفرة في الحالتين |
+| الدفع | بوابة مرخّصة، ثم تفعيل `payments.live` | وضع تجريبي |
+| الفوترة الإلكترونية | بيانات التسجيل لدى هيئة الزكاة والضريبة والجمارك، ثم تفعيل `einvoice.zatca` | فاتورة ضريبية مبسطة مع رمز QR، دون إرسال |
+| النموذج اللغوي الخارجي | `AI_API_KEY`، `AI_BASE_URL`، `AI_MODEL`، ثم تفعيل `ai.external_llm` | محرك محلي باستشهادات |
+
+قبل الإطلاق للعملاء يجب أن يكون `DEMO_SHOW_OTP=false` وأن يكون مزود الرسائل مربوطًا.
+
+## 3) التشغيل المحلي للتطوير
+
+```bash
+# PostgreSQL 16 محلي:
+psql -U postgres -f scripts/db-bootstrap.sql     # بعد تغيير كلمات المرور فيه
+cp .env.example .env                              # DATABASE_URL / DATABASE_OWNER_URL + المفاتيح
+npm ci
+npm run db:migrate && npm run db:seed && npm run db:seed-demo
+npm run dev                                        # http://localhost:3000
+```
+
+## 4) الاختبارات
+
+```bash
+npm test                                            # اختبارات الوحدات (المحركات، التدقيق، الذكاء، الحوكمة…)
+npm run build && npx next start -p 3000 &
+npx playwright test --project=desktop               # e2e على سطح المكتب
+npx playwright test --project=mobile                # e2e على الجوال (Pixel 7)
+```
+
+## 5) الصيانة الدورية
+
+| المهمة | كيف |
+|---|---|
+| النسخ الاحتياطي | خدمة `backup` تأخذ يوميًا `pg_dump` ونسخة من الوثائق المشفرة إلى `./backups` وتحتفظ بها 14 يومًا. **انسخ المجلد خارج الخادم** (مثل `rclone` إلى تخزين آخر). المفتاح `MASTER_KEY` يُحفظ منفصلًا عن النسخ |
+| الاستعادة | `docker compose exec -T db pg_restore -U postgres -d waqfak --clean < backups/waqfak-XXXX.dump` ثم فك `storage-XXXX.tgz` داخل حجم `storage` |
+| التحديث | `git pull && docker compose up -d --build` (الترحيل يعمل تلقائيًا قبل التطبيق) |
+| المهمة اليومية | خدمة `jobs` تشغّلها الساعة 02:15 بتوقيت الرياض. للتشغيل يدويًا: `docker compose run --rm jobs npx tsx --conditions=react-server scripts/jobs/daily.ts` |
+| السجلات | `docker compose logs -f app` · سجل الوصول في حجم `caddy_data` |
+| سلامة سجل التدقيق | لوحة الإدارة ← سجل العمليات ← «تحقق من سلامة السجل» |
+| مصفوفة التتبع | `npx tsx scripts/export-rtm.ts` تولّد `docs/RTM.md` و`docs/RTM.csv` |
+| الصحة | `GET /api/health` |
+| تدوير المفاتيح | `SESSION_SECRET` يمكن تغييره في أي وقت، وتغييره يخرج الجميع. أما `MASTER_KEY` و`HASH_KEY` فلا تغيّرهما إلا بخطة ترحيل لإعادة التشفير |
+
+## 6) الاستجابة للحوادث
+
+- **لإيقاف حساب مخترق:** لوحة الإدارة ← المستخدمون ← قفل وإنهاء الجلسات (يُسجَّل مع السبب).
+- **للوصول الطارئ إلى ملف وقف:** يطلبه موظف ويعتمده موظف آخر لمدة من 1 إلى 24 ساعة. يُبلَّغ ناظر الوقف، ويُسجَّل كل اطلاع.
+- **عند الاشتباه في غسل أموال:** يرفع البلاغ مسؤول الالتزام من «MLRO». البلاغات في مخطط معزول لا يصل إليه غيره، ولا يُبلَّغ صاحب الوقف بها.

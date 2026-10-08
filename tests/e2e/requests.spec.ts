@@ -154,7 +154,9 @@ test.describe.serial("service requests end to end", () => {
 
     for (const id of [emp2Req, noWaqfReqId]) {
       const res = await page.goto(`/admin/requests/${id}`);
-      expect(res?.status(), `staff view of ${id}`).toBe(404);
+      // /admin streams (admin/loading.tsx): notFound() may arrive with 200; what matters is that nothing leaks.
+      expect([200, 404], `staff view of ${id}`).toContain(res?.status());
+      await expect(page.getByText("لم نجد ما طلبته")).toBeVisible();
       // /app streams (loading.tsx), so notFound() renders the not-found UI with status 200 or 404
       const res2 = await page.goto(`/app/requests/${id}`);
       expect([200, 404]).toContain(res2?.status());

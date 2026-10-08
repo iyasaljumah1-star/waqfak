@@ -12,8 +12,9 @@ async function signedIn(page: Page, key: string) {
   const file = path.join(tmpdir(), `waqfak-e2e-assessment-${key}.json`);
   if (existsSync(file) && Date.now() - statSync(file).mtimeMs < 30 * 60_000) {
     await page.context().addCookies(JSON.parse(readFileSync(file, "utf8")));
-    const r = await page.goto("/app");
-    if (r && new URL(page.url()).pathname.startsWith("/app")) return;
+    await page.goto("/app");
+    // a stale cookie (e.g. after the demo data was reset) streams a client-side redirect: wait for it to settle
+    if (await page.getByRole("button", { name: "خروج" }).first().isVisible({ timeout: 4000 }).catch(() => false)) return;
   }
   await loginAs(page, key);
   writeFileSync(file, JSON.stringify(await page.context().cookies()));

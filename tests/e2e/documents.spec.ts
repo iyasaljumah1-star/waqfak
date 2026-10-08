@@ -308,7 +308,8 @@ test.describe.serial("document access control", () => {
     expect(row.storage_key).toMatch(new RegExp(`^u/${D().users.outsider.id}/`));
     expect((await outsider.request.get(`/api/files/${id}`)).status()).toBe(200);
     const nazir = await sessionPage(browser, "nazir");
-    expect((await nazir.request.get(`/api/files/${id}`)).status()).toBe(403);
+    // RLS hides another user's personal document entirely (404); either way nothing is served and the attempt is logged.
+    expect([403, 404]).toContain((await nazir.request.get(`/api/files/${id}`)).status());
     expect(await deniedCount(id, D().users.nazir.id, since)).toBe(1);
     await outsider.context().close();
     await nazir.context().close();

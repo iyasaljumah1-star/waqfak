@@ -10,6 +10,7 @@
  *   `export default async function (tx: Tx, ctx: DemoCtx): Promise<void>`
  * — those files are run in alphabetical order after the core data below.
  */
+import "./jobs/_shim";
 import "dotenv/config";
 import { mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -53,32 +54,57 @@ const reset = process.argv.includes("--reset");
 const phoneOf = (n: number) => `${PHONE_PREFIX}${n}`;
 const localPhone = (n: number) => `055500${n}`;
 
-async function wipe(tx: Tx) {
-  const demoW = await tx.select({ id: s.waqfs.id }).from(s.waqfs).where(eq(s.waqfs.isDemo, true));
-  const ids = demoW.map((w) => w.id);
-  const demoU = await tx.select({ id: s.users.id }).from(s.users).where(like(s.users.phone, `${PHONE_PREFIX}%`));
-  const uids = demoU.map((u) => u.id);
-  // Tables with a waqf_id column: delete rows of demo waqfs (cascade handles most).
-  if (ids.length) {
-    const tables = await tx.execute<{ table_name: string }>(sql`
-      select c.table_name from information_schema.columns c join information_schema.tables t using (table_schema, table_name)
-      where c.table_schema = 'public' and c.column_name = 'waqf_id' and t.table_type = 'BASE TABLE'
-        and c.table_name not in ('audit_logs','document_access_log')`);
-    for (const t of tables.rows) {
-      await tx.execute(sql`delete from ${sql.identifier(t.table_name)} where waqf_id in (${sql.join(ids.map((i) => sql`${i}`), sql`, `)})`).catch(() => undefined);
+/** Deletes all demo rows as the owner role (bypasses RLS). Multi-pass with savepoints so FK order doesn't matter. */
+async function wipe() {
+  const { Pool } = await import("pg");
+  const pool = new Pool({ connectionString: process.env.DATABASE_OWNER_URL });
+  const c = await pool.connect();
+  try {
+    await c.query("begin");
+    // Demo-only: locked minutes are immutable by design; the owner lifts the guard inside this transaction only.
+    await c.query("alter table minutes disable trigger minutes_lock");
+    const ids = (await c.query("select id from waqfs where is_demo")).rows.map((r) => r.id);
+    const uids = (await c.query("select id from users where phone like $1", [`${PHONE_PREFIX}%`])).rows.map((r) => r.id);
+    const cols = (await c.query(`
+      select c.table_schema s, c.table_name t, c.column_name col from information_schema.columns c
+      join information_schema.tables x using (table_schema, table_name)
+      where c.table_schema in ('public','restricted') and x.table_type = 'BASE TABLE'
+        and c.table_name not in ('audit_logs','document_access_log','waqfs','users')
+        and (c.column_name = 'waqf_id' or c.column_name like '%user_id' or c.column_name in ('created_by','owner_user_id'))`)).rows as { s: string; t: string; col: string }[];
+    for (let pass = 0; pass < 6; pass++) {
+      let failed = 0;
+      for (const { s: sch, t, col } of cols) {
+        const list = col === "waqf_id" ? ids : uids;
+        if (!list.length) continue;
+        await c.query("savepoint sp");
+        try {
+          await c.query(`delete from "${sch}"."${t}" where "${col}" = any($1::uuid[])`, [list]);
+          await c.query("release savepoint sp");
+        } catch {
+          await c.query("rollback to savepoint sp");
+          failed++;
+        }
+      }
+      if (!failed) break;
     }
-    await tx.delete(s.waqfs).where(inArray(s.waqfs.id, ids));
-  }
-  if (uids.length) {
-    await tx.delete(s.serviceRequests).where(inArray(s.serviceRequests.requesterUserId, uids)).catch(() => undefined);
-    await tx.delete(s.users).where(inArray(s.users.id, uids));
+    if (ids.length) await c.query("delete from waqfs where id = any($1::uuid[])", [ids]);
+    if (uids.length) await c.query("delete from users where id = any($1::uuid[])", [uids]);
+    await c.query("alter table minutes enable trigger minutes_lock");
+    await c.query("commit");
+    console.log(`Removed ${ids.length} demo waqfs and ${uids.length} demo users.`);
+  } catch (e) {
+    await c.query("rollback");
+    throw e;
+  } finally {
+    c.release();
+    await pool.end();
   }
 }
 
 async function main() {
+  if (reset) await wipe();
   const creds: Record<string, unknown> = {};
   const ctx = await withSystem(async (tx) => {
-    if (reset) await wipe(tx);
     const existing = await tx.select({ id: s.users.id }).from(s.users).where(eq(s.users.phone, phoneOf(1001)));
     if (existing.length) {
       console.log("Demo data already present. Use --reset to recreate (new credentials will be generated).");

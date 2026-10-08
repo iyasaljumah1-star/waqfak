@@ -17,8 +17,12 @@ function fill(t: string, vars: Record<string, string | number | null | undefined
 export async function notify(userId: string, key: string, vars: Record<string, string | number | null | undefined>, opts: { waqfId?: string | null; link?: string; tx?: Tx } = {}) {
   const run = async (tx: Tx) => {
     const [tpl] = await tx.select().from(notificationTemplates).where(eq(notificationTemplates.key, key)).limit(1);
-    const title = fill(tpl?.titleAr ?? key, vars);
-    const body = fill(tpl?.bodyAr ?? "", vars);
+    if (!tpl) {
+      console.warn(`[notify] template "${key}" not found — notification skipped`);
+      return null;
+    }
+    const title = fill(tpl.titleAr, vars);
+    const body = fill(tpl.bodyAr ?? "", vars);
     const severity = tpl?.severity ?? "info";
     const channels = new Set(tpl?.channels ?? ["in_app"]);
     const [pref] = await tx.select().from(notificationPreferences).where(and(eq(notificationPreferences.userId, userId), eq(notificationPreferences.type, key))).limit(1);
@@ -30,7 +34,9 @@ export async function notify(userId: string, key: string, vars: Record<string, s
     const [u] = await tx.select({ phone: users.phone, email: users.email }).from(users).where(eq(users.id, userId)).limit(1);
     return { title, channels, u };
   };
-  const { title, channels, u } = opts.tx ? await run(opts.tx) : await withSystem(run);
+  const res = opts.tx ? await run(opts.tx) : await withSystem(run);
+  if (!res) return;
+  const { title, channels, u } = res;
   const link = opts.link ? `${process.env.APP_URL ?? ""}${opts.link}` : process.env.APP_URL ?? "";
   if (u?.email && channels.has("email")) await sendEmail(u.email, title, `${title}\n\nللاطلاع على التفاصيل: ${link}\n\n— وقفك`);
   if (u?.phone && channels.has("sms")) await sendSms(u.phone, `وقفك: ${title}. التفاصيل في المنصة.`);

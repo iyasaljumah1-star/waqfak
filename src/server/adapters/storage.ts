@@ -5,7 +5,7 @@
  * Providers (process.env.STORAGE_PROVIDER):
  *  - "local" (default): files under env.STORAGE_DIR/blobs/<key>.
  *  - "s3": S3-compatible object storage. Reads S3_ENDPOINT, S3_REGION, S3_BUCKET, S3_ACCESS_KEY_ID,
- *          S3_SECRET_ACCESS_KEY. Not wired yet (no SDK in the dependency set): it fails loudly.
+ *          S3_SECRET_ACCESS_KEY (AWS S3, Cloudflare R2, MinIO or any S3-compatible provider).
  *
  * Keys look like `w/<waqfId>/<uuid>` for waqf documents and `u/<userId>/<uuid>` for personal / request docs.
  */
@@ -59,30 +59,39 @@ export class LocalDiskStorage implements StorageAdapter {
   }
 }
 
+/** S3-compatible object storage (AWS S3, Cloudflare R2, MinIO, or a Saudi-region provider). Objects are already AES-GCM encrypted. */
 export class S3Storage implements StorageAdapter {
   readonly name = "s3";
-  private cfg = {
-    endpoint: process.env.S3_ENDPOINT,
-    region: process.env.S3_REGION,
-    bucket: process.env.S3_BUCKET,
-    accessKeyId: process.env.S3_ACCESS_KEY_ID,
-    secretAccessKey: process.env.S3_SECRET_ACCESS_KEY,
-  };
-  private fail(): never {
-    const missing = Object.entries(this.cfg).filter(([, v]) => !v).map(([k]) => k);
-    throw new Error(
-      `S3 storage is not configured${missing.length ? ` (missing: ${missing.join(", ")})` : ""}: the S3 client is not implemented yet. ` +
-        "Unset STORAGE_PROVIDER to use local disk, or implement S3Storage with a signed-request client.",
-    );
+  private clientP: Promise<{ c: import("@aws-sdk/client-s3").S3Client; m: typeof import("@aws-sdk/client-s3") }> | null = null;
+  private get bucket() {
+    if (!env.S3_BUCKET) throw new Error("S3_BUCKET is not set");
+    return env.S3_BUCKET;
   }
-  async put(_key: string, _data: Buffer): Promise<void> {
-    this.fail();
+  private client() {
+    this.clientP ??= import("@aws-sdk/client-s3").then((m) => {
+      if (!env.S3_ACCESS_KEY_ID || !env.S3_SECRET_ACCESS_KEY) throw new Error("S3 credentials are not set");
+      const c = new m.S3Client({
+        region: env.S3_REGION ?? "auto",
+        endpoint: env.S3_ENDPOINT || undefined,
+        forcePathStyle: !!env.S3_ENDPOINT,
+        credentials: { accessKeyId: env.S3_ACCESS_KEY_ID, secretAccessKey: env.S3_SECRET_ACCESS_KEY },
+      });
+      return { c, m };
+    });
+    return this.clientP;
   }
-  async get(_key: string): Promise<Buffer> {
-    this.fail();
+  async put(key: string, data: Buffer): Promise<void> {
+    const { c, m } = await this.client();
+    await c.send(new m.PutObjectCommand({ Bucket: this.bucket, Key: key, Body: data, ContentType: "application/octet-stream", ServerSideEncryption: env.S3_ENDPOINT ? undefined : "AES256" }));
   }
-  async delete(_key: string): Promise<void> {
-    this.fail();
+  async get(key: string): Promise<Buffer> {
+    const { c, m } = await this.client();
+    const r = await c.send(new m.GetObjectCommand({ Bucket: this.bucket, Key: key }));
+    return Buffer.from(await r.Body!.transformToByteArray());
+  }
+  async delete(key: string): Promise<void> {
+    const { c, m } = await this.client();
+    await c.send(new m.DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
   }
 }
 
@@ -90,6 +99,6 @@ let instance: StorageAdapter | null = null;
 
 export function getStorage(): StorageAdapter {
   if (instance) return instance;
-  instance = process.env.STORAGE_PROVIDER === "s3" ? new S3Storage() : new LocalDiskStorage(env.STORAGE_DIR);
+  instance = env.STORAGE_PROVIDER === "s3" ? new S3Storage() : new LocalDiskStorage(env.STORAGE_DIR);
   return instance;
 }

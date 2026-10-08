@@ -146,3 +146,42 @@ DROP POLICY IF EXISTS notif_owner_del ON notifications;
 CREATE POLICY notif_owner_sel ON notifications AS RESTRICTIVE FOR SELECT TO waqfak_app USING (app_current_user() IS NULL OR user_id = app_current_user());
 CREATE POLICY notif_owner_upd ON notifications AS RESTRICTIVE FOR UPDATE TO waqfak_app USING (app_current_user() IS NULL OR user_id = app_current_user());
 CREATE POLICY notif_owner_del ON notifications AS RESTRICTIVE FOR DELETE TO waqfak_app USING (app_current_user() IS NULL OR user_id = app_current_user());
+
+-- Audit chain head, read outside the caller's RLS view (writers hold advisory lock 724501).
+CREATE OR REPLACE FUNCTION app_audit_last_hash() RETURNS text LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
+  SELECT hash FROM audit_logs ORDER BY id DESC LIMIT 1
+$$;
+REVOKE ALL ON FUNCTION app_audit_last_hash() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION app_audit_last_hash() TO waqfak_app;
+
+-- Break-glass: a staff member can see and file their own requests (approval stays with approvers via global access).
+DROP POLICY IF EXISTS bga_own_select ON break_glass_access;
+DROP POLICY IF EXISTS bga_own_insert ON break_glass_access;
+CREATE POLICY bga_own_select ON break_glass_access FOR SELECT TO waqfak_app USING (user_id = app_current_user());
+CREATE POLICY bga_own_insert ON break_glass_access FOR INSERT TO waqfak_app WITH CHECK (user_id = app_current_user() AND status = 'requested');
+
+-- ───────────── Rows without a waqf (personal / request-only) ─────────────
+-- app_can_access_waqf(NULL) is true, so waqf_isolation alone would expose such rows to every signed-in user.
+-- These RESTRICTIVE policies add an owner check for null-waqf rows (system context and global-access staff excepted).
+DO $$
+DECLARE
+  p record;
+BEGIN
+  FOR p IN SELECT * FROM (VALUES
+    ('assessments',      'user_id IS NULL OR user_id = app_current_user()'),
+    ('ai_interactions',  'user_id = app_current_user()'),
+    ('service_requests', 'requester_user_id = app_current_user() OR assigned_to_user_id = app_current_user() OR created_by = app_current_user()'),
+    ('documents',        'owner_user_id = app_current_user() OR created_by = app_current_user() OR EXISTS (SELECT 1 FROM service_requests r WHERE r.id = documents.request_id AND (r.requester_user_id = app_current_user() OR r.assigned_to_user_id = app_current_user()))'),
+    ('invoices',         'user_id = app_current_user() OR created_by = app_current_user() OR EXISTS (SELECT 1 FROM service_requests r WHERE r.id = invoices.request_id AND (r.requester_user_id = app_current_user() OR r.assigned_to_user_id = app_current_user()))'),
+    ('contracts',        'party_user_id = app_current_user() OR created_by = app_current_user() OR EXISTS (SELECT 1 FROM service_requests r WHERE r.id = contracts.request_id AND (r.requester_user_id = app_current_user() OR r.assigned_to_user_id = app_current_user()))'),
+    ('tasks',            'assignee_user_id = app_current_user() OR created_by = app_current_user() OR EXISTS (SELECT 1 FROM service_requests r WHERE r.id = tasks.request_id AND (r.requester_user_id = app_current_user() OR r.assigned_to_user_id = app_current_user()))'),
+    ('subscriptions',    'user_id = app_current_user() OR created_by = app_current_user()'),
+    ('projects',         'owner_user_id = app_current_user() OR created_by = app_current_user()')
+  ) AS v(tbl, expr)
+  LOOP
+    EXECUTE format('DROP POLICY IF EXISTS nullwaqf_owner ON %I', p.tbl);
+    EXECUTE format(
+      'CREATE POLICY nullwaqf_owner ON %I AS RESTRICTIVE FOR ALL TO waqfak_app USING (waqf_id IS NOT NULL OR app_current_user() IS NULL OR app_has_global_access() OR %s) WITH CHECK (waqf_id IS NOT NULL OR app_current_user() IS NULL OR app_has_global_access() OR %s)',
+      p.tbl, p.expr, p.expr);
+  END LOOP;
+END $$;

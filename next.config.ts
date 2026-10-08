@@ -20,8 +20,16 @@ const csp = [
 const nextConfig: NextConfig = {
   output: "standalone",
   poweredByHeader: false,
-  serverExternalPackages: ["@node-rs/argon2", "pg", "playwright-core"],
+  serverExternalPackages: ["@node-rs/argon2", "pg", "playwright-core", "nodemailer", "@aws-sdk/client-s3"],
   experimental: { serverActions: { bodySizeLimit: "2mb" } },
+  // PDF reports embed these fonts at runtime (read from disk), so the standalone bundle must carry them.
+  outputFileTracingIncludes: {
+    "/**/*": [
+      "./node_modules/@fontsource/ibm-plex-sans-arabic/files/*.woff2",
+      "./node_modules/@fontsource/noto-naskh-arabic/files/*.woff2",
+      "./node_modules/playwright-core/**/*", // PDF renderer: the package reads browsers.json and lib files at runtime
+    ],
+  },
   turbopack: {
     rules: {
       "*.css": {
