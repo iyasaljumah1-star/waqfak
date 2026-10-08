@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useRef, useState, type DragEvent, type KeyboardEvent } from "react";
+import { useEffect, useId, useRef, useState, type DragEvent, type KeyboardEvent } from "react";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, FileUp, Loader2, X } from "lucide-react";
 import { Button, ProgressBar } from "@/components/ui";
@@ -66,6 +66,13 @@ export function DocumentUploader(props: DocumentUploaderProps) {
     setPhase({ k: "idle" });
     if (compact) upload(f);
   }
+
+  // A file chosen before hydration finished never fired React's onChange: pick it up once mounted.
+  useEffect(() => {
+    const f = inputRef.current?.files?.[0];
+    if (f) pick(f);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function upload(f: File | null = file) {
     if (!f || busy) return;

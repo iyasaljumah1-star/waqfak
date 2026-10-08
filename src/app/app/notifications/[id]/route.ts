@@ -1,5 +1,5 @@
 import { and, eq, isNull } from "drizzle-orm";
-import { NextResponse, type NextRequest } from "next/server";
+import type { NextRequest } from "next/server";
 import { withContext } from "@/server/db";
 import { notifications } from "@/server/db/schema";
 import { getAuth } from "@/server/authz/context";
@@ -14,11 +14,13 @@ const safePath = (s: string | null | undefined) => (s && s.startsWith("/") && !s
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const auth = await getAuth();
-  const back = new URL("/app/notifications", req.url);
+  // Relative Location headers: behind a proxy / in the standalone server req.url may carry the bind address (0.0.0.0).
+  const go = (path: string) => new Response(null, { status: 303, headers: { Location: path, "Cache-Control": "no-store" } });
+  const back = "/app/notifications";
   if (!auth || (auth.user.mfaEnabled && !auth.session.mfaVerified)) {
-    return NextResponse.redirect(new URL(`/login?next=${encodeURIComponent("/app/notifications")}`, req.url));
+    return go(`/login?next=${encodeURIComponent("/app/notifications")}`);
   }
-  if (!UUID.test(id)) return NextResponse.redirect(back);
+  if (!UUID.test(id)) return go(back);
   const row = await withContext(auth.db, async (tx) => {
     const [n] = await tx
       .select({ link: notifications.link, readAt: notifications.readAt })
@@ -30,5 +32,5 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     return n ?? null;
   });
   const dest = safePath(row?.link);
-  return NextResponse.redirect(dest ? new URL(dest, req.url) : back);
+  return go(dest ?? back);
 }

@@ -3,8 +3,10 @@ import { login, signup } from "./helpers";
 
 test("sign up, log out, log back in", async ({ page }) => {
   const phone = await signup(page, "سارة الاختبار");
-  await expect(page.getByText("سارة الاختبار").first()).toBeVisible();
-  await page.getByRole("button", { name: "خروج" }).first().click();
+  await expect(page.getByText("سارة الاختبار").filter({ visible: true }).first()).toBeVisible();
+  const out = page.getByRole("button", { name: "خروج" }).filter({ visible: true });
+  if (!(await out.count())) await page.getByRole("button", { name: /القائمة|المزيد|حسابي/ }).filter({ visible: true }).first().click();
+  await page.getByRole("button", { name: "خروج" }).filter({ visible: true }).first().click();
   await page.waitForURL((u) => !u.pathname.startsWith("/app"));
   await page.goto("/app");
   await expect(page).toHaveURL(/\/login/);

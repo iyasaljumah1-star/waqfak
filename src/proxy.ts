@@ -8,7 +8,8 @@ import { NextResponse, type NextRequest } from "next/server";
 export default function proxy(req: NextRequest) {
   const has = req.cookies.has("__Host-wqf") || req.cookies.has("wqf_s");
   if (!has) {
-    const url = new URL("/login", req.nextUrl);
+    // Absolute URL from the configured public origin (APP_URL), never from the server's bind address.
+    const url = new URL("/login", process.env.APP_URL || req.nextUrl.origin);
     url.searchParams.set("next", req.nextUrl.pathname + req.nextUrl.search);
     return NextResponse.redirect(url);
   }
