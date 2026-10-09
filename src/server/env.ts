@@ -37,7 +37,12 @@ const schema = z.object({
   JOB_SECRET: z.string().optional(),
 });
 
-export const env = schema.parse(process.env);
+// `next build` evaluates server modules to collect page config; real secrets are only needed at runtime.
+// During the build phase only, placeholders satisfy the schema (they are never used to serve requests).
+const BUILD_PLACEHOLDERS = process.env.NEXT_PHASE === "phase-production-build"
+  ? { DATABASE_URL: "postgres://build@localhost/build", MASTER_KEY: "b".repeat(44), HASH_KEY: "b".repeat(44), SESSION_SECRET: "b".repeat(44) }
+  : {};
+export const env = schema.parse({ ...BUILD_PLACEHOLDERS, ...process.env });
 export const isProd = env.NODE_ENV === "production";
 export const showOtpOnScreen = env.DEMO_SHOW_OTP === "true" && env.SMS_PROVIDER === "outbox";
 export const cookieSecure = env.COOKIE_SECURE ? env.COOKIE_SECURE === "true" : env.APP_URL.startsWith("https://");

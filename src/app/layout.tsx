@@ -7,6 +7,9 @@ import "@fontsource/noto-naskh-arabic/arabic-500.css";
 import "@fontsource/noto-naskh-arabic/arabic-700.css";
 import "./globals.css";
 
+// Every page reads the session or the database at request time; nothing is prerendered at build (no DB during image builds).
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.APP_URL ?? "http://localhost:3000"),
   title: { default: "وقفك — منصة امتثال ونظارة وتمكين مؤسسي للأوقاف", template: "%s | وقفك" },
