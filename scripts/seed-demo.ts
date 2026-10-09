@@ -55,7 +55,7 @@ const phoneOf = (n: number) => `${PHONE_PREFIX}${n}`;
 const localPhone = (n: number) => `055500${n}`;
 
 /** Deletes all demo rows as the owner role (bypasses RLS). Multi-pass with savepoints so FK order doesn't matter. */
-async function wipe() {
+async function wipe(scope: "demo" | "tests" = "demo") {
   const { Pool } = await import("pg");
   const pool = new Pool({ connectionString: process.env.DATABASE_OWNER_URL });
   const c = await pool.connect();
@@ -63,8 +63,9 @@ async function wipe() {
     await c.query("begin");
     // Demo-only: locked minutes are immutable by design; the owner lifts the guard inside this transaction only.
     await c.query("alter table minutes disable trigger minutes_lock");
-    const ids = (await c.query("select id from waqfs where is_demo")).rows.map((r) => r.id);
-    const uids = (await c.query("select id from users where phone like $1", [`${PHONE_PREFIX}%`])).rows.map((r) => r.id);
+    // "tests": leftovers of automated test runs on a dev/staging DB (non-demo, non-staff accounts and their waqfs)
+    const ids = (await c.query(scope === "demo" ? "select id from waqfs where is_demo" : "select id from waqfs where not is_demo")).rows.map((r) => r.id);
+    const uids = (await c.query(scope === "demo" ? "select id from users where phone like $1" : "select id from users where phone not like $1 and not is_staff", [`${PHONE_PREFIX}%`])).rows.map((r) => r.id);
     const cols = (await c.query(`
       select c.table_schema s, c.table_name t, c.column_name col from information_schema.columns c
       join information_schema.tables x using (table_schema, table_name)
@@ -102,6 +103,11 @@ async function wipe() {
 }
 
 async function main() {
+  if (process.argv.includes("--purge-tests")) {
+    if (process.env.NODE_ENV === "production") throw new Error("--purge-tests is for dev/staging only");
+    await wipe("tests");
+    return;
+  }
   if (reset) await wipe();
   const creds: Record<string, unknown> = {};
   const ctx = await withSystem(async (tx) => {

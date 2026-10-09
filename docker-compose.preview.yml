@@ -1,0 +1,54 @@
+# Local hands-on preview with demo data (NOT for production): http://localhost:3000
+# Run with: bash deploy/preview.sh
+name: waqfak-preview
+
+x-env: &env
+  env_file: .env.preview
+  environment:
+    NODE_ENV: production
+    DATABASE_URL: postgres://waqfak_app:${APP_DB_PASSWORD}@db:5432/waqfak
+    DATABASE_OWNER_URL: postgres://waqfak_owner:${OWNER_DB_PASSWORD}@db:5432/waqfak
+    APP_URL: http://localhost:3000
+    COOKIE_SECURE: "false"
+    DEMO_SHOW_OTP: "true"
+    STORAGE_DIR: /data/storage
+
+services:
+  db:
+    image: postgres:16-bookworm
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD}
+      OWNER_DB_PASSWORD: ${OWNER_DB_PASSWORD}
+    volumes:
+      - preview_pg:/var/lib/postgresql/data
+      - ./deploy/initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d waqfak"]
+      interval: 5s
+      retries: 30
+  setup:
+    build: { context: ., target: tools }
+    image: waqfak-tools
+    <<: *env
+    user: root
+    command: ["sh", "-c", "npm run db:migrate && npm run db:seed && (npx tsx --conditions=react-server scripts/seed-demo.ts || true) && cp storage/demo-credentials.json /data/storage/ 2>/dev/null; cp /data/storage/demo-credentials.json /out/ 2>/dev/null; true"]
+    volumes:
+      - preview_storage:/data/storage
+      - ./preview-output:/out
+    depends_on:
+      db: { condition: service_healthy }
+  app:
+    build: { context: ., target: runner }
+    image: waqfak-app
+    <<: *env
+    user: root
+    ports: ["3000:3000"]
+    volumes:
+      - preview_storage:/data/storage
+    depends_on:
+      setup: { condition: service_completed_successfully }
+
+volumes:
+  preview_pg:
+  preview_storage:
