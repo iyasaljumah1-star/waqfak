@@ -88,8 +88,11 @@
   --color-ok-soft: var(--ok-soft);
   --color-info: var(--info);
   --color-info-soft: var(--info-soft);
-  --font-sans: "IBM Plex Sans Arabic", system-ui, sans-serif;
-  --font-naskh: "Noto Naskh Arabic", "IBM Plex Sans Arabic", serif;
+  --font-sans: var(--font-thmanyah), "Tahoma", system-ui, sans-serif;
+  /* Headings use the brand face too (utility name kept for compatibility). */
+  --font-naskh: var(--font-thmanyah), "Tahoma", system-ui, sans-serif;
+  /* Document surfaces only (deed drafts, minutes, contracts): traditional Naskh. */
+  --font-deed: "Noto Naskh Arabic", var(--font-thmanyah), serif;
   --radius-sm: 4px;
   --radius-md: 8px;
   --radius-lg: 12px;
@@ -120,7 +123,7 @@ body {
   font-variant-numeric: tabular-nums;
 }
 .naskh {
-  font-family: var(--font-naskh);
+  font-family: var(--font-deed);
   line-height: 1.9;
 }
 

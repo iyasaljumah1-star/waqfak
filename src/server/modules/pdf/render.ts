@@ -13,29 +13,26 @@ import { env } from "../../env";
  * One browser instance is reused (cached promise); each render opens and closes its own page.
  */
 
-const FONT_FILES: { family: string; weight: number; file: string; range?: string }[] = [
-  { family: "IBM Plex Sans Arabic", weight: 400, file: "ibm-plex-sans-arabic/files/ibm-plex-sans-arabic-arabic-400-normal.woff2" },
-  { family: "IBM Plex Sans Arabic", weight: 600, file: "ibm-plex-sans-arabic/files/ibm-plex-sans-arabic-arabic-600-normal.woff2" },
-  { family: "IBM Plex Sans Arabic", weight: 700, file: "ibm-plex-sans-arabic/files/ibm-plex-sans-arabic-arabic-700-normal.woff2" },
-  { family: "IBM Plex Sans Arabic", weight: 400, file: "ibm-plex-sans-arabic/files/ibm-plex-sans-arabic-latin-400-normal.woff2", range: "U+0000-00FF, U+2000-206F, U+20AC, U+2122" },
-  { family: "IBM Plex Sans Arabic", weight: 600, file: "ibm-plex-sans-arabic/files/ibm-plex-sans-arabic-latin-600-normal.woff2", range: "U+0000-00FF, U+2000-206F, U+20AC, U+2122" },
-  { family: "IBM Plex Sans Arabic", weight: 700, file: "ibm-plex-sans-arabic/files/ibm-plex-sans-arabic-latin-700-normal.woff2", range: "U+0000-00FF, U+2000-206F, U+20AC, U+2122" },
-  { family: "Noto Naskh Arabic", weight: 500, file: "noto-naskh-arabic/files/noto-naskh-arabic-arabic-500-normal.woff2" },
-  { family: "Noto Naskh Arabic", weight: 700, file: "noto-naskh-arabic/files/noto-naskh-arabic-arabic-700-normal.woff2" },
+// Brand face (Thmanyah Sans, original files embedded in the generated PDF) + Noto Naskh for document headings.
+const FONT_FILES: { family: string; weight: number; file: string; dir: "brand" | "fontsource"; format: "opentype" | "woff2" }[] = [
+  { family: "Thmanyah Sans", weight: 400, file: "thmanyahsans-Regular.otf", dir: "brand", format: "opentype" },
+  { family: "Thmanyah Sans", weight: 500, file: "thmanyahsans-Medium.otf", dir: "brand", format: "opentype" },
+  { family: "Thmanyah Sans", weight: 700, file: "thmanyahsans-Bold.otf", dir: "brand", format: "opentype" },
+  { family: "Noto Naskh Arabic", weight: 500, file: "noto-naskh-arabic/files/noto-naskh-arabic-arabic-500-normal.woff2", dir: "fontsource", format: "woff2" },
+  { family: "Noto Naskh Arabic", weight: 700, file: "noto-naskh-arabic/files/noto-naskh-arabic-arabic-700-normal.woff2", dir: "fontsource", format: "woff2" },
 ];
 
 let fontCss: string | null = null;
 /** @font-face rules with base64-embedded woff2 files (built once per process). */
 export function embeddedFontCss(): string {
   if (fontCss !== null) return fontCss;
-  const base = path.join(process.cwd(), "node_modules", "@fontsource");
+  const dirs = { brand: path.join(process.cwd(), "src", "app", "fonts"), fontsource: path.join(process.cwd(), "node_modules", "@fontsource") };
   const rules: string[] = [];
   for (const f of FONT_FILES) {
     try {
-      const b64 = readFileSync(path.join(base, f.file)).toString("base64");
-      rules.push(
-        `@font-face{font-family:"${f.family}";font-style:normal;font-weight:${f.weight};font-display:block;src:url(data:font/woff2;base64,${b64}) format("woff2");${f.range ? `unicode-range:${f.range};` : ""}}`,
-      );
+      const b64 = readFileSync(path.join(dirs[f.dir], f.file)).toString("base64");
+      const mime = f.format === "woff2" ? "font/woff2" : "font/otf";
+      rules.push(`@font-face{font-family:"${f.family}";font-style:normal;font-weight:${f.weight};font-display:block;src:url(data:${mime};base64,${b64}) format("${f.format}");}`);
     } catch {
       // Missing font file: Chromium falls back to a system font; the PDF still renders.
     }
@@ -53,10 +50,10 @@ export const PDF_BASE_CSS = `
 :root{--ink:${PDF_PALETTE.ink};--seal:${PDF_PALETTE.seal};--olive:${PDF_PALETTE.olive};--stone:${PDF_PALETTE.stone};--critical:${PDF_PALETTE.critical};--fine:${PDF_PALETTE.fine};--ok:${PDF_PALETTE.ok};--muted:${PDF_PALETTE.muted};--line:${PDF_PALETTE.line}}
 *{box-sizing:border-box}
 html,body{margin:0;padding:0}
-body{font-family:"IBM Plex Sans Arabic",sans-serif;color:#1c1d1f;font-size:10.5pt;line-height:1.75;direction:rtl;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+body{font-family:"Thmanyah Sans",Tahoma,sans-serif;color:#1c1d1f;font-size:10.5pt;line-height:1.75;direction:rtl;-webkit-print-color-adjust:exact;print-color-adjust:exact}
 h1,h2,h3{color:var(--ink);line-height:1.4;margin:0 0 .5em;break-after:avoid}
-h1{font-family:"Noto Naskh Arabic",serif;font-size:22pt;font-weight:700}
-h2{font-family:"Noto Naskh Arabic",serif;font-size:15pt;font-weight:700;margin-top:1.4em;padding-bottom:.25em;border-bottom:1.5px solid var(--seal)}
+h1{font-family:"Thmanyah Sans",sans-serif;font-size:22pt;font-weight:700}
+h2{font-family:"Thmanyah Sans",sans-serif;font-size:15pt;font-weight:700;margin-top:1.4em;padding-bottom:.25em;border-bottom:1.5px solid var(--seal)}
 h3{font-size:11.5pt;font-weight:600;margin-top:1em}
 p{margin:0 0 .6em}
 .naskh{font-family:"Noto Naskh Arabic",serif;line-height:1.9}

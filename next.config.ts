@@ -25,7 +25,7 @@ const nextConfig: NextConfig = {
   // PDF reports embed these fonts at runtime (read from disk), so the standalone bundle must carry them.
   outputFileTracingIncludes: {
     "/**/*": [
-      "./node_modules/@fontsource/ibm-plex-sans-arabic/files/*.woff2",
+      "./src/app/fonts/*.otf",
       "./node_modules/@fontsource/noto-naskh-arabic/files/*.woff2",
       "./node_modules/playwright-core/**/*", // PDF renderer: the package reads browsers.json and lib files at runtime
     ],
