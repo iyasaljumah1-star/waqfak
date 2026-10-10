@@ -102,7 +102,12 @@ async function seedServices() {
       basePrice: null, slaDays: x.slaDays ?? null, departmentKey: x.dept, regulatoryRestrictions: x.restriction ?? null,
       conflictRule: x.conflictRule ?? "none", requiresLicenseKey: x.license ?? null, workflowTemplateCode: x.workflow ?? (x.pricingModel === "hourly" ? "opinion" : "standard"),
       audiences: x.audiences, stage: x.stage ?? null, requiredDocuments: x.docs ?? [], position: pos++,
-    }).onConflictDoNothing();
+    }).onConflictDoUpdate({
+      // Refresh seeded copy only on rows nobody edited from the admin panel (updated_by stays null until then).
+      target: s.services.code,
+      set: { nameAr: x.nameAr, summary: x.summary, outputs: x.outputs, regulatoryRestrictions: x.restriction ?? null },
+      setWhere: sql`${s.services.updatedBy} is null`,
+    });
   }
   const svcs = await db.select().from(s.services);
   const sid = new Map(svcs.map((x) => [x.code, x.id]));
@@ -113,19 +118,50 @@ async function seedServices() {
 }
 
 async function seedSystem() {
-  for (const t of NOTIFICATION_TEMPLATES) await db.insert(s.notificationTemplates).values(t).onConflictDoNothing();
-  for (const c of CONTRACT_TEMPLATES) await db.insert(s.contractTemplates).values(c).onConflictDoNothing();
+  // Templates have no updated_by: a row whose updated_at is not newer than the previous seed run was never edited → refresh its text.
+  const [prev] = await db.select().from(s.settings).where(eq(s.settings.key, "seed.last_run_at"));
+  const lastRun = prev ? new Date(String(prev.value)) : null;
+  for (const t of NOTIFICATION_TEMPLATES) {
+    await db.insert(s.notificationTemplates).values(t).onConflictDoUpdate({
+      target: s.notificationTemplates.key,
+      set: { titleAr: t.titleAr, bodyAr: t.bodyAr, updatedAt: new Date() },
+      setWhere: lastRun ? sql`${s.notificationTemplates.updatedAt} <= ${lastRun.toISOString()}::timestamptz + interval '5 minutes'` : sql`true`, // first run of this logic: nothing has been edited through the admin yet
+    });
+  }
+  for (const c of CONTRACT_TEMPLATES) {
+    await db.insert(s.contractTemplates).values(c).onConflictDoUpdate({
+      target: [s.contractTemplates.code, s.contractTemplates.version],
+      set: { nameAr: c.nameAr, body: c.body },
+      setWhere: sql`${s.contractTemplates.updatedBy} is null`,
+    });
+  }
   for (const [key, value, description] of SETTINGS) await db.insert(s.settings).values({ key, value, description }).onConflictDoNothing();
   for (const f of FEATURE_FLAGS) await db.insert(s.featureFlags).values(f).onConflictDoNothing();
 }
 
 async function seedContent() {
+  // Seeded copy is refreshed on every run, except rows an editor changed in the admin CMS (updated_by set).
   for (const a of ARTICLES) {
-    await db.insert(s.contentItems).values({ ...a, status: "published", publishedAt: new Date(), lastVerifiedAt: "2026-10-07" }).onConflictDoNothing();
+    const { slug, kind, ...rest } = a;
+    await db
+      .insert(s.contentItems)
+      .values({ ...a, status: "published", publishedAt: new Date(), lastVerifiedAt: "2026-10-07" })
+      .onConflictDoUpdate({ target: [s.contentItems.kind, s.contentItems.slug], set: { ...rest }, setWhere: sql`${s.contentItems.updatedBy} is null` });
+    void slug; void kind;
   }
-  const existingFaq = await db.select({ c: sql<number>`count(*)` }).from(s.faqs);
-  if (Number(existingFaq[0].c) === 0 && FAQS.length) await db.insert(s.faqs).values(FAQS.map((f, i) => ({ ...f, position: i })));
-  for (const g of GLOSSARY) await db.insert(s.glossaryTerms).values(g).onConflictDoNothing();
+  // FAQs have no natural key: replace the untouched seeded rows; keep rows created or edited by staff.
+  const kept = await db.select({ position: s.faqs.position }).from(s.faqs).where(sql`${s.faqs.createdBy} is not null or ${s.faqs.updatedBy} is not null`);
+  const keptPos = new Set(kept.map((k) => k.position));
+  await db.delete(s.faqs).where(sql`${s.faqs.createdBy} is null and ${s.faqs.updatedBy} is null`);
+  const fresh = FAQS.map((f, i) => ({ ...f, position: i })).filter((f) => !keptPos.has(f.position));
+  if (fresh.length) await db.insert(s.faqs).values(fresh);
+  for (const g of GLOSSARY) {
+    await db.insert(s.glossaryTerms).values(g).onConflictDoUpdate({
+      target: s.glossaryTerms.slug,
+      set: { term: g.term, definition: g.definition, synonyms: g.synonyms, related: g.related, source: g.source ?? null },
+      setWhere: sql`${s.glossaryTerms.updatedBy} is null`,
+    });
+  }
 }
 
 async function main() {
@@ -136,6 +172,8 @@ async function main() {
   await seedServices();
   await seedSystem();
   await seedContent();
+  await db.insert(s.settings).values({ key: "seed.last_run_at", value: new Date().toISOString() as never, description: "آخر تشغيل لبذر البيانات المرجعية" })
+    .onConflictDoUpdate({ target: s.settings.key, set: { value: new Date().toISOString() as never } });
   await pool.end();
   console.log("reference data seeded");
 }

@@ -141,6 +141,34 @@ body {
   a {
     color: inherit;
   }
+
+  /* ───────── Text alignment (Arabic, RTL) ─────────
+     Paragraphs are justified with a natural last line; headings, buttons, labels, numbers and tables keep start
+     alignment. Lives in the base layer so any utility (text-center, text-start…) on an element still wins. */
+  p,
+  .prose-waqf li,
+  .prose-waqf dd,
+  .prose-waqf blockquote {
+    text-align: justify;
+    text-align-last: start;
+    text-justify: inter-word;
+    hyphens: none;
+    text-wrap: pretty;
+  }
+  /* Narrow screens: keep justification for long reading surfaces only; short card text reads better start-aligned. */
+  @media (max-width: 480px) {
+    p {
+      text-align: start;
+    }
+    .prose-waqf p,
+    .prose-waqf li,
+    .naskh p,
+    .deed-paper p,
+    p.justify-mobile {
+      text-align: justify;
+      text-align-last: start;
+    }
+  }
 }
 
 .prose-waqf {
