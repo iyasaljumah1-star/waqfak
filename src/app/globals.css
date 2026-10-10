@@ -4,62 +4,64 @@
    Ink (حبر الصك) carries the voice; the seal gold (ذهب الختم) appears once per view at most;
    olive marks sustainability/positive states. Status colors never carry meaning alone (always icon + word). */
 :root {
-  --ink: #1f2e4d;
-  --ink-hover: #2a3c62;
-  --ink-soft: #e7ebf3;
-  --seal: #a8823a;
-  --seal-soft: #f5eedf;
-  --olive: #5b7746;
-  --olive-soft: #e9efe3;
-  --stone: #eef0ec;
+  /* Direction «الغرس»: grove green carries the voice; ripe-date gold is the single accent (dark text on it);
+     frond green marks completion. Status colors never carry meaning alone (always icon + word). */
+  --ink: #0e4d3c;
+  --ink-hover: #0b3f31;
+  --ink-soft: #e3efe8;
+  --seal: #d49a2a;
+  --seal-soft: #fbf0de;
+  --olive: #2f7d57;
+  --olive-soft: #e3efe8;
+  --stone: #f1f5f2;
   --surface: #ffffff;
-  --surface-2: #f7f8f6;
-  --line: #dadfd6;
-  --line-strong: #c3c9bf;
-  --text: #1c1d1f;
-  --muted: #55595f;
+  --surface-2: #f7faf8;
+  --line: #dce6e0;
+  --line-strong: #c2d3c9;
+  --text: #0b1f1a;
+  --muted: #4e5e57;
   --critical: #b3261e;
-  --critical-soft: #fbeceb;
+  --critical-soft: #fbeae8;
   --fine: #a85d00;
-  --fine-soft: #fdf1e2;
+  --fine-soft: #fbf0de;
   --warn: #7d6400;
   --warn-soft: #fbf5d9;
-  --ok: #2e7d32;
-  --ok-soft: #e8f3e8;
+  --ok: #2f7d57;
+  --ok-soft: #e3efe8;
   --info: #2d5ba8;
   --info-soft: #e8eef9;
   --focus: #2d5ba8;
-  --shadow: 0 1px 2px rgb(31 46 77 / 0.06), 0 4px 16px rgb(31 46 77 / 0.06);
+  --shadow: 0 1px 2px rgb(14 77 60 / 0.05), 0 6px 20px rgb(14 77 60 / 0.07);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --ink: #9fb3d9;
-    --ink-hover: #b6c6e4;
-    --ink-soft: #1d2638;
-    --seal: #d1aa5f;
-    --seal-soft: #2c2618;
-    --olive: #9cbb84;
-    --olive-soft: #1e2a1a;
-    --stone: #121519;
-    --surface: #171a1f;
-    --surface-2: #1c2026;
-    --line: #2b3038;
-    --line-strong: #3a414b;
-    --text: #e8eaed;
-    --muted: #a3a9b2;
+    --ink: #7cc8a2;
+    --ink-hover: #98d6b6;
+    --ink-soft: #13281f;
+    --seal: #e8b04a;
+    --seal-soft: #2e2512;
+    --olive: #86c99e;
+    --olive-soft: #13281f;
+    --stone: #0b1512;
+    --surface: #111c18;
+    --surface-2: #15221d;
+    --line: #22332c;
+    --line-strong: #32463d;
+    --text: #e6eeea;
+    --muted: #9db0a7;
     --critical: #ef8a83;
     --critical-soft: #3a1d1b;
     --fine: #f0aa5c;
     --fine-soft: #36260f;
     --warn: #e2c85b;
     --warn-soft: #332c10;
-    --ok: #86c98a;
-    --ok-soft: #17291a;
+    --ok: #86c99e;
+    --ok-soft: #13281f;
     --info: #8fb0ea;
     --info-soft: #182439;
     --focus: #8fb0ea;
-    --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 4px 16px rgb(0 0 0 / 0.25);
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 6px 20px rgb(0 0 0 / 0.25);
   }
 }
 
@@ -91,13 +93,13 @@
   --font-sans: var(--font-thmanyah), "Tahoma", system-ui, sans-serif;
   /* Headlines: Thmanyah Serif Display (`font-display`; `font-naskh` kept as an alias for existing markup). */
   --font-display: var(--font-thmanyah-display), var(--font-thmanyah), serif;
-  --font-naskh: var(--font-thmanyah-display), var(--font-thmanyah), serif;
+  --font-naskh: var(--font-thmanyah), "Tahoma", system-ui, sans-serif; /* section headings: Sans bold (direction «الغرس») */
   /* Long reading and document surfaces (articles, deeds, minutes, contracts): Thmanyah Serif Text. */
   --font-reading: var(--font-thmanyah-text), var(--font-thmanyah), serif;
   --font-deed: var(--font-thmanyah-text), var(--font-thmanyah), serif;
-  --radius-sm: 4px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 22px;
   --shadow-card: var(--shadow);
 }
 

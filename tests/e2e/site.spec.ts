@@ -15,7 +15,7 @@ async function noHorizontalScroll(page: Page) {
 
 test("home renders with paths, journey, catalog and library", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByRole("heading", { level: 1 })).toContainText("احبس الأصل");
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("غرسٌ يبقى أصله");
   await expect(page.getByRole("link", { name: /أنا واقف/ })).toBeVisible();
   await expect(page.getByRole("heading", { name: "رحلة الوقف، من الفكرة إلى الاستدامة" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "فهرس الخدمات" })).toBeVisible();

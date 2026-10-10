@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { ArrowLeft, BookOpenCheck, FileLock2, Landmark, Scale } from "lucide-react";
-import { Seal } from "@/components/brand";
 import { buttonClass } from "@/components/ui";
 import { ContentRowLink, Container, JsonLd, SITE_URL } from "@/components/site/bits";
 import { JOURNEY } from "@/components/site/labels";
@@ -45,43 +44,44 @@ export default async function Home() {
         }}
       />
 
-      {/* ───────── Hero: the deed ───────── */}
-      <section aria-labelledby="hero-title" className="overflow-hidden border-b border-line bg-stone">
-        <Container className="grid gap-10 py-10 md:py-16 lg:grid-cols-[minmax(0,1fr)_minmax(0,500px)] lg:items-center lg:gap-14 lg:py-20">
-          <div>
-            <h1 id="hero-title" className="font-naskh text-[2.15rem] font-bold leading-[1.55] text-ink sm:text-[2.6rem] lg:text-[3.1rem] lg:leading-[1.5]">
-              احبس الأصل، وسبّل الثمرة،
-              <br />
-              ودَع لنا حفظ ما بينهما.
-            </h1>
-            <p className="mt-5 max-w-xl text-[17px] leading-8 text-muted md:text-lg md:leading-9">
-              وقفك شركة متخصصة في الأوقاف. نصمم الوقف ونصوغ وثيقته ونجهّز تسجيله، ثم نساند ناظره في الحوكمة والمالية والامتثال والاستثمار، ونذكر المرجع النظامي لكل خطوة.
-            </p>
-            <div className="mt-8 flex flex-wrap items-center gap-3">
-              <Link href="/assessment" className={buttonClass("primary", "lg")}>قيّم وقفك مجانًا</Link>
-              <Link href="/services" className={buttonClass("secondary", "lg")}>تصفّح الخدمات</Link>
+      {/* ───────── Hero: the grove ───────── */}
+      <section aria-labelledby="hero-title" className="bg-stone pb-4 pt-4 md:pt-6">
+        <Container>
+          <div className="grid gap-8 rounded-[28px] bg-ink px-6 py-10 text-white sm:px-10 md:rounded-[36px] md:py-14 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,460px)] lg:items-center lg:gap-14 lg:px-14 lg:py-16 dark:bg-[#0d3a2e]">
+            <div>
+              <span className="inline-flex rounded-full bg-white/12 px-3.5 py-1.5 text-[14px] font-medium text-white/90">لكل وقف رحلة من خمس مراحل</span>
+              <h1 id="hero-title" className="mt-5 font-display text-[2.3rem] font-bold leading-[1.45] sm:text-[2.8rem] lg:text-[3.4rem] lg:leading-[1.4]">
+                غرسٌ يبقى أصله،
+                <br />
+                وتتجدّد ثمرته.
+              </h1>
+              <p className="mt-5 max-w-xl text-[17px] leading-8 text-white/80 md:text-lg md:leading-9">
+                وقفك شركة متخصصة في الأوقاف. نصمم الوقف ونصوغ وثيقته ونجهّز تسجيله، ثم نساند ناظره في الحوكمة والمالية والامتثال والاستثمار، ونذكر المرجع النظامي لكل خطوة.
+              </p>
+              <div className="mt-8 flex flex-wrap items-center gap-3">
+                <Link href="/assessment" className={buttonClass("seal", "lg")}>قيّم وقفك مجانًا</Link>
+                <Link href="/services" className={buttonClass("secondary", "lg", "border-transparent bg-white text-ink hover:bg-white/90")}>تصفّح الخدمات</Link>
+              </div>
+              <p className="mt-4 text-[14px] text-white/70">التقييم مجاني، ولا يطلب اسمًا ولا هوية، ويستغرق ربع ساعة تقريبًا.</p>
             </div>
-            <p className="mt-4 text-[14px] text-muted">التقييم مجاني، ولا يطلب اسمًا ولا هوية، ويستغرق ربع ساعة تقريبًا.</p>
-          </div>
 
-          <div className="relative">
-            <div className="deed-paper relative rounded-sm border border-line-strong px-6 pb-[70px] pt-[18px] shadow-card sm:px-9">
-              <div aria-hidden className="pointer-events-none absolute inset-2 rounded-[2px] border border-line" />
-              <h2 className="relative text-center font-naskh text-[1.35rem] font-bold leading-[35px] text-ink">من أنت في هذا الوقف؟</h2>
-              <p className="relative text-center text-[13.5px] leading-[35px] text-muted">اختر سطرك، ندلّك على ما يخصّك.</p>
-              <ul className="relative">
+            <div className="rounded-[24px] bg-surface p-6 text-text shadow-card sm:p-8">
+              <h2 className="text-[1.3rem] font-bold text-ink">من أنت في هذا الوقف؟</h2>
+              <p className="mt-1 text-[14px] text-muted">اختر ما يصفك، ندلّك على ما يخصّك.</p>
+              <ul className="mt-4 grid gap-2">
                 {PATHS.map((p) => (
                   <li key={p.href}>
-                    <Link href={p.href} className="group block py-0 font-naskh text-[16.5px] leading-[35px] text-text hover:text-ink focus-visible:outline-offset-4">
-                      <span className="font-bold text-ink">{p.who}: </span>
-                      {p.clause}
-                      <ArrowLeft aria-hidden className="ms-1 inline size-4 -translate-y-px text-muted transition-transform group-hover:-translate-x-1 group-hover:text-ink" />
+                    <Link href={p.href} className="group flex items-center gap-3 rounded-2xl bg-surface-2 px-4 py-3.5 text-[15.5px] leading-7 transition-colors hover:bg-ink-soft focus-visible:outline-offset-2">
+                      <span className="min-w-0 flex-1">
+                        <span className="font-bold text-ink">{p.who}: </span>
+                        {p.clause}
+                      </span>
+                      <ArrowLeft aria-hidden className="size-4 shrink-0 text-muted transition-transform group-hover:-translate-x-1 group-hover:text-ink" />
                     </Link>
                   </li>
                 ))}
               </ul>
             </div>
-            <Seal className="seal-press absolute -bottom-9 end-6 size-24 rotate-[-8deg] rounded-full bg-surface/70 text-seal sm:size-[104px]" title="ختم وقفك" />
           </div>
         </Container>
       </section>

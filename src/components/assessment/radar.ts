@@ -13,7 +13,7 @@ export type RadarSeries = { label: string; scores: Record<string, number | null>
 export type RadarPalette = { ink: string; grid: string; text: string; muted: string; critical: string; fill: string; surface: string };
 
 export const WEB_PALETTE: RadarPalette = { ink: "var(--ink)", grid: "var(--line)", text: "var(--text)", muted: "var(--muted)", critical: "var(--critical)", fill: "var(--ink)", surface: "var(--surface)" };
-export const PRINT_PALETTE: RadarPalette = { ink: "#1f2e4d", grid: "#dadfd6", text: "#1c1d1f", muted: "#55595f", critical: "#b3261e", fill: "#1f2e4d", surface: "#ffffff" };
+export const PRINT_PALETTE: RadarPalette = { ink: "#0e4d3c", grid: "#dadfd6", text: "#1c1d1f", muted: "#55595f", critical: "#b3261e", fill: "#0e4d3c", surface: "#ffffff" };
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 const r1 = (n: number) => Math.round(n * 10) / 10;

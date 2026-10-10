@@ -43,7 +43,7 @@ export function embeddedFontCss(): string {
   return fontCss;
 }
 
-export const PDF_PALETTE = { ink: "#1f2e4d", seal: "#a8823a", olive: "#5b7746", stone: "#eef0ec", critical: "#b3261e", fine: "#a85d00", ok: "#2e7d32", muted: "#55595f", line: "#dadfd6" };
+export const PDF_PALETTE = { ink: "#0e4d3c", seal: "#b9821c", olive: "#2f7d57", stone: "#f1f5f2", critical: "#b3261e", fine: "#a85d00", ok: "#2e7d32", muted: "#55595f", line: "#dadfd6" };
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 

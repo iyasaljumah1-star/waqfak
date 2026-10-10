@@ -58,13 +58,13 @@ export async function SiteFooter() {
   const lic = licenses.filter((l) => l.key !== "gaa_nazara_license");
   const year = new Date().getFullYear();
   return (
-    <footer data-site="" className="mt-auto bg-ink text-white dark:bg-[#0f1520] no-print">
+    <footer data-site="" className="mt-auto bg-ink text-white dark:bg-[#0a1411] no-print">
       <div className="mx-auto max-w-6xl px-4 pb-8 pt-12 md:px-6">
         <div className="grid gap-10 lg:grid-cols-[minmax(0,1.1fr)_2fr]">
           <div>
             <Link href="/" className="inline-flex items-center gap-2 text-white" aria-label="وقفك — الصفحة الرئيسية">
-              <Seal className="size-9" />
-              <span className="font-naskh text-[26px] font-bold leading-none">وقفك</span>
+              <Seal className="size-9 [--mark-cut:var(--ink)] dark:[--mark-cut:#0a1411]" />
+              <span className="text-[25px] font-bold leading-none">وقفك</span>
             </Link>
             <p className="mt-4 max-w-sm text-[15px] leading-7 text-white/75">
               خدمات متخصصة في الأوقاف: من تصميم الوقف ووثيقته وتسجيله، إلى نظارته وحوكمته وماليته واستثماره.

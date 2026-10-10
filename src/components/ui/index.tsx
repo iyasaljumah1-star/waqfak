@@ -7,15 +7,15 @@ import { cn } from "@/lib/utils";
 type Variant = "primary" | "secondary" | "ghost" | "danger" | "seal";
 type Size = "sm" | "md" | "lg";
 const base =
-  "inline-flex items-center justify-center gap-2 rounded-md font-medium transition-colors duration-150 disabled:opacity-50 disabled:pointer-events-none select-none whitespace-nowrap";
+  "inline-flex items-center justify-center gap-2 rounded-full font-medium transition-colors duration-150 disabled:opacity-50 disabled:pointer-events-none select-none whitespace-nowrap";
 const variants: Record<Variant, string> = {
   primary: "bg-ink text-white hover:bg-ink-hover dark:text-[#0f141c]",
   secondary: "border border-line-strong bg-surface text-text hover:bg-surface-2",
   ghost: "text-ink hover:bg-ink-soft",
   danger: "bg-critical text-white hover:opacity-90 dark:text-[#1a0b0a]",
-  seal: "bg-seal text-white hover:opacity-90 dark:text-[#1d160a]",
+  seal: "bg-seal text-[#0b1f1a] hover:opacity-90",
 };
-const sizes: Record<Size, string> = { sm: "h-8 px-3 text-sm", md: "h-11 px-4 text-[15px]", lg: "h-12 px-6 text-base" };
+const sizes: Record<Size, string> = { sm: "h-8 px-3.5 text-sm", md: "h-11 px-5 text-[15px]", lg: "h-12 px-7 text-base" };
 
 export const buttonClass = (variant: Variant = "primary", size: Size = "md", className?: string) => cn(base, variants[variant], sizes[size], className);
 

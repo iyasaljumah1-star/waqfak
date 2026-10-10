@@ -20,7 +20,7 @@ const CSS = `
 .cover .meta{border-top:2px solid var(--seal);padding-top:6mm}
 .score{display:flex;gap:16px;align-items:center}
 .score .big{font-size:38pt;font-weight:700;color:var(--ink);line-height:1}
-.bar{height:7px;background:#eef0ec;border-radius:4px;overflow:hidden;min-width:90px}
+.bar{height:7px;background:#f1f5f2;border-radius:4px;overflow:hidden;min-width:90px}
 .bar>span{display:block;height:100%;background:var(--ink);border-radius:4px}
 .bar.c>span{background:var(--critical)}
 .rec{border:1px solid var(--line);border-radius:6px;padding:8px 10px;margin:6px 0;break-inside:avoid}

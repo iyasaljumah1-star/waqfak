@@ -32,8 +32,8 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         <div className="mx-auto flex h-14 max-w-[1600px] items-center gap-2 px-3 md:gap-3 md:px-6">
           <AdminMobileNav items={items} userName={name} roles={roles} />
           <Link href="/admin" className="flex shrink-0 items-center gap-2 text-white" aria-label="لوحة الإدارة — الرئيسية">
-            <Seal className="size-7" />
-            <span className="font-naskh text-[20px] font-bold leading-none">وقفك</span>
+            <Seal className="size-7 [--mark-cut:var(--ink)] dark:[--mark-cut:#0f1623]" />
+            <span className="text-[20px] font-bold leading-none">وقفك</span>
             <span className="hidden text-[13px] text-white/75 sm:inline">| لوحة الإدارة</span>
           </Link>
           {demo ? (
