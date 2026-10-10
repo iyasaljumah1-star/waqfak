@@ -125,7 +125,7 @@ function validateValue(q: { answerType: string; options?: { value: string }[] | 
 export async function saveAnswer(assessmentId: string, questionCode: string, value: unknown): Promise<SaveResult> {
   try {
     const v = await resolveAssessment(assessmentId);
-    if (!v || !v.canEdit) throw new UserError("لا يمكن تعديل هذا التقييم. ربما اكتمل أو انتهت صلاحية الرابط.");
+    if (!v || !v.canEdit) throw new UserError("اكتمل هذا التقييم أو انتهت صلاحية رابطه، فلم تعد إجاباته قابلة للتعديل. ابدأ تقييمًا جديدًا إن احتجت.");
     await withContext(v.db, async (tx) => {
       const { questions } = await loadBank(tx, v.row.bankVersionId);
       const q = questions.find((x) => x.code === questionCode);
@@ -167,7 +167,7 @@ export async function submitAssessment(assessmentId: string): Promise<SaveResult
   let target = "";
   try {
     const v = await resolveAssessment(assessmentId);
-    if (!v || !v.canEdit) throw new UserError("لا يمكن إرسال هذا التقييم. ربما اكتمل من قبل.");
+    if (!v || !v.canEdit) throw new UserError("أُرسل هذا التقييم من قبل؛ افتح نتيجته لمتابعتها.");
     const { ip, userAgent } = await requestInfo();
     await withContext(v.db, (tx) => computeAndPersist(tx, assessmentId, { userId: v.auth?.user.id ?? null, ip, userAgent }));
     target = resultPath(assessmentId, !!v.auth);
@@ -187,7 +187,7 @@ export async function claimAssessment(_prev: ActionState, fd: FormData): Promise
     const waqfId = String(fd.get("waqf") ?? "") || null;
     const auth = await requireAuth();
     const v = await resolveAssessment(id);
-    if (!v || !v.canClaim) throw new UserError("لا يمكن حفظ هذا التقييم في حسابك. افتحه من المتصفح نفسه الذي أجريته فيه.");
+    if (!v || !v.canClaim) throw new UserError("يُحفظ التقييم في حسابك من المتصفح نفسه الذي أجريته فيه. افتحه من هناك ثم أعد المحاولة.");
     const { ip, userAgent } = await requestInfo();
     await withContext(auth.db, async (tx) => {
       if (waqfId) {
@@ -282,7 +282,7 @@ export async function createShare(_prev: ActionState, fd: FormData): Promise<Act
       await audit(tx, { actorUserId: auth.user.id, action: "assessment.share", entityType: "report_share", entityId: share.id, waqfId: v.row.waqfId, ip, userAgent, after: { assessmentId: id, days } });
     });
     revalidatePath(`/app/assessments/${id}`);
-    return { ok: true, message: "أنشأنا رابط مشاركة للقراءة فقط. انسخه الآن؛ لن يظهر مرة أخرى.", data: { url: `/r/${token}`, expiresAt: expiresAt.toISOString() } };
+    return { ok: true, message: "أنشأنا رابط مشاركة للقراءة فقط. انسخه الآن؛ فهو يظهر هذه المرة فقط.", data: { url: `/r/${token}`, expiresAt: expiresAt.toISOString() } };
   } catch (e) {
     return toState(e);
   }

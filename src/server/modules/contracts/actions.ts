@@ -30,7 +30,7 @@ export async function generateContract(_: ActionState, fd: FormData): Promise<Ac
     const rc = await loadRequestCtx(c.tx, c.auth, id, "staff");
     if (rc.req.status !== "awaiting_contract") throw new UserError("يُنشأ العقد بعد قبول العميل عرض السعر (حالة «بانتظار العقد»).");
     const cs = await contractState(c.tx, id);
-    if (cs.clientSigned) throw new UserError("العقد موقّع ولا يمكن تعديله. العقود الموقعة غير قابلة للتغيير.");
+    if (cs.clientSigned) throw new UserError("العقد موقّع، والعقود الموقّعة لا تُعدّل.");
     const amountStr = rc.req.agreedPrice ?? rc.req.quoteAmount;
     if (!amountStr) throw new UserError("حدّد مبلغ عرض السعر أولًا.");
     const [tpl] = await c.tx.select().from(contractTemplates)
@@ -97,7 +97,7 @@ export async function requestSignOtp(_: ActionState, fd: FormData): Promise<Acti
 const signSchema = z.object({
   contractId: uuid,
   challengeId: uuid,
-  code: z.string().regex(/^\d{6}$/, "الرمز 6 أرقام."),
+  code: z.string().regex(/^\d{6}$/, "أدخل الرمز المكوّن من 6 أرقام."),
   consent: z.literal("on", { message: "أكّد أنك قرأت العقد وتوافق عليه." }),
 });
 

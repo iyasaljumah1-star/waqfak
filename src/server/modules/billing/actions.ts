@@ -65,7 +65,7 @@ export async function startCheckout(_: ActionState, fd: FormData): Promise<Actio
     try {
       provider = paymentProvider(await isFlagOn(c.tx, "payments.live"));
     } catch {
-      throw new UserError("الدفع الإلكتروني غير مفعّل بعد. سدّد بالتحويل البنكي وأرسل الإيصال عبر رسائل الطلب.");
+      throw new UserError("السداد متاح حاليًا بالتحويل البنكي؛ أرسل الإيصال عبر رسائل الطلب.");
     }
     const [p] = await c.tx.insert(payments).values({ invoiceId: inv.id, userId: c.auth.user.id, provider: provider.name, amount: inv.total, status: "initiated", createdBy: c.auth.user.id }).returning({ id: payments.id });
     const co = await provider.createCheckout({ invoiceId: inv.id, paymentId: p.id, amount: inv.total, currency: inv.currency, description: `فاتورة ${inv.number}` });

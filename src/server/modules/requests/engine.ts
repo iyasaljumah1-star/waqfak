@@ -144,7 +144,7 @@ export async function transition(c: ActCtx, rc: RequestCtx, input: TransitionInp
   const allowed = availableTransitions(from, rc.actors, { resumeTo: rc.resumeTo }).some((x) => x.to === to);
   if (!allowed) {
     if (from === "quality_review" && to === "awaiting_client_approval" && rc.deliverers.includes(auth.user.id))
-      throw new UserError("مبدأ العينين الأربع: لا يراجع جودة العمل من أعدّه. يجب أن يراجعه زميل آخر.");
+      throw new UserError("مبدأ العينين الأربع: يراجع جودةَ العمل زميلٌ آخر غير من أعدّه.");
     throw new UserError("ليست لديك صلاحية لهذا الإجراء على الطلب في حالته الحالية.");
   }
   const note = input.note?.trim() ?? "";

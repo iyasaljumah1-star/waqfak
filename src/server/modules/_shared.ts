@@ -32,7 +32,7 @@ export async function waqfAction(waqfId: string, perm: Permission, fn: (c: WaqfC
     const { ip, userAgent } = await requestInfo();
     const res = await withContext(auth.db, async (tx) => {
       const access = await loadWaqfAccess(tx, auth, waqfId);
-      if (!access) throw new ForbiddenError("لا يمكنك الوصول إلى هذا الوقف.");
+      if (!access) throw new ForbiddenError("لا تشمل صلاحياتك هذا الوقف. اطلب من ناظره دعوتك إليه.");
       if (!access.perms.has(perm)) throw new ForbiddenError();
       return fn({ auth, access, tx, ip, userAgent });
     });

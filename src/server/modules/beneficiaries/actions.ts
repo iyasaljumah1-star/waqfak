@@ -175,7 +175,7 @@ export async function createDistribution(_: ActionState, fd: FormData): Promise<
     if (d.bankAccountId) {
       const [ba] = await c.tx.select().from(bankAccounts).where(and(eq(bankAccounts.id, d.bankAccountId), eq(bankAccounts.waqfId, w.id))).limit(1);
       assertFound(ba, "الحساب البنكي ليس من حسابات هذا الوقف.");
-      if (!ba!.inWaqfName) throw new UserError("لا يُصرف من حساب ليس باسم الوقف. اختر حسابًا باسم الوقف.");
+      if (!ba!.inWaqfName) throw new UserError("يكون الصرف من حساب باسم الوقف. اختر حسابًا باسمه.");
     }
     const people = await c.tx
       .select({ id: beneficiaries.id, share: beneficiaries.entitlementShare })
@@ -203,7 +203,7 @@ export async function approveDistribution(_: ActionState, fd: FormData): Promise
     const [dist] = await c.tx.select().from(distributions).where(and(eq(distributions.id, d.distributionId), eq(distributions.waqfId, w.id))).limit(1);
     assertFound(dist);
     if (dist!.status !== "planned") throw new UserError("الكشف ليس بانتظار الاعتماد.");
-    if (dist!.createdBy === c.auth.user.id) throw new UserError("لا يعتمد الكشف من أعدّه (فصل المهام). يعتمده عضو آخر يملك صلاحية اعتماد الصرف.");
+    if (dist!.createdBy === c.auth.user.id) throw new UserError("يعتمد الكشفَ عضوٌ آخر غير من أعدّه، يملك صلاحية اعتماد الصرف (فصل المهام).");
     await c.tx.update(distributions).set({ status: "approved", updatedBy: c.auth.user.id }).where(eq(distributions.id, dist!.id));
     // Each line becomes the beneficiary's entitlement for the period (what /app/b shows to the beneficiary).
     const lines = await c.tx.select().from(distributionLines).where(eq(distributionLines.distributionId, dist!.id));

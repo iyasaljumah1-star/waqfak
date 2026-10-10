@@ -96,7 +96,7 @@ export async function setComplaintStatus(_: ActionState, fd: FormData): Promise<
   return waqfAction(waqfId, "complaints.handle", async (c) => {
     const [row] = await c.tx.select().from(complaints).where(and(eq(complaints.id, r.data.complaintId), eq(complaints.waqfId, waqfId))).limit(1);
     if (!row) throw new UserError("الطلب غير موجود.");
-    if (r.data.status === "closed" && !row.response) throw new UserError("ردّ على الطلب قبل إغلاقه؛ لا يُغلق طلب بلا رد موثق.");
+    if (r.data.status === "closed" && !row.response) throw new UserError("ردّ على الطلب قبل إغلاقه؛ فكل طلب يُغلق برد موثق.");
     if (row.status === "closed" && r.data.status !== "open") throw new UserError("الطلب مغلق.");
     await c.tx.update(complaints).set({ status: r.data.status, updatedBy: c.auth.user.id }).where(eq(complaints.id, row.id));
     await audit(c.tx, { actorUserId: c.auth.user.id, action: "complaints.status", entityType: "complaint", entityId: row.id, waqfId, ip: c.ip, userAgent: c.userAgent, before: { status: row.status }, after: { status: r.data.status } });

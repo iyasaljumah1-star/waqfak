@@ -84,7 +84,7 @@ export async function runExtraction(auth: Auth, waqfId: string, documentId: stri
     const access = await loadAccess(tx, auth, waqfId);
     const [doc] = await tx.select().from(documents).where(and(eq(documents.id, documentId), eq(documents.waqfId, waqfId))).limit(1);
     if (!doc || !canSeeDocumentSync(docAccess(auth, access), doc)) throw new UserError("الوثيقة غير موجودة أو لا تملك صلاحية الاطلاع عليها.");
-    if (doc.confidentiality === "secret") return { ok: false, message: "لا يعالج المساعد الوثائق السرية جدًا. أدخل بياناتها يدويًا من صفحة الوثيقة." };
+    if (doc.confidentiality === "secret") return { ok: false, message: "تُستثنى الوثائق «السرية جدًا» من المعالجة الآلية؛ أدخل بياناتها يدويًا من صفحة الوثيقة." };
     if (doc.archivedAt || doc.status === "rejected") return { ok: false, message: "الوثيقة مؤرشفة أو مرفوضة، فلا يمكن استخراج بياناتها." };
     const [v] = await tx.select().from(documentVersions).where(and(eq(documentVersions.documentId, doc.id), eq(documentVersions.version, doc.currentVersion))).limit(1);
     if (!v || v.scanStatus !== "clean") return { ok: false, message: "لم يكتمل فحص الملف الأمني بعد، أو لم يجتزه. أعد المحاولة بعد اكتمال الفحص." };

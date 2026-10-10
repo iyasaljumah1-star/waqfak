@@ -77,7 +77,7 @@ export async function approveDocument(_prev: ActionState, fd: FormData): Promise
   const { waqfId, docId } = r.data;
   return waqfAction(waqfId, "documents.approve", async (c) => {
     const d = await loadDoc(c, docId);
-    if (d.status !== "active") throw new UserError("لا يمكن اعتماد وثيقة لم تجتز الفحص أو مؤرشفة.");
+    if (d.status !== "active") throw new UserError("يُتاح الاعتماد للوثائق السارية التي اجتازت الفحص الأمني.");
     if (d.approvalStatus === "approved" || d.approvalStatus === "locked") throw new UserError("الوثيقة معتمدة مسبقًا.");
     const [cur] = await c.tx
       .select({ by: documentVersions.uploadedBy })
@@ -85,7 +85,7 @@ export async function approveDocument(_prev: ActionState, fd: FormData): Promise
       .where(and(eq(documentVersions.documentId, d.id), eq(documentVersions.version, d.currentVersion)))
       .limit(1);
     if (d.ownerUserId === c.auth.user.id || cur?.by === c.auth.user.id)
-      throw new UserError("لا يمكنك اعتماد وثيقة رفعتها بنفسك. اطلب اعتمادها من عضو آخر يملك الصلاحية.");
+      throw new UserError("رفعتَ هذه الوثيقة بنفسك؛ يعتمدها عضو آخر يملك صلاحية الاعتماد.");
     await c.tx.update(documents).set({ approvalStatus: "approved", updatedBy: c.auth.user.id }).where(eq(documents.id, d.id));
     await logAccess(c.tx, { documentId: d.id, waqfId: d.waqfId, userId: c.auth.user.id, action: "approve", ip: c.ip });
     await audit(c.tx, { actorUserId: c.auth.user.id, action: "documents.approve", entityType: "document", entityId: d.id, waqfId: d.waqfId, ip: c.ip, userAgent: c.userAgent, before: { approvalStatus: d.approvalStatus }, after: { approvalStatus: "approved", version: d.currentVersion } });
@@ -140,7 +140,7 @@ export async function createShareLink(_prev: ActionState, fd: FormData): Promise
   const { waqfId, docId, days, maxUses } = r.data;
   return waqfAction(waqfId, "documents.share", async (c) => {
     const d = await loadDoc(c, docId);
-    if (d.status !== "active" || d.archivedAt) throw new UserError("لا يمكن مشاركة وثيقة غير سارية أو مؤرشفة.");
+    if (d.status !== "active" || d.archivedAt) throw new UserError("تُتاح المشاركة للوثائق السارية غير المؤرشفة.");
     if (d.confidentiality === "secret") throw new UserError("لا تُشارك الوثائق «السرية جدًا» عبر روابط عامة. خفّض درجة السرية أولًا إن كان ذلك مناسبًا.");
     const token = randomToken(24);
     const expiresAt = new Date(Date.now() + days * 86_400_000);
@@ -150,7 +150,7 @@ export async function createShareLink(_prev: ActionState, fd: FormData): Promise
       .returning({ id: documentShares.id });
     await logAccess(c.tx, { documentId: d.id, waqfId: d.waqfId, userId: c.auth.user.id, action: "share", ip: c.ip });
     await audit(c.tx, { actorUserId: c.auth.user.id, action: "documents.share", entityType: "document", entityId: d.id, waqfId: d.waqfId, ip: c.ip, userAgent: c.userAgent, after: { shareId: s.id, expiresAt, maxUses } });
-    return { ok: true, message: "أُنشئ الرابط. انسخه الآن، فلن يظهر مرة أخرى.", data: { url: `${env.APP_URL}/s/${token}` } };
+    return { ok: true, message: "أُنشئ الرابط. انسخه الآن؛ فهو يظهر هذه المرة فقط.", data: { url: `${env.APP_URL}/s/${token}` } };
   }, docPath(waqfId, docId));
 }
 

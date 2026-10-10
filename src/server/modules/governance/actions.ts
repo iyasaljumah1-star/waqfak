@@ -257,7 +257,7 @@ export async function confirmQuorum(_: ActionState, fd: FormData): Promise<Actio
       quorumRequired: q.required, quorumMet: q.met, status: q.met ? "held" : m.status, heldAt: q.met ? (m.heldAt ?? new Date()) : m.heldAt, updatedBy: c.auth.user.id,
     }).where(eq(meetings.id, m.id));
     await audit(c.tx, { actorUserId: c.auth.user.id, action: "governance.quorum", entityType: "meeting", entityId: m.id, waqfId, ip: c.ip, userAgent: c.userAgent, after: q });
-    if (!q.met) return { error: `لم يكتمل النصاب: ${q.reasons.join(" ")} لا يجوز التصويت حتى يكتمل.` };
+    if (!q.met) return { error: `لم يكتمل النصاب: ${q.reasons.join(" ")} ويبدأ التصويت بعد اكتماله.` };
     return { ok: true, message: `اكتمل النصاب (${q.presentVoting} من ${q.votingMembers}، المطلوب ${q.required}). الاجتماع منعقد.` };
   }, mtg(waqfId, meetingId));
 }
@@ -330,7 +330,7 @@ export async function castVote(_: ActionState, fd: FormData): Promise<ActionStat
     const ins = await c.tx.insert(votes).values({ resolutionId: res.id, userId: c.auth.user.id, waqfId, value, reason: d.reason || null }).onConflictDoNothing().returning({ v: votes.value });
     if (!ins.length) throw new UserError("سُجّل صوتك على هذا القرار مسبقًا، والأصوات لا تُعدّل بعد الإدلاء بها.");
     await audit(c.tx, { actorUserId: c.auth.user.id, action: "governance.vote", entityType: "resolution", entityId: res.id, waqfId, ip: c.ip, userAgent: c.userAgent, after: { number: res.number, value } });
-    return { ok: true, message: "سُجّل صوتك. لا يمكن تعديله بعد الآن." };
+    return { ok: true, message: "سُجّل صوتك، وهو نهائي." };
   }, mtg(waqfId, meetingId));
 }
 
@@ -532,7 +532,7 @@ export async function lockMinutes(_: ActionState, fd: FormData): Promise<ActionS
     const now = new Date();
     await guardedMinutesUpdate(c, (tx) => tx.update(minutes).set({ status: "locked", approvedAt: now, lockedAt: now, updatedBy: c.auth.user.id }).where(eq(minutes.id, mn.id)));
     await audit(c.tx, { actorUserId: c.auth.user.id, action: "governance.minutes_lock", entityType: "minutes", entityId: mn.id, waqfId, ip: c.ip, userAgent: c.userAgent, after: { contentHash: mn.contentHash, signatures: signed.size } });
-    return { ok: true, message: "أُقفل المحضر. لا يمكن تعديله بعد الآن، وقراراته نافذة للتنفيذ." };
+    return { ok: true, message: "أُقفل المحضر وأصبح نهائيًا، وقراراته نافذة للتنفيذ." };
   }, [mtg(waqfId, meetingId), gov(waqfId)]);
 }
 

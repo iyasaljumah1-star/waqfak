@@ -88,7 +88,7 @@ export async function answerAssessment(tx: Tx, access: WaqfAccess): Promise<Cont
   if (!row) {
     return {
       blocks: [
-        { type: "p", text: "لا يوجد تقييم مكتمل لهذا الوقف بعد. التقييم الأساسي مجاني ويستغرق نحو 20 دقيقة، ويعطيك درجة لكل محور وتوصيات مرتبة." },
+        { type: "p", text: "لا يوجد تقييم مكتمل لهذا الوقف بعد. التقييم الأساسي مجاني ويستغرق نحو 15 دقيقة، ويعطيك درجة لكل محور وتوصيات مرتبة." },
         { type: "actions", items: [{ label: "ابدأ التقييم", href: `/app/w/${id}/assessments` }] },
       ],
       citations: [],

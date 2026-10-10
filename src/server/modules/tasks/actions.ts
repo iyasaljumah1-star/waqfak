@@ -35,12 +35,12 @@ async function withTask(taskId: string, fn: (c: Ctx & { t: typeof tasks.$inferSe
     let manage = false;
     if (t.waqfId) {
       const access = await loadWaqfAccess(c.tx, c.auth, t.waqfId);
-      if (!access || !access.perms.has("waqf.view")) throw new UserError("لا يمكنك الوصول إلى هذه المهمة.");
+      if (!access || !access.perms.has("waqf.view")) throw new UserError("لا تشمل صلاحياتك هذه المهمة.");
       manage = canManage(access);
     } else if (t.createdBy !== c.auth.user.id && t.assigneeUserId !== c.auth.user.id) {
-      throw new UserError("لا يمكنك الوصول إلى هذه المهمة.");
+      throw new UserError("لا تشمل صلاحياتك هذه المهمة.");
     }
-    if (!canSeeTask(t, { id: c.auth.user.id, isStaff: c.auth.isStaff })) throw new UserError("لا يمكنك الوصول إلى هذه المهمة.");
+    if (!canSeeTask(t, { id: c.auth.user.id, isStaff: c.auth.isStaff })) throw new UserError("لا تشمل صلاحياتك هذه المهمة.");
     const mine = t.assigneeUserId === c.auth.user.id || t.createdBy === c.auth.user.id;
     return fn({ ...c, t, manage: manage || (!t.waqfId && mine), mine });
   });

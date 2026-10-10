@@ -88,7 +88,7 @@ export async function approveBreakGlass(_: ActionState, fd: FormData): Promise<A
     const [g] = await tx.select().from(breakGlassAccess).where(eq(breakGlassAccess.id, r.data.id)).limit(1).for("update");
     if (!g) throw new UserError("الطلب غير موجود.");
     if (g.status !== "requested") throw new UserError("بُتّ في هذا الطلب مسبقًا.");
-    if (g.userId === auth.user.id) throw new UserError("لا يعتمد الشخص طلب وصوله الطارئ بنفسه. يعتمده مسؤول آخر.");
+    if (g.userId === auth.user.id) throw new UserError("يعتمد طلبَ الوصول الطارئ مسؤولٌ آخر غير مقدّمه.");
     const now = new Date();
     const expiresAt = new Date(now.getTime() + hours * 3_600_000);
     await tx.update(breakGlassAccess).set({ status: "approved", approvedBy: auth.user.id, approvedAt: now, expiresAt }).where(eq(breakGlassAccess.id, g.id));

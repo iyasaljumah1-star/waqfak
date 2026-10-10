@@ -67,7 +67,7 @@ export async function startTotp(): Promise<ActionState> {
 }
 
 export async function confirmTotp(_: ActionState, fd: FormData): Promise<ActionState> {
-  const r = parseForm(z.object({ factorId: z.uuid(), code: z.string().trim().regex(/^\d{6}$/, "الرمز من 6 أرقام.") }), fd);
+  const r = parseForm(z.object({ factorId: z.uuid(), code: z.string().trim().regex(/^\d{6}$/, "أدخل الرمز المكوّن من 6 أرقام.") }), fd);
   if ("state" in r) return { ...r.state, data: { factorId: fd.get("factorId"), secret: fd.get("secret"), qr: fd.get("qr") } };
   return userAction(
     async ({ auth, tx, ip, userAgent }) => {

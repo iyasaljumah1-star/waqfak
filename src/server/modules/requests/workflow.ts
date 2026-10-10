@@ -128,14 +128,14 @@ export type GuardInput = {
 export function guardTransition(g: GuardInput): string | null {
   const starting = (g.to === "quote" || g.to === "in_progress") && (g.from === "triage" || g.from === "awaiting_client" || g.from === "awaiting_contract");
   if (starting && g.conflictCheck === "blocked")
-    return "الطلب موقوف بسبب تعارض في الاستقلال. لا يبدأ العمل إلا بعد اعتماد مدير التشغيل استثناءً مسببًا.";
+    return "تعارض في الاستقلال: يبدأ العمل بعد اعتماد مدير التشغيل استثناءً مسببًا.";
   if (g.to === "quote" && !(g.quoteAmount && g.quoteAmount > 0)) return "حدّد مبلغ عرض السعر أولًا.";
   if (g.from === "triage" && g.to === "in_progress" && g.pricingModel !== "free" && g.hasContract && !g.contractSignedByClient)
     return "لم يوقّع العميل العقد بعد.";
-  if (g.from === "awaiting_contract" && g.to === "in_progress" && !g.contractSignedByClient) return "لا يبدأ التنفيذ قبل توقيع العميل على العقد.";
+  if (g.from === "awaiting_contract" && g.to === "in_progress" && !g.contractSignedByClient) return "يبدأ التنفيذ بعد توقيع العميل على العقد.";
   if (g.to === "quality_review" && g.submittedDeliverables === 0) return "ارفع مخرجًا واحدًا على الأقل قبل الإرسال لمراجعة الجودة.";
   if (g.from === "quality_review" && g.to === "awaiting_client_approval") {
-    if (g.deliverers.includes(g.actorUserId)) return "مبدأ العينين الأربع: لا يراجع جودة العمل من أعدّه. يجب أن يراجعه زميل آخر.";
+    if (g.deliverers.includes(g.actorUserId)) return "مبدأ العينين الأربع: يراجع جودةَ العمل زميلٌ آخر غير من أعدّه.";
     if (g.workflowCode === "opinion" && g.unsignedOpinionDeliverables > 0)
       return "الرأي المتخصص يجب أن يكون موقّعًا باسم المستشار وصفته قبل إرساله للعميل.";
   }

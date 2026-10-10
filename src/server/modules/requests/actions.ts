@@ -85,7 +85,7 @@ export async function createRequest(_: ActionState, fd: FormData): Promise<Actio
       .returning();
     newId = req.id;
     await createStages(tx, req.id, req.waqfId, wf?.stages ?? []);
-    await logEvent(tx, req, auth.user.id, conflict.result === "blocked" ? "أُرسل الطلب — موقوف لتعارض الاستقلال بانتظار قرار مدير التشغيل" : "أُرسل الطلب", "draft", "submitted");
+    await logEvent(tx, req, auth.user.id, conflict.result === "blocked" ? "أُرسل الطلب وأُحيل إلى مدير التشغيل لمراجعة الاستقلالية" : "أُرسل الطلب", "draft", "submitted");
     if (recId) await tx.update(recommendations).set({ status: "converted", serviceRequestId: req.id }).where(eq(recommendations.id, recId));
     await audit(tx, {
       actorUserId: auth.user.id, action: "requests.create", entityType: "service_request", entityId: req.id, waqfId: req.waqfId, ip, userAgent,

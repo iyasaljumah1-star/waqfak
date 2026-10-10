@@ -110,7 +110,7 @@ export async function ask(auth: Auth, waqfId: string, rawQuestion: string, meta:
         const k = await knowledgeAnswer(question).catch(() => null);
         if (k?.citations.length) {
           citations = k.citations.slice(0, 2);
-          blocks.push({ type: "p", text: "مواد عامة قد تفيدك قبل الاستشارة (ليست جوابًا عن حالتك):" });
+          blocks.push({ type: "p", text: "مواد تعريفية عامة تفيدك قبل الاستشارة:" });
           blocks.push({ type: "list", items: citations.map((c) => ({ text: c.title, href: c.href, meta: c.label, cite: c.n })) });
         }
       }
@@ -129,7 +129,7 @@ export async function ask(auth: Auth, waqfId: string, rawQuestion: string, meta:
         } else {
           intent = "no_answer";
           blocks = [
-            { type: "p", text: "لم أجد في المكتبة المنشورة مصدرًا يجيب عن سؤالك بدقة، ولا أجيب دون مصدر. جرّب صياغة أقصر بكلمات مفتاحية، أو تصفح المكتبة، أو اطلب رأي مختص." },
+            { type: "p", text: "لم أجد في المكتبة المنشورة مصدرًا يجيب عن سؤالك بدقة، وأجيب دائمًا من مصدر مذكور. جرّب صياغة أقصر بكلمات مفتاحية، أو تصفح المكتبة، أو اطلب رأي مختص." },
             { type: "actions", items: [{ label: "تصفح المكتبة", href: "/library" }, { label: "الأسئلة الشائعة", href: "/faq" }, { label: "اطلب استشارة", href: `/app/requests/new?service=C08&waqf=${waqfId}` }] },
           ];
         }

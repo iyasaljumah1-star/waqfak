@@ -83,7 +83,7 @@ export async function publishBankVersion(_: ActionState, fd: FormData): Promise<
     const qs = await c.tx.select().from(assessmentQuestions).where(eq(assessmentQuestions.bankVersionId, id));
     const flags = await c.tx.select({ code: criticalFlagDefs.code }).from(criticalFlagDefs);
     const problems = bankPublishProblems(axes, qs, flags.map((f) => f.code));
-    if (problems.length) throw new UserError(`لا يمكن النشر قبل إصلاح ما يلي: ${problems.slice(0, 6).join(" — ")}${problems.length > 6 ? ` (و${problems.length - 6} أخرى)` : ""}`);
+    if (problems.length) throw new UserError(`أصلح ما يلي قبل النشر: ${problems.slice(0, 6).join(" — ")}${problems.length > 6 ? ` (و${problems.length - 6} أخرى)` : ""}`);
     const now = new Date();
     const prev = await c.tx.select({ id: questionBankVersions.id, version: questionBankVersions.version }).from(questionBankVersions).where(and(eq(questionBankVersions.status, "published"), ne(questionBankVersions.id, id)));
     await c.tx.update(questionBankVersions).set({ status: "retired", updatedBy: c.auth.user.id }).where(and(eq(questionBankVersions.status, "published"), ne(questionBankVersions.id, id)));
