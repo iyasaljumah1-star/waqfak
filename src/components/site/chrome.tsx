@@ -67,7 +67,7 @@ export async function SiteFooter() {
               <span className="text-[25px] font-bold leading-none">وقفك</span>
             </Link>
             <p className="mt-4 max-w-sm text-[15px] leading-7 text-white/75">
-              خدمات متخصصة في الأوقاف: من تصميم الوقف ووثيقته وتسجيله، إلى نظارته وحوكمته وماليته واستثماره.
+              خدمات متخصصة في الأوقاف: من تصميم الوقف وصياغة وثيقته وتجهيز تسجيله، إلى حوكمته وماليته وامتثاله واستثماره.
             </p>
             <dl className="mt-6 space-y-1.5 text-[14px] text-white/75">
               <div className="flex gap-2">
@@ -110,9 +110,9 @@ export async function SiteFooter() {
         </div>
         <div className="mt-10 border-t border-white/15 pt-6 text-[13.5px] leading-7 text-white/65">
           <p>
-            ما في هذا الموقع من مقالات وأدلة وأدوات وتقييمات محتوى إرشادي عام، وليس فتوى شرعية ولا رأيًا قانونيًا ملزمًا في حالتك.
-            وقفك ليست جهة رسمية: لسنا الهيئة العامة للأوقاف ولا جهة توثيق. للرأي الملزم اطلب استشارة موقّعة من مختص.{" "}
-            <Link href="/legal/disclaimer" className="text-white underline underline-offset-4">إخلاء المسؤولية</Link>
+            محتوى الموقع وأدواته تعريفية، ولحالتك الخاصة يقدّم مستشارونا رأيًا مهنيًا موقّعًا. اطّلع على{" "}
+            <Link href="/legal/disclaimer" className="text-white underline underline-offset-4">إخلاء المسؤولية</Link> و
+            <Link href="/legal/terms" className="text-white underline underline-offset-4">الشروط والأحكام</Link>.
           </p>
           <p className="mt-3">© {year} {profile.nameAr ?? "شركة وقفك"}. بياناتك مشفّرة ومحفوظة داخل المملكة.</p>
         </div>

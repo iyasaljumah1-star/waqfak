@@ -80,7 +80,7 @@ export function FaqBrowser({ items, topics, initialAudience }: { items: FaqItem[
 
       <div className="min-w-0">
         <p role="status" aria-live="polite" className="text-[14px] text-muted">
-          {searching ? `${count} نتيجة للبحث عن «${dq.trim()}»` : `${count} سؤالًا`}
+          {searching ? `${count} نتيجة للبحث عن «${dq.trim()}»` : `${count === 1 ? "سؤال واحد" : count === 2 ? "سؤالان" : count >= 3 && count <= 10 ? `${count} أسئلة` : `${count} سؤالًا`}`}
         </p>
         {groups.length ? (
           <div className="mt-4 space-y-10">
@@ -111,7 +111,7 @@ export function FaqBrowser({ items, topics, initialAudience }: { items: FaqItem[
             <SearchX aria-hidden className="size-8 text-muted" />
             <p className="font-semibold">لا يوجد سؤال يطابق بحثك</p>
             <p className="max-w-md text-sm text-muted">
-              جرّب كلمة واحدة أوضح، أو <a href="/contact?topic=question" className="text-ink underline">أرسل سؤالك إلينا</a>.
+              جرّب كلمة أخرى أوضح، أو <a href="/contact?topic=question" className="text-ink underline">أرسل سؤالك إلينا</a>.
             </p>
           </div>
         )}

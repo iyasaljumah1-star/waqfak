@@ -10,7 +10,7 @@ import { getCatalog, getFaqs, getLibrary } from "@/server/modules/public/queries
 const COPY: Record<AudienceSlug, { title: string; lede: string; tools: { href: string; label: string }[]; serviceFilter: string; cta: { href: string; label: string } }> = {
   waqif: {
     title: "للواقف: وقفٌ يبقى كما أردته",
-    lede: "قبل أن توثّق وقفك، اختر الأصل والمصرف والنوع، واكتب شرطًا واضحًا يُنفَّذ بعدك دون خلاف. نصوغ معك الوثيقة أو الوصية، ونجهّز ملف التوثيق والتسجيل.",
+    lede: "قبل أن توثّق وقفك، حدّد الأصل والمصرف والنوع، واكتب شرطًا واضحًا يُنفَّذ بعدك دون خلاف. نصوغ معك الوثيقة أو الوصية، ونجهّز متطلبات توثيقها وتسجيلها، ونرافقك في إجراءاتها.",
     tools: [
       { href: "/tools/waqf-type", label: "اعرف نوع وقفك" },
       { href: "/tools/will-third", label: "احسب ثلث الوصية" },
@@ -20,7 +20,7 @@ const COPY: Record<AudienceSlug, { title: string; lede: string; tools: { href: s
   },
   nazir: {
     title: "للناظر ومجلس النظارة: اعرف ما يلزمك ومتى",
-    lede: "الناظر مسؤول نظامًا عن التسجيل والصرف والسجلات والإفصاح والموازنة والمستفيد الحقيقي، وعن مواعيد كل ذلك. نساندك بالأدوات والمراجعة، وتبقى أنت صاحب القرار.",
+    lede: "الناظر مسؤول نظامًا عن التسجيل والصرف والسجلات والإفصاح والموازنة والمستفيد الحقيقي، وعن الالتزام بمواعيدها. نساندك بالأدوات والمراجعة والخبرة المتخصصة، ويبقى القرار لك.",
     tools: [
       { href: "/tools/nazir-readiness", label: "قائمة جاهزية الناظر" },
       { href: "/tools/registration-deadline", label: "احسب موعد التسجيل" },
@@ -31,14 +31,14 @@ const COPY: Record<AudienceSlug, { title: string; lede: string; tools: { href: s
   },
   beneficiary: {
     title: "للمستفيد: اعرف حقك في غلة الوقف",
-    lede: "لك أن تطّلع على ما يخصك، وأن تسأل الناظر وتشتكي إليه ثم إلى الجهة المختصة. نشرح لك حقوقك وطرق المطالبة، ونقدم الاستشارة الشرعية والقانونية الموقّعة.",
+    lede: "من حقك أن تطّلع على ما يخصك، وأن تسأل الناظر وترفع إليه شكواك، ثم إلى الجهة المختصة. نوضح لك حقوقك وطرق المطالبة بها، ونقدم لك استشارة شرعية وقانونية موقّعة.",
     tools: [{ href: "/tools/waqf-type", label: "اعرف نوع الوقف" }],
     serviceFilter: "beneficiary",
     cta: { href: "/services/C08", label: "اطلب استشارة قانونية" },
   },
   entities: {
     title: "للجهات: أوقاف مؤسسية بحوكمة واضحة",
-    lede: "للجمعيات والمؤسسات والشركات الوقفية: إنشاء الأوقاف عبر جمع التبرعات بترخيصها، والصناديق والمحافظ الوقفية، والحوكمة والمستفيد الحقيقي والتقارير.",
+    lede: "للجمعيات والمؤسسات والشركات الوقفية: نساندكم في إنشاء الأوقاف عن طريق جمع التبرعات وفق ضوابطها، وفي الصناديق والمحافظ الوقفية، والحوكمة، والمستفيد الحقيقي، والتقارير.",
     tools: [{ href: "/tools/waqf-size", label: "حجم الوقف ومتطلباته" }],
     serviceFilter: "entity",
     cta: { href: "/contact?topic=entity", label: "تحدث مع فريقنا" },
@@ -94,7 +94,7 @@ export default async function AudiencePage({ params }: P) {
         <div className="space-y-12">
           {qs.length ? (
             <section aria-labelledby="faq">
-              <h2 id="faq" className="font-naskh text-[1.5rem] font-bold text-ink">أسئلة تتكرر</h2>
+              <h2 id="faq" className="font-naskh text-[1.5rem] font-bold text-ink">أسئلة شائعة</h2>
               <ul className="mt-3 divide-y divide-line border-y border-line">
                 {qs.map((f) => (
                   <li key={f.id}>

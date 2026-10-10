@@ -48,7 +48,7 @@ export function PreferencesForm({ rows }: { rows: PrefRow[] }) {
                   {r.title}
                   {r.locked ? (
                     <span className="mt-0.5 flex items-center gap-1 text-[12px] text-muted">
-                      <Lock aria-hidden className="size-3" /> إشعار أمني أو نظامي لا يمكن إيقافه
+                      <Lock aria-hidden className="size-3" /> إشعار أمني أو نظامي يصلك دائمًا
                     </span>
                   ) : null}
                 </th>

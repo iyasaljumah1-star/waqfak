@@ -433,12 +433,11 @@ function SWList({ items, empty }: { items: { code: string; text: string; axis: s
 export function Disclaimer() {
   return (
     <aside aria-labelledby="disc-title" className="rounded-lg border border-line bg-surface-2 p-4 text-[14px] leading-7 text-muted md:p-5">
-      <h2 id="disc-title" className="mb-1 font-semibold text-text">حدود هذه النتيجة</h2>
+      <h2 id="disc-title" className="mb-1 font-semibold text-text">عن هذه النتيجة</h2>
       <ul className="list-disc space-y-1 ps-5">
-        <li>هذا تشخيص استرشادي، وليس فتوى شرعية ولا رأيًا قانونيًا ملزمًا.</li>
-        <li>بُنيت النتيجة على إجاباتك كما أدخلتها، ولم نتحقق منها بمستندات إلا في التقييم المعمّق.</li>
-        <li>نذكر لكل ملاحظة مرجعها من الأنظمة واللوائح والأدلة الصادرة عن الهيئة العامة للأوقاف؛ ارجع إلى النص الرسمي عند التطبيق.</li>
-        <li>للمراجعة البشرية اختر التقييم المعمّق، أو اطلب استشارة من مختص.</li>
+        <li>نتيجة تقديرية مبنية على إجاباتك كما أدخلتها، ويتحقق منها التقييم المعمّق بالمستندات.</li>
+        <li>لكل ملاحظة مرجعها من الأنظمة واللوائح والأدلة الصادرة عن الهيئة العامة للأوقاف، ويُعتمد النص الرسمي النافذ عند التطبيق.</li>
+        <li>لتأكيد النتيجة في حالتك اختر التقييم المعمّق، أو اطلب استشارة موقّعة من مختص.</li>
       </ul>
     </aside>
   );

@@ -40,12 +40,12 @@ export function LoginForms({ next }: { next?: string }) {
           </Field>
           <FormMessage state={s2} />
           <SubmitButton className="w-full" pendingText="جارٍ التحقق…">ادخل</SubmitButton>
-          <p className="text-[13px] text-muted">بعد كلمة المرور نطلب عاملًا ثانيًا: تطبيق المصادقة أو رمزًا إلى جوالك.</p>
+          <p className="text-[13px] text-muted">بعد كلمة المرور نطلب تحققًا ثانيًا عبر تطبيق المصادقة أو رمز يصل إلى جوالك.</p>
         </form>
       )}
       <div className="flex flex-wrap justify-between gap-2 text-[15px]">
         <Link href="/signup" className="text-ink underline-offset-4 hover:underline">إنشاء حساب جديد</Link>
-        <Link href="/recover" className="text-muted underline-offset-4 hover:underline">لا أستطيع الدخول</Link>
+        <Link href="/recover" className="text-muted underline-offset-4 hover:underline">تعذّر عليّ الدخول</Link>
       </div>
     </div>
   );
@@ -133,7 +133,7 @@ export function RecoverForm() {
       <FormMessage state={s} />
       <SubmitButton className="w-full" pendingText="جارٍ الإرسال…">أرسل رمز الاستعادة</SubmitButton>
       <p className="text-[13px] text-muted">
-        بعد الاستعادة نُنهي جميع الجلسات المفتوحة على حسابك. إن فقدت جوالك وتطبيق المصادقة معًا، تواصل مع الدعم للتحقق اليدوي من هويتك (يستغرق 48 ساعة لحمايتك).
+        بعد الاستعادة نُنهي جميع الجلسات المفتوحة على حسابك. وإن فقدت جوالك وتطبيق المصادقة معًا، فتواصل مع الدعم للتحقق اليدوي من هويتك (يستغرق 48 ساعة حرصًا على أمان حسابك).
       </p>
     </form>
   );

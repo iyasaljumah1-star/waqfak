@@ -12,7 +12,7 @@ export default async function VerifyPage() {
     return (
       <div className="space-y-3">
         <h1 className="font-naskh text-3xl font-bold text-ink">انتهت صلاحية الطلب</h1>
-        <p className="text-muted">مرّت أكثر من 10 دقائق. ابدأ من جديد.</p>
+        <p className="text-muted">مرّت أكثر من 10 دقائق على الطلب. ابدأ من جديد.</p>
         <Link className="text-ink underline" href="/login">العودة إلى الدخول</Link>
       </div>
     );

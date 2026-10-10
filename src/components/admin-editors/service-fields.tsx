@@ -36,7 +36,7 @@ export function ServiceFields({ s, cats, wfs }: { s: Partial<Svc> | null; cats: 
         <CheckGroup name="audiences" options={AUDIENCES} selected={s?.audiences ?? []} />
       </EFieldset>
       <FieldGrid>
-        <EField label="قاعدة التعارض" name="conflictRule" hint="تمنع بيع الخدمة حين يتعارض دور وقفك في الوقف (لائحة النظارة م18/2، م15/4).">
+        <EField label="قاعدة التعارض" name="conflictRule" hint="تحجب الخدمة حين يتعارض دور وقفك في الوقف، حفاظًا على الاستقلال (لائحة النظارة م18/2، م15/4).">
           <Select name="conflictRule" defaultValue={s?.conflictRule ?? "none"} options={CONFLICT_RULES} />
         </EField>
         <EField label="الترخيص المطلوب" name="requiresLicenseKey" hint="مفتاح الترخيص في إعدادات الشركة، مثل gaa_nazara_license. تُحجب الخدمة حتى يُسجّل الترخيص.">

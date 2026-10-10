@@ -112,7 +112,7 @@ export default async function IdentityPage({ params }: { params: Promise<{ id: s
                 action={classifyWaqf}
                 hidden={{ waqfId: id }}
                 submitLabel="احسب واحفظ التصنيف"
-                footnote="التصنيف المحسوب استرشادي؛ عند الشك في وصف خيري على الذرية استشر مختصًا قبل اعتماده."
+                footnote="التصنيف محسوب آليًا؛ وإن تضمّن المصرف وصفًا خيريًا على الذرية فاعرضه على مختص قبل اعتماده."
                 fields={[
                   { name: "beneficiaryKind", label: "على من شرط الواقف صرف الغلة؟", type: "select", options: BENEFICIARY_KIND_OPTIONS, required: true, wide: true },
                   { name: "charitableQualifier", label: "إن كان على الذرية: هل قيّده بوصف خيري كالفقر أو الحاجة؟", type: "select", options: YES_NO },

@@ -38,7 +38,7 @@ export function TemplateCard({ t }: { t: TemplateView }) {
         <form action={action} className="space-y-3 border-t border-line px-4 py-4" noValidate>
           <input type="hidden" name="key" value={t.key} />
           <FormMessage state={s} />
-          {t.locked ? <p className="text-[13px] text-muted">قالب أمني أو نظامي: يمكن تحسين صياغته، ولا يمكن إيقاف قنواته أو خفض أهميته.</p> : null}
+          {t.locked ? <p className="text-[13px] text-muted">قالب أمني أو نظامي: تُحسَّن صياغته، وتبقى قنواته ودرجة أهميته ثابتة.</p> : null}
           <Field label="العنوان" name={`titleAr-${t.key}`} error={fe.titleAr} required>
             <Input name="titleAr" id={`titleAr-${t.key}`} defaultValue={t.titleAr} error={fe.titleAr} />
           </Field>

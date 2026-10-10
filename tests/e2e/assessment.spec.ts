@@ -88,7 +88,7 @@ async function completeRunner(page: Page, pick: (i: number, count: number) => nu
 test("anonymous visitor completes a quick assessment and sees the result", async ({ page }) => {
   await page.goto("/assessment");
   await expect(page.getByRole("heading", { level: 1 })).toContainText("اعرف أين يقف وقفك");
-  await expect(page.getByText("تشخيص، لا فتوى ولا رأي قانوني ملزم")).toBeVisible();
+  await expect(page.getByText("تشخيص بمرجع نظامي")).toBeVisible();
   // deep requires login
   await expect(page.locator("input[name=kind][value=deep]")).toBeDisabled();
   await shot(page, "start");
@@ -125,7 +125,7 @@ test("anonymous visitor completes a quick assessment and sees the result", async
   await expect(page.getByRole("img", { name: /مخطط عنكبوتي لدرجات محاور التقييم/ })).toBeVisible();
   await expect(page.getByText("مؤشر النضج").first()).toBeVisible();
   await expect(page.getByRole("heading", { name: "ما الذي تفعله الآن؟" })).toBeVisible();
-  await expect(page.getByText("هذا تشخيص استرشادي، وليس فتوى شرعية ولا رأيًا قانونيًا ملزمًا.")).toBeVisible();
+  await expect(page.getByText("نتيجة تقديرية مبنية على إجاباتك كما أدخلتها، ويتحقق منها التقييم المعمّق بالمستندات.")).toBeVisible();
   await expect(page.getByRole("link", { name: "أنشئ حسابًا" })).toBeVisible();
   await shot(page, "anon-result");
 

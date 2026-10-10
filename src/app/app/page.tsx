@@ -15,7 +15,7 @@ export const metadata: Metadata = { title: "الرئيسية" };
 const STARTS = [
   { href: "/assessment", icon: Gauge, title: "قيّم وقفك", text: "أسئلة قصيرة تكشف وضع الوقف النظامي ومواطن الخطر، وتخرج بتوصيات مرتبة." },
   { href: "/app/establish", icon: Sprout, title: "أسّس وقفًا جديدًا", text: "معالج يرتب معك الأصل والمصارف والنظارة ويجهز مسودة الوثيقة للتوثيق." },
-  { href: "/app/waqfs/new", icon: Landmark, title: "سجّل وقفًا قائمًا", text: "أدخل بيانات صك وقف موثّق ليُبنى له ملف والتزامات بمواعيدها." },
+  { href: "/app/waqfs/new", icon: Landmark, title: "سجّل وقفًا قائمًا", text: "أدخل بيانات صك وقف موثّق، ونبني له ملفًا والتزامات بمواعيدها." },
 ] as const;
 
 export default async function Dashboard() {

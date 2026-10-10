@@ -68,7 +68,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       "  obligations.csv                  حالة الالتزامات للسنة المالية",
       "  documents.csv                    فهرس الوثائق السارية (الملفات نفسها في خزنة الوثائق بالمنصة)",
       "",
-      "تصدير فقط: لا ربط تقني مع بوابة الهيئة العامة للأوقاف. المراجع والجزاءات المعلّمة «بانتظار التحقق» تُطابق مع النص الرسمي قبل الاعتماد عليها.",
+      "حزمة معدّة للتقديم عبر بوابة الهيئة العامة للأوقاف. وتُطابَق المراجع والجزاءات المعلّمة «بانتظار التحقق» مع النص الرسمي قبل الاعتماد عليها.",
       s.waqf.isDemo ? "بيانات تجريبية — لا تمثل وقفًا حقيقيًا." : "",
     ].join("\r\n");
     return { ...pdf, kind: "zip" as const, extra: [{ name: "obligations.csv", data: obligationsCsv }, { name: "documents.csv", data: docsCsv }, { name: "README.txt", data: "\uFEFF" + readme }], zipName: `${row.r.number}-annual-bundle.zip` };

@@ -32,7 +32,7 @@ export function MfaPanel({ enabled, isStaff }: { enabled: boolean; isStaff: bool
   if (codes)
     return (
       <div className="space-y-4">
-        <Alert tone="ok" title="فُعّل التحقق بخطوتين">احفظ أكواد الاسترداد الآن. لن نعرضها مرة أخرى.</Alert>
+        <Alert tone="ok" title="فُعّل التحقق بخطوتين">احفظ أكواد الاسترداد الآن؛ فهي تظهر هذه المرة فقط.</Alert>
         <p className="text-[15px]">
           كل كود يُستخدم مرة واحدة للدخول إن فقدت جوالك. احفظها في مكان آمن خارج الجوال (مدير كلمات مرور أو ورقة محفوظة).
         </p>
@@ -69,7 +69,7 @@ export function MfaPanel({ enabled, isStaff }: { enabled: boolean; isStaff: bool
           التحقق بخطوتين مفعّل بتطبيق المصادقة.
         </p>
         {isStaff ? (
-          <p className="text-sm text-muted">التحقق بخطوتين إلزامي لموظفي وقفك ولا يمكن إيقافه.</p>
+          <p className="text-sm text-muted">التحقق بخطوتين إلزامي لموظفي وقفك، ويبقى مفعّلًا دائمًا.</p>
         ) : (
           <details className="rounded-md border border-line p-3">
             <summary className="cursor-pointer text-[15px] text-muted">إيقاف التحقق بخطوتين</summary>

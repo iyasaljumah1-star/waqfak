@@ -201,7 +201,7 @@ test("feature flag changes require a reason and the nazara service follows its l
   await expect(row.getByText(/اذكر سبب التغيير/)).toBeVisible();
   await row.getByLabel(/سبب التفعيل/).fill("اختبار: محاولة تفعيل قبل صدور الترخيص");
   await row.getByRole("button", { name: "أكّد التفعيل" }).click();
-  await expect(row.getByText(/لا تُفعّل خدمة تولي النظارة قبل تفعيل ترخيص/)).toBeVisible();
+  await expect(row.getByText(/تُفعَّل خدمة تولي النظارة بعد تفعيل ترخيص/)).toBeVisible();
   await page.goto("/admin/settings");
   await expect(page.getByText(/خدمة .* \(N01\): غير متاحة/)).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/${info.project.name}-settings.png`, fullPage: true });

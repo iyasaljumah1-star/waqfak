@@ -122,7 +122,7 @@ export async function setFeatureFlag(_: ActionState, fd: FormData): Promise<Acti
     if (flag.key === NAZARA_FLAG && enabled) {
       const lic = (await readValue<License[]>(tx, "company.licenses", [])).find((l) => l.key === NAZARA_LICENSE);
       if (!lic?.active || !lic.number?.trim() || (lic.expiresOn && lic.expiresOn <= todayISO()))
-        throw new UserError("لا تُفعّل خدمة تولي النظارة قبل تفعيل ترخيص الهيئة العامة للأوقاف للناظر الاعتباري برقم ساري.");
+        throw new UserError("تُفعَّل خدمة تولي النظارة بعد تفعيل ترخيص الهيئة العامة للأوقاف للناظر الاعتباري برقم ساري. فعّل الترخيص أولًا.");
     }
     await tx.update(featureFlags).set({ enabled, reason: r.data.reason, updatedBy: auth.user.id, updatedAt: new Date() }).where(eq(featureFlags.key, flag.key));
     await audit(tx, {

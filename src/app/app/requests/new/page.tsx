@@ -12,9 +12,9 @@ import { recommendationForPrefill, requestableWaqfs } from "@/server/modules/req
 export const metadata: Metadata = { title: "طلب خدمة" };
 
 const CONFLICT_HINT: Record<string, string> = {
-  blocked_if_waqfak_nazir: "إن كانت وقفك ناظرًا لهذا الوقف فسيُوقف الطلب تلقائيًا لتعارض الاستقلال، ويقرر مدير التشغيل.",
-  blocked_if_waqfak_controls_finance: "إن كانت وقفك تنظر هذا الوقف أو تديره أو تمسك دفاتره فسيُوقف الطلب تلقائيًا لتعارض الاستقلال، ويقرر مدير التشغيل.",
-  inside_nazara_only: "هذه الخدمة تُقدَّم داخل نظارة وقفك فقط؛ لغير ذلك يُوقف الطلب لقرار مدير التشغيل.",
+  blocked_if_waqfak_nazir: "حرصًا على الاستقلالية، تُقدَّم هذه الخدمة للأوقاف التي لا تتولى وقفك نظارتها. إن كانت وقفك ناظرًا لهذا الوقف يُحال الطلب إلى مدير التشغيل ليقرر فيه.",
+  blocked_if_waqfak_controls_finance: "حرصًا على الاستقلالية، تُقدَّم هذه الخدمة للأوقاف التي لا تتولى وقفك نظارتها أو إدارتها أو مسك دفاترها. وفي غير ذلك يُحال الطلب إلى مدير التشغيل ليقرر فيه.",
+  inside_nazara_only: "تُقدَّم هذه الخدمة للأوقاف التي تتولى وقفك نظارتها. وفي غير ذلك يُحال الطلب إلى مدير التشغيل ليقرر فيه.",
 };
 
 export default async function NewRequestPage({ searchParams }: { searchParams: Promise<{ service?: string; waqf?: string; rec?: string }> }) {

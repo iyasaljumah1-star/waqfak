@@ -18,7 +18,7 @@ export default async function ContactPage({ searchParams }: { searchParams: Prom
 
   return (
     <>
-      <PageIntro crumbs={[{ label: "تواصل معنا" }]} title="تواصل معنا" lede="اكتب لنا ما تحتاجه، ونرد عليك خلال يومي عمل. إن كان سؤالك عن وقف بعينه فاذكر ما يكفي لفهم حالته دون بيانات حساسة." />
+      <PageIntro crumbs={[{ label: "تواصل معنا" }]} title="تواصل معنا" lede="اكتب لنا ما تحتاجه، ونرد عليك خلال يومي عمل. وإن كان سؤالك عن وقف بعينه، فاذكر ما يكفي لفهم حالته دون بيانات حساسة." />
       <Container className="grid gap-12 py-10 lg:grid-cols-[minmax(0,1fr)_320px]">
         <section aria-label="نموذج التواصل" className="min-w-0">
           {refCode ? (
@@ -31,10 +31,10 @@ export default async function ContactPage({ searchParams }: { searchParams: Prom
         <aside className="space-y-6 text-[15px] leading-7">
           <Point icon={Clock} title="متى نرد">خلال يومي عمل (الأحد إلى الخميس).</Point>
           <Point icon={FileQuestion} title="قبل أن تكتب">
-            قد تجد جوابك في <Link href="/faq" className="text-ink underline underline-offset-4">الأسئلة الشائعة</Link>. وإن أردت معرفة وضع وقفك فابدأ{" "}
+            قد تجد إجابتك في <Link href="/faq" className="text-ink underline underline-offset-4">الأسئلة الشائعة</Link>. وإن أردت معرفة وضع وقفك فابدأ{" "}
             <Link href="/assessment" className="text-ink underline underline-offset-4">بالتقييم المجاني</Link>.
           </Point>
-          <Point icon={ShieldCheck} title="بياناتك">نستخدم ما تكتبه للرد عليك فقط، ولا نشاركه مع أحد.</Point>
+          <Point icon={ShieldCheck} title="بياناتك">نستخدم ما تكتبه للرد عليك فقط، وفق <Link href="/legal/privacy" className="text-ink underline underline-offset-4">سياسة الخصوصية</Link>.</Point>
           {profile.email || profile.phone ? (
             <div className="border-t border-line pt-5">
               <p className="font-semibold">قنوات أخرى</p>

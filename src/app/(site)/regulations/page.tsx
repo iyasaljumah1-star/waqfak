@@ -18,7 +18,7 @@ export default async function RegulationsPage() {
       <PageIntro
         crumbs={[{ label: "الأنظمة واللوائح" }]}
         title="الأنظمة واللوائح"
-        lede="ملخص لكل نظام أو لائحة أو دليل نبني عليه عملنا: ما الذي ينظّمه، ومن يخاطب، وأهم مواده. الملخص للفهم، والمرجع الملزم هو النص الرسمي لدى مصدره."
+        lede="ملخص لكل نظام أو لائحة أو دليل نستند إليه في خدماتنا: ما ينظّمه، ومن يخاطب، وأهم مواده، مع الإحالة إلى النص الرسمي المعتمد لدى مصدره."
       />
       <Container className="py-10">
         <ol className="divide-y divide-line border-y border-line">

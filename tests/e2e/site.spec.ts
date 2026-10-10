@@ -72,7 +72,7 @@ test("services: filter, open a service, CTA goes to request form", async ({ page
 
   // License-gated service is labeled and cannot be requested
   await page.goto("/services/N01");
-  await expect(page.getByText("قريبًا — بانتظار الترخيص").first()).toBeVisible();
+  await expect(page.getByText("تُتاح بعد اعتماد الترخيص").first()).toBeVisible();
   await expect(page.getByRole("link", { name: "اطلب الخدمة" })).toHaveCount(0);
 });
 
@@ -158,7 +158,7 @@ test("tools compute indicative results", async ({ page }) => {
 
   // 1) waqf type
   await page.goto("/tools/waqf-type");
-  await expect(page.getByText("أداة استرشادية")).toBeVisible();
+  await expect(page.getByText("تحسب الأداة نتيجة تقديرية")).toBeVisible();
   await page.getByLabel(/أشخاص معيّنون/).check();
   await page.getByLabel(/بوصف كالفقر أو الحاجة/).check();
   await expect(result).toHaveText("وقف عام (خيري)");
@@ -208,7 +208,7 @@ test("legal and about pages render from content", async ({ page }) => {
   }
   await page.goto("/about");
   await expect(page.getByRole("heading", { name: "بيانات الشركة والتراخيص" })).toBeVisible();
-  await expect(page.getByText("بانتظار الترخيص")).toBeVisible();
+  await expect(page.getByText("تُتاح خدمات النظارة بعد اعتماده")).toBeVisible();
 });
 
 test("404, sitemap and robots", async ({ page, request }) => {

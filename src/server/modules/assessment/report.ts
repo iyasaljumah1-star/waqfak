@@ -59,7 +59,7 @@ export function assessmentReportHtml(b: ResultBundle, opts: { generatedAt?: Date
       <dt>تاريخ الحساب</dt><dd>${esc(gregorian(computed))} م — ${esc(hijri(computed))}</dd>
       <dt>تاريخ إصدار التقرير</dt><dd>${esc(gregorian(now))} م — ${esc(hijri(now))}</dd>
     </dl>
-    <p class="small muted" style="margin-top:6mm">تشخيص استرشادي مبني على إجابات المستخدم، وليس فتوى ولا رأيًا قانونيًا ملزمًا.</p>
+    <p class="small muted" style="margin-top:6mm">نتيجة تقديرية مبنية على إجابات المستخدم، ويكملها رأي المختص عند الحاجة.</p>
   </div>
 </section>`;
 
@@ -137,12 +137,11 @@ export function assessmentReportHtml(b: ResultBundle, opts: { generatedAt?: Date
   <ul class="small">${[...refs].sort().map((r) => `<li>${esc(r)}</li>`).join("")}</ul>
 </section>
 <section class="box stone avoid-break" style="margin-top:10mm">
-  <b>حدود هذا التقرير</b>
+  <b>عن هذا التقرير</b>
   <ul class="small">
-    <li>تشخيص استرشادي، وليس فتوى شرعية ولا رأيًا قانونيًا ملزمًا.</li>
-    <li>بُني على إجابات المستخدم كما أدخلها${b.row.reviewedAt ? "، وراجعه مختص من وقفك" : "، ولم يُتحقق منها بمستندات"}.</li>
-    <li>المراجع مذكورة للاسترشاد؛ يُرجع إلى النص الرسمي النافذ عند التطبيق.</li>
-    <li>للمراجعة البشرية: التقييم المعمّق أو طلب استشارة من مختص عبر المنصة.</li>
+    <li>نتيجة تقديرية مبنية على إجابات المستخدم كما أدخلها${b.row.reviewedAt ? "، وراجعها مختص من وقفك" : "، قبل التحقق منها بالمستندات"}.</li>
+    <li>المراجع مذكورة للإحالة، ويُعتمد النص الرسمي النافذ عند التطبيق.</li>
+    <li>لتأكيد النتيجة في حالتك: التقييم المعمّق، أو استشارة موقّعة من مختص عبر المنصة.</li>
   </ul>
   <p class="ref">إصدار بنك الأسئلة وقواعد التوصيات محفوظ مع التقييم؛ إعادة الحساب بالإجابات نفسها تعطي النتيجة نفسها.</p>
 </section>`;

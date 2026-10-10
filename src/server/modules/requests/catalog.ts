@@ -32,14 +32,14 @@ export function serviceAvailability(
   flags: Map<string, { enabled: boolean; reason: string | null }>,
   licenses: License[],
 ): Availability {
-  if (!svc.isActive) return { available: false, reason: "الخدمة موقوفة حاليًا." };
+  if (!svc.isActive) return { available: false, reason: "توقف استقبال طلبات هذه الخدمة مؤقتًا." };
   for (const key of [SERVICE_FLAGS[svc.code], `service.${svc.code}`, `service.${svc.code.toLowerCase()}`]) {
     const f = key ? flags.get(key) : undefined;
-    if (f && !f.enabled) return { available: false, reason: f.reason ?? "غير متاحة حاليًا." };
+    if (f && !f.enabled) return { available: false, reason: f.reason ?? "تُتاح هذه الخدمة لاحقًا." };
   }
   if (svc.requiresLicenseKey) {
     const lic = licenses.find((l) => l.key === svc.requiresLicenseKey);
-    if (!lic || lic.active === false || !String(lic.number ?? "").trim()) return { available: false, reason: "بانتظار الترخيص" };
+    if (!lic || lic.active === false || !String(lic.number ?? "").trim()) return { available: false, reason: "تُتاح بعد اعتماد ترخيص الهيئة العامة للأوقاف للناظر الاعتباري." };
   }
   return { available: true };
 }

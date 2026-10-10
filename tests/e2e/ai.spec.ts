@@ -27,7 +27,7 @@ test.describe("assistant — nazir on waqf A", () => {
     await expect(ob).toContainText("تحديث سجل المستفيد الحقيقي");
     const obLink = ob.locator(`a[href^="/app/w/${A()}/compliance#i-"]`).first();
     await expect(obLink).toBeVisible();
-    await expect(ob.getByTestId("ai-disclosure")).toHaveText(/إجابة آلية استرشادية — ليست فتوى ولا رأيًا قانونيًا ملزمًا/);
+    await expect(ob.getByTestId("ai-disclosure")).toHaveText(/إجابة آلية مستندة إلى المصادر المذكورة؛ وللرأي المهني في حالتك اطلب استشارة موقّعة/);
     await ob.getByRole("button", { name: /عرض المصادر/ }).click();
     await expect(ob.getByTestId("ai-sources")).toContainText("سجل الالتزامات النظامية لوقفك");
 
@@ -83,7 +83,7 @@ test.describe("assistant — nazir on waqf A", () => {
     const okRes = await page.request.post("/api/ai/ask", { data: { waqfId: A(), question: "رقمي 0551234567 ما مهلة تسجيل الوقف؟" } });
     expect(okRes.status()).toBe(200);
     const body = await okRes.json();
-    expect(body.disclosure).toContain("ليست فتوى");
+    expect(body.disclosure).toContain("استشارة موقّعة");
     expect(body.citations.length).toBeGreaterThan(0);
   });
 });

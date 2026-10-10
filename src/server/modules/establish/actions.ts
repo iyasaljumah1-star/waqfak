@@ -241,8 +241,8 @@ export async function finishEstablish(_: ActionState, fd: FormData): Promise<Act
     }
     const text = buildDeedDraft(st, t);
     const finished = { ...st, finishedAt: new Date().toISOString(), deedText: text };
-    await tx.update(deedVersions).set({ body: text, structured: finished as unknown as Record<string, unknown>, changeNote: "مسودة استرشادية مولّدة من معالج التأسيس — تتطلب مراجعة قانونية وشرعية", updatedBy: uid }).where(eq(deedVersions.id, d.versionId));
-    await tx.insert(waqfTimelineEvents).values({ waqfId: w.id, type: "establish", occurredOn: t, title: "إعداد مسودة وثيقة الوقف", details: "مسودة استرشادية تتطلب مراجعة قانونية وشرعية قبل التوثيق.", stage: 1, createdBy: uid });
+    await tx.update(deedVersions).set({ body: text, structured: finished as unknown as Record<string, unknown>, changeNote: "مسودة أولية من معالج التأسيس، للمراجعة الشرعية والقانونية قبل التوثيق", updatedBy: uid }).where(eq(deedVersions.id, d.versionId));
+    await tx.insert(waqfTimelineEvents).values({ waqfId: w.id, type: "establish", occurredOn: t, title: "إعداد مسودة وثيقة الوقف", details: "مسودة أولية للمراجعة الشرعية والقانونية قبل التوثيق.", stage: 1, createdBy: uid });
     await audit(tx, { actorUserId: uid, action: "establish.finished", entityType: "waqf", entityId: w.id, waqfId: w.id, ip, userAgent, after: { name: st.waqfName, legalType: type.type, nazirMode, sizeClass, assets: st.assets.length, classes: classRows.length, conditions: st.conditions.length } });
     await syncWaqfObligations(tx, w.id);
     return { ok: true };

@@ -1,6 +1,6 @@
 /** Types shared by the assistant engine, the API and the client UI (no server imports). */
 
-export const AI_DISCLOSURE = "إجابة آلية استرشادية — ليست فتوى ولا رأيًا قانونيًا ملزمًا";
+export const AI_DISCLOSURE = "إجابة آلية مستندة إلى المصادر المذكورة؛ وللرأي المهني في حالتك اطلب استشارة موقّعة";
 
 export type CitationKind = "content" | "faq" | "glossary" | "requirement" | "data";
 

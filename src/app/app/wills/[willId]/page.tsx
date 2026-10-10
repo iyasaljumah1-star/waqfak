@@ -33,7 +33,7 @@ export default async function WillPage({ params }: { params: Promise<{ willId: s
       <Panel title="المخطط">
         <WillPlanner action={saveWill} willId={willId} plan={data.plan} />
       </Panel>
-      <DeedPaper title="وصية بوقف" label="نص استرشادي يتطلب مراجعة شرعية وقانونية قبل التوثيق" testId="will-draft">
+      <DeedPaper title="وصية بوقف" label="مسودة أولية للمراجعة الشرعية والقانونية قبل التوثيق" testId="will-draft">
         <DeedText text={text} />
       </DeedPaper>
       <Panel title="الخطوة التالية">

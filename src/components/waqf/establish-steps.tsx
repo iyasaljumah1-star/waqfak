@@ -113,7 +113,7 @@ export function ClassificationFields({ initial, temporaryAllowed }: { initial: {
         <p className="text-[13px] font-medium text-seal">النوع المحسوب</p>
         <p className="text-lg font-semibold text-ink">{t.type ? TYPE_AR[t.type] : "أجب عن السؤال الأول"}</p>
         {t.reason ? <p className="mt-1 text-[14px] leading-7">{t.reason}</p> : null}
-        <p className="mt-2 text-[12px] text-muted">التصنيف استرشادي وفق الدليل الاسترشادي لتصنيف أنواع الوقف، ويُؤكَّد عند المراجعة الشرعية والقانونية.</p>
+        <p className="mt-2 text-[12px] text-muted">تصنيف أولي وفق الدليل الاسترشادي لتصنيف أنواع الوقف، يُؤكَّد في المراجعة الشرعية والقانونية.</p>
       </div>
     </div>
   );

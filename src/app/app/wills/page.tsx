@@ -20,7 +20,7 @@ export default async function WillsPage() {
     <div className="space-y-6">
       <PageHeader
         title="الوصية بالوقف"
-        description="خطّط لوقف يُنشأ بعد وفاتك: قدّر تركتك، وتحقق أن الوصية في حدود الثلث، واحصل على مسودة نص استرشادية تراجعها مع مختص قبل توثيقها."
+        description="خطّط لوقف يُنشأ بعد وفاتك: قدّر تركتك، وتحقق أن الوصية في حدود الثلث، واحصل على مسودة أولية للوصية تراجعها مع مختص قبل توثيقها."
         actions={<ActionButton action={startWill} hidden={{}} label="ابدأ مخطط وصية" variant="primary" size="md" />}
       />
       <Alert tone="info" title="قاعدة الثلث">

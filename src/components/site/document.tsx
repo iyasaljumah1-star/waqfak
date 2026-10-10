@@ -71,10 +71,13 @@ export function ContentDocument({ item, crumbs, after, showKind = true }: { item
             </section>
           ) : null}
 
-          <p className="mt-8 max-w-[68ch] rounded-md bg-surface-2 p-4 text-[14px] leading-7 text-muted">
-            هذا محتوى إرشادي عام، وليس فتوى ولا رأيًا قانونيًا في حالتك. الأنظمة تتغير، فتحقق من النص النافذ لدى مصدره، أو{" "}
-            <Link href="/services/C08" className="font-medium text-ink underline underline-offset-4">اطلب استشارة موقّعة</Link>.
-          </p>
+          {showKind ? (
+            <p className="mt-8 max-w-[68ch] rounded-md bg-surface-2 p-4 text-[14px] leading-7 text-muted">
+              محتوى تعريفي يساعدك على فهم أحكام الوقف ومتطلباته، {item.lastVerifiedAt ? "تحققنا من مراجعه في " : "حُدِّث في "}
+              <time dateTime={new Date(updated).toISOString().slice(0, 10)}>{fmtDate(updated)}</time>. ولتطبيقه على حالتك، يقدّم مستشارونا{" "}
+              <Link href="/services/C08" className="font-medium text-ink underline underline-offset-4">رأيًا مهنيًا موقّعًا</Link>.
+            </p>
+          ) : null}
           {after}
         </div>
 

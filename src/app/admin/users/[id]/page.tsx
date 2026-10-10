@@ -62,7 +62,7 @@ export default async function UserPage({ params, searchParams }: { params: Promi
       ) : null}
       {u.isStaff && !u.mfaEnabled ? (
         <Alert tone="warn" className="mb-6" title="لم يُكمل التهيئة">
-          لن يصل هذا الحساب إلى لوحة الإدارة حتى يسجل تطبيق المصادقة عند دخوله التالي.
+          تُفتح لوحة الإدارة لهذا الحساب بعد تسجيل تطبيق المصادقة في دخوله التالي.
         </Alert>
       ) : null}
 

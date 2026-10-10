@@ -29,7 +29,7 @@ export default async function ReportsPage({ params }: { params: Promise<{ id: st
     <div className="space-y-6">
       <PageHeader
         title="التقارير وحزم التصدير"
-        description="حزم جاهزة للتقديم إلى الهيئة العامة للأوقاف تُبنى من بيانات الوقف في لحظة إعدادها. التصدير فقط: لا يوجد ربط تقني مع بوابة الهيئة."
+        description="حزم جاهزة للتقديم إلى الهيئة العامة للأوقاف، تُبنى من بيانات الوقف لحظة إعدادها، وتُقدَّم عبر بوابة الهيئة."
         crumbs={[{ href: `/app/w/${id}`, label: access.waqf.name }, { label: "التقارير" }]}
       />
 
@@ -40,7 +40,7 @@ export default async function ReportsPage({ params }: { params: Promise<{ id: st
         </Panel>
         <div className="space-y-4">
           <Panel title="ملف المستفيد الحقيقي" description="سجل تفصيلي سري وفق معايير المستفيد الحقيقي (م5 وم6).">
-            {!canBo ? <p className="mb-3 text-[13px] text-muted">لا تملك صلاحية عرض المستفيد الحقيقي؛ ستُحجب الحقول المشفرة في نسختك.</p> : null}
+            {!canBo ? <p className="mb-3 text-[13px] text-muted">تُحجب الحقول المشفرة في نسختك، لأن صلاحيتك لا تشمل عرض بيانات المستفيد الحقيقي.</p> : null}
             <GenerateReportForm waqfId={id} pkg="bo" label="جهّز الملف" />
           </Panel>
           <Panel title="سجل الالتزامات" description="كل الالتزامات بحالاتها ومراجعها بصيغة CSV.">

@@ -36,7 +36,7 @@ export type Availability = { available: boolean; label: string | null; reason: s
 
 /** A service is offered only when active, its required license is active, and its feature flag (if any) is on. */
 function availability(s: typeof services.$inferSelect, licenses: License[], flags: Map<string, boolean>): Availability {
-  if (!s.isActive) return { available: false, label: "غير متاحة حاليًا", reason: "أوقفنا استقبال طلبات هذه الخدمة مؤقتًا." };
+  if (!s.isActive) return { available: false, label: "غير متاحة حاليًا", reason: "توقف استقبال طلبات هذه الخدمة مؤقتًا." };
   if (s.requiresLicenseKey) {
     const lic = licenses.find((l) => l.key === s.requiresLicenseKey);
     const flagKey = s.requiresLicenseKey === "gaa_nazara_license" ? "service.nazara" : null;
@@ -44,8 +44,8 @@ function availability(s: typeof services.$inferSelect, licenses: License[], flag
     if (!lic?.active || flagOff)
       return {
         available: false,
-        label: "قريبًا — بانتظار الترخيص",
-        reason: `تتطلب هذه الخدمة ${lic?.nameAr ?? "ترخيصًا نظاميًا"}${lic?.issuer ? ` من ${lic.issuer}` : ""}، ولن نقدمها قبل صدوره.`,
+        label: "تُتاح بعد اعتماد الترخيص",
+        reason: `تتطلب هذه الخدمة ${lic?.nameAr ?? "ترخيصًا نظاميًا"}${lic?.issuer ? ` من ${lic.issuer}` : ""}، وتُتاح بعد صدوره.`,
       };
   }
   return { available: true, label: null, reason: null };

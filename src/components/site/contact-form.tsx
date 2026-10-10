@@ -27,7 +27,7 @@ export function ContactForm({ defaultTopic, refCode }: { defaultTopic?: string; 
         <h2 className="text-xl font-semibold text-text">أُرسلت رسالتك</h2>
         <p className="text-[15.5px] leading-7">{state.message}</p>
         <p className="text-[14px] text-muted">
-          وإلى أن نرد، قد تجد جوابك في <Link href="/faq" className="text-ink underline underline-offset-4">الأسئلة الشائعة</Link> أو{" "}
+          وإلى أن نرد عليك، قد تجد إجابتك في <Link href="/faq" className="text-ink underline underline-offset-4">الأسئلة الشائعة</Link> أو{" "}
           <Link href="/library" className="text-ink underline underline-offset-4">المكتبة</Link>.
         </p>
       </div>
@@ -43,14 +43,14 @@ export function ContactForm({ defaultTopic, refCode }: { defaultTopic?: string; 
         <Field label="موضوع الرسالة" name="topic" required error={fe.topic}>
           <Select name="topic" required defaultValue={CONTACT_TOPICS.some((t) => t.value === defaultTopic) ? defaultTopic : "general"} options={CONTACT_TOPICS.map((t) => ({ value: t.value, label: t.label }))} error={fe.topic} />
         </Field>
-        <Field label="رقم الجوال" name="phone" hint="جوالك أو بريدك، أحدهما يكفي." error={fe.phone}>
+        <Field label="رقم الجوال" name="phone" hint="يكفي رقم الجوال أو البريد الإلكتروني." error={fe.phone}>
           <Input name="phone" type="tel" inputMode="tel" autoComplete="tel" dir="ltr" placeholder="05xxxxxxxx" className="text-end" error={fe.phone} />
         </Field>
         <Field label="البريد الإلكتروني" name="email" error={fe.email}>
           <Input name="email" type="email" autoComplete="email" dir="ltr" className="text-end" error={fe.email} />
         </Field>
       </div>
-      <Field label="رسالتك" name="body" required error={fe.body} hint="لا تكتب أرقام هويات أو حسابات بنكية هنا.">
+      <Field label="رسالتك" name="body" required error={fe.body} hint="حفاظًا على خصوصيتك، تجنّب كتابة أرقام الهوية أو الحسابات البنكية.">
         <Textarea name="body" required rows={6} maxLength={3000} error={fe.body} />
       </Field>
       {refCode ? <input type="hidden" name="ref" value={refCode} /> : null}

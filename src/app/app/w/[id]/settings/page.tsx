@@ -80,7 +80,7 @@ export default async function WaqfSettings({ params }: { params: Promise<{ id: s
                   if (m.status !== "active") return <span className="text-[13px] text-muted">—</span>;
                   if (m.roleKey === "agent") return <span className="text-[13px] text-muted">يُدار من الوكالات</span>;
                   if (PROTECTED_ROLES.includes(m.roleKey) && activeCount(m.roleKey) <= 1)
-                    return <span className="text-[13px] text-muted">آخر {roleName(m.roleKey)} نشط، فلا يُنهى قبل تعيين من يخلفه.</span>;
+                    return <span className="text-[13px] text-muted">آخر {roleName(m.roleKey)} نشط؛ تُنهى عضويته بعد تعيين من يخلفه.</span>;
                   return <EndMembershipForm waqfId={id} membershipId={m.id} name={m.name ?? "العضو"} />;
                 },
               },

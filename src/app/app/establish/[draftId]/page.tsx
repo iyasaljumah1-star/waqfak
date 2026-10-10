@@ -21,7 +21,7 @@ import { ASSET_CATEGORY_LABEL, CONDITION_CATEGORY_LABEL, FOUNDER_POWERS, options
 
 export const metadata: Metadata = { title: "معالج تأسيس الوقف" };
 
-const DRAFT_LABEL = "مسودة استرشادية تتطلب مراجعة قانونية وشرعية";
+const DRAFT_LABEL = "مسودة أولية للمراجعة الشرعية والقانونية قبل التوثيق";
 const input = "block h-11 w-full rounded-md border border-line-strong bg-surface px-3 text-[15px]";
 
 function L({ label, children, hint, className }: { label: string; children: React.ReactNode; hint?: string; className?: string }) {
@@ -183,7 +183,7 @@ export default async function EstablishDraftPage({ params, searchParams }: { par
               <L label="أو أجرة ثابتة سنوية (ريال)"><input name="feeFixed" inputMode="decimal" dir="ltr" defaultValue={st.nazara.feeFixed} className={input} /></L>
               <L label="واجبات أو صلاحيات إضافية للناظر" className="sm:col-span-2"><textarea name="duties" defaultValue={st.nazara.duties} maxLength={1500} className="block min-h-20 w-full rounded-md border border-line-strong bg-surface px-3 py-2" /></L>
             </div>
-            <Muted>الناظر الاعتباري يلزمه ترخيص من الهيئة. والأوقاف الكبيرة يُستحسن أن تُدار بمجلس نظارة فيه أعضاء مستقلون.</Muted>
+            <Muted>يلزم الناظرَ الاعتباري ترخيصٌ من الهيئة، ويُستحسن أن تُدار الأوقاف الكبيرة بمجلس نظارة يضم أعضاء مستقلين.</Muted>
           </WizardStepForm>
         </Panel>
       ) : null}
@@ -233,7 +233,7 @@ export default async function EstablishDraftPage({ params, searchParams }: { par
                     <ul className="space-y-0.5">{missing.map((m, i) => <li key={i}><Link className="underline" href={`/app/establish/${draftId}?step=${m.step}`}>الخطوة {m.step}</Link>: {m.text}</li>)}</ul>
                   </Alert>
                 ) : (
-                  <p className="text-[15px]">اعتماد المسودة ينشئ ملف الوقف ببياناته في المنصة (بحالة «مسودة») ويحفظ نص الوثيقة إصدارًا أول. يمكنك بعدها طلب الصياغة النهائية والتوثيق.</p>
+                  <p className="text-[15px]">باعتماد المسودة يُنشأ ملف الوقف ببياناته في المنصة (بحالة «مسودة»)، ويُحفظ نص الوثيقة إصدارًا أول. ثم تطلب الصياغة النهائية والتوثيق.</p>
                 )}
                 <div className="flex flex-wrap gap-2">
                   <ActionButton action={finishEstablish} hidden={{ draftId }} label="اعتمد المسودة وأنشئ ملف الوقف" variant="primary" size="md" />
@@ -242,13 +242,13 @@ export default async function EstablishDraftPage({ params, searchParams }: { par
               </div>
             ) : (
               <div className="space-y-3">
-                <p className="text-[15px]">لا تُوثَّق هذه المسودة كما هي: اطلب صياغتها النهائية بمراجعة شرعية وقانونية، ثم تجهيز ملف التوثيق والتسجيل.</p>
+                <p className="text-[15px]">المسودة جاهزة للخطوة التالية: صياغتها النهائية بمراجعة شرعية وقانونية، ثم تجهيز متطلبات التوثيق والتسجيل، ونرافقك في إجراءاتهما لدى الجهات المختصة.</p>
                 <div className="flex flex-wrap gap-2">
                   <ActionLink href={`/app/requests/new?service=T03&waqf=${draftId}`} variant="primary" data-testid="request-documentation">اطلب خدمة التوثيق — صياغة الوثيقة</ActionLink>
                   <ActionLink href={`/app/requests/new?service=T06&waqf=${draftId}`} variant="secondary">تجهيز ملف التوثيق والتسجيل</ActionLink>
                   <ActionLink href={`/app/w/${draftId}`} variant="ghost">افتح ملف الوقف</ActionLink>
                 </div>
-                <p className="flex items-center gap-2 text-[13px] text-muted"><Badge tone="seal" icon={false}>تنبيه</Badge> التوثيق يتم لدى الجهة المختصة عبر بوابة ناجز، ثم يُسجّل الوقف لدى الهيئة خلال 30 يوم عمل من توثيقه.</p>
+                <p className="flex items-center gap-2 text-[13px] text-muted"><Badge tone="seal" icon={false}>للعلم</Badge> يُوثَّق الوقف لدى الجهة المختصة عبر بوابة ناجز، ثم يُسجَّل لدى الهيئة خلال 30 يوم عمل من توثيقه.</p>
               </div>
             )}
           </Panel>

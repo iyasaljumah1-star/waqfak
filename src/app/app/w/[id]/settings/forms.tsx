@@ -138,7 +138,7 @@ export function DelegationForm({ waqfId, perms, today }: { waqfId: string; perms
       </div>
       <fieldset>
         <legend className="mb-1 text-[15px] font-medium">نطاق الوكالة</legend>
-        <p className="mb-2 text-[13px] text-muted">لا يتجاوز نطاق الوكيل هذه القائمة مهما اتسعت الوكالة، ويتقيد بما تحدده هنا.</p>
+        <p className="mb-2 text-[13px] text-muted">يتقيد الوكيل بالنطاق الذي تحدده هنا، حتى لو اتسعت الوكالة لأكثر منه.</p>
         <div className="grid gap-x-6 sm:grid-cols-2">
           {perms.map((p) => (
             <Checkbox key={p.value} name="perm" value={p.value} label={p.label} defaultChecked={chosen.size ? chosen.has(p.value) : p.value === "waqf.view"} />

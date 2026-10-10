@@ -53,7 +53,7 @@ export default async function StaffRequest({ params }: { params: Promise<{ id: s
       />
 
       {r.conflictCheck === "blocked" ? (
-        <Alert tone="critical" title="تعارض في الاستقلال — العمل موقوف">
+        <Alert tone="critical" title="تعارض استقلال — العمل متوقف حتى القرار">
           <p className="whitespace-pre-line">{r.conflictNote}</p>
           {ops ? (
             <details className="mt-3">
@@ -148,7 +148,7 @@ export default async function StaffRequest({ params }: { params: Promise<{ id: s
             </Panel>
           ) : null}
 
-          <Panel title="المخرجات" description={isOpinion ? "رأي متخصص: يجب توقيع المخرج باسم المستشار وصفته قبل اعتماد الجودة." : undefined}>
+          <Panel title="المخرجات" description={isOpinion ? "رأي متخصص: يُوقَّع المخرج باسم المستشار وصفته قبل اعتماد الجودة." : undefined}>
             {deliverables.length ? (
               <ul className="mb-4 divide-y divide-line">
                 {deliverables.map((x) => (

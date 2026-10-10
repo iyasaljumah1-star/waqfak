@@ -241,19 +241,19 @@ export function evaluateConflict(c: ConflictInput): ConflictResult {
     case "blocked_if_waqfak_controls_finance": {
       const controls = ["nazir", "delegated_manager", "bookkeeper"].includes(role) || c.openServiceCodes.includes("F03") || c.openServiceCodes.includes("N01") || c.openServiceCodes.includes("N04");
       return controls
-        ? { result: "blocked", note: "مبدأ استقلال المراجعة: وقفك تتولى النظارة أو الإدارة أو مسك الدفاتر لهذا الوقف، فلا يجوز أن تراجع أو تدقق عملها. المراجع لا يراجع نفسه. يلزم مراجع خارجي مستقل، أو استثناء مسبب يعتمده مدير التشغيل." }
+        ? { result: "blocked", note: "استقلال المراجعة: تتولى وقفك النظارة أو الإدارة أو مسك الدفاتر لهذا الوقف، وحرصًا على استقلال الرأي تُسند مراجعة عملها إلى مراجع خارجي مستقل، أو يعتمد مدير التشغيل استثناءً مسببًا." }
         : { result: "passed", note: null };
     }
     case "blocked_if_waqfak_nazir": {
       const nazir = role === "nazir" || c.openServiceCodes.includes("N01");
       return nazir
-        ? { result: "blocked", note: "مبدأ الاستقلال: وقفك هي ناظر هذا الوقف، فلا يجوز أن تقيّم أداء النظارة أو المجلس الذي تعمل فيه. المقيِّم لا يقيّم نفسه. يلزم مقيّم مستقل، أو استثناء مسبب يعتمده مدير التشغيل." }
+        ? { result: "blocked", note: "استقلال التقييم: وقفك هي ناظر هذا الوقف، وحرصًا على استقلال الرأي يُسند تقييم أداء النظارة أو المجلس الذي تعمل فيه إلى مقيّم مستقل، أو يعتمد مدير التشغيل استثناءً مسببًا." }
         : { result: "passed", note: null };
     }
     case "inside_nazara_only":
       return role === "nazir"
         ? { result: "passed", note: null }
-        : { result: "blocked", note: "هذه الخدمة تُقدَّم داخل نظارة وقفك فقط (ضمن أجر النظارة)، ولا تُقدَّم منفصلة لوقف لا تنظره وقفك، حفاظًا على استقلال المراجعة المالية لاحقًا." };
+        : { result: "blocked", note: "تُقدَّم هذه الخدمة للأوقاف التي تتولى وقفك نظارتها، ضمن أجر النظارة؛ حرصًا على استقلال المراجعة المالية لاحقًا." };
     default:
       return { result: "passed", note: null };
   }

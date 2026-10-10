@@ -23,7 +23,7 @@ export function RuleFields({ r, isNew, readOnly, needs, services, assessments }:
   return (
     <div className="space-y-6">
       <fieldset className="space-y-5">
-        {readOnly ? <p className="rounded-md bg-surface-2 px-3 py-2 text-[14px] text-muted">هذا الإصدار لا يُحفظ عليه تعديل. يمكنك تغيير الحقول هنا لتجربة بدائل في لوحة الاختبار فقط.</p> : null}
+        {readOnly ? <p className="rounded-md bg-surface-2 px-3 py-2 text-[14px] text-muted">هذا الإصدار منشور وثابت. غيّر الحقول هنا لتجربة بدائل في لوحة الاختبار دون حفظها.</p> : null}
         {r?.id ? <input type="hidden" name="ruleId" value={r.id} /> : null}
         {!isNew ? <input type="hidden" name="code" value={r?.code ?? ""} /> : null}
         <FieldGrid cols={3}>

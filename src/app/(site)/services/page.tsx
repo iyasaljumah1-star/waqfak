@@ -14,6 +14,7 @@ export const metadata: Metadata = {
 };
 
 const AUD = ["waqif", "nazir", "board", "beneficiary", "entity"];
+const serviceCount = (n: number) => (n === 1 ? "خدمة واحدة" : n === 2 ? "خدمتان" : n >= 3 && n <= 10 ? `${n} خدمات` : `${n} خدمة`);
 
 export default async function ServicesPage({ searchParams }: { searchParams: Promise<{ audience?: string; stage?: string }> }) {
   const sp = await searchParams;
@@ -37,7 +38,7 @@ export default async function ServicesPage({ searchParams }: { searchParams: Pro
       <PageIntro
         crumbs={[{ label: "الخدمات" }]}
         title="الخدمات"
-        lede="لكل خدمة نطاق ومخرجات ومدة معلنة. ما لا نسعّره مسبقًا نعطيك عرضه بعد دراسة حالتك، وما يقيّده النظام مكتوب في صفحته."
+        lede="لكل خدمة نطاق ومخرجات ومدة واضحة، وضوابطها النظامية مبيّنة في صفحتها. وما يتطلب تسعيره دراسة حالتك نرسل إليك عرضه بعد الاطلاع عليها."
       />
       <Container className="py-8 md:py-10">
         <div className="space-y-4" role="group" aria-label="تصفية الخدمات">
@@ -57,7 +58,7 @@ export default async function ServicesPage({ searchParams }: { searchParams: Pro
           </div>
         </div>
         <p className="mt-6 text-[14px] text-muted" role="status">
-          {total} خدمة{audience || stage ? " تطابق اختيارك" : ""}.
+          {serviceCount(total)}{audience || stage ? (total === 2 ? " تطابقان اختيارك" : " تطابق اختيارك") : ""}.
           {audience || stage ? <> <Link href="/services" className="font-medium text-ink underline underline-offset-4">أزل التصفية</Link></> : null}
         </p>
 
@@ -91,7 +92,7 @@ export default async function ServicesPage({ searchParams }: { searchParams: Pro
         ) : (
           <div className="mt-6">
             <EmptyState icon={SearchX} title="لا توجد خدمة تطابق هذا الاختيار">
-              جرّب مرحلة أخرى، أو <Link href="/services" className="text-ink underline">اعرض كل الخدمات</Link>، أو <Link href="/contact" className="text-ink underline">صف لنا حاجتك</Link>.
+              جرّب فئة أو مرحلة أخرى، أو <Link href="/services" className="text-ink underline">اعرض كل الخدمات</Link>، أو <Link href="/contact" className="text-ink underline">صف لنا حاجتك</Link>.
             </EmptyState>
           </div>
         )}

@@ -28,7 +28,7 @@ export default async function AboutPage() {
               <Fact label="السجل التجاري">{profile.crNumber || "—"}</Fact>
               {licenses.map((l) => (
                 <Fact key={l.key} label={l.nameAr}>
-                  {l.key === "gaa_nazara_license" && !l.active ? "بانتظار الترخيص" : l.number || "—"}
+                  {l.key === "gaa_nazara_license" && !l.active ? "تُتاح خدمات النظارة بعد اعتماده" : l.number || "—"}
                 </Fact>
               ))}
             </dl>

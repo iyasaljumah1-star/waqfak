@@ -59,7 +59,7 @@ export function DocAssist({ waqfId, docs, canDecide }: { waqfId: string; docs: A
   }
 
   if (!docs.length) {
-    return <p className="text-[15px] text-muted">لا توجد وثائق نصية (PDF أو Word أو نص) يمكن للمساعد قراءتها في هذا الوقف. الوثائق السرية جدًا لا تُعالج آليًا.</p>;
+    return <p className="text-[15px] text-muted">لا توجد وثائق نصية (PDF أو Word أو نص) يمكن للمساعد قراءتها في هذا الوقف. وتُستثنى الوثائق «السرية جدًا» من المعالجة الآلية حمايةً لها.</p>;
   }
 
   return (

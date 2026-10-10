@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { Clock, FileText, Info, Users } from "lucide-react";
 import { Alert, Badge, buttonClass } from "@/components/ui";
 import { Container, Crumbs, JsonLd, SITE_URL } from "@/components/site/bits";
-import { CONFLICT_LABEL, DEPARTMENT_LABEL, JOURNEY, PRICING_LABEL, priceText, SERVICE_AUDIENCE_LABEL } from "@/components/site/labels";
+import { availabilityCopy, CONFLICT_LABEL, DEPARTMENT_LABEL, JOURNEY, PRICING_LABEL, priceText, SERVICE_AUDIENCE_LABEL } from "@/components/site/labels";
 import { ServiceRow } from "@/components/site/service-row";
 import { daysAr } from "@/lib/utils";
 import { getService } from "@/server/modules/public/queries";
@@ -29,6 +29,7 @@ export default async function ServicePage({ params }: P) {
   const stage = JOURNEY.find((j) => j.stage === s.stage);
   const conflict = CONFLICT_LABEL[s.conflictRule] ?? null;
   const price = priceText(s.pricingModel, s.basePrice);
+  const off = availabilityCopy(s);
 
   return (
     <>
@@ -52,7 +53,7 @@ export default async function ServicePage({ params }: P) {
               <p className="flex flex-wrap items-center gap-2 text-[14px] text-muted">
                 <span className="tabular font-medium" dir="ltr">{s.code}</span>
                 {stage ? <span>مرحلة {stage.name}</span> : null}
-                {!s.availability.available ? <Badge tone="warn">{s.availability.label}</Badge> : null}
+                {off ? <Badge tone="warn">{off.label}</Badge> : null}
               </p>
               <h1 className="mt-2 font-naskh text-[1.9rem] font-bold leading-[1.5] text-ink md:text-[2.4rem]">{s.nameAr}</h1>
               <p className="mt-3 max-w-2xl text-[17px] leading-8 text-muted">{s.summary}</p>
@@ -66,28 +67,25 @@ export default async function ServicePage({ params }: P) {
                   ? "دون مقابل."
                   : s.basePrice
                     ? `${PRICING_LABEL[s.pricingModel]}، وتضاف ضريبة القيمة المضافة.`
-                    : `طريقة التسعير: ${PRICING_LABEL[s.pricingModel]}. نرسل لك العرض بعد الاطلاع على حالتك.`}
+                    : `طريقة التسعير: ${PRICING_LABEL[s.pricingModel]}. نرسل إليك العرض بعد الاطلاع على حالتك.`}
               </p>
               {s.availability.available ? (
                 <>
                   <Link href={`/app/requests/new?service=${encodeURIComponent(s.code)}`} className={buttonClass("primary", "lg", "mt-5 w-full")}>
                     اطلب الخدمة
                   </Link>
-                  <p className="mt-2 text-[13px] leading-6 text-muted">تحتاج حسابًا. نراجع طلبك ونرسل لك العرض والعقد قبل أي التزام.</p>
+                  <p className="mt-2 text-[13px] leading-6 text-muted">يُقدَّم الطلب من حسابك على المنصة، فندرسه ونرسل إليك العرض والعقد قبل أي التزام.</p>
                 </>
               ) : (
                 <>
-                  <span aria-disabled="true" className={buttonClass("secondary", "lg", "mt-5 w-full cursor-not-allowed opacity-60")}>
-                    غير متاحة للطلب الآن
-                  </span>
-                  <p className="mt-2 text-[13px] leading-6 text-muted">{s.availability.reason}</p>
-                  <Link href={`/contact?topic=service&service=${s.code}`} className="mt-2 inline-block text-[14px] font-medium text-ink underline underline-offset-4">
-                    تواصل معنا بشأنها
+                  <Link href={`/contact?topic=service&service=${s.code}`} className={buttonClass("secondary", "lg", "mt-5 w-full")}>
+                    {off?.gated ? "سجّل اهتمامك بالخدمة" : "تواصل معنا بشأن الخدمة"}
                   </Link>
+                  <p className="mt-2 text-[13px] leading-6 text-muted">{off?.reason}</p>
                 </>
               )}
               <div className="mt-4 border-t border-line pt-4">
-                <Link href="/assessment" className="text-[14px] font-medium text-ink underline underline-offset-4">لست متأكدًا؟ قيّم وقفك مجانًا أولًا</Link>
+                <Link href="/assessment" className="text-[14px] font-medium text-ink underline underline-offset-4">لست متأكدًا من حاجتك؟ ابدأ بتقييم وقفك مجانًا</Link>
               </div>
             </aside>
           </div>
@@ -120,7 +118,7 @@ export default async function ServicePage({ params }: P) {
                   {s.requiredDocuments.map((d) => (
                     <li key={d.docType} className="flex items-center justify-between gap-3 py-2.5 text-[15.5px]">
                       <span>{d.label}</span>
-                      <span className="text-[13px] text-muted">{d.required ? "مطلوب" : "إن وجد"}</span>
+                      <span className="text-[13px] text-muted">{d.required ? "مطلوب" : "إن وُجد"}</span>
                     </li>
                   ))}
                 </ul>
@@ -130,7 +128,7 @@ export default async function ServicePage({ params }: P) {
 
           {s.regulatoryRestrictions || conflict ? (
             <section aria-labelledby="limits">
-              <h2 id="limits" className="font-naskh text-[1.4rem] font-bold text-ink">حدود الخدمة وضوابطها</h2>
+              <h2 id="limits" className="font-naskh text-[1.4rem] font-bold text-ink">ضوابط الخدمة</h2>
               <div className="mt-3 space-y-3">
                 {s.regulatoryRestrictions ? <Alert tone="info">{s.regulatoryRestrictions}</Alert> : null}
                 {conflict ? <Alert tone="neutral">{conflict}</Alert> : null}
@@ -158,9 +156,9 @@ export default async function ServicePage({ params }: P) {
             {s.audiences.length ? (
               <Row icon={Users} label="تناسب">{s.audiences.map((a) => SERVICE_AUDIENCE_LABEL[a] ?? a).join("، ")}</Row>
             ) : null}
-            {s.departmentKey ? <Row icon={Info} label="ينفذها">{DEPARTMENT_LABEL[s.departmentKey] ?? s.departmentKey}</Row> : null}
+            {s.departmentKey ? <Row icon={Info} label="الفريق المنفّذ">{DEPARTMENT_LABEL[s.departmentKey] ?? s.departmentKey}</Row> : null}
             {inPackages.length ? (
-              <Row icon={FileText} label="مشمولة في باقة">
+              <Row icon={FileText} label="ضمن باقة">
                 {inPackages.map((p, i) => (
                   <span key={p.code}>
                     {i ? "، " : null}

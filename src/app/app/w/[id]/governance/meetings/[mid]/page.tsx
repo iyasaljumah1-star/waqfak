@@ -136,7 +136,7 @@ export default async function MeetingPage({ params }: { params: Promise<{ id: st
                           )}
                           {it.myVote ? <p className="text-[14px] font-medium" data-testid="my-vote">صوتك: {VOTE_AR[it.myVote as VoteValue]}</p> : null}
                           {r.status === "draft" && iConflicted && d.mySeat?.hasVote ? (
-                            <Alert tone="fine" title="أنت مستبعد من التصويت على هذا البند">أفصحت عن تعارض مصالح، فلا يحق لك التصويت عليه ولا تُحسب في نصابه.</Alert>
+                            <Alert tone="fine" title="أنت مستبعد من التصويت على هذا البند">أفصحتَ عن تعارض مصالح في هذا البند، لذا لا تصوّت عليه ولا تُحسب في نصابه.</Alert>
                           ) : null}
                           {canCast ? <VoteForm {...ids} resolutionId={r.id} needsDeclaration={!it.myDeclaration} /> : null}
                           {r.status === "draft" && manage ? <CloseVoteForm {...ids} resolutionId={r.id} /> : null}
@@ -200,7 +200,7 @@ export default async function MeetingPage({ params }: { params: Promise<{ id: st
               <div className="space-y-4">
                 {locked ? (
                   <Alert tone="ok" title="المحضر مقفل">
-                    أُقفل في {fmtDateTime(mn.lockedAt)} بعد توقيع جميع الحاضرين. لا يمكن تعديله؛ قاعدة البيانات ترفض أي تغيير عليه.
+                    أُقفل في {fmtDateTime(mn.lockedAt)} بعد توقيع جميع الحاضرين. وأصبح نهائيًا ومحميًا من أي تعديل.
                   </Alert>
                 ) : null}
                 <MinutesView body={mn.body} />
@@ -224,7 +224,7 @@ export default async function MeetingPage({ params }: { params: Promise<{ id: st
                 ) : null}
                 {mn.status === "circulated" && manage ? (
                   <div className="flex flex-wrap items-start gap-3 border-t border-line pt-4">
-                    <ActionButton action={lockMinutes} fields={{ ...ids, minuteId: mn.id }} label="أقفل المحضر" variant="primary" confirm="بعد الإقفال لا يمكن تعديل المحضر نهائيًا. متابعة؟" />
+                    <ActionButton action={lockMinutes} fields={{ ...ids, minuteId: mn.id }} label="أقفل المحضر" variant="primary" confirm="بعد الإقفال يصبح المحضر نهائيًا ولا يقبل التعديل. أتريد المتابعة؟" />
                     <ActionButton action={reopenMinutes} fields={{ ...ids, minuteId: mn.id }} label="أعده إلى مسودة" variant="ghost" confirm="ستُلغى التوقيعات الحالية. متابعة؟" />
                   </div>
                 ) : null}
@@ -246,7 +246,7 @@ export default async function MeetingPage({ params }: { params: Promise<{ id: st
           ) : null}
 
           <Panel title="الحضور والنصاب" description={m.quorumRequired ? `النصاب المطلوب ${m.quorumRequired} من الأعضاء المصوّتين${d.profile.requireIndependent ? " مع عضو مستقل" : ""}.` : undefined}>
-            {m.quorumMet === true ? <Alert tone="ok" title="اكتمل النصاب" className="mb-3">حضر {d.presentVoting} من الأعضاء المصوّتين.</Alert> : m.quorumMet === false ? <Alert tone="critical" title="لم يكتمل النصاب" className="mb-3">لا يجوز التصويت. أكمل الحضور ثم أعد التحقق.</Alert> : null}
+            {m.quorumMet === true ? <Alert tone="ok" title="اكتمل النصاب" className="mb-3">حضر {d.presentVoting} من الأعضاء المصوّتين.</Alert> : m.quorumMet === false ? <Alert tone="critical" title="لم يكتمل النصاب" className="mb-3">يبدأ التصويت بعد اكتمال النصاب. أكمل تسجيل الحضور ثم أعد التحقق.</Alert> : null}
             {manage && d.invited && !cancelled && (!mn || mn.status === "draft") ? (
               <div className="space-y-4">
                 <AttendanceForm {...ids} seats={d.seats} locked={false} />

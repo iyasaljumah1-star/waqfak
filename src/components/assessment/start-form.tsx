@@ -71,7 +71,7 @@ export function StartForm({ signedIn, waqfs, quickCount, deepCount, defaultKind,
                 <input type="radio" name="waqf" value="new" checked={waqf === "new"} onChange={() => setWaqf("new")} className="size-5 accent-[var(--ink)]" />
                 وقف غير مسجّل هنا
               </span>
-              <span className="text-[14px] text-muted">لن يُربط التقييم بأي ملف وقف. يمكنك ربطه لاحقًا.</span>
+              <span className="text-[14px] text-muted">يُحفظ التقييم دون ربطه بملف وقف، ويمكنك ربطه لاحقًا.</span>
             </label>
           </div>
           {waqfs.length ? <p className="mt-2 text-[13.5px] text-muted">تظهر الأوقاف التي تملك فيها صلاحية إجراء التقييم. نعبّئ إجابات ملف الوقف من بياناته لتراجعها.</p> : null}

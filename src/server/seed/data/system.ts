@@ -28,19 +28,19 @@ export const FEATURE_FLAGS = [
 ];
 
 export const NOTIFICATION_TEMPLATES = [
-  { key: "obligation.reminder", titleAr: "التزام نظامي يقترب: {title}", bodyAr: "الموعد {due} — {waqf}. المرجع: {reference}", severity: "important" as const, channels: ["in_app", "email"] },
+  { key: "obligation.reminder", titleAr: "موعد التزام نظامي يقترب: {title}", bodyAr: "الموعد {due} — {waqf}. المرجع: {reference}", severity: "important" as const, channels: ["in_app", "email"] },
   { key: "obligation.overdue", titleAr: "فات موعد التزام نظامي: {title}", bodyAr: "{waqf} — كان الموعد {due}. الجزاء المحتمل: {penalty}", severity: "critical" as const, channels: ["in_app", "email", "sms"], locked: true },
   { key: "request.status", titleAr: "تحديث على طلبك {number}", bodyAr: "الحالة الآن: {status}", severity: "info" as const, channels: ["in_app", "email"] },
-  { key: "request.awaiting_client", titleAr: "طلبك {number} بانتظارك", bodyAr: "{note}", severity: "important" as const, channels: ["in_app", "email"] },
+  { key: "request.awaiting_client", titleAr: "طلبك {number} بانتظار إجراء منك", bodyAr: "{note}", severity: "important" as const, channels: ["in_app", "email"] },
   { key: "request.assigned", titleAr: "طلب جديد مسند إليك: {number}", bodyAr: "{service} — {waqf}", severity: "important" as const, channels: ["in_app", "email"] },
   { key: "meeting.invite", titleAr: "دعوة لاجتماع: {title}", bodyAr: "{when} — {waqf}", severity: "important" as const, channels: ["in_app", "email"] },
   { key: "minutes.sign", titleAr: "محضر بانتظار توقيعك", bodyAr: "{title}", severity: "important" as const, channels: ["in_app", "email"] },
-  { key: "complaint.new", titleAr: "شكوى جديدة من مستفيد", bodyAr: "{subject} — يجب الرد قبل {due}", severity: "important" as const, channels: ["in_app", "email"] },
+  { key: "complaint.new", titleAr: "شكوى جديدة من مستفيد", bodyAr: "{subject} — موعد الرد: {due}", severity: "important" as const, channels: ["in_app", "email"] },
   { key: "complaint.answered", titleAr: "تم الرد على طلبك", bodyAr: "{subject}", severity: "info" as const, channels: ["in_app", "email"] },
   { key: "document.expiring", titleAr: "وثيقة تقترب من الانتهاء: {title}", bodyAr: "تنتهي في {date}", severity: "important" as const, channels: ["in_app", "email"] },
   { key: "invitation", titleAr: "دعوة للانضمام إلى ملف وقف", bodyAr: "دُعيت إلى {waqf} بصفة {role}", severity: "info" as const, channels: ["in_app", "sms"] },
-  { key: "security.new_login", titleAr: "دخول جديد إلى حسابك", bodyAr: "من {device} في {time}. إن لم يكن أنت فغيّر بيانات الدخول فورًا.", severity: "critical" as const, channels: ["in_app", "email"], locked: true },
-  { key: "invitation.accepted", titleAr: "قُبلت دعوتك", bodyAr: "{name} انضم إلى {waqf} بصفة {role}", severity: "info" as const, channels: ["in_app"] },
+  { key: "security.new_login", titleAr: "دخول جديد إلى حسابك", bodyAr: "من {device} في {time}. إن لم تكن أنت، فغيّر بيانات الدخول فورًا.", severity: "critical" as const, channels: ["in_app", "email"], locked: true },
+  { key: "invitation.accepted", titleAr: "قُبلت دعوتك", bodyAr: "انضم {name} إلى {waqf} بصفة {role}", severity: "info" as const, channels: ["in_app"] },
   { key: "assessment.reviewed", titleAr: "روجع تقييم وقفك من مختص", bodyAr: "{waqf}: الدرجة {score} — {status}", severity: "info" as const, channels: ["in_app", "email"] },
   { key: "assessment.ready", titleAr: "نتيجة تقييم وقفك جاهزة", bodyAr: "{waqf}: الدرجة {score} — {status}", severity: "info" as const, channels: ["in_app", "email"] },
   { key: "task.assigned", titleAr: "مهمة جديدة مسندة إليك: {title}", bodyAr: "{waqf} — الموعد {due}", severity: "important" as const, channels: ["in_app", "email"] },
@@ -48,7 +48,7 @@ export const NOTIFICATION_TEMPLATES = [
   { key: "breakglass.requested", titleAr: "طلب وصول طارئ بانتظار اعتمادك", bodyAr: "{name} يطلب وصولًا طارئًا إلى الوقف {waqf}.", severity: "important" as const, channels: ["in_app", "email"] },
   { key: "breakglass.approved", titleAr: "اعتُمد وصولك الطارئ", bodyAr: "الوقف {waqf} — لمدة {hours} ساعة. كل اطلاع مسجّل.", severity: "important" as const, channels: ["in_app"] },
   { key: "breakglass.waqf_notice", titleAr: "فُتح وصول طارئ على ملف وقفك", bodyAr: "{waqf} — لمدة {hours} ساعة لأغراض الدعم. يمكنك مراجعة سجل العمليات.", severity: "critical" as const, channels: ["in_app", "email"], locked: true },
-  { key: "security.mfa_reset", titleAr: "أُعيد ضبط التحقق بخطوتين في حسابك", bodyAr: "تم ذلك في {time} من فريق الدعم. إن لم تطلبه فتواصل معنا فورًا.", severity: "critical" as const, channels: ["in_app", "email", "sms"], locked: true },
+  { key: "security.mfa_reset", titleAr: "أُعيد ضبط التحقق بخطوتين في حسابك", bodyAr: "نفّذه فريق الدعم في {time}. إن لم تطلبه، فتواصل معنا فورًا.", severity: "critical" as const, channels: ["in_app", "email", "sms"], locked: true },
   { key: "privacy.request_closed", titleAr: "أُغلق طلبك المتعلق ببياناتك", bodyAr: "الحالة: {status}. {note}", severity: "info" as const, channels: ["in_app", "email"] },
   { key: "contact.new", titleAr: "رسالة تواصل جديدة: {topic}", bodyAr: "من {name}", severity: "info" as const, channels: ["in_app"] },
 ];
@@ -63,20 +63,20 @@ const SERVICE_CONTRACT = `# عقد تقديم خدمة رقم {{number}}
 ولا يُعد الطرف الأول نائبًا أو وكيلًا عن الطرف الثاني ما لم يصدر تفويض مستقل مكتوب.
 
 ## 2. المدة والمراحل
-تُنفذ الخدمة وفق مراحل سير العمل المبينة في المنصة، وتبدأ المدة المعيارية ({{sla_days}} يومًا) من اكتمال المستندات المطلوبة.
+تُنفَّذ الخدمة وفق مراحل سير العمل المبينة في المنصة، وتُحتسب المدة المعيارية ({{sla_days}} يومًا) من تاريخ اكتمال المستندات المطلوبة.
 
 ## 3. المقابل المالي
-{{price_clause}} وتضاف ضريبة القيمة المضافة. يجوز تعديل المقابل باتفاق مكتوب إذا تغيّر نطاق العمل.
+{{price_clause}} وتُضاف إليه ضريبة القيمة المضافة. ويجوز تعديل المقابل باتفاق مكتوب إذا تغيّر نطاق العمل.
 
 ## 4. حدود الخدمة والقيود النظامية
 {{restriction}}
-مخرجات المنصة الآلية استرشادية. الآراء الشرعية والقانونية تصدر موقّعة باسم المستشار وصفته.
+المخرجات الآلية للمنصة، كالتقييمات والتذكيرات، تقديرية مبنية على البيانات المدخلة ولا تُعد رأيًا مهنيًا. وتصدر الآراء الشرعية والقانونية مكتوبة موقّعة باسم المستشار وصفته.
 
 ## 5. السرية وحماية البيانات
-يلتزم الطرف الأول بسرية المعلومات وبمعالجة البيانات الشخصية للغرض المتعاقد عليه فقط، وتبقى السرية بعد انتهاء العقد.
+يلتزم الطرف الأول بسرية المعلومات، وبمعالجة البيانات الشخصية للغرض المتعاقد عليه فقط، ويبقى التزام السرية قائمًا بعد انتهاء العقد.
 
 ## 6. المسؤولية
-لا تتجاوز مسؤولية الطرف الأول التعاقدية قيمة هذا العقد، ولا يسري هذا الحد في حالات الغش أو الخطأ الجسيم، ولا يخل بالمسؤولية عن الفعل الضار.
+لا تتجاوز مسؤولية الطرف الأول التعاقدية قيمة هذا العقد. ولا يسري هذا الحد في حالات الغش أو الخطأ الجسيم، ولا يخل بالمسؤولية عن الفعل الضار.
 
 ## 7. الإشعارات
 يتفق الطرفان على أن الإشعار عبر المنصة والبريد الإلكتروني المسجل وسيلة معتمدة للتبليغ والإعذار.

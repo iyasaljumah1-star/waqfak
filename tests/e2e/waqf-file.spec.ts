@@ -88,7 +88,7 @@ test.describe("waqf file & establish wizard", () => {
     await page.getByLabel("اسم الوقف كما تريده في الوثيقة").fill("وقف الاختبار الأهلي (تجريبي)");
     await page.getByRole("button", { name: "احفظ الاسم" }).click();
     await page.waitForURL(/step=7/);
-    await expect(page.getByTestId("deed-draft")).toContainText("مسودة استرشادية تتطلب مراجعة قانونية وشرعية");
+    await expect(page.getByTestId("deed-draft")).toContainText("مسودة أولية للمراجعة الشرعية والقانونية قبل التوثيق");
     await expect(page.getByTestId("deed-draft")).toContainText("للذكر مثل حظ الأنثيين");
     await page.getByRole("button", { name: "اعتمد المسودة وأنشئ ملف الوقف" }).click();
     await page.waitForURL(/done=1/);

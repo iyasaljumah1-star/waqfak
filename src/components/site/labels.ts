@@ -82,10 +82,28 @@ export function priceText(pricingModel: string, basePrice: string | null): strin
 
 export const CONFLICT_LABEL: Record<string, string | null> = {
   none: null,
-  blocked_if_waqfak_nazir: "لا نقدمها لوقف تتولى وقفك نظارته، حفاظًا على استقلال التقييم.",
-  blocked_if_waqfak_controls_finance: "لا نقدمها لوقف تتولى وقفك نظارته أو إدارته المالية أو مسك دفاتره، حفاظًا على الاستقلال.",
-  inside_nazara_only: "تُقدَّم ضمن ضوابط الاستقلال: لا نراجع لاحقًا دفاتر نمسكها.",
+  blocked_if_waqfak_nazir: "حرصًا على استقلالية التقييم، تُقدَّم هذه الخدمة للأوقاف التي لا تتولى وقفك نظارتها.",
+  blocked_if_waqfak_controls_finance: "حرصًا على الاستقلالية، تُقدَّم هذه الخدمة للأوقاف التي لا تتولى وقفك نظارتها أو إدارتها المالية أو مسك دفاترها.",
+  inside_nazara_only: "تُقدَّم وفق ضوابط الاستقلالية، فلا يجتمع لدينا مسك دفاتر الوقف ومراجعتها.",
 };
+
+/**
+ * Display copy for a service that cannot be ordered yet. Wording only: whether a
+ * service is orderable is decided server-side (`availability.available`).
+ */
+export function availabilityCopy(s: { isActive: boolean; requiresLicenseKey: string | null; availability: { available: boolean } }) {
+  if (s.availability.available) return null;
+  if (s.isActive && s.requiresLicenseKey)
+    return {
+      gated: true,
+      label: "تُتاح بعد اعتماد الترخيص",
+      reason:
+        s.requiresLicenseKey === "gaa_nazara_license"
+          ? "تُتاح هذه الخدمة بعد اعتماد ترخيص الهيئة العامة للأوقاف للناظر الاعتباري. سجّل اهتمامك، ونبلغك عند إتاحتها."
+          : "تُتاح هذه الخدمة بعد اعتماد الترخيص النظامي الخاص بها. سجّل اهتمامك، ونبلغك عند إتاحتها.",
+    };
+  return { gated: false, label: "غير متاحة حاليًا", reason: "توقف استقبال طلبات هذه الخدمة مؤقتًا. تواصل معنا لنقترح عليك البديل المناسب." };
+}
 
 export const DEPARTMENT_LABEL: Record<string, string> = {
   sharia: "الفريق الشرعي",
@@ -98,7 +116,7 @@ export const DEPARTMENT_LABEL: Record<string, string> = {
 
 export const AUDIENCE_LINKS = [
   { href: "/for/waqif", label: "الواقف", hint: "من يريد أن يقف مالًا أو يوصي بوقف" },
-  { href: "/for/nazir", label: "الناظر والمجلس", hint: "من يدير وقفًا قائمًا ويُسأل عنه" },
+  { href: "/for/nazir", label: "الناظر والمجلس", hint: "من يدير وقفًا قائمًا ويتحمّل مسؤوليته" },
   { href: "/for/beneficiary", label: "المستفيد", hint: "من له حق في غلة وقف" },
   { href: "/for/entities", label: "الجهات", hint: "الجمعيات والمؤسسات والشركات الوقفية" },
 ];

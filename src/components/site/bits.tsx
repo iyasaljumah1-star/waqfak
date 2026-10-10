@@ -96,11 +96,11 @@ export function FilterChip({ href, active, children }: { href: string; active: b
   );
 }
 
-/** Small marker for indicative tools/content. */
+/** One concise note on estimate-based results (tools, assessment). */
 export function IndicativeNote({ children }: { children?: ReactNode }) {
   return (
     <p className="rounded-md border-s-2 border-seal bg-seal-soft/60 px-3 py-2 text-[14px] leading-7 text-text/85">
-      {children ?? "نتيجة استرشادية مبنية على ما أدخلته، وليست رأيًا شرعيًا أو قانونيًا ملزمًا. للتأكد في حالتك اطلب استشارة موقّعة."}
+      {children ?? "نتيجة تقديرية بحسب ما أدخلته؛ ولتأكيدها في حالتك اطلب رأي مختص."}
     </p>
   );
 }

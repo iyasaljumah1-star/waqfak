@@ -169,7 +169,7 @@ export default async function BeneficiariesPage({ params }: { params: Promise<{ 
           <EmptyState icon={HeartHandshake} title="لم تُسجّل المصارف">أضف مصارف الوقف بالترتيب الذي اشترطه الواقف، مع المآل النهائي إذا انقطع المستحقون.</EmptyState>
         )}
         {d.classes.length && !d.classes.some((c) => c.isFinalDestination || c.kind === "public") ? (
-          <Alert tone="warn" className="mt-3" title="لا مآل نهائي محدد">الدليل الإرشادي لصياغة الوثيقة يوصي بتحديد بدائل المصارف إذا انقطع المستحقون. سجّل المآل كما في الشرط، أو اطلب رأيًا مختصًا إن سكت عنه.</Alert>
+          <Alert tone="warn" className="mt-3" title="لا مآل نهائي محدد">الدليل الإرشادي لصياغة الوثيقة يوصي بتحديد بدائل المصارف إذا انقطع المستحقون. سجّل المآل كما في الشرط، أو اطلب رأي مختص إن سكت الشرط عنه.</Alert>
         ) : null}
         {canEdit ? (
           <div className="mt-4">
@@ -268,7 +268,7 @@ export default async function BeneficiariesPage({ params }: { params: Promise<{ 
                   </details>
                   <div className="mt-2 flex flex-wrap items-start gap-3">
                     {x.status === "planned" && can("distributions.approve") ? (
-                      mine ? <Muted>أعددت هذا الكشف، فلا تعتمده أنت. يعتمده عضو آخر.</Muted> : <ActionButton action={approveDistribution} hidden={{ waqfId: id, distributionId: x.id }} label="اعتمد الكشف" variant="primary" />
+                      mine ? <Muted>أعددتَ هذا الكشف، ويعتمده عضو آخر يملك صلاحية اعتماد الصرف.</Muted> : <ActionButton action={approveDistribution} hidden={{ waqfId: id, distributionId: x.id }} label="اعتمد الكشف" variant="primary" />
                     ) : null}
                     {x.status === "approved" && can("finance.edit") ? (
                       <ActionForm action={markDistributionPaid} hidden={{ waqfId: id, distributionId: x.id }} submitLabel="سجّل الصرف" fields={[{ name: "paidOn", label: "تاريخ الصرف", type: "date", required: true, defaultValue: today }]} cols={1} />

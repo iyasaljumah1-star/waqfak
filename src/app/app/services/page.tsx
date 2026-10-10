@@ -90,7 +90,7 @@ export default async function ServicesPage({ searchParams }: { searchParams: Pro
                 <p className="mt-2 text-[15px]">
                   {p.annualPrice ? <span className="tabular font-medium">{fmtSAR(p.annualPrice)} سنويًا</span> : p.monthlyPrice ? <span className="tabular font-medium">{fmtSAR(p.monthlyPrice)} شهريًا</span> : <span className="text-muted">{PRICE_UNKNOWN}</span>}
                 </p>
-                {p.isClosed ? <p className="mt-1 text-[13px] text-fine">باقة مغلقة: لا تُضاف إليها خدمات منفصلة، وتخضع لقواعد استقلال النظارة.</p> : null}
+                {p.isClosed ? <p className="mt-1 text-[13px] text-fine">باقة بنطاق ثابت لا تُضاف إليها خدمات منفصلة، وتسري عليها قواعد استقلال النظارة.</p> : null}
                 {p.services.length ? (
                   <ul className="mt-3 flex flex-wrap gap-1.5">
                     {p.services.map((s) => (

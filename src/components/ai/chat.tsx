@@ -124,7 +124,7 @@ export function AssistantChat({ waqfId, suggestions, engineNote }: { waqfId: str
           </Button>
         </div>
         <p className="mt-1 text-[12px] text-muted">
-          لا تكتب أرقام هوية أو حسابات بنكية؛ نخفيها تلقائيًا من السجل. <span className="tabular">{text.length}/{MAX}</span>
+          تجنّب كتابة أرقام الهوية أو الحسابات البنكية؛ وما يُكتب منها نخفيه تلقائيًا من السجل. <span className="tabular">{text.length}/{MAX}</span>
         </p>
       </form>
     </section>

@@ -199,7 +199,7 @@ function cover(title: string, sub: string, waqfName: string, meta: [string, stri
   return `<div class="brandbar"></div>
   <div style="padding-top:28mm">
     ${confidential ? `<p class="tag critical" style="font-size:11pt;padding:2px 12px">سري — للاطلاع المقيد</p>` : ""}
-    <p class="muted" style="margin-top:8px">وقفك — حزمة تصدير للهيئة العامة للأوقاف (تصدير فقط، لا ربط تقني)</p>
+    <p class="muted" style="margin-top:8px">وقفك — حزمة معدّة للتقديم إلى الهيئة العامة للأوقاف عبر بوابتها</p>
     <h1 style="font-size:26pt;margin-top:6mm">${esc(title)}</h1>
     <p class="naskh" style="font-size:16pt;color:var(--seal)">${esc(waqfName)}</p>
     <p class="muted">${esc(sub)}</p>

@@ -36,7 +36,7 @@ export function ComplaintForm({ waqfId, defaultKind = "info_request" }: { waqfId
       <Field label="الموضوع" name="subject" error={fe.subject} required>
         <Input name="subject" maxLength={200} required />
       </Field>
-      <Field label="التفاصيل" name="body" error={fe.body} required hint="لا تكتب أرقام حسابات أو هويات؛ سيتواصل معك الناظر عبر المنصة.">
+      <Field label="التفاصيل" name="body" error={fe.body} required hint="تجنّب كتابة أرقام الحسابات أو الهويات؛ يتواصل معك الناظر عبر المنصة.">
         <Textarea name="body" maxLength={5000} required />
       </Field>
       <FormMessage state={state} />

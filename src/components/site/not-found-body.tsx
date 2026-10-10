@@ -10,7 +10,7 @@ export function NotFoundBody() {
         <div className="deed-paper relative rounded-sm border border-line-strong px-6 py-[35px] shadow-card sm:px-10">
           <p className="text-[14px] leading-[35px] text-muted">خطأ 404</p>
           <h1 className="font-naskh text-[1.9rem] font-bold leading-[70px] text-ink md:text-[2.3rem]">لم نجد هذه الصفحة</h1>
-          <p className="max-w-lg text-[16px] leading-[35px]">ربما تغير عنوانها أو حُذفت، أو في الرابط خطأ في الكتابة. جرّب إحدى هذه الوجهات:</p>
+          <p className="max-w-lg text-[16px] leading-[35px]">ربما تغيّر عنوانها أو نُقلت، أو في الرابط خطأ إملائي. جرّب إحدى هذه الوجهات:</p>
           <ul className="mt-[35px] text-[16px] leading-[35px]">
             <li><Link href="/" className="font-medium text-ink underline underline-offset-4">الصفحة الرئيسية</Link></li>
             <li><Link href="/services" className="font-medium text-ink underline underline-offset-4">الخدمات</Link></li>

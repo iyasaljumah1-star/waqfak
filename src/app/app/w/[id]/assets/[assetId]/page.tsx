@@ -238,7 +238,7 @@ export default async function AssetDetailPage({ params }: { params: Promise<{ id
         <DataTable
           rows={d.valuations}
           rowKey={(v) => v.id}
-          empty={<Muted>لا تقييمات. يُستحسن تقييم الأصول دوريًا من مقيّم معتمد.</Muted>}
+          empty={<Muted>لا تقييمات مسجّلة. يُستحسن تقييم الأصول دوريًا لدى مقيّم معتمد.</Muted>}
           columns={[
             { key: "d", label: "التاريخ", render: (v) => fmtDate(v.valuedOn) },
             { key: "v", label: "القيمة", render: (v) => fmtSAR(v.value) },

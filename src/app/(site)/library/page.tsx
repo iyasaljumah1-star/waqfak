@@ -47,7 +47,7 @@ export default async function LibraryPage({ searchParams }: { searchParams: Prom
       <PageIntro
         crumbs={[{ label: "المكتبة" }]}
         title="المكتبة"
-        lede="ما يحتاج أن يعرفه الواقف والناظر والمستفيد، مكتوبًا بلغة واضحة، ومع مرجع كل معلومة من الأنظمة والأدلة الرسمية."
+        lede="ما يحتاج إليه الواقف والناظر والمستفيد من معرفة، بلغة واضحة ومرجع لكل معلومة من الأنظمة والأدلة الرسمية."
       >
         <form action="/library" method="get" role="search" className="mt-6 flex max-w-xl gap-2">
           {kind ? <input type="hidden" name="kind" value={kind} /> : null}
@@ -106,7 +106,7 @@ export default async function LibraryPage({ searchParams }: { searchParams: Prom
           ) : (
             <div className="mt-6">
               <EmptyState icon={SearchX} title="لم نجد مادة تطابق بحثك">
-                جرّب كلمة أقصر أو مرادفًا، أو ابحث في <Link href="/faq" className="text-ink underline">الأسئلة الشائعة</Link> و<Link href="/glossary" className="text-ink underline">قاموس المصطلحات</Link>.
+                جرّب كلمة أقصر أو مرادفًا لها، أو ابحث في <Link href="/faq" className="text-ink underline">الأسئلة الشائعة</Link> و<Link href="/glossary" className="text-ink underline">قاموس المصطلحات</Link>.
               </EmptyState>
             </div>
           )}

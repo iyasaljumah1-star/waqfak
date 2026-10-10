@@ -47,12 +47,12 @@ export default async function RequestPage({ params, searchParams }: { params: Pr
       {created ? <Alert tone="ok" title="أُرسل طلبك">سيُسند لمختص ويُفرز خلال 5 أيام عمل. ارفع المستندات المطلوبة الآن لتسريع العمل.</Alert> : null}
       {signed && contract.clientSigned ? <Alert tone="ok" title="تم توقيع العقد">حُفظ توقيعك مع بصمة نص العقد. تصدر الفاتورة بعد ذلك وتصلك في «الفواتير».</Alert> : null}
       {r.conflictCheck === "blocked" ? (
-        <Alert tone="critical" title="الطلب موقوف لتعارض في الاستقلال">
+        <Alert tone="critical" title="الطلب قيد مراجعة الاستقلالية">
           <p className="whitespace-pre-line">{r.conflictNote}</p>
-          <p className="mt-1">حُفظ الطلب، ويقرر مدير التشغيل: إما رفضه أو اعتماد استثناء مسبب.</p>
+          <p className="mt-1">حُفظ طلبك، ويقرر فيه مدير التشغيل: اعتماد استثناء مسبب أو رفض الطلب مع بيان السبب.</p>
         </Alert>
       ) : r.conflictCheck === "override_approved" ? (
-        <Alert tone="seal" title="اعتُمد استثناء من قاعدة الاستقلال"><p className="whitespace-pre-line">{r.conflictNote}</p></Alert>
+        <Alert tone="seal" title="اعتُمد استثناء مسبب من قاعدة الاستقلال"><p className="whitespace-pre-line">{r.conflictNote}</p></Alert>
       ) : null}
       {r.status === "on_hold" ? (
         <Alert tone="fine" title={`الطلب معلّق — بانتظار ${HOLD_PARTY_LABEL[r.holdParty ?? ""] ?? "طرف آخر"}`}>

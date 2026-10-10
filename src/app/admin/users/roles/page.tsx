@@ -43,7 +43,7 @@ export default async function RolesPage({ searchParams }: { searchParams: Promis
   return (
     <div>
       <PageHeader title="الأدوار والصلاحيات" crumbs={[{ href: "/admin/users", label: "المستخدمون" }, { label: "الأدوار والصلاحيات" }]}
-        description="مصدر الحقيقة هو قاعدة البيانات: أي تعديل هنا يسري على كل حاملي الدور خلال ثوانٍ، دون تعديل في الشيفرة، ويُسجل في سجل العمليات." />
+        description="الصلاحيات محفوظة في قاعدة البيانات: أي تعديل هنا يسري على كل حاملي الدور خلال ثوانٍ دون تعديل برمجي، ويُسجَّل في سجل العمليات." />
       <UsersTabs auth={auth} />
       <div className="mb-4 flex flex-wrap items-center gap-2">
         {tab("global", "أدوار فريق وقفك")}

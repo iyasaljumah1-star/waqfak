@@ -4,18 +4,18 @@ import { ArrowLeft, BookOpenCheck, FileLock2, Landmark, Scale } from "lucide-rea
 import { buttonClass } from "@/components/ui";
 import { ContentRowLink, Container, JsonLd, SITE_URL } from "@/components/site/bits";
 import { JOURNEY } from "@/components/site/labels";
-import { getCatalog, getCompany, getLibrary } from "@/server/modules/public/queries";
+import { getCatalog, getLibrary } from "@/server/modules/public/queries";
 
 export const metadata: Metadata = {
   title: { absolute: "وقفك — خدمات الأوقاف من الفكرة إلى الاستدامة" },
   description:
-    "وقفك شركة سعودية متخصصة في الأوقاف: تصميم الوقف وصياغة وثيقته وتسجيله، ومساندة الناظر في الحوكمة والمالية والامتثال والاستثمار. ابدأ بتقييم وقفك مجانًا.",
+    "وقفك شركة سعودية متخصصة في الأوقاف: تصميم الوقف وصياغة وثيقته وتجهيز متطلبات توثيقه وتسجيله، ومساندة الناظر في الحوكمة والمالية والامتثال والاستثمار. ابدأ بتقييم وقفك مجانًا.",
   alternates: { canonical: "/" },
 };
 
 const PATHS = [
-  { href: "/for/waqif", who: "أنا واقف", clause: "أريد أن أحبس مالًا، أو أوصي بوقف، على وجهٍ أحتسبه." },
-  { href: "/for/nazir", who: "أنا ناظر", clause: "أُدير وقفًا قائمًا، وأريد أن أعرف ما يلزمني ومتى." },
+  { href: "/for/waqif", who: "أنا واقف", clause: "أريد أن أقف مالًا أو أوصي بوقف، في وجه برٍّ أحتسبه." },
+  { href: "/for/nazir", who: "أنا ناظر", clause: "أدير وقفًا قائمًا، وأريد أن أعرف ما يلزمني ومتى." },
   { href: "/for/beneficiary", who: "أنا مستفيد", clause: "لي حق في غلة وقف، وأريد أن أفهمه وأطمئن إليه." },
   { href: "/for/entities", who: "نحن جهة", clause: "جمعية أو مؤسسة أو شركة وقفية تبني أوقافها أو تديرها." },
 ];
@@ -23,11 +23,10 @@ const PATHS = [
 const serviceCount = (n: number) => (n === 1 ? "خدمة واحدة" : n === 2 ? "خدمتان" : n <= 10 ? `${n} خدمات` : `${n} خدمة`);
 
 export default async function Home() {
-  const [{ categories, services }, library, { licenses }] = await Promise.all([getCatalog(), getLibrary(), getCompany()]);
+  const [{ categories, services }, library] = await Promise.all([getCatalog(), getLibrary()]);
   const latest = library.filter((i) => i.kind !== "regulation").slice(0, 4);
   const regs = library.filter((i) => i.kind === "regulation").slice(0, 6);
   const byStage = (s: number) => services.filter((x) => x.stage === s).length;
-  const nazara = licenses.find((l) => l.key === "gaa_nazara_license");
 
   return (
     <>
@@ -56,18 +55,18 @@ export default async function Home() {
                 وتتجدّد ثمرته.
               </h1>
               <p className="mt-5 max-w-xl text-[17px] leading-8 text-white/80 md:text-lg md:leading-9">
-                وقفك شركة متخصصة في الأوقاف. نصمم الوقف ونصوغ وثيقته ونجهّز تسجيله، ثم نساند ناظره في الحوكمة والمالية والامتثال والاستثمار، ونذكر المرجع النظامي لكل خطوة.
+                وقفك شركة متخصصة في الأوقاف. نصمم وقفك ونصوغ وثيقته ونجهّز متطلبات توثيقه وتسجيله، ثم نساند ناظره في الحوكمة والمالية والامتثال والاستثمار، بخدمات تستند إلى الأنظمة واللوائح المنظِّمة للأوقاف.
               </p>
               <div className="mt-8 flex flex-wrap items-center gap-3">
                 <Link href="/assessment" className={buttonClass("seal", "lg")}>قيّم وقفك مجانًا</Link>
                 <Link href="/services" className={buttonClass("secondary", "lg", "border-transparent bg-white text-ink hover:bg-white/90")}>تصفّح الخدمات</Link>
               </div>
-              <p className="mt-4 text-[14px] text-white/70">التقييم مجاني، ولا يطلب اسمًا ولا هوية، ويستغرق ربع ساعة تقريبًا.</p>
+              <p className="mt-4 text-[14px] text-white/70">تقييم مجاني في نحو ربع ساعة، تبدأه دون اسم أو رقم هوية.</p>
             </div>
 
             <div className="rounded-[24px] bg-surface p-6 text-text shadow-card sm:p-8">
               <h2 className="text-[1.3rem] font-bold text-ink">من أنت في هذا الوقف؟</h2>
-              <p className="mt-1 text-[14px] text-muted">اختر ما يصفك، ندلّك على ما يخصّك.</p>
+              <p className="mt-1 text-[14px] text-muted">اختر ما يصفك، ونرشدك إلى ما يخصك.</p>
               <ul className="mt-4 grid gap-2">
                 {PATHS.map((p) => (
                   <li key={p.href}>
@@ -91,7 +90,7 @@ export default async function Home() {
         <Container>
           <div className="max-w-2xl">
             <h2 id="journey-title" className="font-naskh text-[1.75rem] font-bold leading-[1.5] text-ink md:text-[2.1rem]">رحلة الوقف، من الفكرة إلى الاستدامة</h2>
-            <p className="mt-2 text-[16.5px] leading-8 text-muted">لكل مرحلة التزاماتها ومواعيدها. اعرف أين يقف وقفك، وابدأ من خدمات مرحلته.</p>
+            <p className="mt-2 text-[16.5px] leading-8 text-muted">لكل مرحلة التزاماتها ومواعيدها. حدّد مرحلة وقفك، وابدأ بالخدمات التي تناسبها.</p>
           </div>
           <ol className="mt-10 grid gap-0 lg:grid-cols-5">
             {JOURNEY.map((j, i) => {
@@ -128,7 +127,7 @@ export default async function Home() {
             <div className="max-w-2xl">
               <h2 id="cats-title" className="font-naskh text-[1.75rem] font-bold leading-[1.5] text-ink md:text-[2.1rem]">فهرس الخدمات</h2>
               <p className="mt-2 text-[16.5px] leading-8 text-muted">
-                {serviceCount(services.length)} في {categories.length} أبواب. لكل خدمة نطاق ومخرجات معلنة، وما يقيّدها نظامًا مكتوب في صفحتها.
+                {serviceCount(services.length)} في {categories.length} أبواب، لكل خدمة نطاق ومخرجات واضحة، وضوابطها النظامية مبيّنة في صفحتها.
               </p>
             </div>
             <Link href="/services" className={buttonClass("secondary", "md")}>كل الخدمات</Link>
@@ -156,7 +155,7 @@ export default async function Home() {
           <div>
             <h2 id="asmt-title" className="font-naskh text-[1.75rem] font-bold leading-[1.55] md:text-[2.2rem]">قبل أن تطلب أي خدمة، اعرف أين يقف وقفك</h2>
             <p className="mt-4 max-w-xl text-[16.5px] leading-8 text-white/80">
-              أسئلة واضحة في أحد عشر محورًا، من سلامة الشرط والتسجيل إلى المالية والحوكمة والمستفيدين. تحصل على درجة لكل محور، وتنبيه بالمخالفات الجوهرية، وخطة عمل مرتبة مع مرجع كل ملاحظة.
+              أسئلة واضحة في أحد عشر محورًا، من سلامة الشرط والتسجيل إلى المالية والحوكمة والمستفيدين. تحصل على درجة لكل محور، وتنبيه إلى المخالفات الجوهرية، وخطة عمل مرتبة مع مرجع كل ملاحظة.
             </p>
             <Link href="/assessment" className="mt-8 inline-flex h-12 items-center justify-center rounded-md bg-white px-6 font-medium text-ink hover:bg-white/90">
               ابدأ التقييم المجاني
@@ -164,10 +163,10 @@ export default async function Home() {
           </div>
           <dl className="grid gap-px overflow-hidden rounded-lg bg-white/15 sm:grid-cols-2">
             {[
-              ["مجاني ودون هوية", "لا نطلب اسمًا ولا رقم هوية لبدء التقييم."],
-              ["يُحفظ تلقائيًا", "توقف متى شئت، وأكمل لاحقًا من الجهاز نفسه أو من حسابك."],
-              ["بمرجع نظامي", "كل ملاحظة تشير إلى المادة أو الدليل الذي بُنيت عليه."],
-              ["نتيجة تعمل بها", "توصيات مرتبطة بالخدمة المناسبة، وتقرير PDF تحتفظ به."],
+              ["مجاني وسهل البدء", "تبدأ التقييم دون اسم أو رقم هوية."],
+              ["يُحفظ تلقائيًا", "توقّف متى شئت، وأكمل لاحقًا من الجهاز نفسه أو من حسابك."],
+              ["بمرجع نظامي", "كل ملاحظة تحيل إلى المادة أو الدليل الذي بُنيت عليه."],
+              ["نتيجة قابلة للتنفيذ", "توصيات مرتبطة بالخدمة المناسبة، وتقرير PDF تحتفظ به."],
             ].map(([t, d]) => (
               <div key={t} className="bg-ink p-5 dark:bg-[#0f1520]">
                 <dt className="font-semibold">{t}</dt>
@@ -182,8 +181,8 @@ export default async function Home() {
       <section aria-labelledby="trust-title" className="py-14 md:py-20">
         <Container className="grid gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
           <div>
-            <h2 id="trust-title" className="font-naskh text-[1.75rem] font-bold leading-[1.5] text-ink md:text-[2.1rem]">على ماذا نبني عملنا</h2>
-            <p className="mt-2 text-[16.5px] leading-8 text-muted">ما نكتبه ونقدمه مرجعه الأنظمة واللوائح والأدلة الصادرة عن الجهات المختصة. هذه أبرزها، ولكل منها ملخص في المكتبة.</p>
+            <h2 id="trust-title" className="font-naskh text-[1.75rem] font-bold leading-[1.5] text-ink md:text-[2.1rem]">مرجعيتنا في العمل</h2>
+            <p className="mt-2 text-[16.5px] leading-8 text-muted">نقدم خدماتنا وحلولنا بالاستناد إلى الأنظمة واللوائح والضوابط والأدلة ذات الصلة بالأوقاف، مع مراعاة طبيعة كل وقف واحتياجاته. هذه أبرزها، ولكل منها ملخص في المكتبة.</p>
             <ul className="mt-6 divide-y divide-line border-y border-line">
               {regs.map((r) => (
                 <li key={r.id}>
@@ -197,15 +196,17 @@ export default async function Home() {
             <Link href="/regulations" className="mt-4 inline-block text-[15px] font-medium text-ink underline underline-offset-4">كل الأنظمة واللوائح</Link>
           </div>
           <ul className="space-y-7 lg:pt-2">
-            <Commit icon={BookOpenCheck} title="نذكر المرجع، ونفرّق بين الإلزامي والاسترشادي">
-              كل التزام نعرضه مقرون بمادته. وما كان من مبادئ استرشادية نقوله كذلك، ولا نقدمه على أنه إلزام.
+            <Commit icon={BookOpenCheck} title="خدمات تستند إلى المرجعية النظامية">
+              كل توصية نقدمها مقرونة بمرجعها من النظام أو اللائحة أو الدليل، فتعرف أساسها ومدى إلزامها لوقفك.
             </Commit>
-            <Commit icon={Landmark} title="نعرف حدودنا">
-              لسنا جهة رسمية ولا جهة توثيق، ولا نصدر فتاوى، ولا نجمع التبرعات ولا ندير الأموال استثماريًا.{" "}
-              {nazara && !nazara.active ? "وخدمة تولي النظارة لن نقدمها قبل صدور ترخيص الهيئة العامة للأوقاف لنا." : null}
+            <Commit icon={Landmark} title="حلول متكاملة في كل مراحل الوقف">
+              من تصميم الوقف وصياغة وثيقته وتجهيز متطلبات توثيقه وتسجيله، إلى مساندة ناظره في الحوكمة والمالية والامتثال والاستثمار، ونرافقك في الإجراءات لدى الجهات المختصة.
+            </Commit>
+            <Commit icon={Scale} title="رأي مهني موقّع">
+              تصدر استشاراتنا الشرعية والقانونية رأيًا مهنيًا موقّعًا باسم المستشار وصفته، مبنيًا على وقائع وقفك ووثائقه.
             </Commit>
             <Commit icon={FileLock2} title="بيانات وقفك لك">
-              نشفّر البيانات الحساسة ونحفظها داخل المملكة، ولا يرى ملف وقفك إلا من تمنحه صلاحية. <Link href="/legal/privacy" className="font-medium text-ink underline underline-offset-4">سياسة الخصوصية</Link>
+              نشفّر البيانات الحساسة ونحفظها داخل المملكة، ولا يطّلع على ملف وقفك إلا من تمنحه الصلاحية. <Link href="/legal/privacy" className="font-medium text-ink underline underline-offset-4">سياسة الخصوصية</Link>
             </Commit>
           </ul>
         </Container>

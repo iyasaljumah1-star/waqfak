@@ -108,7 +108,7 @@ export default async function ReviewAssessment({ params }: { params: Promise<{ i
             </Panel>
           ) : null}
 
-          <Panel title="الإجابات ودرجة الإثبات" description="عدّل درجة الإثبات بعد الاطلاع على المستندات. ترفع «مستند مرفق» و«تحقق المراجع» ثقة النتيجة. لا تُعدَّل إجابات العميل نفسها.">
+          <Panel title="الإجابات ودرجة الإثبات" description="عدّل درجة الإثبات بعد الاطلاع على المستندات. ترفع «مستند مرفق» و«تحقق المراجع» ثقة النتيجة. وتبقى إجابات العميل كما أدخلها.">
             <EvidenceForm id={id}>
               <div className="space-y-5">
                 {axisGroups.map((g) => (

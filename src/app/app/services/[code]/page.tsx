@@ -13,9 +13,9 @@ export async function generateMetadata({ params }: { params: Promise<{ code: str
 }
 
 const CONFLICT_TEXT: Record<string, string> = {
-  blocked_if_waqfak_nazir: "لا تُقدَّم لوقف تتولى وقفك نظارته، لأن المقيِّم لا يقيّم نفسه.",
-  blocked_if_waqfak_controls_finance: "لا تُقدَّم لوقف تنظره وقفك أو تديره أو تمسك دفاتره، حفاظًا على استقلال المراجعة.",
-  inside_nazara_only: "تُقدَّم داخل نظارة وقفك فقط.",
+  blocked_if_waqfak_nazir: "حرصًا على استقلال التقييم، تُقدَّم هذه الخدمة للأوقاف التي لا تتولى وقفك نظارتها.",
+  blocked_if_waqfak_controls_finance: "حرصًا على استقلال المراجعة، تُقدَّم هذه الخدمة للأوقاف التي لا تتولى وقفك نظارتها أو إدارتها أو مسك دفاترها.",
+  inside_nazara_only: "تُقدَّم للأوقاف التي تتولى وقفك نظارتها، ضمن أجر النظارة.",
 };
 
 export default async function ServiceDetail({ params, searchParams }: { params: Promise<{ code: string }>; searchParams: Promise<{ waqf?: string }> }) {
@@ -83,7 +83,7 @@ export default async function ServiceDetail({ params, searchParams }: { params: 
             <p className="text-lg">
               {s.pricingModel === "free" ? <span className="font-semibold text-ok">مجانية</span> : price === null ? <span className="text-muted">{PRICE_UNKNOWN}</span> : <span className="tabular font-semibold">{fmtSAR(price)}</span>}
             </p>
-            <p className="text-sm text-muted">{PRICING_LABEL[s.pricingModel]}. تضاف ضريبة القيمة المضافة. لا يبدأ العمل قبل موافقتك على عرض السعر وتوقيع العقد.</p>
+            <p className="text-sm text-muted">{PRICING_LABEL[s.pricingModel]}. تضاف ضريبة القيمة المضافة. يبدأ العمل بعد موافقتك على عرض السعر وتوقيع العقد.</p>
           </Panel>
           <Panel title="مراحل العمل">
             {workflow?.stages.length ? (

@@ -30,7 +30,7 @@ export default async function FaqPage({ searchParams }: { searchParams: Promise<
       <PageIntro
         crumbs={[{ label: "الأسئلة الشائعة" }]}
         title="الأسئلة الشائعة"
-        lede="إجابات مختصرة، لكل منها مرجعها. الإجابة العامة لا تغني عن دراسة حالتك؛ فإن كان سؤالك عن وقف بعينه فاطلب استشارة."
+        lede="إجابات مختصرة عن أكثر ما يسأل عنه الواقفون والنظار والمستفيدون، مع مرجع كل إجابة. ولسؤال يخص وقفك تحديدًا، يقدّم مستشارونا استشارة متخصصة."
       />
       <Container className="py-10">
         <FaqBrowser

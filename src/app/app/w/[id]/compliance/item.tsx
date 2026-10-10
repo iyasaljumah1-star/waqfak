@@ -112,7 +112,7 @@ export function ObligationItem({ item: i, waqfId, canManage, canUpload, docs }: 
       <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1">
         {i.why.length ? (
           <details className="group text-[14px]">
-            <summary className="cursor-pointer text-ink underline-offset-4 hover:underline">لماذا ينطبق علي؟</summary>
+            <summary className="cursor-pointer text-ink underline-offset-4 hover:underline">لماذا ينطبق عليّ؟</summary>
             <ul className="mt-2 list-disc space-y-1 ps-5 text-text/90">
               {i.why.map((w, k) => <li key={k}>{w}</li>)}
             </ul>

@@ -49,7 +49,7 @@ export default async function ToolPage({ params }: P) {
       <PageIntro crumbs={[{ href: "/tools", label: "الأدوات" }, { label: t.title }]} title={t.title} lede={t.lede} />
       <Container className="py-8 md:py-10">
         <IndicativeNote>
-          أداة استرشادية: تحسب بناءً على ما تدخله، ولا تحفظ بياناتك ولا ترسلها. نتيجتها ليست فتوى ولا رأيًا قانونيًا ملزمًا؛ للتأكد في حالتك اطلب استشارة موقّعة.
+          تحسب الأداة نتيجة تقديرية بحسب ما تدخله، دون حفظ بياناتك أو إرسالها. ولتأكيد النتيجة في حالتك، يقدّم مستشارونا رأيًا مهنيًا موقّعًا.
         </IndicativeNote>
         <div className="mt-8">{body}</div>
 
@@ -66,7 +66,7 @@ export default async function ToolPage({ params }: P) {
           </section>
           <section aria-labelledby="next" className="md:border-s md:border-line md:ps-10">
             <h2 id="next" className="font-naskh text-[1.3rem] font-bold text-ink">الخطوة التالية</h2>
-            <p className="mt-2 text-[15.5px] leading-8">إن أردت أن يتولى مختص هذه المسألة في وقفك، فالخدمة الأقرب: {t.service.label}.</p>
+            <p className="mt-2 text-[15.5px] leading-8">ليتولى فريقنا المتخصص هذه المسألة في وقفك، فالخدمة المناسبة: {t.service.label}.</p>
             <div className="mt-4 flex flex-wrap gap-3">
               <Link href={`/services/${t.service.code}`} className={buttonClass("primary", "md")}>{t.service.label}</Link>
               <Link href="/tools" className={buttonClass("secondary", "md")}>أدوات أخرى</Link>

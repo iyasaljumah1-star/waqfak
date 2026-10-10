@@ -25,10 +25,10 @@ export default async function SettingsPage() {
             <Alert tone={s.nazara.availability.available ? "ok" : "info"} title={`خدمة ${s.nazara.name} (N01): ${s.nazara.availability.available ? "متاحة للعملاء" : "غير متاحة"}`}>
               {s.nazara.availability.available
                 ? "الترخيص مفعّل والخاصية مفعّلة."
-                : `السبب: ${s.nazara.availability.reason}. تُتاح عند تفعيل ترخيص النظارة برقم ساري وتفعيل خاصية service.nazara.`}
+                : `السبب: ${s.nazara.availability.reason.replace(/\.\s*$/, "")}. تُتاح الخدمة بعد تفعيل ترخيص النظارة برقم ساري وتفعيل خاصية service.nazara.`}
             </Alert>
           ) : null}
-          <Panel title="التراخيص" description="لا يُفعّل ترخيص بلا رقم وتاريخ انتهاء ساري. كل تعديل يُسجل في سجل العمليات.">
+          <Panel title="التراخيص" description="يُفعَّل الترخيص برقمه وتاريخ انتهائه الساري، ويُسجَّل كل تعديل في سجل العمليات.">
             <div className="space-y-4">
               {s.licenses.map((l) => (
                 <LicenseForm key={l.key} lic={l} today={today} nazaraFlagOn={nazaraFlag?.enabled} />

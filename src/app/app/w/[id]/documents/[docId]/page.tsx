@@ -121,7 +121,7 @@ export default async function DocumentDetailPage({ params }: { params: Promise<{
             ) : (
               <div className="flex flex-col items-center gap-2 px-4 py-10 text-center text-muted">
                 <FileText aria-hidden className="size-8" />
-                <p>{servable ? "لا تتوفر معاينة لهذا النوع من الملفات. نزّل الملف لفتحه." : "لا يمكن عرض الملف لأنه لم يجتز الفحص."}</p>
+                <p>{servable ? "لا تتوفر معاينة لهذا النوع من الملفات. نزّل الملف لفتحه." : "يتعذر عرض الملف لأنه لم يجتز الفحص الأمني. ارفع نسخة سليمة منه."}</p>
               </div>
             )}
           </Panel>
@@ -183,7 +183,7 @@ export default async function DocumentDetailPage({ params }: { params: Promise<{
           {can("documents.approve") && doc.status === "active" && !doc.archivedAt && doc.approvalStatus !== "approved" && doc.approvalStatus !== "locked" ? (
             <Panel title="الاعتماد">
               {isUploader ? (
-                <p className="text-[15px] text-muted">لا يمكنك اعتماد وثيقة رفعتها بنفسك. يعتمدها عضو آخر يملك صلاحية الاعتماد.</p>
+                <p className="text-[15px] text-muted">رفعتَ هذه الوثيقة بنفسك، ويعتمدها عضو آخر يملك صلاحية الاعتماد.</p>
               ) : (
                 <>
                   <p className="mb-3 text-[15px] text-muted">راجع النسخة الحالية ({doc.currentVersion}) قبل اعتمادها.</p>
@@ -250,7 +250,7 @@ export default async function DocumentDetailPage({ params }: { params: Promise<{
           {can("documents.approve") && doc.approvalStatus !== "locked" ? (
             <Panel title={doc.archivedAt ? "استعادة" : "الأرشفة"}>
               <p className="mb-3 text-[14px] text-muted">
-                {doc.archivedAt ? "تعيد الوثيقة إلى القائمة." : "لا تُحذف الوثائق النظامية. الأرشفة تخفيها من القائمة وتلغي روابط المشاركة."}
+                {doc.archivedAt ? "تعيد الوثيقة إلى القائمة." : "تُحفظ الوثائق النظامية ولا تُحذف؛ والأرشفة تخفيها من القائمة وتلغي روابط مشاركتها."}
                 {doc.retentionUntil ? ` تُحفظ حتى ${fmtDate(doc.retentionUntil)}.` : ""}
               </p>
               <ArchiveForm waqfId={id} docId={doc.id} archived={!!doc.archivedAt} />

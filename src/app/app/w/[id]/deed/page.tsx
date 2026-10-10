@@ -113,7 +113,7 @@ export default async function DeedPage({ params }: { params: Promise<{ id: strin
 
       <Panel
         title="فهرس الشروط"
-        description="نص كل شرط كما ورد، مصنّفًا. التفسير لا يُعتمد آليًا: يُسجّل مصدره، ويبقى معلّمًا حتى يراجعه مختص شرعي."
+        description="نص كل شرط كما ورد، مصنّفًا. يُسجَّل كل تفسير منسوبًا إلى مصدره، ويبقى معلّمًا حتى يعتمده مختص شرعي."
         actions={d.conditions.length ? <Badge tone={unreviewed ? "warn" : "ok"}>{unreviewed ? `${unreviewed} شرط بلا اعتماد شرعي` : "كل الشروط روجعت"}</Badge> : null}
       >
         {d.conditions.length ? (
@@ -167,7 +167,7 @@ export default async function DeedPage({ params }: { params: Promise<{ id: strin
                                 action={addInterpretation}
                                 hidden={{ waqfId: id, conditionId: c.id }}
                                 submitLabel="سجّل التفسير"
-                                footnote="يُسجّل التفسير منسوبًا إلى مصدره، ولا تعتمده المنصة؛ يظهر بعلامة «يحتاج اعتماد مختص شرعي» حتى تُسجّل نتيجة المراجعة."
+                                footnote="يُسجَّل التفسير منسوبًا إلى مصدره، ويظهر بعلامة «يحتاج اعتماد مختص شرعي» حتى تُسجَّل نتيجة المراجعة."
                                 fields={[
                                   { name: "text", label: "نص التفسير", type: "textarea", required: true, wide: true },
                                   { name: "source", label: "المصدر", type: "select", options: options(INTERP_SOURCE_LABEL), required: true },
@@ -184,7 +184,7 @@ export default async function DeedPage({ params }: { params: Promise<{ id: strin
                                 action={recordShariaReview}
                                 hidden={{ waqfId: id, conditionId: c.id }}
                                 submitLabel="سجّل النتيجة"
-                                footnote="سجّل ما ورد في رأي مختص شرعي موثّق فقط؛ المنصة لا تحكم على الشروط."
+                                footnote="سجّل ما ورد في رأي مختص شرعي موثّق؛ فالحكم على الشروط للمختص."
                                 fields={[
                                   { name: "shariaReview", label: "النتيجة", type: "select", options: options(SHARIA_REVIEW_LABEL), defaultValue: c.shariaReview, required: true },
                                   { name: "reviewer", label: "المختص الشرعي" },

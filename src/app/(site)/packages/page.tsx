@@ -15,7 +15,7 @@ export const metadata: Metadata = {
 const nf = new Intl.NumberFormat("ar-SA-u-nu-latn", { maximumFractionDigits: 0 });
 
 function pkgPrice(p: { code: string; monthlyPrice: string | null; annualPrice: string | null }) {
-  if (p.code === "free") return { main: "مجانًا", sub: "بلا مدة ولا بطاقة" };
+  if (p.code === "free") return { main: "مجانًا", sub: "دون مدة محددة ودون بطاقة دفع" };
   if (p.annualPrice) return { main: `${nf.format(Number(p.annualPrice))} ر.س سنويًا`, sub: p.monthlyPrice ? `أو ${nf.format(Number(p.monthlyPrice))} ر.س شهريًا` : "تضاف ضريبة القيمة المضافة" };
   if (p.monthlyPrice) return { main: `${nf.format(Number(p.monthlyPrice))} ر.س شهريًا`, sub: "تضاف ضريبة القيمة المضافة" };
   return { main: "عرض سعر بعد الدراسة", sub: "بحسب حجم الوقف وأصوله" };
@@ -31,7 +31,7 @@ export default async function PackagesPage() {
       <PageIntro
         crumbs={[{ label: "الباقات" }]}
         title="الباقات"
-        lede="الباقة تجمع ما يحتاجه وقف من حجمه طوال السنة. ابدأ بالمجانية، وانتقل حين يكبر الوقف أو تكثر التزاماته."
+        lede="تجمع كل باقة ما يحتاجه الوقف بحسب حجمه على مدار السنة. ابدأ بالباقة المجانية، وانتقل إلى ما يناسبك كلما نما وقفك أو زادت التزاماته."
       />
       <Container className="py-10">
         <div className="grid gap-px overflow-hidden rounded-lg border border-line bg-line md:grid-cols-2 xl:grid-cols-4">
@@ -77,15 +77,16 @@ export default async function PackagesPage() {
               <h2 id={`pkg-h-${p.code}`} className="font-naskh text-[1.3rem] font-bold text-ink">باقة {p.nameAr}</h2>
               <p className="mt-1 text-[15px] leading-7 text-muted">{p.description}</p>
               <p className="mt-1 text-[14px] text-muted">
-                باقة مغلقة: تخضع لضوابط النظارة وتعارض المصالح، ولا تُتاح إلا بعد صدور ترخيص الهيئة العامة للأوقاف للناظر الاعتباري.
+                تُتاح هذه الباقة بعد اعتماد ترخيص الهيئة العامة للأوقاف للناظر الاعتباري، وتُقدَّم وفق ضوابط النظارة والاستقلالية.{" "}
+                <Link href={`/contact?topic=package&package=${p.code}`} className="font-medium text-ink underline underline-offset-4">سجّل اهتمامك</Link>
               </p>
             </div>
           </section>
         ))}
 
         <p className="mt-8 max-w-3xl text-[14px] leading-7 text-muted">
-          الأسعار المعلنة لا تشمل ضريبة القيمة المضافة. الخدمات خارج الباقة تُطلب منفردة من <Link href="/services" className="text-ink underline underline-offset-4">صفحة الخدمات</Link>.
-          ما يدفعه الوقف من ماله يصدر بفاتورة باسم الوقف.
+          تضاف ضريبة القيمة المضافة إلى الأسعار المعلنة. ويمكنك طلب أي خدمة غير مشمولة في باقتك منفردةً من <Link href="/services" className="text-ink underline underline-offset-4">صفحة الخدمات</Link>.
+          وتصدر فاتورة ما يُدفع من مال الوقف باسم الوقف.
         </p>
       </Container>
     </>

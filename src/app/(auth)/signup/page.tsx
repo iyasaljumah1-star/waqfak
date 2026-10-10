@@ -8,7 +8,7 @@ export default async function SignupPage({ searchParams }: { searchParams: Promi
   return (
     <>
       <h1 className="font-naskh text-3xl font-bold text-ink">إنشاء حساب</h1>
-      <p className="mb-6 mt-2 text-muted">نطلب الآن ما يلزم للدخول فقط. بيانات الهوية تُطلب لاحقًا عند ربط وقف أو طلب خدمة.</p>
+      <p className="mb-6 mt-2 text-muted">نكتفي الآن بما يلزم للدخول، ونطلب بيانات الهوية لاحقًا عند ربط وقف أو طلب خدمة.</p>
       <SignupForm next={next} />
     </>
   );

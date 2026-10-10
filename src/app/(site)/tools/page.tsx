@@ -5,7 +5,7 @@ import { TOOLS } from "@/components/site/tools/registry";
 
 export const metadata: Metadata = {
   title: "الأدوات",
-  description: "أدوات استرشادية مجانية للواقف والناظر: تصنيف نوع الوقف، وحجمه ومتطلباته، ومواعيد التسجيل، وثلث الوصية، وجاهزية الناظر.",
+  description: "أدوات مجانية للواقف والناظر: تصنيف نوع الوقف، وحجمه ومتطلباته، ومواعيد التسجيل، وثلث الوصية، وجاهزية الناظر.",
   alternates: { canonical: "/tools" },
 };
 
@@ -15,7 +15,7 @@ export default function ToolsIndex() {
       <PageIntro
         crumbs={[{ label: "الأدوات" }]}
         title="الأدوات"
-        lede="حسابات سريعة تعمل في متصفحك ولا تحفظ شيئًا مما تدخله. نتائجها استرشادية، ولكل منها مرجعها النظامي."
+        lede="حسابات سريعة تعمل في متصفحك دون حفظ ما تدخله، تمنحك نتيجة تقديرية بمرجعها النظامي، وتساعدك على تحديد خطوتك التالية."
       />
       <Container className="py-10">
         <ul className="divide-y divide-line border-y border-line">
@@ -29,7 +29,7 @@ export default function ToolsIndex() {
           ))}
         </ul>
         <p className="mt-8 text-[15px] text-muted">
-          تريد صورة كاملة عن وقفك بدل أداة واحدة؟ <Link href="/assessment" className="font-medium text-ink underline underline-offset-4">ابدأ التقييم الوقفي المجاني</Link>.
+          تريد صورة شاملة عن وقفك؟ <Link href="/assessment" className="font-medium text-ink underline underline-offset-4">ابدأ التقييم الوقفي المجاني</Link>.
         </p>
       </Container>
     </>
