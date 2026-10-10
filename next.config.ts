@@ -26,7 +26,6 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     "/**/*": [
       "./src/app/fonts/*.otf",
-      "./node_modules/@fontsource/noto-naskh-arabic/files/*.woff2",
       "./node_modules/playwright-core/**/*", // PDF renderer: the package reads browsers.json and lib files at runtime
     ],
   },

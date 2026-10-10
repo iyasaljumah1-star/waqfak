@@ -89,10 +89,12 @@
   --color-info: var(--info);
   --color-info-soft: var(--info-soft);
   --font-sans: var(--font-thmanyah), "Tahoma", system-ui, sans-serif;
-  /* Headings use the brand face too (utility name kept for compatibility). */
-  --font-naskh: var(--font-thmanyah), "Tahoma", system-ui, sans-serif;
-  /* Document surfaces only (deed drafts, minutes, contracts): traditional Naskh. */
-  --font-deed: "Noto Naskh Arabic", var(--font-thmanyah), serif;
+  /* Headlines: Thmanyah Serif Display (`font-display`; `font-naskh` kept as an alias for existing markup). */
+  --font-display: var(--font-thmanyah-display), var(--font-thmanyah), serif;
+  --font-naskh: var(--font-thmanyah-display), var(--font-thmanyah), serif;
+  /* Long reading and document surfaces (articles, deeds, minutes, contracts): Thmanyah Serif Text. */
+  --font-reading: var(--font-thmanyah-text), var(--font-thmanyah), serif;
+  --font-deed: var(--font-thmanyah-text), var(--font-thmanyah), serif;
   --radius-sm: 4px;
   --radius-md: 8px;
   --radius-lg: 12px;
@@ -142,6 +144,8 @@ body {
 .prose-waqf {
   max-width: 68ch;
   line-height: 1.95;
+  font-family: var(--font-reading);
+  font-size: 1.0625rem;
 }
 .prose-waqf h2 {
   font-family: var(--font-naskh);
@@ -194,7 +198,7 @@ body {
   border-inline-start: 3px solid var(--seal);
   padding-inline-start: 1rem;
   color: var(--muted);
-  font-family: var(--font-naskh);
+  font-family: var(--font-reading);
 }
 
 /* Deed paper: ruled lines that recall a صك */
