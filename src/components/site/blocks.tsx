@@ -256,8 +256,9 @@ export function InfoPanel({ tone = "note", title, children, icon, className }: {
 
 // ───────────── Reference card ─────────────
 /** A regulation, guide or source. Internal links open the summary; external sources open the official text. */
-export function ReferenceCard({ href, title, summary, meta, external, icon: Icon, headingLevel = 3 }: { href?: string | null; title: ReactNode; summary?: ReactNode; meta?: ReactNode; external?: boolean; icon: LucideIcon; headingLevel?: 2 | 3 }) {
-  const H = headingLevel === 2 ? "h2" : "h3";
+export function ReferenceCard({ href, title, summary, meta, external, icon: Icon, headingLevel = 3 }: { href?: string | null; title: ReactNode; summary?: ReactNode; meta?: ReactNode; external?: boolean; icon: LucideIcon; headingLevel?: 2 | 3 | "none" }) {
+  // "none": an item in a list under its own heading (e.g. an article's sources) — not a heading itself.
+  const H = headingLevel === 2 ? "h2" : headingLevel === 3 ? "h3" : "p";
   const link = href ? (
     external ? (
       <a href={href} target="_blank" rel="noopener noreferrer nofollow" className="after:absolute after:inset-0 after:rounded-md focus-visible:outline-none">

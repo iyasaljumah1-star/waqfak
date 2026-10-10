@@ -75,6 +75,7 @@ export function ContentDocument({ item, crumbs, after, showKind = true }: { item
                   return (
                     <li key={i} className="flex [&>div]:flex-1">
                       <ReferenceCard
+                        headingLevel="none"
                         href={href}
                         external={!!href && !href.startsWith("/")}
                         icon={BookMarked}
