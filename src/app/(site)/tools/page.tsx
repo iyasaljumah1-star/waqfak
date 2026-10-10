@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
-import Link from "next/link";
+import { Wrench } from "lucide-react";
 import { Container, PageIntro } from "@/components/site/bits";
+import { CallToAction, CategoryCard } from "@/components/site/blocks";
+import { TOOL_ICON } from "@/components/site/icons";
 import { TOOLS } from "@/components/site/tools/registry";
 
 export const metadata: Metadata = {
@@ -13,25 +15,25 @@ export default function ToolsIndex() {
   return (
     <>
       <PageIntro
+        icon={Wrench}
         crumbs={[{ label: "الأدوات" }]}
         title="الأدوات"
         lede="حسابات سريعة تعمل في متصفحك دون حفظ ما تدخله، تمنحك نتيجة تقديرية بمرجعها النظامي، وتساعدك على تحديد خطوتك التالية."
       />
-      <Container className="py-10">
-        <ul className="divide-y divide-line border-y border-line">
+      <Container className="py-10 md:py-12">
+        <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {TOOLS.map((t) => (
-            <li key={t.slug}>
-              <Link href={`/tools/${t.slug}`} className="group grid gap-1 py-5 md:grid-cols-[280px_minmax(0,1fr)] md:gap-8">
-                <span className="font-naskh text-[1.3rem] font-bold text-ink group-hover:underline group-hover:underline-offset-8">{t.title}</span>
-                <span className="text-[15.5px] leading-7 text-muted">{t.short}</span>
-              </Link>
+            <li key={t.slug} className="flex [&>div]:flex-1">
+              <CategoryCard href={`/tools/${t.slug}`} icon={TOOL_ICON[t.slug] ?? Wrench} title={t.title} description={t.short} more="استخدم الأداة" headingLevel={2} />
             </li>
           ))}
         </ul>
-        <p className="mt-8 text-[15px] text-muted">
-          تريد صورة شاملة عن وقفك؟ <Link href="/assessment" className="font-medium text-ink underline underline-offset-4">ابدأ التقييم الوقفي المجاني</Link>.
-        </p>
       </Container>
+      <CallToAction
+        title="تريد صورة شاملة عن وقفك؟"
+        lede="يجمع التقييم الوقفي المجاني ما تقيسه هذه الأدوات وأكثر، في أحد عشر محورًا وخطة عمل مرتبة."
+        primary={{ href: "/assessment", label: "ابدأ التقييم الوقفي المجاني" }}
+      />
     </>
   );
 }

@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Check, Lock } from "lucide-react";
+import { Check, Lock, Package } from "lucide-react";
 import { buttonClass } from "@/components/ui";
 import { Container, PageIntro } from "@/components/site/bits";
+import { InfoPanel } from "@/components/site/blocks";
 import { SIZE_LABEL } from "@/lib/utils";
 import { getPackages } from "@/server/modules/public/queries";
 
@@ -29,25 +30,28 @@ export default async function PackagesPage() {
   return (
     <>
       <PageIntro
+        icon={Package}
         crumbs={[{ label: "الباقات" }]}
         title="الباقات"
         lede="تجمع كل باقة ما يحتاجه الوقف بحسب حجمه على مدار السنة. ابدأ بالباقة المجانية، وانتقل إلى ما يناسبك كلما نما وقفك أو زادت التزاماته."
       />
       <Container className="py-10">
-        <div className="grid gap-px overflow-hidden rounded-lg border border-line bg-line md:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           {open.map((p) => {
             const price = pkgPrice(p);
             return (
-              <section key={p.id} id={`pkg-${p.code}`} aria-labelledby={`pkg-h-${p.code}`} className="flex scroll-mt-24 flex-col bg-surface p-6">
+              <section key={p.id} id={`pkg-${p.code}`} aria-labelledby={`pkg-h-${p.code}`} className={`card flex scroll-mt-24 flex-col rounded-lg border bg-surface p-6 ${p.code === "free" ? "border-ink/40 shadow-card" : "border-line"}`}>
                 <h2 id={`pkg-h-${p.code}`} className="font-naskh text-[1.5rem] font-bold text-ink">{p.nameAr}</h2>
                 <p className="text-[14px] text-muted">
                   {p.audience}
                   {p.targetSizeClasses.length ? ` (${p.targetSizeClasses.map((s) => SIZE_LABEL[s] ?? s).join(" أو ")})` : ""}
                 </p>
-                <p className="mt-4 text-lg font-semibold">{price.main}</p>
-                <p className="text-[13px] text-muted">{price.sub}</p>
+                <div className="mt-4 rounded-md bg-stone px-4 py-3">
+                  <p className="text-[1.15rem] font-bold text-ink">{price.main}</p>
+                  <p className="text-[13px] text-muted">{price.sub}</p>
+                </div>
                 {p.description ? <p className="mt-4 text-[15px] leading-7">{p.description}</p> : null}
-                <h3 className="mt-5 text-[14px] font-medium text-muted">تشمل</h3>
+                <h3 className="mt-5 border-t border-line pt-4 text-[14px] font-bold text-text">تشمل</h3>
                 <ul className="mt-2 flex-1 space-y-1.5">
                   {p.services.map(({ service: s, note }) => (
                     <li key={s.id} className="flex gap-2 text-[14.5px] leading-6">
@@ -71,8 +75,10 @@ export default async function PackagesPage() {
         </div>
 
         {closed.map((p) => (
-          <section key={p.id} id={`pkg-${p.code}`} aria-labelledby={`pkg-h-${p.code}`} className="mt-8 flex scroll-mt-24 flex-col gap-4 rounded-lg border border-dashed border-line-strong p-6 md:flex-row md:items-center">
-            <Lock aria-hidden className="size-6 shrink-0 text-muted" />
+          <section key={p.id} id={`pkg-${p.code}`} aria-labelledby={`pkg-h-${p.code}`} className="mt-8 flex scroll-mt-24 flex-col gap-4 rounded-lg border border-dashed border-line-strong bg-stone p-6 md:flex-row md:items-center">
+            <span aria-hidden className="grid size-12 shrink-0 place-items-center rounded-[14px] bg-surface text-muted ring-1 ring-line">
+              <Lock className="size-6" strokeWidth={1.75} />
+            </span>
             <div className="flex-1">
               <h2 id={`pkg-h-${p.code}`} className="font-naskh text-[1.3rem] font-bold text-ink">باقة {p.nameAr}</h2>
               <p className="mt-1 text-[15px] leading-7 text-muted">{p.description}</p>
@@ -84,10 +90,12 @@ export default async function PackagesPage() {
           </section>
         ))}
 
-        <p className="mt-8 max-w-3xl text-[14px] leading-7 text-muted">
-          تضاف ضريبة القيمة المضافة إلى الأسعار المعلنة. ويمكنك طلب أي خدمة غير مشمولة في باقتك منفردةً من <Link href="/services" className="text-ink underline underline-offset-4">صفحة الخدمات</Link>.
-          وتصدر فاتورة ما يُدفع من مال الوقف باسم الوقف.
-        </p>
+        <InfoPanel tone="info" title="عن الأسعار والفوترة" className="mt-8 max-w-3xl">
+          <p className="text-[14.5px] leading-7">
+            تضاف ضريبة القيمة المضافة إلى الأسعار المعلنة. ويمكنك طلب أي خدمة غير مشمولة في باقتك منفردةً من <Link href="/services" className="text-ink underline underline-offset-4">صفحة الخدمات</Link>.
+            وتصدر فاتورة ما يُدفع من مال الوقف باسم الوقف.
+          </p>
+        </InfoPanel>
       </Container>
     </>
   );

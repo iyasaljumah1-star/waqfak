@@ -28,18 +28,18 @@ export function FaqBrowser({ items, topics, initialAudience }: { items: FaqItem[
 
   return (
     <div className="grid gap-10 lg:grid-cols-[240px_minmax(0,1fr)]">
-      <div className="space-y-6 lg:sticky lg:top-24 lg:self-start">
+      <div className="card space-y-5 rounded-lg border border-line bg-surface p-4 shadow-card md:p-5 lg:sticky lg:top-24 lg:self-start">
         <div>
           <label htmlFor="faq-q" className="mb-2 block text-[14px] font-medium text-muted">ابحث في الأسئلة</label>
           <div className="relative">
-            <Search aria-hidden className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted" />
+            <Search aria-hidden className="pointer-events-none absolute start-4 top-1/2 size-4 -translate-y-1/2 text-muted" />
             <input
               id="faq-q"
               type="search"
               value={q}
               onChange={(e) => setQ(e.target.value)}
               placeholder="مثل: الثلث، التسجيل، الصرف"
-              className="h-11 w-full rounded-md border border-line-strong bg-surface ps-9 pe-3 text-[15px] focus:border-ink focus:outline-none focus:ring-2 focus:ring-ink/20"
+              className="h-11 w-full rounded-full border border-line-strong bg-surface ps-10 pe-4 text-[15px] focus:border-ink focus:outline-none focus:ring-2 focus:ring-ink/20"
             />
           </div>
         </div>
@@ -87,7 +87,7 @@ export function FaqBrowser({ items, topics, initialAudience }: { items: FaqItem[
             {groups.map((g) => (
               <section key={g.key} id={`t-${g.key}`} aria-labelledby={`th-${g.key}`} className="scroll-mt-24">
                 <h2 id={`th-${g.key}`} className="font-naskh text-[1.4rem] font-bold text-ink">{g.label}</h2>
-                <ul className="mt-2 divide-y divide-line border-y border-line">
+                <ul className="card mt-3 divide-y divide-line rounded-md border border-line bg-surface px-4 md:px-5">
                   {g.items.map((f) => (
                     <li key={f.id}>
                       <details className="group" open={searching && count <= 3}>

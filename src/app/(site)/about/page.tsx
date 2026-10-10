@@ -22,7 +22,7 @@ export default async function AboutPage() {
         <>
           <section aria-labelledby="facts" className="mt-10 max-w-[68ch]">
             <h2 id="facts" className="font-naskh text-[1.4rem] font-bold text-ink">بيانات الشركة والتراخيص</h2>
-            <dl className="mt-3 divide-y divide-line border-y border-line text-[15px]">
+            <dl className="card mt-4 divide-y divide-line rounded-md border border-line bg-surface px-4 text-[15px] md:px-5">
               <Fact label="الاسم">{profile.nameAr ?? "شركة وقفك"}</Fact>
               <Fact label="الشكل النظامي">{profile.legalForm ?? "شركة ذات مسؤولية محدودة"} (تحت التأسيس)</Fact>
               <Fact label="السجل التجاري">{profile.crNumber || "—"}</Fact>
@@ -45,8 +45,8 @@ export default async function AboutPage() {
 
 function Fact({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] gap-4 py-2.5">
-      <dt className="text-muted">{label}</dt>
+    <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] gap-4 py-3">
+      <dt className="font-medium text-muted">{label}</dt>
       <dd className="tabular">{children}</dd>
     </div>
   );

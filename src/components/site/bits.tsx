@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
+import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { CONTENT_AUDIENCE_LABEL, KIND_LABEL, TOPIC_LABEL } from "./labels";
 
 export const SITE_URL = process.env.APP_URL ?? "http://localhost:3000";
 
@@ -28,13 +28,18 @@ export function Crumbs({ items }: { items: { href?: string; label: string }[] })
 }
 
 /** Page opening band used by inner pages: quiet stone ground, Naskh title, short lede. */
-export function PageIntro({ title, lede, crumbs, children, aside }: { title: ReactNode; lede?: ReactNode; crumbs?: { href?: string; label: string }[]; children?: ReactNode; aside?: ReactNode }) {
+export function PageIntro({ title, lede, crumbs, children, aside, icon: Icon }: { title: ReactNode; lede?: ReactNode; crumbs?: { href?: string; label: string }[]; children?: ReactNode; aside?: ReactNode; icon?: LucideIcon }) {
   return (
     <div className="border-b border-line bg-stone">
       <Container className="py-8 md:py-12">
         {crumbs ? <Crumbs items={crumbs} /> : null}
-        <div className={cn("mt-4 grid gap-8", aside && "lg:grid-cols-[minmax(0,1fr)_320px] lg:items-end")}>
+        <div className={cn("mt-5 grid gap-8", aside && "lg:grid-cols-[minmax(0,1fr)_320px] lg:items-end")}>
           <div className="min-w-0">
+            {Icon ? (
+              <span aria-hidden className="mb-4 grid size-12 place-items-center rounded-[14px] bg-surface text-ink shadow-card ring-1 ring-line">
+                <Icon strokeWidth={1.75} className="size-6" />
+              </span>
+            ) : null}
             <h1 className="font-naskh text-[1.9rem] font-bold leading-[1.5] text-ink md:text-[2.5rem]">{title}</h1>
             {lede ? <p className="mt-3 max-w-2xl text-[17px] leading-8 text-muted">{lede}</p> : null}
             {children}
@@ -50,34 +55,6 @@ export function JsonLd({ data }: { data: unknown }) {
   // JSON, not HTML: escape "<" so the payload can never close the script element.
   const json = JSON.stringify(data).replace(/</g, "\\u003c");
   return <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: json }} />;
-}
-
-export function ContentMeta({ kind, topic, minutes, audience }: { kind: string; topic?: string | null; minutes?: number | null; audience?: string[] }) {
-  const parts = [KIND_LABEL[kind] ?? kind, topic ? TOPIC_LABEL[topic] ?? topic : null, minutes ? `${minutes} دقائق قراءة` : null].filter(Boolean);
-  return (
-    <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[13.5px] text-muted">
-      {parts.map((p, i) => (
-        <span key={i} className={i === 0 ? "font-medium text-seal" : undefined}>{p}</span>
-      ))}
-      {audience?.length ? <span className="sr-only">لـ {audience.map((a) => CONTENT_AUDIENCE_LABEL[a] ?? a).join("، ")}</span> : null}
-    </p>
-  );
-}
-
-/** A library entry as a row in a list (not a card): title, summary, meta. */
-export function ContentRowLink({ item, headingLevel = 3 }: { item: { slug: string; kind: string; titleAr: string; summary: string | null; topic: string | null; readingMinutes: number | null; audience: string[] }; headingLevel?: 2 | 3 }) {
-  const H = headingLevel === 2 ? "h2" : "h3";
-  return (
-    <article className="group relative py-5">
-      <ContentMeta kind={item.kind} topic={item.topic} minutes={item.readingMinutes} audience={item.audience} />
-      <H className="mt-1 text-[18px] font-semibold leading-8 text-text group-hover:text-ink">
-        <Link href={`/library/${item.slug}`} className="after:absolute after:inset-0 focus-visible:outline-none group-focus-within:underline">
-          {item.titleAr}
-        </Link>
-      </H>
-      {item.summary ? <p className="mt-1 line-clamp-2 max-w-3xl text-[15px] leading-7 text-muted">{item.summary}</p> : null}
-    </article>
-  );
 }
 
 export function FilterChip({ href, active, children }: { href: string; active: boolean; children: ReactNode }) {

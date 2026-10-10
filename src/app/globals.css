@@ -155,6 +155,13 @@ body {
     hyphens: none;
     text-wrap: pretty;
   }
+  /* Cards, panels, chips and table cells hold short text: start alignment reads better than justification. */
+  .card p,
+  td p,
+  th p,
+  summary p {
+    text-align: start;
+  }
   /* Narrow screens: keep justification for long reading surfaces only; short card text reads better start-aligned. */
   @media (max-width: 480px) {
     p {
@@ -181,8 +188,37 @@ body {
   font-family: var(--font-naskh);
   font-size: 1.45rem;
   font-weight: 700;
-  margin: 2rem 0 0.75rem;
+  line-height: 1.6;
+  margin: 2.75rem 0 0.85rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--line);
   color: var(--ink);
+  position: relative;
+}
+/* A short gold stroke marks the start of each major section (the only accent in the reading column). */
+.prose-waqf h2::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: 0;
+  top: -1px;
+  width: 2.5rem;
+  height: 3px;
+  border-radius: 0 0 3px 3px;
+  background: var(--seal);
+}
+.prose-waqf > h2:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+.prose-waqf > h2:first-child::before {
+  display: none;
+}
+.prose-waqf h4 {
+  font-size: 1rem;
+  font-weight: 700;
+  margin: 1.25rem 0 0.4rem;
+  color: var(--text);
 }
 .prose-waqf h3 {
   font-size: 1.1rem;
@@ -224,11 +260,85 @@ body {
   text-align: start;
   vertical-align: top;
 }
+/* Callouts inside articles (markdown blockquotes). The renderer adds a tone class from the callout label. */
 .prose-waqf blockquote {
-  border-inline-start: 3px solid var(--seal);
-  padding-inline-start: 1rem;
-  color: var(--muted);
+  margin: 1.5rem 0;
+  padding: 0.9rem 1.1rem;
+  border-inline-start: 4px solid var(--seal);
+  border-radius: var(--radius-md);
+  background: color-mix(in oklab, var(--seal-soft) 70%, transparent);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 0.96rem;
+  line-height: 1.95;
+}
+.prose-waqf blockquote > :last-child {
+  margin-bottom: 0;
+}
+.prose-waqf blockquote.callout-warn {
+  border-color: var(--warn);
+  background: color-mix(in oklab, var(--warn-soft) 80%, transparent);
+}
+.prose-waqf blockquote.callout-info {
+  border-color: var(--info);
+  background: color-mix(in oklab, var(--info-soft) 80%, transparent);
+}
+/* A model letter or quoted text the reader may copy: document face on a ruled-paper ground. */
+.prose-waqf blockquote.callout-model {
+  border-color: var(--ink);
+  background: var(--stone);
   font-family: var(--font-reading);
+  font-size: 1rem;
+}
+.prose-waqf .callout-label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.2rem;
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--muted);
+}
+/* Tables: framed, with a tinted head and zebra rows for scanning. */
+.table-frame {
+  overflow-x: auto;
+}
+.prose-waqf .table-frame {
+  margin: 1.5rem 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  overflow-x: auto;
+}
+.prose-waqf .table-frame table {
+  margin: 0;
+}
+.prose-waqf .table-frame thead tr {
+  background: var(--stone);
+}
+.prose-waqf .table-frame th,
+.prose-waqf .table-frame td {
+  padding: 0.65rem 0.85rem;
+  font-family: var(--font-sans);
+  line-height: 1.8;
+}
+.prose-waqf .table-frame tbody tr:nth-child(even) {
+  background: var(--surface-2);
+}
+.prose-waqf .table-frame tbody tr:last-child td {
+  border-bottom: 0;
+}
+.prose-waqf strong {
+  font-weight: 700;
+  color: var(--text);
+}
+.prose-waqf ul > li::marker {
+  color: var(--seal);
+}
+.prose-waqf ol > li::marker {
+  color: var(--ink);
+  font-weight: 700;
+  font-family: var(--font-sans);
 }
 
 /* Deed paper: ruled lines that recall a صك */

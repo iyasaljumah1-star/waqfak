@@ -94,7 +94,7 @@ export function Panel({ title, description, actions, children, className, id, ti
   return (
     <section id={id} className={cn("rounded-lg border border-line bg-surface", className)}>
       {title || actions ? (
-        <div className="flex flex-wrap items-start justify-between gap-2 border-b border-line px-4 py-3 md:px-5">
+        <div className="flex flex-wrap items-start justify-between gap-2 rounded-t-lg border-b border-line bg-surface-2 px-4 py-3 md:px-5">
           <div>
             {title ? <h2 className="text-[17px] font-semibold text-text">{title}</h2> : null}
             {description ? <p className="text-sm text-muted">{description}</p> : null}

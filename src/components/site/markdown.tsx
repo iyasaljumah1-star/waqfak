@@ -183,6 +183,20 @@ function List({ ordered, items, k }: { ordered: boolean; items: ListItem[]; k: s
   );
 }
 
+/**
+ * Callout tone from the quote's own wording (presentation only; the text is unchanged):
+ * a leading "**…تحقق…**" label → caution; "**حالة النفاذ**"/"**ملاحظة انتقالية**" or another bold label → info;
+ * a model letter with [placeholders] → copyable model; anything else → a plain note.
+ */
+function calloutTone(blocks: Block[]): "warn" | "info" | "model" | null {
+  const first = blocks[0];
+  if (!first || first.t !== "p") return null;
+  const label = /^\*\*([^*]{2,30})\*\*\s*[:：]/.exec(first.text)?.[1];
+  if (label) return /تحقق/.test(label) ? "warn" : "info";
+  if (/\[[^\]]{2,}\]/.test(first.text) && !/\]\(/.test(first.text)) return "model";
+  return null;
+}
+
 function renderBlocks(blocks: Block[], prefix = "b"): ReactNode[] {
   return blocks.map((b, n) => {
     const k = `${prefix}${n}`;
@@ -195,13 +209,20 @@ function renderBlocks(blocks: Block[], prefix = "b"): ReactNode[] {
         return <p key={k}>{renderInline(b.text, k)}</p>;
       case "hr":
         return <hr key={k} className="my-8 border-line" />;
-      case "quote":
-        return <blockquote key={k} className="my-5">{renderBlocks(b.blocks, `${k}q`)}</blockquote>;
+      case "quote": {
+        const tone = calloutTone(b.blocks);
+        return (
+          <blockquote key={k} className={tone ? `callout-${tone}` : undefined}>
+            {tone === "model" ? <p className="callout-label">نموذج قابل للنسخ</p> : null}
+            {renderBlocks(b.blocks, `${k}q`)}
+          </blockquote>
+        );
+      }
       case "list":
         return <List key={k} ordered={b.ordered} items={b.items} k={k} />;
       case "table":
         return (
-          <div key={k} className="my-5 -mx-1 overflow-x-auto px-1" role="region" aria-label="جدول" tabIndex={0}>
+          <div key={k} className="table-frame" role="region" aria-label="جدول" tabIndex={0}>
             <table className="!my-0 min-w-[480px]">
               <thead>
                 <tr className="bg-surface-2">

@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ArrowLeft, BookOpenCheck, FileLock2, Landmark, Scale } from "lucide-react";
+import { ArrowLeft, BookOpenCheck, ClipboardList, FileCheck2, FileLock2, Landmark, Save, Scale, Sparkles } from "lucide-react";
 import { buttonClass } from "@/components/ui";
-import { ContentRowLink, Container, JsonLd, SITE_URL } from "@/components/site/bits";
-import { JOURNEY } from "@/components/site/labels";
+import { Container, JsonLd, SITE_URL } from "@/components/site/bits";
+import { ArticleCard, CallToAction, CategoryCard, Chip, FeatureCard, ReferenceCard, Section, SectionHeader } from "@/components/site/blocks";
+import { AUDIENCE_ICON, categoryIcon } from "@/components/site/icons";
+import { JOURNEY, TOPIC_LABEL } from "@/components/site/labels";
 import { getCatalog, getLibrary } from "@/server/modules/public/queries";
 
 export const metadata: Metadata = {
@@ -14,10 +16,10 @@ export const metadata: Metadata = {
 };
 
 const PATHS = [
-  { href: "/for/waqif", who: "أنا واقف", clause: "أريد أن أقف مالًا أو أوصي بوقف، في وجه برٍّ أحتسبه." },
-  { href: "/for/nazir", who: "أنا ناظر", clause: "أدير وقفًا قائمًا، وأريد أن أعرف ما يلزمني ومتى." },
-  { href: "/for/beneficiary", who: "أنا مستفيد", clause: "لي حق في غلة وقف، وأريد أن أفهمه وأطمئن إليه." },
-  { href: "/for/entities", who: "نحن جهة", clause: "جمعية أو مؤسسة أو شركة وقفية تبني أوقافها أو تديرها." },
+  { key: "waqif", href: "/for/waqif", who: "أنا واقف", clause: "أريد أن أقف مالًا أو أوصي بوقف، في وجه برٍّ أحتسبه." },
+  { key: "nazir", href: "/for/nazir", who: "أنا ناظر", clause: "أدير وقفًا قائمًا، وأريد أن أعرف ما يلزمني ومتى." },
+  { key: "beneficiary", href: "/for/beneficiary", who: "أنا مستفيد", clause: "لي حق في غلة وقف، وأريد أن أفهمه وأطمئن إليه." },
+  { key: "entities", href: "/for/entities", who: "نحن جهة", clause: "جمعية أو مؤسسة أو شركة وقفية تبني أوقافها أو تديرها." },
 ];
 
 const serviceCount = (n: number) => (n === 1 ? "خدمة واحدة" : n === 2 ? "خدمتان" : n <= 10 ? `${n} خدمات` : `${n} خدمة`);
@@ -68,9 +70,14 @@ export default async function Home() {
               <h2 className="text-[1.3rem] font-bold text-ink">من أنت في هذا الوقف؟</h2>
               <p className="mt-1 text-[14px] text-muted">اختر ما يصفك، ونرشدك إلى ما يخصك.</p>
               <ul className="mt-4 grid gap-2">
-                {PATHS.map((p) => (
+                {PATHS.map((p) => {
+                  const Icon = AUDIENCE_ICON[p.key];
+                  return (
                   <li key={p.href}>
                     <Link href={p.href} className="group flex items-center gap-3 rounded-2xl bg-surface-2 px-4 py-3.5 text-[15.5px] leading-7 transition-colors hover:bg-ink-soft focus-visible:outline-offset-2">
+                      <span aria-hidden className="grid size-9 shrink-0 place-items-center rounded-[10px] bg-surface text-ink ring-1 ring-line">
+                        <Icon strokeWidth={1.75} className="size-[18px]" />
+                      </span>
                       <span className="min-w-0 flex-1">
                         <span className="font-bold text-ink">{p.who}: </span>
                         {p.clause}
@@ -78,170 +85,151 @@ export default async function Home() {
                       <ArrowLeft aria-hidden className="size-4 shrink-0 text-muted transition-transform group-hover:-translate-x-1 group-hover:text-ink" />
                     </Link>
                   </li>
-                ))}
+                  );
+                })}
               </ul>
             </div>
           </div>
         </Container>
       </section>
 
-      {/* ───────── Journey ───────── */}
-      <section aria-labelledby="journey-title" className="py-14 md:py-20">
-        <Container>
-          <div className="max-w-2xl">
-            <h2 id="journey-title" className="font-naskh text-[1.75rem] font-bold leading-[1.5] text-ink md:text-[2.1rem]">رحلة الوقف، من الفكرة إلى الاستدامة</h2>
-            <p className="mt-2 text-[16.5px] leading-8 text-muted">لكل مرحلة التزاماتها ومواعيدها. حدّد مرحلة وقفك، وابدأ بالخدمات التي تناسبها.</p>
-          </div>
-          <ol className="mt-10 grid gap-0 lg:grid-cols-5">
-            {JOURNEY.map((j, i) => {
-              const n = byStage(j.stage);
-              return (
-                <li key={j.stage} className="relative flex gap-4 pb-8 lg:block lg:pb-0 lg:pe-6">
-                  {/* connecting rule: vertical on phones, horizontal on desktop */}
-                  {i < JOURNEY.length - 1 ? (
-                    <span aria-hidden className="absolute start-[15px] top-8 h-full w-px bg-line-strong lg:start-8 lg:top-[15px] lg:h-px lg:w-full" />
+      {/* ───────── Journey: five stages, a true sequence ───────── */}
+      <Section labelledBy="journey-title">
+        <SectionHeader id="journey-title" title="رحلة الوقف، من الفكرة إلى الاستدامة" lede="لكل مرحلة التزاماتها ومواعيدها. حدّد مرحلة وقفك، وابدأ بالخدمات التي تناسبها." />
+        <ol className="relative mt-10 grid gap-4 md:grid-cols-2 lg:grid-cols-5 lg:gap-3">
+          {/* the thread that ties the stages (desktop) */}
+          <span aria-hidden className="absolute inset-x-8 top-[38px] hidden h-px bg-line-strong lg:block" />
+          {JOURNEY.map((j) => {
+            const n = byStage(j.stage);
+            return (
+              <li key={j.stage} className="card relative flex gap-4 rounded-md border border-line bg-surface p-5 md:flex-col md:gap-0">
+                <span className="relative grid size-9 shrink-0 place-items-center rounded-full bg-ink text-[15px] font-bold text-white tabular ring-4 ring-surface dark:text-[#0f141c]">
+                  {j.stage}
+                </span>
+                <div className="flex min-w-0 flex-1 flex-col">
+                  <h3 className="font-naskh text-[1.2rem] font-bold text-ink md:mt-4">{j.name}</h3>
+                  <p className="mt-1 flex-1 text-[14.5px] leading-7 text-muted">{j.line}</p>
+                  {n ? (
+                    <Link href={`/services?stage=${j.stage}`} className="mt-3 inline-flex items-center gap-1 text-[14px] font-medium text-ink underline-offset-4 hover:underline md:mt-4">
+                      خدمات المرحلة ({serviceCount(n)})
+                      <ArrowLeft aria-hidden className="size-4 shrink-0" />
+                    </Link>
                   ) : null}
-                  <span className="relative grid size-8 shrink-0 place-items-center rounded-full border border-ink bg-surface text-[14px] font-semibold text-ink tabular">
-                    {j.stage}
-                  </span>
-                  <div className="min-w-0 lg:mt-5">
-                    <h3 className="font-naskh text-[1.3rem] font-bold text-ink">{j.name}</h3>
-                    <p className="mt-1 text-[15px] leading-7 text-muted">{j.line}</p>
-                    {n ? (
-                      <Link href={`/services?stage=${j.stage}`} className="mt-2 inline-flex items-center gap-1 text-[14.5px] font-medium text-ink underline-offset-4 hover:underline">
-                        خدمات المرحلة ({serviceCount(n)})
-                      </Link>
-                    ) : null}
-                  </div>
-                </li>
-              );
-            })}
-          </ol>
-        </Container>
-      </section>
-
-      {/* ───────── Service index ───────── */}
-      <section aria-labelledby="cats-title" className="border-t border-line bg-surface-2 py-14 md:py-20">
-        <Container>
-          <div className="flex flex-wrap items-end justify-between gap-4">
-            <div className="max-w-2xl">
-              <h2 id="cats-title" className="font-naskh text-[1.75rem] font-bold leading-[1.5] text-ink md:text-[2.1rem]">فهرس الخدمات</h2>
-              <p className="mt-2 text-[16.5px] leading-8 text-muted">
-                {serviceCount(services.length)} في {categories.length} أبواب، لكل خدمة نطاق ومخرجات واضحة، وضوابطها النظامية مبيّنة في صفحتها.
-              </p>
-            </div>
-            <Link href="/services" className={buttonClass("secondary", "md")}>كل الخدمات</Link>
-          </div>
-          <ul className="mt-8 grid gap-x-12 md:grid-cols-2">
-            {categories.map((c) => (
-              <li key={c.id} className="border-b border-line">
-                <Link href={`/services#cat-${c.code}`} className="group block py-5">
-                  <span className="flex items-baseline gap-3">
-                    <span className="font-naskh text-[1.25rem] font-bold text-text group-hover:text-ink">{c.nameAr}</span>
-                    <span aria-hidden className="mb-1.5 flex-1 border-b border-dotted border-line-strong" />
-                    <span className="shrink-0 text-[14px] text-muted tabular">{serviceCount(c.services.length)}</span>
-                  </span>
-                  {c.description ? <span className="mt-1 block text-[15px] leading-7 text-muted">{c.description}</span> : null}
-                </Link>
+                </div>
               </li>
-            ))}
-          </ul>
-        </Container>
-      </section>
+            );
+          })}
+        </ol>
+      </Section>
 
-      {/* ───────── Assessment ───────── */}
-      <section aria-labelledby="asmt-title" className="bg-ink text-white dark:bg-[#0f1520]">
-        <Container className="grid gap-10 py-14 md:py-20 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:items-center">
+      {/* ───────── Service categories ───────── */}
+      <Section tone="stone" labelledBy="cats-title">
+        <SectionHeader
+          id="cats-title"
+          title="فهرس الخدمات"
+          lede={`${serviceCount(services.length)} في ${categories.length} أبواب، لكل خدمة نطاق ومخرجات واضحة، وضوابطها النظامية مبيّنة في صفحتها.`}
+          action={<Link href="/services" className={buttonClass("secondary", "md")}>كل الخدمات</Link>}
+        />
+        <ul className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {categories.map((c) => (
+            <li key={c.id} className="flex">
+              <div className="flex-1 [&>div]:h-full">
+                <CategoryCard href={`/services#cat-${c.code}`} icon={categoryIcon(c.code)} title={c.nameAr} description={c.description} meta={serviceCount(c.services.length)} more="خدمات الباب" />
+              </div>
+            </li>
+          ))}
+          <li className="flex">
+            <Link href="/packages" className="group flex flex-1 flex-col justify-between rounded-md border border-dashed border-ink/30 bg-surface/60 p-5 transition-colors hover:border-ink/60 hover:bg-surface md:p-6">
+              <span>
+                <span className="block font-naskh text-[1.2rem] font-bold text-ink">الباقات السنوية</span>
+                <span className="mt-1.5 block text-[15px] leading-7 text-muted">خدمات مجمّعة بحسب حجم الوقف على مدار السنة، تبدأ بباقة مجانية.</span>
+              </span>
+              <span className="mt-4 inline-flex items-center gap-1 text-[14px] font-medium text-ink">
+                قارن الباقات
+                <ArrowLeft aria-hidden className="size-4 transition-transform group-hover:-translate-x-0.5" />
+              </span>
+            </Link>
+          </li>
+        </ul>
+      </Section>
+
+      {/* ───────── Free assessment ───────── */}
+      <section aria-labelledby="asmt-title" className="bg-ink text-white dark:bg-[#0d3a2e]">
+        <Container className="grid gap-10 py-14 md:py-20 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] lg:items-center">
           <div>
-            <h2 id="asmt-title" className="font-naskh text-[1.75rem] font-bold leading-[1.55] md:text-[2.2rem]">قبل أن تطلب أي خدمة، اعرف أين يقف وقفك</h2>
+            <Chip tone="onInk" icon={Sparkles}>مجاني</Chip>
+            <h2 id="asmt-title" className="mt-4 font-naskh text-[1.75rem] font-bold leading-[1.55] md:text-[2.2rem]">قبل أن تطلب أي خدمة، اعرف أين يقف وقفك</h2>
             <p className="mt-4 max-w-xl text-[16.5px] leading-8 text-white/80">
               أسئلة واضحة في أحد عشر محورًا، من سلامة الشرط والتسجيل إلى المالية والحوكمة والمستفيدين. تحصل على درجة لكل محور، وتنبيه إلى المخالفات الجوهرية، وخطة عمل مرتبة مع مرجع كل ملاحظة.
             </p>
-            <Link href="/assessment" className="mt-8 inline-flex h-12 items-center justify-center rounded-md bg-white px-6 font-medium text-ink hover:bg-white/90">
-              ابدأ التقييم المجاني
-            </Link>
+            <Link href="/assessment" className={buttonClass("seal", "lg", "mt-8")}>ابدأ التقييم المجاني</Link>
           </div>
-          <dl className="grid gap-px overflow-hidden rounded-lg bg-white/15 sm:grid-cols-2">
-            {[
-              ["مجاني وسهل البدء", "تبدأ التقييم دون اسم أو رقم هوية."],
-              ["يُحفظ تلقائيًا", "توقّف متى شئت، وأكمل لاحقًا من الجهاز نفسه أو من حسابك."],
-              ["بمرجع نظامي", "كل ملاحظة تحيل إلى المادة أو الدليل الذي بُنيت عليه."],
-              ["نتيجة قابلة للتنفيذ", "توصيات مرتبطة بالخدمة المناسبة، وتقرير PDF تحتفظ به."],
-            ].map(([t, d]) => (
-              <div key={t} className="bg-ink p-5 dark:bg-[#0f1520]">
-                <dt className="font-semibold">{t}</dt>
-                <dd className="mt-1 text-[15px] leading-7 text-white/75">{d}</dd>
-              </div>
-            ))}
-          </dl>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <FeatureCard onInk icon={ClipboardList} title="مجاني وسهل البدء">تبدأ التقييم دون اسم أو رقم هوية.</FeatureCard>
+            <FeatureCard onInk icon={Save} title="يُحفظ تلقائيًا">توقّف متى شئت، وأكمل لاحقًا من الجهاز نفسه أو من حسابك.</FeatureCard>
+            <FeatureCard onInk icon={Scale} title="بمرجع نظامي">كل ملاحظة تحيل إلى المادة أو الدليل الذي بُنيت عليه.</FeatureCard>
+            <FeatureCard onInk icon={FileCheck2} title="نتيجة قابلة للتنفيذ">توصيات مرتبطة بالخدمة المناسبة، وتقرير PDF تحتفظ به.</FeatureCard>
+          </div>
         </Container>
       </section>
 
-      {/* ───────── Trust ───────── */}
-      <section aria-labelledby="trust-title" className="py-14 md:py-20">
-        <Container className="grid gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-          <div>
-            <h2 id="trust-title" className="font-naskh text-[1.75rem] font-bold leading-[1.5] text-ink md:text-[2.1rem]">مرجعيتنا في العمل</h2>
-            <p className="mt-2 text-[16.5px] leading-8 text-muted">نقدم خدماتنا وحلولنا بالاستناد إلى الأنظمة واللوائح والضوابط والأدلة ذات الصلة بالأوقاف، مع مراعاة طبيعة كل وقف واحتياجاته. هذه أبرزها، ولكل منها ملخص في المكتبة.</p>
-            <ul className="mt-6 divide-y divide-line border-y border-line">
-              {regs.map((r) => (
-                <li key={r.id}>
-                  <Link href={`/library/${r.slug}`} className="flex items-start gap-3 py-3.5 text-[15.5px] leading-7 hover:text-ink">
-                    <Scale aria-hidden className="mt-1 size-4 shrink-0 text-muted" />
-                    <span>{r.titleAr}</span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-            <Link href="/regulations" className="mt-4 inline-block text-[15px] font-medium text-ink underline underline-offset-4">كل الأنظمة واللوائح</Link>
-          </div>
-          <ul className="space-y-7 lg:pt-2">
-            <Commit icon={BookOpenCheck} title="خدمات تستند إلى المرجعية النظامية">
-              كل توصية نقدمها مقرونة بمرجعها من النظام أو اللائحة أو الدليل، فتعرف أساسها ومدى إلزامها لوقفك.
-            </Commit>
-            <Commit icon={Landmark} title="حلول متكاملة في كل مراحل الوقف">
-              من تصميم الوقف وصياغة وثيقته وتجهيز متطلبات توثيقه وتسجيله، إلى مساندة ناظره في الحوكمة والمالية والامتثال والاستثمار، ونرافقك في الإجراءات لدى الجهات المختصة.
-            </Commit>
-            <Commit icon={Scale} title="رأي مهني موقّع">
-              تصدر استشاراتنا الشرعية والقانونية رأيًا مهنيًا موقّعًا باسم المستشار وصفته، مبنيًا على وقائع وقفك ووثائقه.
-            </Commit>
-            <Commit icon={FileLock2} title="بيانات وقفك لك">
-              نشفّر البيانات الحساسة ونحفظها داخل المملكة، ولا يطّلع على ملف وقفك إلا من تمنحه الصلاحية. <Link href="/legal/privacy" className="font-medium text-ink underline underline-offset-4">سياسة الخصوصية</Link>
-            </Commit>
+      {/* ───────── Regulatory reference + commitments ───────── */}
+      <Section labelledBy="trust-title">
+        <SectionHeader
+          id="trust-title"
+          title="مرجعيتنا في العمل"
+          lede="نقدم خدماتنا وحلولنا بالاستناد إلى الأنظمة واللوائح والضوابط والأدلة ذات الصلة بالأوقاف، مع مراعاة طبيعة كل وقف واحتياجاته. هذه أبرزها، ولكل منها ملخص في المكتبة."
+          action={<Link href="/regulations" className={buttonClass("secondary", "md")}>كل الأنظمة واللوائح</Link>}
+        />
+        <div className="mt-10 grid gap-10 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
+          <ul className="grid content-start gap-3 sm:grid-cols-2">
+            {regs.map((r) => (
+              <li key={r.id} className="flex [&>div]:flex-1">
+                <ReferenceCard href={`/library/${r.slug}`} icon={Scale} title={r.titleAr} meta={r.topic && TOPIC_LABEL[r.topic] ? <span>{TOPIC_LABEL[r.topic]}</span> : null} />
+              </li>
+            ))}
           </ul>
-        </Container>
-      </section>
+          <div className="rounded-lg bg-stone p-6 md:p-7">
+            <h3 className="font-naskh text-[1.25rem] font-bold text-ink">ما يميّز عملنا</h3>
+            <div className="mt-5 space-y-6">
+              <FeatureCard plain icon={BookOpenCheck} title="خدمات تستند إلى المرجعية النظامية">
+                كل توصية نقدمها مقرونة بمرجعها من النظام أو اللائحة أو الدليل، فتعرف أساسها ومدى إلزامها لوقفك.
+              </FeatureCard>
+              <FeatureCard plain icon={Landmark} title="حلول متكاملة في كل مراحل الوقف">
+                من تصميم الوقف وصياغة وثيقته وتجهيز متطلبات توثيقه وتسجيله، إلى مساندة ناظره في الحوكمة والمالية والامتثال والاستثمار، ونرافقك في الإجراءات لدى الجهات المختصة.
+              </FeatureCard>
+              <FeatureCard plain icon={Scale} title="رأي مهني موقّع">
+                تصدر استشاراتنا الشرعية والقانونية رأيًا مهنيًا موقّعًا باسم المستشار وصفته، مبنيًا على وقائع وقفك ووثائقه.
+              </FeatureCard>
+              <FeatureCard plain icon={FileLock2} title="بيانات وقفك لك">
+                نشفّر البيانات الحساسة ونحفظها داخل المملكة، ولا يطّلع على ملف وقفك إلا من تمنحه الصلاحية. <Link href="/legal/privacy" className="font-medium text-ink underline underline-offset-4">سياسة الخصوصية</Link>
+              </FeatureCard>
+            </div>
+          </div>
+        </div>
+      </Section>
 
       {/* ───────── Library ───────── */}
-      <section aria-labelledby="lib-title" className="border-t border-line pb-16 pt-14 md:pb-20">
-        <Container>
-          <div className="flex flex-wrap items-end justify-between gap-4">
-            <h2 id="lib-title" className="font-naskh text-[1.75rem] font-bold leading-[1.5] text-ink md:text-[2.1rem]">من المكتبة</h2>
-            <Link href="/library" className={buttonClass("secondary", "md")}>تصفّح المكتبة</Link>
-          </div>
-          <div className="mt-4 grid divide-y divide-line md:grid-cols-2 md:gap-x-12 md:divide-y-0">
-            {latest.map((i) => (
-              <div key={i.id} className="md:border-b md:border-line">
-                <ContentRowLink item={i} />
-              </div>
-            ))}
-          </div>
-        </Container>
-      </section>
-    </>
-  );
-}
+      <Section tone="stone" labelledBy="lib-title">
+        <SectionHeader
+          id="lib-title"
+          title="من المكتبة"
+          lede="مقالات وأدلة مختصرة بلغة واضحة، مع مرجع كل معلومة."
+          action={<Link href="/library" className={buttonClass("secondary", "md")}>تصفّح المكتبة</Link>}
+        />
+        <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {latest.map((i) => (
+            <ArticleCard key={i.id} item={i} />
+          ))}
+        </div>
+      </Section>
 
-function Commit({ icon: Icon, title, children }: { icon: typeof Scale; title: string; children: React.ReactNode }) {
-  return (
-    <li className="flex gap-4">
-      <span className="mt-1 grid size-10 shrink-0 place-items-center rounded-full bg-ink-soft text-ink">
-        <Icon aria-hidden className="size-5" />
-      </span>
-      <div>
-        <h3 className="text-[17px] font-semibold">{title}</h3>
-        <p className="mt-1 text-[15.5px] leading-7 text-muted">{children}</p>
-      </div>
-    </li>
+      <CallToAction
+        title="ابدأ بخطوة واضحة لوقفك"
+        lede="قيّم وقفك مجانًا لتعرف ما يلزمه الآن، أو صف لنا حاجتك ويتواصل معك فريقنا خلال يومي عمل."
+        primary={{ href: "/assessment", label: "قيّم وقفك مجانًا" }}
+        secondary={{ href: "/contact", label: "تحدّث مع فريقنا" }}
+      />
+    </>
   );
 }

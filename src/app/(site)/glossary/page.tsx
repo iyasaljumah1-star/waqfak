@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { BookA } from "lucide-react";
 import { Container, JsonLd, PageIntro, SITE_URL } from "@/components/site/bits";
 import { getGlossary } from "@/server/modules/public/queries";
 
@@ -42,6 +43,7 @@ export default async function GlossaryPage() {
         }}
       />
       <PageIntro
+        icon={BookA}
         crumbs={[{ label: "قاموس المصطلحات" }]}
         title="قاموس مصطلحات الوقف"
         lede={`${terms.length} مصطلحًا مرتبة على حروف الهجاء دون «ال» التعريف، ولكل تعريف مصدره.`}
@@ -65,12 +67,12 @@ export default async function GlossaryPage() {
         <div className="space-y-12">
           {letters.map((l) => (
             <section key={l} id={`letter-${l}`} aria-labelledby={`lh-${l}`} className="scroll-mt-36 grid gap-4 md:grid-cols-[80px_minmax(0,1fr)]">
-              <h2 id={`lh-${l}`} className="font-naskh text-[2.5rem] font-bold leading-none text-ink/80 md:sticky md:top-36 md:self-start">
+              <h2 id={`lh-${l}`} className="grid size-14 place-items-center rounded-md bg-ink-soft font-naskh text-[1.9rem] font-bold leading-none text-ink md:sticky md:top-36 md:size-16 md:self-start md:text-[2.2rem]">
                 {l === "#" ? "أخرى" : l}
               </h2>
-              <dl className="divide-y divide-line border-y border-line">
+              <dl className="card divide-y divide-line rounded-md border border-line bg-surface">
                 {groups.get(l)!.map((t) => (
-                  <div key={t.id} id={t.slug} className="scroll-mt-36 py-5 target:bg-seal-soft/50 target:px-3">
+                  <div key={t.id} id={t.slug} className="scroll-mt-36 px-4 py-5 first:rounded-t-md last:rounded-b-md target:bg-seal-soft/50 md:px-6">
                     <dt className="font-naskh text-[1.25rem] font-bold text-text">
                       <a href={`#${t.slug}`} className="hover:text-ink">{t.term}</a>
                     </dt>

@@ -2,9 +2,11 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { buttonClass } from "@/components/ui";
-import { ContentRowLink, Container, PageIntro } from "@/components/site/bits";
+import { ChevronDown, CircleHelp } from "lucide-react";
+import { Container, PageIntro } from "@/components/site/bits";
+import { ArticleCard, CallToAction, RelatedContent, ServiceCard, ServiceGrid } from "@/components/site/blocks";
+import { AUDIENCE_ICON } from "@/components/site/icons";
 import { AUDIENCES, type AudienceSlug } from "@/components/site/labels";
-import { ServiceRow } from "@/components/site/service-row";
 import { getCatalog, getFaqs, getLibrary } from "@/server/modules/public/queries";
 
 const COPY: Record<AudienceSlug, { title: string; lede: string; tools: { href: string; label: string }[]; serviceFilter: string; cta: { href: string; label: string } }> = {
@@ -67,7 +69,7 @@ export default async function AudiencePage({ params }: P) {
 
   return (
     <>
-      <PageIntro crumbs={[{ label: "لمن نخدم" }, { label: aud.label }]} title={c.title} lede={c.lede}>
+      <PageIntro icon={AUDIENCE_ICON[who]} crumbs={[{ label: "لمن نخدم" }, { label: aud.label }]} title={c.title} lede={c.lede}>
         <div className="mt-6 flex flex-wrap gap-3">
           <Link href={c.cta.href} className={buttonClass("primary", "lg")}>{c.cta.label}</Link>
           {c.tools.map((t) => (
@@ -76,51 +78,62 @@ export default async function AudiencePage({ params }: P) {
         </div>
       </PageIntro>
 
-      <Container className="grid gap-12 py-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,380px)]">
-        <section aria-labelledby="svc" className="min-w-0">
-          <h2 id="svc" className="font-naskh text-[1.5rem] font-bold text-ink">خدمات تناسبك</h2>
-          <ul className="mt-3 border-t border-line">
-            {svc.slice(0, 10).map((s) => (
-              <ServiceRow key={s.id} s={s} />
-            ))}
-          </ul>
-          {svc.length > 10 ? (
-            <Link href={`/services?audience=${c.serviceFilter}`} className="mt-4 inline-block font-medium text-ink underline underline-offset-4">
-              كل الخدمات المناسبة ({svc.length})
-            </Link>
-          ) : null}
-        </section>
+      <section aria-labelledby="svc" className="py-12 md:py-16">
+        <Container>
+          <RelatedContent
+            id="svc"
+            title="خدمات تناسبك"
+            more={svc.length > 9 ? { href: `/services?audience=${c.serviceFilter}`, label: `كل الخدمات المناسبة (${svc.length})` } : undefined}
+          >
+            <ServiceGrid wide>
+              {svc.slice(0, 9).map((s) => (
+                <ServiceCard key={s.id} s={s} />
+              ))}
+            </ServiceGrid>
+          </RelatedContent>
+        </Container>
+      </section>
 
-        <div className="space-y-12">
-          {qs.length ? (
-            <section aria-labelledby="faq">
-              <h2 id="faq" className="font-naskh text-[1.5rem] font-bold text-ink">أسئلة شائعة</h2>
-              <ul className="mt-3 divide-y divide-line border-y border-line">
-                {qs.map((f) => (
-                  <li key={f.id}>
-                    <details className="group py-3">
-                      <summary className="cursor-pointer list-none font-medium leading-7 marker:hidden hover:text-ink">{f.question}</summary>
-                      <p className="mt-2 text-[15px] leading-7 text-muted">{f.answer}</p>
-                    </details>
-                  </li>
-                ))}
-              </ul>
-              <Link href={`/faq?audience=${aud.faqKeys[0]}`} className="mt-3 inline-block text-[15px] font-medium text-ink underline underline-offset-4">كل الأسئلة</Link>
-            </section>
-          ) : null}
-          {reads.length ? (
-            <section aria-labelledby="read">
-              <h2 id="read" className="font-naskh text-[1.5rem] font-bold text-ink">اقرأ أولًا</h2>
-              <div className="divide-y divide-line">
-                {reads.map((i) => (
-                  <ContentRowLink key={i.id} item={i} />
-                ))}
-              </div>
-              <Link href={`/library?audience=${aud.contentKeys[0]}`} className="mt-2 inline-block text-[15px] font-medium text-ink underline underline-offset-4">المزيد في المكتبة</Link>
-            </section>
-          ) : null}
-        </div>
-      </Container>
+      {qs.length || reads.length ? (
+        <section className="border-t border-line bg-stone py-12 md:py-16">
+          <Container className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+            {qs.length ? (
+              <RelatedContent id="faq" title="أسئلة شائعة" more={{ href: `/faq?audience=${aud.faqKeys[0]}`, label: "كل الأسئلة" }}>
+                <ul className="card divide-y divide-line rounded-md border border-line bg-surface">
+                  {qs.map((f) => (
+                    <li key={f.id}>
+                      <details className="group px-4 py-3.5">
+                        <summary className="flex cursor-pointer list-none items-start gap-3 font-medium leading-7 marker:hidden hover:text-ink">
+                          <CircleHelp aria-hidden className="mt-1 size-4 shrink-0 text-ink" />
+                          <span className="min-w-0 flex-1">{f.question}</span>
+                          <ChevronDown aria-hidden className="mt-1 size-4 shrink-0 text-muted transition-transform group-open:rotate-180" />
+                        </summary>
+                        <p className="mt-2 ps-7 text-[15px] leading-7 text-muted">{f.answer}</p>
+                      </details>
+                    </li>
+                  ))}
+                </ul>
+              </RelatedContent>
+            ) : null}
+            {reads.length ? (
+              <RelatedContent id="read" title="اقرأ أولًا" more={{ href: `/library?audience=${aud.contentKeys[0]}`, label: "المزيد في المكتبة" }}>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {reads.map((i) => (
+                    <ArticleCard key={i.id} item={i} compact />
+                  ))}
+                </div>
+              </RelatedContent>
+            ) : null}
+          </Container>
+        </section>
+      ) : null}
+
+      <CallToAction
+        title="نبدأ معك من حيث يقف وقفك"
+        lede="ابدأ بالخطوة المقترحة لك، أو قيّم وقفك مجانًا لتعرف ما يلزمه الآن."
+        primary={c.cta}
+        secondary={c.cta.href === "/assessment" ? { href: "/contact", label: "تواصل معنا" } : { href: "/assessment", label: "قيّم وقفك مجانًا" }}
+      />
     </>
   );
 }

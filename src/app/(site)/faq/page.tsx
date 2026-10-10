@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { MessagesSquare } from "lucide-react";
 import { Container, JsonLd, PageIntro } from "@/components/site/bits";
 import { FaqBrowser } from "@/components/site/faq-browser";
 import { TOPIC_LABEL, TOPIC_ORDER } from "@/components/site/labels";
@@ -28,6 +29,7 @@ export default async function FaqPage({ searchParams }: { searchParams: Promise<
         }}
       />
       <PageIntro
+        icon={MessagesSquare}
         crumbs={[{ label: "الأسئلة الشائعة" }]}
         title="الأسئلة الشائعة"
         lede="إجابات مختصرة عن أكثر ما يسأل عنه الواقفون والنظار والمستفيدون، مع مرجع كل إجابة. ولسؤال يخص وقفك تحديدًا، يقدّم مستشارونا استشارة متخصصة."

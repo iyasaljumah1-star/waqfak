@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { ContentRowLink, JsonLd, SITE_URL } from "@/components/site/bits";
+import { JsonLd, SITE_URL } from "@/components/site/bits";
+import { ArticleCard, RelatedContent } from "@/components/site/blocks";
 import { ContentDocument } from "@/components/site/document";
 import { getContent, getLibrary } from "@/server/modules/public/queries";
 
@@ -47,14 +48,13 @@ export default async function LibraryItem({ params }: P) {
         crumbs={isReg ? [{ href: "/regulations", label: "الأنظمة واللوائح" }, { label: item.titleAr }] : [{ href: "/library", label: "المكتبة" }, { label: item.titleAr }]}
         after={
           related.length ? (
-            <section aria-labelledby="related" className="mt-12 max-w-[68ch]">
-              <h2 id="related" className="font-naskh text-[1.4rem] font-bold text-ink">في الموضوع نفسه</h2>
-              <div className="divide-y divide-line border-b border-line">
+            <RelatedContent id="related" title="في الموضوع نفسه" className="mt-14" more={item.topic ? { href: `/library?topic=${item.topic}`, label: "المزيد في الموضوع" } : undefined}>
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                 {related.map((r) => (
-                  <ContentRowLink key={r.id} item={r} />
+                  <ArticleCard key={r.id} item={r} compact />
                 ))}
               </div>
-            </section>
+            </RelatedContent>
           ) : null
         }
       />

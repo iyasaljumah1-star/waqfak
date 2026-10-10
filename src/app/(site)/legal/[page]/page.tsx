@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { ArrowLeft, FileText } from "lucide-react";
 import { notFound } from "next/navigation";
 import { ContentDocument } from "@/components/site/document";
 import { LEGAL_PAGES } from "@/components/site/labels";
@@ -30,12 +31,16 @@ export default async function LegalPage({ params }: P) {
       showKind={false}
       crumbs={[{ label: "السياسات" }, { label: item.titleAr }]}
       after={
-        <nav aria-label="السياسات الأخرى" className="mt-10 max-w-[68ch] border-t border-line pt-6">
-          <p className="text-[14px] font-medium text-muted">سياسات أخرى</p>
-          <ul className="mt-2 flex flex-wrap gap-x-5 gap-y-2">
+        <nav aria-label="السياسات الأخرى" className="mt-12 max-w-[68ch]">
+          <p className="font-naskh text-[1.25rem] font-bold text-ink">سياسات أخرى</p>
+          <ul className="mt-4 grid gap-3 sm:grid-cols-2">
             {LEGAL_PAGES.filter((p) => p.key !== page).map((p) => (
               <li key={p.key}>
-                <Link href={`/legal/${p.key}`} className="text-[15px] text-ink underline underline-offset-4">{p.label}</Link>
+                <Link href={`/legal/${p.key}`} className="card group flex items-center gap-3 rounded-md border border-line bg-surface px-4 py-3 text-[15px] font-medium transition-colors hover:border-ink/40 hover:text-ink">
+                  <FileText aria-hidden className="size-4 shrink-0 text-ink" />
+                  <span className="min-w-0 flex-1">{p.label}</span>
+                  <ArrowLeft aria-hidden className="size-4 shrink-0 text-muted transition-transform group-hover:-translate-x-0.5 group-hover:text-ink" />
+                </Link>
               </li>
             ))}
           </ul>

@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Search, SearchX } from "lucide-react";
+import { Library, Search, SearchX, SlidersHorizontal } from "lucide-react";
 import { EmptyState } from "@/components/ui";
-import { ContentRowLink, Container, FilterChip, PageIntro } from "@/components/site/bits";
+import { Container, FilterChip, PageIntro } from "@/components/site/bits";
+import { ArticleCard } from "@/components/site/blocks";
 import { CONTENT_AUDIENCE_LABEL, KIND_PLURAL, TOPIC_LABEL, TOPIC_ORDER } from "@/components/site/labels";
 import { filterLibrary, getLibrary, normalizeAr, searchLibraryBodies } from "@/server/modules/public/queries";
 
@@ -45,6 +46,7 @@ export default async function LibraryPage({ searchParams }: { searchParams: Prom
   return (
     <>
       <PageIntro
+        icon={Library}
         crumbs={[{ label: "المكتبة" }]}
         title="المكتبة"
         lede="ما يحتاج إليه الواقف والناظر والمستفيد من معرفة، بلغة واضحة ومرجع لكل معلومة من الأنظمة والأدلة الرسمية."
@@ -55,22 +57,26 @@ export default async function LibraryPage({ searchParams }: { searchParams: Prom
           {audience ? <input type="hidden" name="audience" value={audience} /> : null}
           <label htmlFor="lib-q" className="sr-only">ابحث في المكتبة</label>
           <div className="relative flex-1">
-            <Search aria-hidden className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted" />
+            <Search aria-hidden className="pointer-events-none absolute start-4 top-1/2 size-4 -translate-y-1/2 text-muted" />
             <input
               id="lib-q"
               name="q"
               type="search"
               defaultValue={q}
               placeholder="مثل: تسجيل الوقف، الموازنة، المستفيد الحقيقي"
-              className="h-12 w-full rounded-md border border-line-strong bg-surface ps-9 pe-3 text-[15px] placeholder:text-muted/80 focus:border-ink focus:outline-none focus:ring-2 focus:ring-ink/20"
+              className="h-12 w-full rounded-full border border-line-strong bg-surface ps-10 pe-3 text-[15px] placeholder:text-muted/80 focus:border-ink focus:outline-none focus:ring-2 focus:ring-ink/20"
             />
           </div>
-          <button type="submit" className="h-12 rounded-md bg-ink px-5 font-medium text-white hover:bg-ink-hover dark:text-[#0f141c]">ابحث</button>
+          <button type="submit" className="h-12 rounded-full bg-ink px-6 font-medium text-white hover:bg-ink-hover dark:text-[#0f141c]">ابحث</button>
         </form>
       </PageIntro>
 
-      <Container className="grid gap-10 py-8 lg:grid-cols-[240px_minmax(0,1fr)]">
-        <aside aria-label="تصفية المكتبة" className="space-y-6">
+      <Container className="grid gap-8 py-8 md:py-10 lg:grid-cols-[260px_minmax(0,1fr)] lg:gap-10">
+        <aside aria-label="تصفية المكتبة" className="card h-fit space-y-5 rounded-lg border border-line bg-surface p-4 shadow-card md:p-5 lg:sticky lg:top-24">
+          <p className="flex items-center gap-2 text-[15px] font-bold text-text">
+            <SlidersHorizontal aria-hidden className="size-4 text-ink" />
+            تصفية المواد
+          </p>
           <FilterGroup title="النوع">
             <FilterChip href={href({ kind: "" })} active={!kind}>الكل</FilterChip>
             {kinds.map((k) => (
@@ -98,9 +104,9 @@ export default async function LibraryPage({ searchParams }: { searchParams: Prom
             {filtered ? <> — <Link href="/library" className="font-medium text-ink underline underline-offset-4">أزل التصفية</Link></> : null}
           </p>
           {items.length ? (
-            <div className="mt-2 divide-y divide-line border-b border-line">
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
               {items.map((i) => (
-                <ContentRowLink key={i.id} item={i} headingLevel={2} />
+                <ArticleCard key={i.id} item={i} headingLevel={2} />
               ))}
             </div>
           ) : (
@@ -118,8 +124,8 @@ export default async function LibraryPage({ searchParams }: { searchParams: Prom
 
 function FilterGroup({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div role="group" aria-label={title}>
-      <p className="mb-2 text-[14px] font-medium text-muted">{title}</p>
+    <div role="group" aria-label={title} className="border-t border-line pt-4">
+      <p className="mb-2.5 text-[14px] font-medium text-muted">{title}</p>
       <div className="flex flex-wrap gap-2">{children}</div>
     </div>
   );
