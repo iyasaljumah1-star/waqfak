@@ -32,7 +32,7 @@ export function embeddedFontCss(): string {
   const rules: string[] = [];
   for (const f of FONT_FILES) {
     try {
-      const b64 = readFileSync(path.join(dirs[f.dir], f.file)).toString("base64");
+      const b64 = readFileSync(path.join(/*turbopackIgnore: true*/ dirs[f.dir], f.file)) /* fonts are shipped via outputFileTracingIncludes */.toString("base64");
       const mime = "font/otf";
       rules.push(`@font-face{font-family:"${f.family}";font-style:normal;font-weight:${f.weight};font-display:block;src:url(data:${mime};base64,${b64}) format("${f.format}");}`);
     } catch {

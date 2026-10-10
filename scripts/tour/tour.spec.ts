@@ -1,6 +1,6 @@
 import { test } from "@playwright/test";
 import { writeFileSync } from "node:fs";
-import { loginAs, demo } from "./helpers";
+import { loginAs, demo } from "../../tests/e2e/helpers";
 
 const OUT = "/tmp/claude-0/tour";
 const D = demo();
