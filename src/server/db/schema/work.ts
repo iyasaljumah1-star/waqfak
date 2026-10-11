@@ -538,8 +538,12 @@ export const reports = pgTable("reports", {
   id: id(),
   number: text().notNull(),
   waqfId: uuid(),
-  kind: text().notNull(), // assessment | annual | compliance | financial | minutes | distribution | gaa_package
+  kind: text().notNull(), // assessment | annual | compliance | financial | minutes | distribution | gaa_package | nazara_periodic | nazara_takeover | nazara_handover
   title: text().notNull(),
+  /** final: issued as-is (packages); draft → approved for reports that need the nazir's approval before release. */
+  status: text().default("final").notNull(),
+  approvedBy: uuid(),
+  approvedAt: timestamp({ withTimezone: true }),
   assessmentId: uuid(),
   verificationCode: text().notNull(),
   documentId: uuid(),

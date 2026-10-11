@@ -4,7 +4,7 @@ import { Alert, Badge, DataTable, EmptyState, PageHeader, Panel, buttonClass } f
 import { fmtDateTime } from "@/lib/utils";
 import { requireAuth, requireWaqf, waqfCan } from "@/server/authz/context";
 import { read } from "@/server/modules/_shared";
-import { listReports } from "@/server/modules/compliance/queries";
+import { listNazaraOutputs, listReports } from "@/server/modules/compliance/queries";
 import { lastFiscalYearEnd, todayISO } from "@/server/engines/dates";
 import { GenerateReportForm } from "../compliance/forms";
 import { RevokeReportButton } from "./revoke";
@@ -18,7 +18,7 @@ export default async function ReportsPage({ params }: { params: Promise<{ id: st
   const { id } = await params;
   const auth = await requireAuth({ next: `/app/w/${id}/reports` });
   const access = await requireWaqf(auth, id, "reports.generate");
-  const rows = await read(auth, (tx) => listReports(tx, id));
+  const [rows, nazaraRows] = await read(auth, (tx) => Promise.all([listReports(tx, id), listNazaraOutputs(tx, id)]));
   const canBo = waqfCan(access, "bo.view");
   const fye = lastFiscalYearEnd(todayISO(), access.waqf.fiscalYearEnd || "12-31");
   const y = Number(fye.slice(0, 4));
@@ -50,6 +50,25 @@ export default async function ReportsPage({ params }: { params: Promise<{ id: st
       </div>
 
       <Alert tone="info">كل حزمة تحمل رقمًا ورمز تحقق، وتُحفظ لقطتها كما كانت لحظة الإعداد؛ يُسجَّل كل تنزيل في سجل العمليات.</Alert>
+
+      {nazaraRows.length ? (
+        <Panel title="مخرجات النظارة" description="تقارير «وقفك» بصفتها ناظر الوقف ومحاضر الاستلام والتسليم، بعد اعتمادها." tight>
+          <ul className="divide-y divide-line">
+            {nazaraRows.map((r) => (
+              <li key={r.r.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+                <div className="min-w-0">
+                  <p className="font-medium">{r.r.title}</p>
+                  <p className="text-[13px] text-muted"><span dir="ltr" className="tabular">{r.r.number}</span> · {fmtDateTime(r.r.generatedAt)}{r.r.status === "approved" ? " · معتمد" : ""}</p>
+                </div>
+                <div className="flex gap-2">
+                  <a className={buttonClass("secondary", "sm")} href={`${base}/${r.r.id}/download`} download>PDF</a>
+                  {r.r.kind === "nazara_periodic" ? <a className={buttonClass("secondary", "sm")} href={`${base}/${r.r.id}/download?format=csv`} download>CSV</a> : null}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </Panel>
+      ) : null}
 
       <Panel title="الحزم المجهزة" tight>
         <DataTable

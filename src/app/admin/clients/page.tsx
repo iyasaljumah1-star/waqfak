@@ -5,7 +5,7 @@ import { Badge, DataTable, EmptyState, PageHeader, Panel } from "@/components/ui
 import { ClientsTabs } from "@/components/admin/section-tabs";
 import { USER_STATUS } from "@/components/admin/labels";
 import { fmtDate, fmtNumber, fmtSAR } from "@/lib/utils";
-import { maskPhoneShort, requireAdmin } from "@/server/modules/admin/guard";
+import { requireAdmin, staffPhone } from "@/server/modules/admin/guard";
 import { listClients, newContactCount } from "@/server/modules/admin/clients/queries";
 
 export const metadata: Metadata = { title: "العملاء" };
@@ -34,7 +34,7 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
               { key: "n", label: "العميل", render: (r) => (
                 <span>
                   <Link href={`/admin/clients/${r.id}`} className="font-medium text-ink hover:underline">{r.fullName || "بلا اسم"}</Link>
-                  <span dir="ltr" className="tabular block text-end text-[13px] text-muted md:text-start">{maskPhoneShort(r.phone)}</span>
+                  <span dir="ltr" className="tabular block text-end text-[13px] text-muted md:text-start">{staffPhone(auth, r.phone)}</span>
                 </span>
               ) },
               { key: "w", label: "الأوقاف", render: (r) => <span className="tabular">{fmtNumber(r.waqfs)}</span> },

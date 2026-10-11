@@ -9,7 +9,7 @@ import { DocumentUploader } from "@/components/documents/uploader";
 import { CONFLICT_LABEL, ConflictBadge, ContractPaper, CONTACT_LABEL, EventList, NotesThread, PRIORITY_LABEL, SlaBadge, StageTimeline, StatusBadge } from "@/components/requests/bits";
 import { ActionForm, NoteForm, TransitionPanel } from "@/components/requests/forms";
 import { fmtBoth, fmtDate, fmtDateTime, fmtSAR, WAQFAK_ROLE_LABEL } from "@/lib/utils";
-import { maskPhone } from "@/server/auth/otp";
+import { staffPhone } from "@/server/modules/admin/guard";
 import { requireStaff } from "@/server/authz/context";
 import {
   addDeliverable, advanceStageAction, assignRequest, overrideConflict, postStaffNote, setQuote, staffTransition,
@@ -197,7 +197,7 @@ export default async function StaffRequest({ params }: { params: Promise<{ id: s
           <Panel title="المراحل"><StageTimeline stages={stages} /></Panel>
           <Panel title="بيانات الطلب">
             <DefinitionList cols={1} items={[
-              { label: "العميل", value: <>{requesterName}{d.requesterPhone ? <span dir="ltr" className="ms-2 text-[13px] text-muted">{maskPhone(d.requesterPhone)}</span> : null}</> },
+              { label: "العميل", value: <>{requesterName}{d.requesterPhone ? <span dir="ltr" className="ms-2 text-[13px] text-muted">{staffPhone(auth, d.requesterPhone)}</span> : null}</> },
               { label: "الوقف", value: rc.waqf ? <Link className="text-ink hover:underline" href={`/app/w/${rc.waqf.id}`}>{rc.waqf.name}</Link> : "بلا وقف" },
               { label: "دور وقفك في الوقف", value: rc.waqf ? WAQFAK_ROLE_LABEL[rc.waqf.waqfakRole] ?? rc.waqf.waqfakRole : "—" },
               { label: "المختص", value: assigneeName ?? "غير مسند" },

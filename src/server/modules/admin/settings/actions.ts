@@ -13,7 +13,6 @@ import type { License } from "./queries";
 
 const PATH = "/admin/settings";
 const NAZARA_LICENSE = "gaa_nazara_license";
-const NAZARA_FLAG = "service.nazara";
 
 async function readValue<T>(tx: Tx, key: string, fallback: T): Promise<T> {
   const [r] = await tx.select({ v: settings.value }).from(settings).where(eq(settings.key, key)).limit(1).for("update");
@@ -84,22 +83,9 @@ export async function saveLicense(_: ActionState, fd: FormData): Promise<ActionS
     const next = list.map((l, i) => (i === idx ? after : l));
     await writeValue(tx, "company.licenses", next, auth.user.id);
     await audit(tx, { actorUserId: auth.user.id, action: "admin.settings.license", entityType: "setting", entityId: `company.licenses:${d.key}`, ip, userAgent, before, after });
-    let extra = "";
-    if (d.key === NAZARA_LICENSE) {
-      const [flag] = await tx.select().from(featureFlags).where(eq(featureFlags.key, NAZARA_FLAG)).limit(1).for("update");
-      const want = active ? d.alsoFlag === "on" : false;
-      if (flag && flag.enabled !== want && (want || flag.enabled)) {
-        const reason = want
-          ? d.reason?.trim() || `فُعّل ترخيص النظارة رقم ${d.number} الساري حتى ${d.expiresOn}.`
-          : "أُوقف ترخيص النظارة؛ تُوقف خدمة تولي النظارة تلقائيًا (لائحة النظارة م5/2).";
-        await tx.update(featureFlags).set({ enabled: want, reason, updatedBy: auth.user.id, updatedAt: new Date() }).where(eq(featureFlags.key, NAZARA_FLAG));
-        await audit(tx, {
-          actorUserId: auth.user.id, action: "admin.flag.toggled", entityType: "feature_flag", entityId: NAZARA_FLAG, ip, userAgent,
-          before: { enabled: flag.enabled, reason: flag.reason }, after: { enabled: want, reason, via: "license" },
-        });
-        extra = want ? " وفُعّلت خدمة تولي النظارة (N01)." : " وأُوقفت خدمة تولي النظارة (N01).";
-      }
-    }
+    // The nazara licence no longer switches N01 intake on or off: it gates the start of nazara on real waqfs
+    // (activation of an engagement), checked at that moment against this record.
+    const extra = d.key === NAZARA_LICENSE ? (active ? " يمكن الآن مباشرة النظارة على الأوقاف المقبولة." : " تبقى طلبات النظارة تُستقبل وتُدرس، وتتوقف مباشرة نظارات جديدة حتى تفعيله.") : "";
     return { ok: true, message: `حُفظ «${before.nameAr}».${extra}` };
   }, PATH);
 }
@@ -119,11 +105,6 @@ export async function setFeatureFlag(_: ActionState, fd: FormData): Promise<Acti
     const [flag] = await tx.select().from(featureFlags).where(eq(featureFlags.key, r.data.key)).limit(1).for("update");
     if (!flag) throw new UserError("الخاصية غير معروفة.");
     if (flag.enabled === enabled) return { ok: true, message: "لا تغيير." };
-    if (flag.key === NAZARA_FLAG && enabled) {
-      const lic = (await readValue<License[]>(tx, "company.licenses", [])).find((l) => l.key === NAZARA_LICENSE);
-      if (!lic?.active || !lic.number?.trim() || (lic.expiresOn && lic.expiresOn <= todayISO()))
-        throw new UserError("تُفعَّل خدمة تولي النظارة بعد تفعيل ترخيص الهيئة العامة للأوقاف للناظر الاعتباري برقم ساري. فعّل الترخيص أولًا.");
-    }
     await tx.update(featureFlags).set({ enabled, reason: r.data.reason, updatedBy: auth.user.id, updatedAt: new Date() }).where(eq(featureFlags.key, flag.key));
     await audit(tx, {
       actorUserId: auth.user.id, action: "admin.flag.toggled", entityType: "feature_flag", entityId: flag.key, ip, userAgent,

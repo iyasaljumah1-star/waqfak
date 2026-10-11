@@ -1,3 +1,4 @@
+import { PRACTICE_GATED_LICENSES } from "@/server/modules/nazara/licence";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Lock } from "lucide-react";
@@ -42,6 +43,11 @@ export default async function ServiceDetail({ params, searchParams }: { params: 
         }
       />
       {off ? <Alert tone="warn" title="الخدمة غير متاحة حاليًا">{availability.reason}</Alert> : null}
+      {s.requiresLicenseKey && PRACTICE_GATED_LICENSES.has(s.requiresLicenseKey) ? (
+        <Alert tone="info" title="كيف تسير خدمة تولي النظارة">
+          نستلم ملف الوقف ومستنداته وندرسه، ثم يُعتمد قبول النظارة، ثم تبدأ «وقفك» النظارة بقرار التعيين الموثّق لدى الجهة المختصة؛ ومباشرتها مشروطة بسريان ترخيص الهيئة العامة للأوقاف للناظر الاعتباري (لائحة تنظيم أعمال النظارة م4 وم5/2).
+        </Alert>
+      ) : null}
 
       <div className="grid gap-4 lg:grid-cols-[1fr_340px]">
         <div className="space-y-4">

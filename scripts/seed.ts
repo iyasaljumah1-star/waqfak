@@ -4,7 +4,7 @@
  * Runs with the owner role (bypasses RLS). Demo data is separate: scripts/seed-demo.ts.
  */
 import "dotenv/config";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import * as s from "../src/server/db/schema";
@@ -13,13 +13,18 @@ import { AXES, FLAG_DEFS, QUESTIONS } from "../src/server/seed/data/assessment";
 import { NEEDS, RULES } from "../src/server/seed/data/rules";
 import { CATEGORIES, PACKAGES, SERVICES, WORKFLOWS } from "../src/server/seed/data/services";
 import { HOLIDAYS, OBLIGATIONS, PENALTIES, PENALTY_NOTE, REFERENCES, REQUIREMENTS } from "../src/server/seed/data/compliance";
-import { CONTRACT_TEMPLATES, FEATURE_FLAGS, NOTIFICATION_TEMPLATES, SETTINGS } from "../src/server/seed/data/system";
+import { CONTRACT_TEMPLATES, FEATURE_FLAGS, LEGACY_NAZARA_FLAG_REASON, NOTIFICATION_TEMPLATES, SETTINGS } from "../src/server/seed/data/system";
 import { ARTICLES, FAQS, GLOSSARY } from "../src/server/seed/data/content";
 
 const pool = new Pool({ connectionString: process.env.DATABASE_OWNER_URL });
 const db = drizzle(pool, { schema: s, casing: "snake_case" });
 
 async function seedRoles() {
+  // Permissions that existed before this run: a permission added to the catalog later is granted once to the roles
+  // that declare it (tracked in settings), without re-adding permissions an admin removed from a role.
+  const before = new Set((await db.select({ key: s.permissions.key }).from(s.permissions)).map((p) => p.key));
+  const [trackedRow] = await db.select().from(s.settings).where(eq(s.settings.key, "seed.granted_permissions")).limit(1);
+  const granted = new Set<string>((trackedRow?.value as string[] | undefined) ?? [...before]);
   for (const [key, [nameAr, domain]] of Object.entries(PERMISSIONS)) {
     await db.insert(s.permissions).values({ key, nameAr, domain }).onConflictDoUpdate({ target: s.permissions.key, set: { nameAr, domain } });
   }
@@ -31,8 +36,13 @@ async function seedRoles() {
     const existing = await db.select().from(s.rolePermissions).where(eq(s.rolePermissions.roleId, role.id));
     if (existing.length === 0) {
       await db.insert(s.rolePermissions).values(r.permissions.map((p) => ({ roleId: role.id, permissionId: pid.get(p)! })));
+    } else {
+      const fresh = r.permissions.filter((p) => !granted.has(p));
+      if (fresh.length) await db.insert(s.rolePermissions).values(fresh.map((p) => ({ roleId: role.id, permissionId: pid.get(p)! }))).onConflictDoNothing();
     }
   }
+  const all = Object.keys(PERMISSIONS);
+  await db.insert(s.settings).values({ key: "seed.granted_permissions", value: all }).onConflictDoUpdate({ target: s.settings.key, set: { value: all } });
 }
 
 async function seedAssessment() {
@@ -137,6 +147,13 @@ async function seedSystem() {
   }
   for (const [key, value, description] of SETTINGS) await db.insert(s.settings).values({ key, value, description }).onConflictDoNothing();
   for (const f of FEATURE_FLAGS) await db.insert(s.featureFlags).values(f).onConflictDoNothing();
+  // N01 intake used to be switched off until the nazara licence; the licence now gates only the start of nazara
+  // (activation), so an untouched legacy flag is re-seeded. A flag an admin changed (updated_by set) is left alone.
+  const nz = FEATURE_FLAGS.find((f) => f.key === "service.nazara")!;
+  await db
+    .update(s.featureFlags)
+    .set({ enabled: nz.enabled, description: nz.description, reason: nz.reason })
+    .where(and(eq(s.featureFlags.key, nz.key), isNull(s.featureFlags.updatedBy), eq(s.featureFlags.reason, LEGACY_NAZARA_FLAG_REASON)));
 }
 
 async function seedContent() {

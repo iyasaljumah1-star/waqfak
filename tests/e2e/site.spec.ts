@@ -70,10 +70,10 @@ test("services: filter, open a service, CTA goes to request form", async ({ page
   await cta.click();
   await expect(page).toHaveURL(/\/(login|app\/requests\/new)/, { timeout: 30_000 }); // anonymous visitors are asked to sign in
 
-  // License-gated service is labeled and cannot be requested
+  // Corporate nazara: requests are received now; starting the nazara waits for the GAA licence (notice shown)
   await page.goto("/services/N01");
-  await expect(page.getByText("تُتاح بعد اعتماد الترخيص").first()).toBeVisible();
-  await expect(page.getByRole("link", { name: "اطلب الخدمة" })).toHaveCount(0);
+  await expect(page.getByText(/بعد اعتماد ترخيص الهيئة العامة للأوقاف للناظر الاعتباري/).first()).toBeVisible();
+  await expect(page.getByRole("link", { name: "اطلب الخدمة" })).toHaveAttribute("href", "/app/requests/new?service=N01");
 });
 
 test("packages and audience pages render from the catalog", async ({ page }) => {

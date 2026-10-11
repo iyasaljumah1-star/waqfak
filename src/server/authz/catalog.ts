@@ -64,6 +64,12 @@ export const PERMISSIONS = {
   "admin.notifications": ["إدارة قوالب الإشعارات", "admin"],
   "admin.finance": ["الفواتير والمدفوعات", "admin"],
   "admin.reports": ["تقارير الشركة", "admin"],
+  "admin.clients.edit": ["تعديل بيانات حسابات العملاء والمستخدمين", "admin"],
+  "admin.pii.view": ["عرض البيانات الشخصية كاملة (الجوال والبريد)", "admin"],
+  // corporate nazara (Waqfak as legal-entity nazir)
+  "nazara.view": ["عرض لوحة النظارة الاعتبارية", "nazara"],
+  "nazara.manage": ["إدارة ملفات النظارة: الاستلام والتحقق والفريق", "nazara"],
+  "nazara.approve": ["اعتماد قبول النظارة ومباشرتها وإنهائها وتقاريرها", "nazara"],
   "staff.requests.assigned": ["العمل على الطلبات المسندة", "staff"],
   "staff.deliver": ["رفع المخرجات", "staff"],
   "staff.quality_review": ["مراجعة الجودة", "staff"],
@@ -140,6 +146,12 @@ export const ROLES: Record<string, { nameAr: string; scope: "global" | "waqf"; p
     permissions: ["waqf.view", "finance.view", "statements.view", "beneficiaries.view", "documents.view", "documents.view_confidential", "governance.view"],
   },
   viewer: { nameAr: "مشاهد", scope: "waqf", permissions: ["waqf.view"] },
+  // Staff studying a nazara request before acceptance (read-only); replaced by «nazir»/«executive» on activation.
+  nazara_reviewer: {
+    nameAr: "فريق دراسة النظارة", scope: "waqf",
+    permissions: ["waqf.view", "deed.view", "assets.view", "finance.view", "finance.summary", "statements.view", "beneficiaries.view",
+      "governance.view", "documents.view", "documents.view_confidential", "compliance.view", "requests.view"],
+  },
 
   // ── global (staff / platform) roles
   super_admin: {
@@ -147,7 +159,8 @@ export const ROLES: Record<string, { nameAr: string; scope: "global" | "waqf"; p
     permissions: ["admin.access", "admin.users", "admin.roles", "admin.services", "admin.pricing", "admin.rules",
       "admin.compliance", "admin.content", "admin.settings", "admin.audit", "admin.requests.all", "admin.waqfs.all",
       "admin.notifications", "admin.finance", "admin.reports", "breakglass.approve", "staff.requests.assigned",
-      "staff.deliver", "staff.quality_review", "staff.assessment_review"],
+      "staff.deliver", "staff.quality_review", "staff.assessment_review", "admin.clients.edit", "admin.pii.view",
+      "nazara.view", "nazara.manage", "nazara.approve"],
   },
   system_admin: {
     // manages configuration and users but does not read waqf content
@@ -161,7 +174,18 @@ export const ROLES: Record<string, { nameAr: string; scope: "global" | "waqf"; p
   ops_manager: {
     nameAr: "مدير التشغيل", scope: "global", globalAccess: true,
     permissions: ["admin.access", "admin.requests.all", "admin.waqfs.all", "admin.services", "admin.pricing", "admin.compliance",
-      "admin.reports", "staff.requests.assigned", "staff.deliver", "staff.quality_review", "staff.assessment_review", "breakglass.approve"],
+      "admin.reports", "staff.requests.assigned", "staff.deliver", "staff.quality_review", "staff.assessment_review", "breakglass.approve",
+      "nazara.view", "nazara.manage"],
+  },
+  // Corporate nazara team. The manager approves acceptance, activation, ending and reports; the officer runs the file.
+  // A team member's access to a waqf comes from the engagement's team membership (waqf-scoped), not from these roles.
+  nazara_manager: {
+    nameAr: "مدير النظارة الاعتبارية", scope: "global", globalAccess: true,
+    permissions: ["admin.access", "nazara.view", "nazara.manage", "nazara.approve", "staff.requests.assigned", "staff.deliver"],
+  },
+  nazara_officer: {
+    nameAr: "موظف النظارة", scope: "global",
+    permissions: ["admin.access", "nazara.view", "nazara.manage", "staff.requests.assigned", "staff.deliver"],
   },
   account_manager: {
     nameAr: "مدير حساب", scope: "global",

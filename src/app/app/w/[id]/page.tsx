@@ -8,6 +8,8 @@ import { cn, fmtBoth, fmtDate, fmtNumber, relDays, SIZE_LABEL } from "@/lib/util
 import { requireAuth, waqfCan } from "@/server/authz/context";
 import { roleName } from "@/server/authz/catalog";
 import { waqfAccess, waqfOverview } from "@/server/modules/waqf-core/queries";
+import { currentEngagement } from "@/server/modules/nazara/queries";
+import { STATUS_AR as NAZARA_STATUS_AR } from "@/server/modules/nazara/pure";
 
 export const metadata = { title: "نظرة عامة" };
 
@@ -31,6 +33,7 @@ export default async function WaqfOverview({ params, searchParams }: { params: P
   const w = access.waqf;
   const base = `/app/w/${id}`;
   const data = await waqfOverview(auth, id);
+  const nazara = await currentEngagement(auth, id);
   const can = (p: Parameters<typeof waqfCan>[1]) => waqfCan(access, p);
   const stage = Math.min(5, Math.max(1, w.stage || 1));
   const flags = [
@@ -49,6 +52,16 @@ export default async function WaqfOverview({ params, searchParams }: { params: P
     <div className="space-y-6">
       {sp.saved === "1" ? (
         <Alert tone="ok" title="حُفظ ملف الوقف">أعدنا حساب الالتزامات النظامية ومواعيدها وفق البيانات الجديدة، وسُجّل التعديل في سجل العمليات.</Alert>
+      ) : null}
+      {nazara ? (
+        <Alert tone={nazara.status === "active" ? "ok" : nazara.status === "suspended" ? "warn" : "info"} title={`نظارة «وقفك» على الوقف: ${NAZARA_STATUS_AR[nazara.status as keyof typeof NAZARA_STATUS_AR] ?? nazara.status}${nazara.isPractice ? " (تجريبية)" : ""}`}>
+          {nazara.status === "active"
+            ? `تتولى «وقفك» نظارة هذا الوقف بصفتها ناظرًا اعتباريًا منذ ${fmtDate(nazara.startedOn)}. تجد تقاريرها المعتمدة في «التقارير».`
+            : ["intake", "under_review", "pending_completion", "accepted"].includes(nazara.status)
+              ? "طلب تولي النظارة قيد الاستلام والدراسة لدى فريق «وقفك»."
+              : null}
+          {auth.perms.has("nazara.view") ? <div className="mt-1"><SectionLink href={`/admin/nazara/${nazara.id}`}>ملف النظارة في لوحة الفريق</SectionLink></div> : null}
+        </Alert>
       ) : null}
       {data.overdue.length ? (
         <Alert tone="critical" title={`${fmtNumber(data.overdue.length)} التزام نظامي فات موعده`}>

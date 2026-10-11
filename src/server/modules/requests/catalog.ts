@@ -5,9 +5,10 @@ import {
   featureFlags, packageItems, packages, serviceCategories, servicePrices, services, settings, workflowTemplates,
 } from "@/server/db/schema";
 import { todayISO } from "@/server/engines/dates";
+import { NAZARA_INTAKE_FLAG, PRACTICE_GATED_LICENSES } from "@/server/modules/nazara/licence";
 
 /** Feature flags that gate specific services (besides the generic `service.<code>` convention). */
-const SERVICE_FLAGS: Record<string, string> = { N01: "service.nazara" };
+const SERVICE_FLAGS: Record<string, string> = { N01: NAZARA_INTAKE_FLAG };
 
 export type License = { key: string; nameAr?: string; number?: string; active?: boolean };
 export type Availability = { available: true } | { available: false; reason: string };
@@ -37,9 +38,10 @@ export function serviceAvailability(
     const f = key ? flags.get(key) : undefined;
     if (f && !f.enabled) return { available: false, reason: f.reason ?? "تُتاح هذه الخدمة لاحقًا." };
   }
-  if (svc.requiresLicenseKey) {
+  // A practice-gated licence (corporate nazara) does not block requests: it gates activation of the engagement.
+  if (svc.requiresLicenseKey && !PRACTICE_GATED_LICENSES.has(svc.requiresLicenseKey)) {
     const lic = licenses.find((l) => l.key === svc.requiresLicenseKey);
-    if (!lic || lic.active === false || !String(lic.number ?? "").trim()) return { available: false, reason: "تُتاح بعد اعتماد ترخيص الهيئة العامة للأوقاف للناظر الاعتباري." };
+    if (!lic || lic.active === false || !String(lic.number ?? "").trim()) return { available: false, reason: "تُتاح بعد اعتماد الترخيص النظامي الخاص بها." };
   }
   return { available: true };
 }

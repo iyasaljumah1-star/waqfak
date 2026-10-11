@@ -18,6 +18,8 @@ export const ADMIN_ACTION_LABEL: Record<string, string> = {
   "admin.user.unlocked": "فتح حساب",
   "admin.user.signed_out": "إنهاء جلسات مستخدم",
   "admin.user.mfa_reset": "إعادة ضبط التحقق بخطوتين",
+  "admin.user.profile_updated": "تعديل بيانات الحساب",
+  "admin.user.pii_viewed": "اطلاع على البيانات الشخصية كاملة",
   "admin.user.staff_invited": "دعوة موظف",
   "admin.role.permission_granted": "إضافة صلاحية إلى دور",
   "admin.role.permission_revoked": "إزالة صلاحية من دور",

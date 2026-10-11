@@ -52,6 +52,7 @@ export const ADMIN_NAV: NavItem[] = [
   { href: "/admin", label: "لوحة الشركة", icon: "LayoutDashboard", perm: "admin.access" },
   { href: "/admin/requests", label: "الطلبات", icon: "ClipboardList", perm: "staff.requests.assigned" },
   { href: "/admin/waqfs", label: "الأوقاف", icon: "Landmark", perm: "admin.waqfs.all" },
+  { href: "/admin/nazara", label: "النظارة الاعتبارية", icon: "KeyRound", perm: "nazara.view" },
   { href: "/admin/clients", label: "العملاء", icon: "Contact", perm: "admin.users" },
   { href: "/admin/assessments", label: "التقييمات المعمّقة", icon: "Gauge", perm: "staff.assessment_review" },
   { href: "/admin/services", label: "الخدمات والباقات والأسعار", icon: "Briefcase", perm: "admin.services" },

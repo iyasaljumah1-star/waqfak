@@ -3,6 +3,8 @@ import { and, asc, desc, eq, gt, ilike, inArray, isNull, like, or, type SQL } fr
 import type { Auth } from "@/server/authz/context";
 import { auditLogs, breakGlassAccess, mfaFactors, recoveryCodes, roles, sessions, userRoles, users, waqfMemberships, waqfs } from "@/server/db/schema";
 import { read } from "@/server/modules/_shared";
+import { audit } from "@/server/lib/audit";
+import { requestInfo } from "@/server/lib/request-info";
 import { likeTerm } from "../guard";
 
 export type UserListFilter = { q?: string; kind?: "staff" | "clients" | "all"; status?: string; role?: string };
@@ -105,4 +107,21 @@ export type UserDetail = NonNullable<Awaited<ReturnType<typeof userDetail>>>;
 
 export async function globalRoleOptions(auth: Auth) {
   return read(auth, (tx) => tx.select({ key: roles.key, nameAr: roles.nameAr }).from(roles).where(eq(roles.scope, "global")).orderBy(asc(roles.nameAr)));
+}
+
+/**
+ * Records that a staff member opened a client's unmasked personal data (once per viewer, account and 15 minutes),
+ * so access to full phone numbers stays traceable in the audit log without flooding it.
+ */
+export async function recordPiiView(auth: Auth, userId: string) {
+  const { ip, userAgent } = await requestInfo();
+  await read(auth, async (tx) => {
+    const since = new Date(Date.now() - 15 * 60_000);
+    const [recent] = await tx
+      .select({ id: auditLogs.id })
+      .from(auditLogs)
+      .where(and(eq(auditLogs.actorUserId, auth.user.id), eq(auditLogs.action, "admin.user.pii_viewed"), eq(auditLogs.entityId, userId), gt(auditLogs.at, since)))
+      .limit(1);
+    if (!recent) await audit(tx, { actorUserId: auth.user.id, action: "admin.user.pii_viewed", entityType: "user", entityId: userId, ip, userAgent });
+  });
 }

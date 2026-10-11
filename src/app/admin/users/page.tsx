@@ -7,7 +7,7 @@ import { UsersTabs } from "@/components/admin/section-tabs";
 import { USER_STATUS } from "@/components/admin/labels";
 import { fmtDateTime } from "@/lib/utils";
 import { roleName } from "@/server/authz/catalog";
-import { maskPhoneShort, requireAdmin } from "@/server/modules/admin/guard";
+import { canViewPii, maskEmail, requireAdmin, staffPhone } from "@/server/modules/admin/guard";
 import { globalRoleOptions, listUsers } from "@/server/modules/admin/users/queries";
 
 export const metadata: Metadata = { title: "المستخدمون" };
@@ -59,7 +59,7 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
             empty={<div className="p-4"><EmptyState icon={UsersRound} title="لا نتائج">غيّر عبارة البحث أو المرشحات.</EmptyState></div>}
             columns={[
               { key: "n", label: "الاسم", render: (r) => <Link href={`/admin/users/${r.id}`} className="font-medium text-ink hover:underline">{r.fullName || "بلا اسم"}</Link> },
-              { key: "c", label: "التواصل", render: (r) => <span className="text-[14px]"><span dir="ltr" className="tabular block text-end md:text-start">{maskPhoneShort(r.phone)}</span>{r.email ? <span dir="ltr" className="block truncate text-muted">{r.email}</span> : null}</span>, hideOnMobile: true },
+              { key: "c", label: "التواصل", render: (r) => <span className="text-[14px]"><span dir="ltr" className="tabular block text-end md:text-start">{staffPhone(auth, r.phone)}</span>{r.email ? <span dir="ltr" className="block truncate text-muted">{canViewPii(auth) ? r.email : maskEmail(r.email)}</span> : null}</span>, hideOnMobile: true },
               { key: "r", label: "الأدوار", render: (r) => r.roles.length ? <span className="flex flex-wrap gap-1">{r.roles.map((k) => <Badge key={k} tone={k === "super_admin" ? "seal" : "ink"} icon={false}>{roleName(k)}</Badge>)}</span> : <span className="text-muted">{r.isStaff ? "بلا دور" : "عميل"}</span> },
               { key: "s", label: "الحالة", render: (r) => (
                 <span className="flex flex-wrap gap-1">

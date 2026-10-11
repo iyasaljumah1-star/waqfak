@@ -124,6 +124,7 @@ export function ServiceCard({ s, showIcon = false, headingLevel = 3 }: { s: Publ
         <Chip dir="ltr" className="tabular">{s.code}</Chip>
         {stage ? <Chip tone="ink">مرحلة {stage}</Chip> : null}
         {off ? <Chip tone="warn">{off.label}</Chip> : null}
+        {!off && s.availability.notice ? <Chip tone="seal">المباشرة بعد اعتماد الترخيص</Chip> : null}
       </div>
       <H className="mt-3 text-[17.5px] font-bold leading-7 text-text">
         <Link href={`/services/${s.code}`} className="after:absolute after:inset-0 after:rounded-md group-hover:text-ink focus-visible:outline-none">

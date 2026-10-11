@@ -74,6 +74,7 @@ export default async function ServicePage({ params }: P) {
               </p>
               {s.availability.available ? (
                 <>
+                  {s.availability.notice ? <p className="mt-4 rounded-md bg-info-soft px-3 py-2 text-[13.5px] leading-6 text-text/90">{s.availability.notice}</p> : null}
                   <Link href={`/app/requests/new?service=${encodeURIComponent(s.code)}`} className={buttonClass("primary", "lg", "mt-5 w-full")}>
                     اطلب الخدمة
                   </Link>

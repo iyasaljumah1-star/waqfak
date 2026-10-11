@@ -226,3 +226,91 @@ export async function inviteStaff(_: ActionState, fd: FormData): Promise<ActionS
   await sendSms(phone, `وقفك: دُعيت للانضمام إلى فريق المنصة. ادخل برقم جوالك من ${env.APP_URL}/login ثم فعّل التحقق بخطوتين لإكمال التهيئة.`);
   redirect(`/admin/users/${newId}?invited=1`);
 }
+
+// ───────────── edit account data ─────────────
+const profileSchema = z.object({
+  userId: uuid,
+  fullName: z.string().trim().min(3, "اكتب الاسم الكامل (3 أحرف على الأقل).").max(120, "الاسم طويل جدًا."),
+  email: z.union([z.literal(""), z.string().trim().toLowerCase().email("البريد الإلكتروني غير صحيح.").max(160)]),
+  phone: z.string().trim().max(20).optional().default(""),
+  residesInKsa: z.enum(["", "yes", "no"]).optional().default(""),
+  reason: z.string().trim().max(500, "السبب طويل جدًا.").optional().default(""),
+  keepEmail: z.string().optional(),
+});
+
+/**
+ * Edits a user's identifying data. Name and residence are plain edits; a new phone or email is treated as a change of
+ * sign-in identifier: it needs a written reason, clears the verified flag (the next OTP sign-in to the new phone
+ * re-verifies it), ends the account's sessions, and both the old and new numbers are told. Second-factor apps are not
+ * touched. Accounts holding staff roles can be edited only by someone who may manage roles.
+ */
+export async function updateAccount(_: ActionState, fd: FormData): Promise<ActionState> {
+  const r = parseForm(profileSchema, fd);
+  if ("state" in r) return r.state;
+  const d = r.data;
+  let newPhone: string | null = null;
+  if (d.phone) {
+    newPhone = normalizeSaudiMobile(d.phone);
+    if (!newPhone) return { error: "راجع الحقول المظللة.", fieldErrors: { phone: "أدخل رقم جوال سعودي صحيح يبدأ بـ 05." } };
+  }
+  let notices: { to: string; text: string }[] = [];
+  const res = await staffAction("admin.clients.edit", async ({ auth, tx, ip, userAgent }) => {
+    const u = await loadTarget(tx, d.userId);
+    if (u.status === "deleted") throw new UserError("هذا الحساب محذوف ولا يمكن تعديله.");
+    const keys = await roleKeysOf(tx, u.id);
+    if (keys.length && !auth.perms.has("admin.roles")) throw new UserError("تعديل حسابات فريق وقفك يتطلب صلاحية إدارة الأدوار.");
+    if (keys.includes("super_admin") && !isSuperAdmin(auth) && u.id !== auth.user.id) throw new UserError("تعديل حساب مسؤول نظام أعلى مقصور على مسؤول نظام أعلى.");
+
+    const phoneChanged = !!newPhone && newPhone !== u.phone;
+    // An editor who cannot see the current email gets an empty field: empty then means "keep", not "remove".
+    const email = d.email || (d.keepEmail ? u.email : null);
+    const emailChanged = (email ?? null) !== (u.email ?? null);
+    if ((phoneChanged || emailChanged) && d.reason.length < 10) {
+      return { error: "راجع الحقول المظللة.", fieldErrors: { reason: "تغيير الجوال أو البريد يتطلب سببًا واضحًا لا يقل عن 10 أحرف." } };
+    }
+    if (phoneChanged) {
+      const [clash] = await tx.select({ id: users.id }).from(users).where(and(eq(users.phone, newPhone!), ne(users.id, u.id))).limit(1);
+      if (clash) return { error: "راجع الحقول المظللة.", fieldErrors: { phone: "هذا الرقم مسجل لحساب آخر." } };
+    }
+    if (emailChanged && email) {
+      const [clash] = await tx.select({ id: users.id }).from(users).where(and(eq(users.email, email), ne(users.id, u.id))).limit(1);
+      if (clash) return { error: "راجع الحقول المظللة.", fieldErrors: { email: "البريد مستخدم في حساب آخر." } };
+    }
+    const resides = d.residesInKsa === "yes" ? true : d.residesInKsa === "no" ? false : u.residesInKsa;
+    const patch: Partial<typeof users.$inferInsert> = { fullName: d.fullName, residesInKsa: resides, updatedBy: auth.user.id };
+    if (phoneChanged) Object.assign(patch, { phone: newPhone!, phoneVerifiedAt: null });
+    if (emailChanged) Object.assign(patch, { email, emailVerifiedAt: null });
+
+    const changed: string[] = [];
+    if (d.fullName !== (u.fullName ?? "")) changed.push("fullName");
+    if (resides !== u.residesInKsa) changed.push("residesInKsa");
+    if (phoneChanged) changed.push("phone");
+    if (emailChanged) changed.push("email");
+    if (!changed.length) return { ok: true, message: "لا تغييرات للحفظ." };
+
+    await tx.update(users).set(patch).where(eq(users.id, u.id));
+    const revoked = phoneChanged || emailChanged ? await revokeSessions(tx, u.id, "admin_identifier_changed") : 0;
+    const mask = (p: string | null) => (p ? `${p.slice(0, 5)}•••••${p.slice(-3)}` : null);
+    const maskMail = (e: string | null) => (e ? e.replace(/^(.)[^@]*(@.*)$/, "$1•••$2") : null);
+    // Personal data stays masked in the audit trail; the record shows who changed what, when, and why.
+    await audit(tx, {
+      actorUserId: auth.user.id, action: "admin.user.profile_updated", entityType: "user", entityId: u.id, ip, userAgent,
+      before: { fullName: u.fullName, residesInKsa: u.residesInKsa, ...(phoneChanged ? { phone: mask(u.phone) } : {}), ...(emailChanged ? { email: maskMail(u.email) } : {}) },
+      after: { fullName: d.fullName, residesInKsa: resides, ...(phoneChanged ? { phone: mask(newPhone), phoneVerified: false } : {}), ...(emailChanged ? { email: maskMail(email), emailVerified: false } : {}), changed, ...(d.reason ? { reason: d.reason } : {}), sessionsRevoked: revoked },
+    });
+    if (phoneChanged) {
+      notices = [
+        { to: u.phone, text: "وقفك: نُقل حسابك إلى رقم جوال آخر بطلب من فريق الدعم. إن لم تطلب ذلك فتواصل معنا فورًا." },
+        { to: newPhone!, text: `وقفك: أصبح هذا الرقم رقم الدخول إلى حسابك. ادخل من ${env.APP_URL}/login برمز يصلك عليه لتأكيده.` },
+      ];
+    }
+    return {
+      ok: true,
+      message: phoneChanged || emailChanged
+        ? "حُفظت البيانات. أُنهيت جلسات الحساب، ويُؤكَّد المعرّف الجديد عند أول دخول به."
+        : "حُفظت البيانات.",
+    };
+  }, [`/admin/users/${d.userId}`, `/admin/clients/${d.userId}`, "/admin/clients", "/admin/users"]);
+  if (res.ok) for (const n of notices) await sendSms(n.to, n.text).catch(() => undefined);
+  return res;
+}

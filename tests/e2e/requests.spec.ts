@@ -81,16 +81,17 @@ test.describe.serial("service requests end to end", () => {
     pages.clear();
   });
 
-  test("catalog shows the quote label and gates N01 behind its flag", async ({ browser, viewport }, info) => {
+  test("catalog shows the quote label; N01 takes requests and explains the licence condition", async ({ browser, viewport }, info) => {
     const page = await as(browser, "nazir", viewport);
     await page.goto("/app/services");
     await ex(page.getByRole("heading", { level: 1, name: "الخدمات والباقات" })).toBeVisible();
     await ex(page.getByText("عرض سعر بعد الدراسة").first()).toBeVisible();
-    // N01 (nazara) is behind service.nazara (off): visible, but not requestable
-    await ex(page.locator('a[href^="/app/requests/new?service=N01"]')).toHaveCount(0);
+    // N01 (nazara): requests are received and studied; starting the nazara is what the licence gates
+    await ex(page.locator('a[href^="/app/requests/new?service=N01"]').first()).toBeAttached();
     await ex(page.locator('a[href^="/app/requests/new?service=C02"]')).toHaveCount(1);
     await page.goto("/app/requests/new?service=N01");
-    await ex(page.getByText("الخدمة غير متاحة حاليًا").first()).toBeVisible();
+    await ex(page.getByText("كيف تسير خدمة تولي النظارة").first()).toBeVisible();
+    await ex(page.getByRole("button", { name: "أرسل الطلب" })).toBeVisible();
     await page.screenshot({ path: `${shots}/req-catalog-${info.project.name}.png`, fullPage: false });
   });
 

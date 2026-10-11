@@ -192,17 +192,28 @@ test("break-glass: employee requests, another admin approves, access is time-lim
   await admin.ctx.close();
 });
 
-test("feature flag changes require a reason and the nazara service follows its license", async ({ page }, info) => {
+test("feature flag changes require a reason; N01 intake is an operational switch, separate from the licence", async ({ page }, info) => {
+  test.skip(info.project.name === "mobile", "changes a shared flag; runs once (desktop)");
   await loginAs(page, "admin");
   await page.goto("/admin/settings/flags");
   const row = page.getByRole("listitem").filter({ hasText: "service.nazara" });
-  await row.getByRole("button", { name: "فعّل" }).click();
-  await row.getByRole("button", { name: "أكّد التفعيل" }).click();
+  await row.getByRole("button", { name: "أوقف" }).click();
+  await row.getByRole("button", { name: "أكّد الإيقاف" }).click();
   await expect(row.getByText(/اذكر سبب التغيير/)).toBeVisible();
-  await row.getByLabel(/سبب التفعيل/).fill("اختبار: محاولة تفعيل قبل صدور الترخيص");
-  await row.getByRole("button", { name: "أكّد التفعيل" }).click();
-  await expect(row.getByText(/تُفعَّل خدمة تولي النظارة بعد تفعيل ترخيص/)).toBeVisible();
+  await row.getByLabel(/سبب الإيقاف/).fill("اختبار: إيقاف مؤقت لاستقبال طلبات النظارة");
+  await row.getByRole("button", { name: "أكّد الإيقاف" }).click();
+  await expect(row.getByText("موقوفة")).toBeVisible({ timeout: 20_000 });
   await page.goto("/admin/settings");
-  await expect(page.getByText(/خدمة .* \(N01\): غير متاحة/)).toBeVisible();
+  await expect(page.getByText(/استقبال الطلبات متوقف/)).toBeVisible();
+  // Licence inactive: the note says starting a nazara on a real waqf waits for it (intake is independent)
+  await expect(page.getByText(/مباشرة النظارة على وقف حقيقي تنتظر تفعيل ترخيص الهيئة/)).toBeVisible();
+  await page.goto("/admin/settings/flags");
+  const row2 = page.getByRole("listitem").filter({ hasText: "service.nazara" });
+  await row2.getByRole("button", { name: "فعّل" }).click();
+  await row2.getByLabel(/سبب التفعيل/).fill("اختبار: إعادة استقبال طلبات النظارة");
+  await row2.getByRole("button", { name: "أكّد التفعيل" }).click();
+  await expect(row2.getByText("مفعّلة")).toBeVisible({ timeout: 20_000 });
+  await page.goto("/admin/settings");
+  await expect(page.getByText(/تُستقبل الطلبات وتُدرس/)).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/${info.project.name}-settings.png`, fullPage: true });
 });

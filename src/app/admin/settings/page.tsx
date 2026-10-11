@@ -11,7 +11,6 @@ export default async function SettingsPage() {
   const auth = await requireAdmin("admin.settings");
   const s = await loadSettings(auth);
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Riyadh" }).format(new Date());
-  const nazaraFlag = s.flags.find((f) => f.key === "service.nazara");
   return (
     <div>
       <PageHeader title="الإعدادات والتراخيص" description="بيانات الشركة التي تظهر في العقود والفواتير والتقارير، والتراخيص التي تفتح الخدمات المقيدة." />
@@ -22,16 +21,17 @@ export default async function SettingsPage() {
         </Panel>
         <div className="space-y-6">
           {s.nazara ? (
-            <Alert tone={s.nazara.availability.available ? "ok" : "info"} title={`خدمة ${s.nazara.name} (N01): ${s.nazara.availability.available ? "متاحة للعملاء" : "غير متاحة"}`}>
-              {s.nazara.availability.available
-                ? "الترخيص مفعّل والخاصية مفعّلة."
-                : `السبب: ${s.nazara.availability.reason.replace(/\.\s*$/, "")}. تُتاح الخدمة بعد تفعيل ترخيص النظارة برقم ساري وتفعيل خاصية service.nazara.`}
+            <Alert tone={s.nazara.licenceValid ? "ok" : "info"} title={`${s.nazara.name} (N01)`}>
+              {s.nazara.availability.available ? "تُستقبل الطلبات وتُدرس. " : `استقبال الطلبات متوقف: ${s.nazara.availability.reason.replace(/\.\s*$/, "")}. `}
+              {s.nazara.licenceValid
+                ? "الترخيص ساري، فيمكن مباشرة النظارة على الأوقاف التي تُعتمد."
+                : "مباشرة النظارة على وقف حقيقي تنتظر تفعيل ترخيص الهيئة أدناه؛ وتُجرَّب المنظومة كاملة على الأوقاف التجريبية."}
             </Alert>
           ) : null}
           <Panel title="التراخيص" description="يُفعَّل الترخيص برقمه وتاريخ انتهائه الساري، ويُسجَّل كل تعديل في سجل العمليات.">
             <div className="space-y-4">
               {s.licenses.map((l) => (
-                <LicenseForm key={l.key} lic={l} today={today} nazaraFlagOn={nazaraFlag?.enabled} />
+                <LicenseForm key={l.key} lic={l} today={today} />
               ))}
             </div>
           </Panel>

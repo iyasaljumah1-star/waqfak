@@ -7,7 +7,7 @@ export const SETTINGS: [string, unknown, string][] = [
     { key: "legal_consulting", nameAr: "ترخيص الاستشارات القانونية", number: "", issuer: "", expiresOn: "" },
     { key: "financial_audit", nameAr: "ترخيص المراجعة المالية", number: "", issuer: "", expiresOn: "" },
     { key: "gaa_nazara_license", nameAr: "ترخيص الهيئة العامة للأوقاف للناظر الاعتباري", number: "", issuer: "الهيئة العامة للأوقاف", expiresOn: "", active: false },
-  ], "التراخيص: الأرقام فارغة حتى تعبئتها. ترخيص النظارة غير مفعّل حتى صدوره (يفتح خدمة N01)."],
+  ], "التراخيص: الأرقام فارغة حتى تعبئتها. ترخيص النظارة غير مفعّل حتى صدوره (شرط مباشرة النظارة على الأوقاف الحقيقية)."],
   ["assessment.maturity_bands", [{ min: 90, level: "رائد" }, { min: 75, level: "متقدم" }, { min: 60, level: "مُدار" }, { min: 40, level: "ناشئ" }, { min: 0, level: "تأسيسي" }], "حدود مستويات النضج"],
   ["assessment.reassess_months", 6, "تذكير بإعادة التقييم"],
   ["requests.default_vat_rate", 15, "نسبة ضريبة القيمة المضافة"],
@@ -16,8 +16,11 @@ export const SETTINGS: [string, unknown, string][] = [
   ["security.session_idle_minutes", 30, "مهلة الخمول للبوابة"],
 ];
 
+/** Reason the nazara flag was first seeded with (licence-gated intake); replaced once if no admin changed it since. */
+export const LEGACY_NAZARA_FLAG_REASON = "بانتظار ترخيص الهيئة العامة للأوقاف للناظر الاعتباري (لائحة النظارة م5/2)";
+
 export const FEATURE_FLAGS = [
-  { key: "service.nazara", enabled: false, description: "خدمة تولي النظارة (N01)", reason: "بانتظار ترخيص الهيئة العامة للأوقاف للناظر الاعتباري (لائحة النظارة م5/2)" },
+  { key: "service.nazara", enabled: true, description: "استقبال طلبات تولي النظارة (N01)", reason: "تُستقبل الطلبات وتُدرس ملفاتها؛ ومباشرة النظارة على وقف حقيقي مشروطة بترخيص الهيئة العامة للأوقاف للناظر الاعتباري (لائحة النظارة م5/2)" },
   { key: "auth.nafath", enabled: false, description: "الدخول عبر النفاذ الوطني", reason: "بانتظار التحقق من أهلية الربط وشروطه" },
   { key: "payments.live", enabled: false, description: "الدفع الإلكتروني الحي", reason: "بانتظار حساب بوابة دفع مرخصة؛ يعمل الآن في وضع تجريبي" },
   { key: "einvoice.zatca", enabled: false, description: "الربط مع الفوترة الإلكترونية", reason: "بانتظار بيانات التسجيل لدى هيئة الزكاة والضريبة والجمارك" },
@@ -33,6 +36,7 @@ export const NOTIFICATION_TEMPLATES = [
   { key: "request.status", titleAr: "تحديث على طلبك {number}", bodyAr: "الحالة الآن: {status}", severity: "info" as const, channels: ["in_app", "email"] },
   { key: "request.awaiting_client", titleAr: "طلبك {number} بانتظار إجراء منك", bodyAr: "{note}", severity: "important" as const, channels: ["in_app", "email"] },
   { key: "request.assigned", titleAr: "طلب جديد مسند إليك: {number}", bodyAr: "{service} — {waqf}", severity: "important" as const, channels: ["in_app", "email"] },
+  { key: "nazara.update", titleAr: "النظارة {number}: {status}", bodyAr: "{waqf} — {note}", severity: "important" as const, channels: ["in_app", "email"] },
   { key: "meeting.invite", titleAr: "دعوة لاجتماع: {title}", bodyAr: "{when} — {waqf}", severity: "important" as const, channels: ["in_app", "email"] },
   { key: "minutes.sign", titleAr: "محضر بانتظار توقيعك", bodyAr: "{title}", severity: "important" as const, channels: ["in_app", "email"] },
   { key: "complaint.new", titleAr: "شكوى جديدة من مستفيد", bodyAr: "{subject} — موعد الرد: {due}", severity: "important" as const, channels: ["in_app", "email"] },

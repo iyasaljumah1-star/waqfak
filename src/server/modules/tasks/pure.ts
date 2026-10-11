@@ -6,7 +6,7 @@ export type TaskStatus = "todo" | "in_progress" | "done" | "cancelled";
 export const TASK_STATUSES: TaskStatus[] = ["todo", "in_progress", "done", "cancelled"];
 export const TASK_STATUS_AR: Record<string, string> = { todo: "للتنفيذ", in_progress: "قيد التنفيذ", done: "منجزة", cancelled: "ملغاة" };
 export const TASK_PRIORITY_AR: Record<string, string> = { urgent: "عاجلة", high: "عالية", normal: "عادية", low: "منخفضة" };
-export const TASK_SOURCE_AR: Record<string, string> = { manual: "يدوية", request: "طلب خدمة", resolution: "قرار مجلس", compliance: "امتثال", assessment: "تقييم" };
+export const TASK_SOURCE_AR: Record<string, string> = { manual: "يدوية", request: "طلب خدمة", resolution: "قرار مجلس", compliance: "امتثال", assessment: "تقييم", nazara: "النظارة الاعتبارية" };
 export const VISIBILITY_AR: Record<string, string> = { shared: "مشتركة مع أطراف الوقف", internal: "داخلية لفريق وقفك" };
 
 /** Progress follows the checklist when there is one; otherwise it follows the status (with manual progress in between). */

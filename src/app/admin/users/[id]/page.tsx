@@ -9,7 +9,9 @@ import { UsersTabs } from "@/components/admin/section-tabs";
 import { actionLabel, USER_STATUS } from "@/components/admin/labels";
 import { fmtDate, fmtDateTime } from "@/lib/utils";
 import { roleName } from "@/server/authz/catalog";
-import { maskPhoneShort, requireAdmin } from "@/server/modules/admin/guard";
+import { canViewPii, requireAdmin, staffPhone } from "@/server/modules/admin/guard";
+import { AccountEditForm } from "@/components/admin/account-edit-form";
+import { recordPiiView } from "@/server/modules/admin/users/queries";
 import { userDetail } from "@/server/modules/admin/users/queries";
 import { forceSignOut, grantRole, lockUser, resetMfa, revokeRole, unlockUser } from "@/server/modules/admin/users/actions";
 import { BG_STATUS_LABEL, bgStatus } from "@/server/modules/admin/breakglass/queries";
@@ -25,7 +27,7 @@ const device = (ua: string | null) => {
 };
 
 export default async function UserPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ invited?: string }> }) {
-  const auth = await requireAdmin("admin.users", "admin.roles");
+  const auth = await requireAdmin("admin.users", "admin.roles", "admin.clients.edit");
   const { id } = await params;
   const sp = await searchParams;
   if (!UUID.test(id)) notFound();
@@ -39,6 +41,9 @@ export default async function UserPage({ params, searchParams }: { params: Promi
   const grantable = d.allRoles.filter((r) => !held.has(r.key));
   const st = USER_STATUS[u.status] ?? { label: u.status, tone: "neutral" as const };
   const lockedNow = u.status === "locked" || (u.lockedUntil && u.lockedUntil > new Date());
+  const pii = canViewPii(auth);
+  if (pii && !self) await recordPiiView(auth, u.id);
+  const canEdit = auth.perms.has("admin.clients.edit") && u.status !== "deleted" && (!d.grants.length || canRoles);
 
   return (
     <div>
@@ -71,8 +76,9 @@ export default async function UserPage({ params, searchParams }: { params: Promi
           <Panel title="البيانات">
             <DefinitionList
               items={[
-                { label: "الجوال", value: <span dir="ltr" className="tabular">{maskPhoneShort(u.phone)}</span> },
-                { label: "البريد", value: u.email ? <span dir="ltr">{u.email}</span> : "—" },
+                { label: "الجوال", value: <span dir="ltr" className="tabular">{staffPhone(auth, u.phone)}</span>, hint: u.phoneVerifiedAt ? undefined : "لم يُؤكَّد بعد: يُؤكَّد عند أول دخول برمز يصل إليه." },
+                { label: "البريد", value: u.email ? <span dir="ltr">{pii ? u.email : u.email.replace(/^(.)[^@]*(@.*)$/, "$1•••$2")}</span> : "—" },
+                { label: "الإقامة", value: u.residesInKsa === true ? "داخل المملكة" : u.residesInKsa === false ? "خارج المملكة" : "—" },
                 { label: "تاريخ الإنشاء", value: fmtDate(u.createdAt) },
                 { label: "آخر دخول", value: u.lastLoginAt ? fmtDateTime(u.lastLoginAt) : "لم يدخل بعد" },
                 { label: "محاولات دخول فاشلة متتالية", value: <span className="tabular">{u.failedLoginCount}</span> },
@@ -146,6 +152,19 @@ export default async function UserPage({ params, searchParams }: { params: Promi
         </div>
 
         <div className="space-y-6">
+          {canEdit ? (
+            <Panel title="تعديل بيانات الحساب" description="الاسم والجوال والبريد والإقامة. يُسجَّل كل تعديل في سجل العمليات.">
+              <AccountEditForm
+                userId={u.id}
+                fullName={u.fullName ?? ""}
+                email={pii ? u.email ?? "" : ""}
+                hasEmail={!!u.email}
+                phoneLocal={pii ? u.phone.replace(/^\+966/, "0") : ""}
+                residesInKsa={u.residesInKsa}
+                canSeePii={pii}
+              />
+            </Panel>
+          ) : null}
           <Panel title="أدوار فريق وقفك" description="تحدد ما يراه الموظف في لوحة الإدارة. تسري من الطلب التالي.">
             {d.grants.length ? (
               <ul className="mb-4 divide-y divide-line rounded-lg border border-line">

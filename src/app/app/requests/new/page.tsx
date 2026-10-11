@@ -1,3 +1,4 @@
+import { PRACTICE_GATED_LICENSES } from "@/server/modules/nazara/licence";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Briefcase, Landmark } from "lucide-react";
@@ -52,6 +53,11 @@ export default async function NewRequestPage({ searchParams }: { searchParams: P
       <PageHeader crumbs={[{ href: "/app/services", label: "الخدمات" }, { href: `/app/services/${s.code}`, label: s.nameAr }, { label: "طلب جديد" }]} title={`طلب: ${s.nameAr}`} description={s.summary} />
       <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
         <Panel>
+          {s.requiresLicenseKey && PRACTICE_GATED_LICENSES.has(s.requiresLicenseKey) ? (
+            <Alert tone="info" title="كيف تسير خدمة تولي النظارة">
+              نستلم ملف الوقف ومستنداته وندرسه، ثم يُعتمد قبول النظارة، ثم تبدأ «وقفك» النظارة بقرار التعيين الموثّق لدى الجهة المختصة؛ ومباشرتها مشروطة بسريان ترخيص الهيئة العامة للأوقاف للناظر الاعتباري (لائحة تنظيم أعمال النظارة م4 وم5/2).
+            </Alert>
+          ) : null}
           {!availability.available ? (
             <Alert tone="warn" title="الخدمة غير متاحة حاليًا">{availability.reason}</Alert>
           ) : !waqfs.length && !allowNoWaqf ? (

@@ -1,14 +1,15 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Badge, DataTable, DefinitionList, PageHeader, Panel } from "@/components/ui";
+import { Badge, buttonClass, DataTable, DefinitionList, PageHeader, Panel } from "@/components/ui";
 import { ClientsTabs } from "@/components/admin/section-tabs";
 import { USER_STATUS } from "@/components/admin/labels";
 import { DSR_LABEL, DSR_STATUS_LABEL } from "@/server/modules/account/constants";
 import { fmtDate, fmtDateTime, fmtSAR, STATUS_LABEL as WAQF_STATUS } from "@/lib/utils";
 import { roleName } from "@/server/authz/catalog";
-import { maskPhoneShort, requireAdmin } from "@/server/modules/admin/guard";
+import { canViewPii, maskEmail, requireAdmin, staffPhone } from "@/server/modules/admin/guard";
 import { clientDetail } from "@/server/modules/admin/clients/queries";
+import { recordPiiView } from "@/server/modules/admin/users/queries";
 import { STATUS_LABEL } from "@/server/modules/requests/workflow";
 
 export const metadata: Metadata = { title: "عميل" };
@@ -23,12 +24,17 @@ export default async function ClientPage({ params }: { params: Promise<{ id: str
   if (!d) notFound();
   const u = d.user;
   const st = USER_STATUS[u.status] ?? { label: u.status, tone: "neutral" as const };
+  if (canViewPii(auth)) await recordPiiView(auth, u.id);
   return (
     <div>
       <PageHeader
         title={u.fullName || "عميل بلا اسم"}
         crumbs={[{ href: "/admin/clients", label: "العملاء" }, { label: u.fullName || "عميل" }]}
-        actions={<Link href={`/admin/users/${u.id}`} className="rounded-md border border-line-strong bg-surface px-3 py-2 text-[15px] hover:bg-surface-2">الحساب والأمان</Link>}
+        actions={
+          <Link href={`/admin/users/${u.id}`} className={buttonClass("secondary", "md")}>
+            {auth.perms.has("admin.clients.edit") ? "تعديل البيانات والأمان" : "الحساب والأمان"}
+          </Link>
+        }
       />
       <ClientsTabs />
       <div className="grid gap-6 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
@@ -89,8 +95,8 @@ export default async function ClientPage({ params }: { params: Promise<{ id: str
               cols={1}
               items={[
                 { label: "الحالة", value: <Badge tone={st.tone}>{st.label}</Badge> },
-                { label: "الجوال", value: <span dir="ltr" className="tabular">{maskPhoneShort(u.phone)}</span> },
-                { label: "البريد", value: u.email ? <span dir="ltr">{u.email}</span> : "—" },
+                { label: "الجوال", value: <span dir="ltr" className="tabular">{staffPhone(auth, u.phone)}</span> },
+                { label: "البريد", value: u.email ? <span dir="ltr">{canViewPii(auth) ? u.email : maskEmail(u.email)}</span> : "—" },
                 { label: "انضم", value: fmtDate(u.createdAt) },
                 { label: "آخر دخول", value: u.lastLoginAt ? fmtDateTime(u.lastLoginAt) : "—" },
               ]}

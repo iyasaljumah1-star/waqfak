@@ -1,4 +1,6 @@
 import "server-only";
+import { licenceValid, NAZARA_LICENSE_KEY, type LicenceRecord } from "@/server/modules/nazara/licence";
+import { todayISO } from "@/server/engines/dates";
 import { asc, eq, inArray } from "drizzle-orm";
 import type { Auth } from "@/server/authz/context";
 import { featureFlags, services, settings, users } from "@/server/db/schema";
@@ -26,7 +28,11 @@ export async function loadSettings(auth: Auth) {
     const people = updaterIds.length ? await tx.select({ id: users.id, name: users.fullName }).from(users).where(inArray(users.id, updaterIds)) : [];
     const flagMap = new Map(flags.map((f) => [f.key, { enabled: f.enabled, reason: f.reason }]));
     const nazara = n01[0]
-      ? { name: n01[0].nameAr, availability: serviceAvailability(n01[0], flagMap, licenses as CatalogLicense[]) }
+      ? {
+          name: n01[0].nameAr,
+          availability: serviceAvailability(n01[0], flagMap, licenses as CatalogLicense[]),
+          licenceValid: licenceValid((licenses as LicenceRecord[]).find((l) => l.key === NAZARA_LICENSE_KEY), todayISO()),
+        }
       : null;
     return {
       profile, licenses, retention, general, flags, nazara,

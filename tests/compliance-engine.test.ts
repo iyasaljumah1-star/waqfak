@@ -102,22 +102,28 @@ describe.skipIf(!hasDemo)("compliance engine (DB, rolled back)", () => {
   it("recomputes statuses by date and sends each reminder once (obligation_events dedupe)", async () => {
     const s = await import("../src/server/db/schema");
     const { emit, recomputeStatuses, sendReminders } = await import("../src/server/modules/compliance/engine");
+    const { addDays, todayISO } = await import("../src/server/engines/dates");
+    // Dates relative to today: the instance is created as "due soon" whatever day the suite runs.
+    const t0 = todayISO();
+    const due = addDays(t0, 2);
+    const remindOn = addDays(t0, 1);
+    const late = addDays(t0, 4);
     await inRollback(async (tx) => {
-      await emit(tx, { waqfId: demo!.waqfs.A, event: "gaa_request", date: "2026-10-07", refId: "aaaaaaaa-2222-4333-8444-555555555555", dueOverride: "2026-10-09" });
+      await emit(tx, { waqfId: demo!.waqfs.A, event: "gaa_request", date: t0, refId: "aaaaaaaa-2222-4333-8444-555555555555", dueOverride: due });
       const [inst] = await tx.select().from(s.obligationInstances).where(and(eq(s.obligationInstances.waqfId, demo!.waqfs.A), eq(s.obligationInstances.periodKey, "ref:aaaaaaaa-2222-4333-8444-555555555555")));
       expect(inst.status).toBe("due_soon");
-      const r1 = await sendReminders(tx, "2026-10-08");
-      const r2 = await sendReminders(tx, "2026-10-08");
+      const r1 = await sendReminders(tx, remindOn);
+      const r2 = await sendReminders(tx, remindOn);
       expect(r1.sent).toBeGreaterThanOrEqual(1);
       expect(r2.sent).toBe(0);
       const ev = await tx.select().from(s.obligationEvents).where(and(eq(s.obligationEvents.instanceId, inst.id), eq(s.obligationEvents.action, "reminder")));
       expect(ev).toHaveLength(1);
       // Two days after the deadline the instance becomes overdue and gets an overdue notice once.
-      await recomputeStatuses(tx, "2026-10-11");
-      const [late] = await tx.select().from(s.obligationInstances).where(eq(s.obligationInstances.id, inst.id));
-      expect(late.status).toBe("overdue");
-      await sendReminders(tx, "2026-10-11");
-      await sendReminders(tx, "2026-10-11");
+      await recomputeStatuses(tx, late);
+      const [lateRow] = await tx.select().from(s.obligationInstances).where(eq(s.obligationInstances.id, inst.id));
+      expect(lateRow.status).toBe("overdue");
+      await sendReminders(tx, late);
+      await sendReminders(tx, late);
       const ev2 = await tx.select().from(s.obligationEvents).where(and(eq(s.obligationEvents.instanceId, inst.id), eq(s.obligationEvents.action, "reminder")));
       expect(ev2.map((e) => e.note).sort()).toEqual(["offset:-1", "offset:1"]);
     });

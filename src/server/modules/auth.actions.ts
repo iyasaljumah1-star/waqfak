@@ -152,6 +152,8 @@ export async function verifyCode(_: ActionState, fd: FormData): Promise<ActionSt
     }
 
     // login or password step-up
+    // A successful OTP to this number proves ownership: re-verifies a phone an admin changed on the account.
+    if (!u.phoneVerifiedAt) await withSystem((tx) => tx.update(users).set({ phoneVerifiedAt: new Date() }).where(eq(users.id, u.id)));
     await clearFlow();
     await createSession(u.id, { isStaff: u.isStaff, mfaVerified: false, ip, userAgent });
     await withSystem((tx) => audit(tx, { actorUserId: u.id, action: "user.login", entityType: "user", entityId: u.id, ip, userAgent, after: { method: flow.purpose } }));

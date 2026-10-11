@@ -219,3 +219,14 @@ export async function waqfMemberOptions(tx: Tx, waqfId: string) {
     .where(and(eq(waqfMemberships.waqfId, waqfId), eq(waqfMemberships.status, "active")));
   return rows.sort((a, b) => (a.name ?? "").localeCompare(b.name ?? "", "ar"));
 }
+
+/** Nazara outputs visible to waqf members: final records and approved periodic reports (drafts stay with the team). */
+export async function listNazaraOutputs(tx: Tx, waqfId: string) {
+  return tx
+    .select({ r: reports, by: users.fullName })
+    .from(reports)
+    .leftJoin(users, eq(users.id, reports.generatedBy))
+    .where(and(eq(reports.waqfId, waqfId), inArray(reports.kind, ["nazara_periodic", "nazara_takeover", "nazara_handover"]), inArray(reports.status, ["final", "approved"]), isNull(reports.revokedAt)))
+    .orderBy(desc(reports.generatedAt))
+    .limit(50);
+}

@@ -8,7 +8,7 @@ import { ActionForm } from "./action-form";
  * Rendered collapsed inside <details> so the reason box only appears when the admin chooses the action.
  */
 export function ReasonAction({
-  id, title, description, action, hidden, submit, variant = "secondary", reasonLabel = "السبب (يُحفظ في سجل العمليات)", reasonName = "reason", open,
+  id, title, description, action, hidden, submit, variant = "secondary", reasonLabel = "السبب (يُحفظ في سجل العمليات)", reasonName = "reason", open, optional,
 }: {
   id: string;
   title: string;
@@ -20,6 +20,8 @@ export function ReasonAction({
   reasonLabel?: string;
   reasonName?: string;
   open?: boolean;
+  /** The note may be left empty. */
+  optional?: boolean;
 }) {
   return (
     <details className="group rounded-lg border border-line open:bg-surface-2/50" open={open}>
@@ -32,8 +34,8 @@ export function ReasonAction({
       </summary>
       <div className="border-t border-line px-4 py-3">
         <ActionForm action={action} hidden={hidden}>
-          <Field label={reasonLabel} name={`${reasonName}-${id}`} required>
-            <Textarea name={reasonName} id={`${reasonName}-${id}`} className="min-h-20" required minLength={10} maxLength={500} />
+          <Field label={reasonLabel} name={`${reasonName}-${id}`} required={!optional}>
+            <Textarea name={reasonName} id={`${reasonName}-${id}`} className="min-h-20" required={!optional} minLength={optional ? undefined : 10} maxLength={optional ? 2000 : 500} />
           </Field>
           <SubmitButton variant={variant} pendingText="جارٍ التنفيذ…">{submit}</SubmitButton>
         </ActionForm>

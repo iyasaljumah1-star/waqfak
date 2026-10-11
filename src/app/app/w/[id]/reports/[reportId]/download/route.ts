@@ -8,6 +8,7 @@ import { pdfShell, renderPdf } from "@/server/modules/pdf/render";
 import { BO_PDF_CSS, annualHtml, boDecryptor, boHtml, type AnySnapshot } from "@/server/modules/compliance/reports";
 import { CATEGORY_AR, STATUS_AR, buildCsv, buildZip } from "@/server/modules/compliance/pure";
 import { gregorian, hijri } from "@/server/engines/dates";
+import { nameOf, nazaraFile } from "@/server/modules/nazara/report";
 
 export const dynamic = "force-dynamic";
 const UUID = /^[0-9a-f-]{36}$/i;
@@ -18,6 +19,7 @@ const fail = (status: number, msg: string) => new Response(msg, { status, header
 export async function GET(req: Request, { params }: { params: Promise<{ id: string; reportId: string }> }) {
   const { id, reportId } = await params;
   const asZip = new URL(req.url).searchParams.get("format") === "zip";
+  const asCsv = new URL(req.url).searchParams.get("format") === "csv";
   if (!UUID.test(id) || !UUID.test(reportId)) return fail(404, "غير موجود");
   const auth = await getAuth();
   if (!auth || (auth.user.mfaEnabled && !auth.session.mfaVerified)) return fail(401, "سجّل الدخول ثم أعد المحاولة.");
@@ -30,9 +32,16 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       .select({ r: reports, by: users.fullName })
       .from(reports)
       .leftJoin(users, eq(users.id, reports.generatedBy))
-      .where(and(eq(reports.id, reportId), eq(reports.waqfId, id), isNull(reports.revokedAt), inArray(reports.kind, ["annual", "gaa_package", "compliance"])))
+      .where(and(eq(reports.id, reportId), eq(reports.waqfId, id), isNull(reports.revokedAt), inArray(reports.kind, ["annual", "gaa_package", "compliance", "nazara_periodic", "nazara_takeover", "nazara_handover"])))
       .limit(1);
     if (!row?.r.snapshot) return null;
+    if (row.r.kind.startsWith("nazara_")) {
+      // Nazara outputs reach waqf members once final/approved; drafts stay with the nazara team.
+      if (row.r.status === "draft") return null;
+      await audit(tx, { actorUserId: auth.user.id, action: "reports.download", entityType: "report", entityId: reportId, waqfId: id, ip, userAgent, after: { number: row.r.number, kind: row.r.kind } });
+      const f = nazaraFile(row.r, { generatedBy: row.by, approvedBy: await nameOf(tx, row.r.approvedBy) }, asCsv ? "csv" : "pdf");
+      return f.kind === "pdf" ? { kind: "pdf" as const, html: pdfShell(f.title, f.html), headerTitle: f.headerTitle, name: f.name } : f;
+    }
     const s = row.r.snapshot as AnySnapshot;
     const canBo = access.perms.has("bo.view");
     await audit(tx, { actorUserId: auth.user.id, action: "reports.download", entityType: "report", entityId: reportId, waqfId: id, ip, userAgent, after: { number: row.r.number, package: s.package, decrypted: s.package === "bo" ? canBo : undefined } });

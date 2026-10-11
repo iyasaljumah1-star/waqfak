@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { Checkbox, Field, FormMessage, Input, SubmitButton, Textarea } from "@/components/ui/form";
+import { Field, FormMessage, Input, SubmitButton, Textarea } from "@/components/ui/form";
 import { Badge } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { runRetention, saveCompanyProfile, saveGeneralSettings, saveLicense, saveRetention, setFeatureFlag } from "@/server/modules/admin/settings/actions";
@@ -27,7 +27,7 @@ export function CompanyForm({ values }: { values: Record<string, string> }) {
 
 export type LicenseView = { key: string; nameAr: string; issuer?: string; number?: string; expiresOn?: string; active?: boolean };
 
-export function LicenseForm({ lic, today, nazaraFlagOn }: { lic: LicenseView; today: string; nazaraFlagOn?: boolean }) {
+export function LicenseForm({ lic, today }: { lic: LicenseView; today: string }) {
   const [s, action] = useActionState(saveLicense, {});
   const [active, setActive] = useState(!!lic.active);
   const fe = s.fieldErrors ?? {};
@@ -56,17 +56,13 @@ export function LicenseForm({ lic, today, nazaraFlagOn }: { lic: LicenseView; to
       </div>
       <label className="flex items-start gap-3 text-[15px]">
         <input type="checkbox" name="active" checked={active} onChange={(e) => setActive(e.target.checked)} className="mt-1.5 size-4 accent-[var(--ink)]" />
-        <span>الترخيص ساري ومفعّل{isNazara ? " (شرط لتقديم خدمة تولي النظارة N01)" : ""}</span>
+        <span>الترخيص ساري ومفعّل{isNazara ? " (شرط لمباشرة النظارة على الأوقاف الحقيقية)" : ""}</span>
       </label>
-      {isNazara && active ? (
-        <div className="space-y-2 rounded-md bg-surface-2 p-3">
-          <Checkbox name="alsoFlag" label="فعّل خدمة تولي النظارة (N01) للعملاء أيضًا" defaultChecked={nazaraFlagOn ?? true} />
-          <Field label="سبب التفعيل (اختياري؛ يُحفظ مع الخاصية)" name={`reason-${lic.key}`}>
-            <Input name="reason" id={`reason-${lic.key}`} placeholder="مثال: صدر الترخيص رقم … بتاريخ …" />
-          </Field>
-        </div>
+      {isNazara ? (
+        <p className="text-[13px] leading-6 text-muted">
+          يحدد هذا الترخيص إمكان مباشرة «وقفك» النظارة على وقف حقيقي. طلبات تولي النظارة تُستقبل وتُدرس دائمًا، ويمكن تجربة المنظومة على الأوقاف التجريبية بلا ترخيص.
+        </p>
       ) : null}
-      {isNazara && !active && lic.active ? <p className="text-[13px] text-fine">إيقاف الترخيص يوقف خدمة تولي النظارة تلقائيًا.</p> : null}
       <SubmitButton variant="secondary" size="sm">احفظ الترخيص</SubmitButton>
     </form>
   );

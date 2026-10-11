@@ -1,5 +1,8 @@
 "use server";
 
+import { openEngagementTx } from "@/server/modules/nazara/engine";
+import { nazaraManagerIds } from "@/server/modules/nazara/queries";
+
 import { redirect } from "next/navigation";
 import { and, eq, inArray, notInArray } from "drizzle-orm";
 import { z } from "zod";
@@ -43,6 +46,7 @@ export async function createRequest(_: ActionState, fd: FormData): Promise<Actio
     if (!avail.available) throw new UserError(`الخدمة غير متاحة حاليًا: ${avail.reason}`);
 
     let waqf: { id: string; waqfakRole: string } | null = null;
+    if (svc.code === "N01" && (!d.waqf || d.waqf === "none")) throw new UserError("اختر الوقف المطلوب تولي نظارته. إن لم يكن له ملف بعد، أنشئه من «أوقافي» ثم قدّم الطلب.");
     if (d.waqf && d.waqf !== "none") {
       if (!uuid.safeParse(d.waqf).success) throw new UserError("اختر وقفًا صحيحًا.");
       if (!(await memberCan(tx, auth, d.waqf, "requests.create"))) throw new ForbiddenError("لا تملك صلاحية طلب خدمات لهذا الوقف.");
@@ -87,6 +91,12 @@ export async function createRequest(_: ActionState, fd: FormData): Promise<Actio
     await createStages(tx, req.id, req.waqfId, wf?.stages ?? []);
     await logEvent(tx, req, auth.user.id, conflict.result === "blocked" ? "أُرسل الطلب وأُحيل إلى مدير التشغيل لمراجعة الاستقلالية" : "أُرسل الطلب", "draft", "submitted");
     if (recId) await tx.update(recommendations).set({ status: "converted", serviceRequestId: req.id }).where(eq(recommendations.id, recId));
+    // Corporate nazara: the request opens the engagement's intake (study and documents); the licence gates activation only.
+    if (svc.code === "N01" && waqf) {
+      const eng = await openEngagementTx(tx, { waqfId: waqf.id, requestId: req.id, actorId: auth.user.id, ip, userAgent });
+      for (const mid of await nazaraManagerIds(tx))
+        await notify(mid, "nazara.update", { number: eng.number, status: "طلب نظارة جديد", waqf: "", note: `من الطلب ${number}` }, { waqfId: waqf.id, link: `/admin/nazara/${eng.id}`, tx });
+    }
     await audit(tx, {
       actorUserId: auth.user.id, action: "requests.create", entityType: "service_request", entityId: req.id, waqfId: req.waqfId, ip, userAgent,
       after: { number, service: svc.code, priority: d.priority, conflictCheck: conflict.result, source: recId ? "recommendation" : "manual" },

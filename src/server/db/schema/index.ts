@@ -6,3 +6,4 @@ export * from "./finance-governance";
 export * from "./compliance";
 export * from "./documents-assessment";
 export * from "./work";
+export * from "./nazara";

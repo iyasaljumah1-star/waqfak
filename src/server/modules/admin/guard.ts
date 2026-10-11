@@ -56,5 +56,16 @@ export async function notifyIfTemplate(tx: Tx, userId: string, key: string, vars
 /** Masks a phone for staff screens: +9665•••••123. */
 export const maskPhoneShort = (p: string | null | undefined) => (p ? `${p.slice(0, 5)}•••••${p.slice(-3)}` : "—");
 
+/** Whether this staff member may see clients' personal data unmasked (server-side permission, never a UI toggle). */
+export const canViewPii = (auth: Auth) => auth.perms.has("admin.pii.view");
+
+/**
+ * Phone as a staff screen may show it: the full number for holders of `admin.pii.view`, masked otherwise.
+ * Pages render on the server, so a masked number is all an unauthorised browser ever receives.
+ */
+export const maskEmail = (e: string) => e.replace(/^(.)[^@]*(@.*)$/, "$1•••$2");
+
+export const staffPhone = (auth: Auth, p: string | null | undefined) => (!p ? "—" : canViewPii(auth) ? p : maskPhoneShort(p));
+
 /** Escapes LIKE wildcards in user search input. */
 export const likeTerm = (q: string) => `%${q.trim().replace(/[\\%_]/g, (m) => `\\${m}`)}%`;

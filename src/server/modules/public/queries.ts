@@ -1,4 +1,6 @@
 import "server-only";
+import { licenceValid, NAZARA_INTAKE_FLAG, NAZARA_PRACTICE_NOTICE, PRACTICE_GATED_LICENSES } from "@/server/modules/nazara/licence";
+import { todayISO } from "@/server/engines/dates";
 import { cache } from "react";
 import { and, asc, desc, eq, gte, inArray, lte, ne } from "drizzle-orm";
 import { withSystem } from "@/server/db";
@@ -32,16 +34,21 @@ export const getFlags = cache(async () => {
 
 // ───────────── services ─────────────
 export type PublicService = typeof services.$inferSelect & { availability: Availability };
-export type Availability = { available: boolean; label: string | null; reason: string | null };
+export type Availability = { available: boolean; label: string | null; reason: string | null; notice?: string | null };
 
-/** A service is offered only when active, its required license is active, and its feature flag (if any) is on. */
+/**
+ * A service is offered when active and its feature flag (if any) is on. A required licence blocks ordering, except
+ * licences that gate only the start of practice (corporate nazara): those services take requests now and carry a notice.
+ */
 function availability(s: typeof services.$inferSelect, licenses: License[], flags: Map<string, boolean>): Availability {
   if (!s.isActive) return { available: false, label: "غير متاحة حاليًا", reason: "توقف استقبال طلبات هذه الخدمة مؤقتًا." };
   if (s.requiresLicenseKey) {
     const lic = licenses.find((l) => l.key === s.requiresLicenseKey);
-    const flagKey = s.requiresLicenseKey === "gaa_nazara_license" ? "service.nazara" : null;
-    const flagOff = flagKey ? flags.get(flagKey) === false : false;
-    if (!lic?.active || flagOff)
+    if (PRACTICE_GATED_LICENSES.has(s.requiresLicenseKey)) {
+      if (flags.get(NAZARA_INTAKE_FLAG) === false) return { available: false, label: "غير متاحة حاليًا", reason: "توقف استقبال طلبات هذه الخدمة مؤقتًا." };
+      return { available: true, label: null, reason: null, notice: licenceValid(lic, todayISO()) ? null : NAZARA_PRACTICE_NOTICE };
+    }
+    if (!lic?.active)
       return {
         available: false,
         label: "تُتاح بعد اعتماد الترخيص",
