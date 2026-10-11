@@ -1,6 +1,6 @@
 # Requirement Traceability Matrix — وقفك
 
-Generated from the live database on 2026-10-08. Source of truth: /admin/traceability (editable without code changes).
+Generated from the live database on 2026-10-11. Source of truth: /admin/traceability (editable without code changes).
 
 Total: 45 · implemented: 35 · pending verification: 9 · planned: 1 · excluded: 1
 

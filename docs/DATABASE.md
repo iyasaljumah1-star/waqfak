@@ -1,6 +1,6 @@
 # Database schema — وقفك
 
-PostgreSQL 16 · 143 tables · generated 2026-10-08 from the live catalog (scripts/export-schema.ts).
+PostgreSQL 16 · 146 tables · generated 2026-10-11 from the live catalog (scripts/export-schema.ts).
 Definitions live in `src/server/db/schema/*.ts` (Drizzle) → migrations in `drizzle/` → security (roles, grants, RLS, triggers) in `src/server/db/sql/security.sql`.
 
 Roles: `waqfak_owner` (migrations), `waqfak_app` (runtime, subject to RLS), `waqfak_mlro` (only role that reaches the `restricted` schema).
@@ -8,7 +8,7 @@ Isolation: every table with a `waqf_id` column carries the `waqf_isolation` poli
 
 ## Tables
 
-[public.action_plans](#publicaction_plans) · [public.agenda_items](#publicagenda_items) · [public.ai_interactions](#publicai_interactions) · [public.approvals](#publicapprovals) · [public.assessment_answers](#publicassessment_answers) · [public.assessment_axes](#publicassessment_axes) · [public.assessment_questions](#publicassessment_questions) · [public.assessment_results](#publicassessment_results) · [public.assessments](#publicassessments) · [public.assets](#publicassets) · [public.attendance](#publicattendance) · [public.audit_logs](#publicaudit_logs) · [public.axis_scores](#publicaxis_scores) · [public.bank_accounts](#publicbank_accounts) · [public.beneficial_owners](#publicbeneficial_owners) · [public.beneficiaries](#publicbeneficiaries) · [public.beneficiary_classes](#publicbeneficiary_classes) · [public.bodies](#publicbodies) · [public.body_memberships](#publicbody_memberships) · [public.break_glass_access](#publicbreak_glass_access) · [public.budgets](#publicbudgets) · [public.complaints](#publiccomplaints) · [public.compliance_change_log](#publiccompliance_change_log) · [public.condition_interpretations](#publiccondition_interpretations) · [public.conditions](#publicconditions) · [public.conflict_declarations](#publicconflict_declarations) · [public.consents](#publicconsents) · [public.contact_messages](#publiccontact_messages) · [public.content_items](#publiccontent_items) · [public.content_reviews](#publiccontent_reviews) · [public.contract_signatures](#publiccontract_signatures) · [public.contract_templates](#publiccontract_templates) · [public.contracts](#publiccontracts) · [public.conversations](#publicconversations) · [public.critical_flag_defs](#publiccritical_flag_defs) · [public.critical_flags](#publiccritical_flags) · [public.data_subject_requests](#publicdata_subject_requests) · [public.deed_versions](#publicdeed_versions) · [public.delegations](#publicdelegations) · [public.deliverables](#publicdeliverables) · [public.devices](#publicdevices) · [public.discounts](#publicdiscounts) · [public.distribution_lines](#publicdistribution_lines) · [public.distributions](#publicdistributions) · [public.document_access_log](#publicdocument_access_log) · [public.document_links](#publicdocument_links) · [public.document_shares](#publicdocument_shares) · [public.document_versions](#publicdocument_versions) · [public.documents](#publicdocuments) · [public.encumbrances](#publicencumbrances) · [public.entitlements](#publicentitlements) · [public.extracted_fields](#publicextracted_fields) · [public.facts](#publicfacts) · [public.faqs](#publicfaqs) · [public.feature_flags](#publicfeature_flags) · [public.financial_statements](#publicfinancial_statements) · [public.founders](#publicfounders) · [public.glossary_terms](#publicglossary_terms) · [public.holidays](#publicholidays) · [public.investment_policies](#publicinvestment_policies) · [public.investments](#publicinvestments) · [public.invitations](#publicinvitations) · [public.invoices](#publicinvoices) · [public.job_runs](#publicjob_runs) · [public.kyc_records](#publickyc_records) · [public.leases](#publicleases) · [public.ledger_entries](#publicledger_entries) · [public.maintenance_plans](#publicmaintenance_plans) · [public.meetings](#publicmeetings) · [public.messages](#publicmessages) · [public.mfa_factors](#publicmfa_factors) · [public.minute_signatures](#publicminute_signatures) · [public.minutes](#publicminutes) · [public.needs](#publicneeds) · [public.notification_preferences](#publicnotification_preferences) · [public.notification_templates](#publicnotification_templates) · [public.notifications](#publicnotifications) · [public.obligation_events](#publicobligation_events) · [public.obligation_instances](#publicobligation_instances) · [public.obligations](#publicobligations) · [public.organization_members](#publicorganization_members) · [public.organizations](#publicorganizations) · [public.otp_challenges](#publicotp_challenges) · [public.outbox_messages](#publicoutbox_messages) · [public.package_items](#publicpackage_items) · [public.packages](#publicpackages) · [public.payments](#publicpayments) · [public.penalty_schedule](#publicpenalty_schedule) · [public.performance_reviews](#publicperformance_reviews) · [public.permissions](#publicpermissions) · [public.persons](#publicpersons) · [public.policies](#publicpolicies) · [public.portfolios](#publicportfolios) · [public.price_change_log](#publicprice_change_log) · [public.projects](#publicprojects) · [public.properties](#publicproperties) · [public.question_bank_versions](#publicquestion_bank_versions) · [public.rate_limits](#publicrate_limits) · [public.recommendation_rules](#publicrecommendation_rules) · [public.recommendations](#publicrecommendations) · [public.recovery_codes](#publicrecovery_codes) · [public.regulatory_references](#publicregulatory_references) · [public.regulatory_requirements](#publicregulatory_requirements) · [public.report_shares](#publicreport_shares) · [public.reports](#publicreports) · [public.request_events](#publicrequest_events) · [public.request_notes](#publicrequest_notes) · [public.request_stages](#publicrequest_stages) · [public.resolutions](#publicresolutions) · [public.revenue_allocations](#publicrevenue_allocations) · [public.risk_register](#publicrisk_register) · [public.role_permissions](#publicrole_permissions) · [public.roles](#publicroles) · [public.sequences](#publicsequences) · [public.service_categories](#publicservice_categories) · [public.service_prices](#publicservice_prices) · [public.service_requests](#publicservice_requests) · [public.services](#publicservices) · [public.sessions](#publicsessions) · [public.settings](#publicsettings) · [public.subscriptions](#publicsubscriptions) · [public.successions](#publicsuccessions) · [public.task_comments](#publictask_comments) · [public.tasks](#publictasks) · [public.trustee_appointments](#publictrustee_appointments) · [public.trustees](#publictrustees) · [public.user_roles](#publicuser_roles) · [public.users](#publicusers) · [public.valuations](#publicvaluations) · [public.violations](#publicviolations) · [public.votes](#publicvotes) · [public.waqf_classifications](#publicwaqf_classifications) · [public.waqf_deeds](#publicwaqf_deeds) · [public.waqf_exceptions](#publicwaqf_exceptions) · [public.waqf_governance_profiles](#publicwaqf_governance_profiles) · [public.waqf_keys](#publicwaqf_keys) · [public.waqf_memberships](#publicwaqf_memberships) · [public.waqf_registrations](#publicwaqf_registrations) · [public.waqf_timeline_events](#publicwaqf_timeline_events) · [public.waqfs](#publicwaqfs) · [public.workflow_templates](#publicworkflow_templates) · [restricted.screening_results](#restrictedscreening_results) · [restricted.suspicion_reports](#restrictedsuspicion_reports)
+[public.action_plans](#publicaction_plans) · [public.agenda_items](#publicagenda_items) · [public.ai_interactions](#publicai_interactions) · [public.approvals](#publicapprovals) · [public.assessment_answers](#publicassessment_answers) · [public.assessment_axes](#publicassessment_axes) · [public.assessment_questions](#publicassessment_questions) · [public.assessment_results](#publicassessment_results) · [public.assessments](#publicassessments) · [public.assets](#publicassets) · [public.attendance](#publicattendance) · [public.audit_logs](#publicaudit_logs) · [public.axis_scores](#publicaxis_scores) · [public.bank_accounts](#publicbank_accounts) · [public.beneficial_owners](#publicbeneficial_owners) · [public.beneficiaries](#publicbeneficiaries) · [public.beneficiary_classes](#publicbeneficiary_classes) · [public.bodies](#publicbodies) · [public.body_memberships](#publicbody_memberships) · [public.break_glass_access](#publicbreak_glass_access) · [public.budgets](#publicbudgets) · [public.complaints](#publiccomplaints) · [public.compliance_change_log](#publiccompliance_change_log) · [public.condition_interpretations](#publiccondition_interpretations) · [public.conditions](#publicconditions) · [public.conflict_declarations](#publicconflict_declarations) · [public.consents](#publicconsents) · [public.contact_messages](#publiccontact_messages) · [public.content_items](#publiccontent_items) · [public.content_reviews](#publiccontent_reviews) · [public.contract_signatures](#publiccontract_signatures) · [public.contract_templates](#publiccontract_templates) · [public.contracts](#publiccontracts) · [public.conversations](#publicconversations) · [public.critical_flag_defs](#publiccritical_flag_defs) · [public.critical_flags](#publiccritical_flags) · [public.data_subject_requests](#publicdata_subject_requests) · [public.deed_versions](#publicdeed_versions) · [public.delegations](#publicdelegations) · [public.deliverables](#publicdeliverables) · [public.devices](#publicdevices) · [public.discounts](#publicdiscounts) · [public.distribution_lines](#publicdistribution_lines) · [public.distributions](#publicdistributions) · [public.document_access_log](#publicdocument_access_log) · [public.document_links](#publicdocument_links) · [public.document_shares](#publicdocument_shares) · [public.document_versions](#publicdocument_versions) · [public.documents](#publicdocuments) · [public.encumbrances](#publicencumbrances) · [public.entitlements](#publicentitlements) · [public.extracted_fields](#publicextracted_fields) · [public.facts](#publicfacts) · [public.faqs](#publicfaqs) · [public.feature_flags](#publicfeature_flags) · [public.financial_statements](#publicfinancial_statements) · [public.founders](#publicfounders) · [public.glossary_terms](#publicglossary_terms) · [public.holidays](#publicholidays) · [public.investment_policies](#publicinvestment_policies) · [public.investments](#publicinvestments) · [public.invitations](#publicinvitations) · [public.invoices](#publicinvoices) · [public.job_runs](#publicjob_runs) · [public.kyc_records](#publickyc_records) · [public.leases](#publicleases) · [public.ledger_entries](#publicledger_entries) · [public.maintenance_plans](#publicmaintenance_plans) · [public.meetings](#publicmeetings) · [public.messages](#publicmessages) · [public.mfa_factors](#publicmfa_factors) · [public.minute_signatures](#publicminute_signatures) · [public.minutes](#publicminutes) · [public.nazara_engagements](#publicnazara_engagements) · [public.nazara_events](#publicnazara_events) · [public.nazara_team](#publicnazara_team) · [public.needs](#publicneeds) · [public.notification_preferences](#publicnotification_preferences) · [public.notification_templates](#publicnotification_templates) · [public.notifications](#publicnotifications) · [public.obligation_events](#publicobligation_events) · [public.obligation_instances](#publicobligation_instances) · [public.obligations](#publicobligations) · [public.organization_members](#publicorganization_members) · [public.organizations](#publicorganizations) · [public.otp_challenges](#publicotp_challenges) · [public.outbox_messages](#publicoutbox_messages) · [public.package_items](#publicpackage_items) · [public.packages](#publicpackages) · [public.payments](#publicpayments) · [public.penalty_schedule](#publicpenalty_schedule) · [public.performance_reviews](#publicperformance_reviews) · [public.permissions](#publicpermissions) · [public.persons](#publicpersons) · [public.policies](#publicpolicies) · [public.portfolios](#publicportfolios) · [public.price_change_log](#publicprice_change_log) · [public.projects](#publicprojects) · [public.properties](#publicproperties) · [public.question_bank_versions](#publicquestion_bank_versions) · [public.rate_limits](#publicrate_limits) · [public.recommendation_rules](#publicrecommendation_rules) · [public.recommendations](#publicrecommendations) · [public.recovery_codes](#publicrecovery_codes) · [public.regulatory_references](#publicregulatory_references) · [public.regulatory_requirements](#publicregulatory_requirements) · [public.report_shares](#publicreport_shares) · [public.reports](#publicreports) · [public.request_events](#publicrequest_events) · [public.request_notes](#publicrequest_notes) · [public.request_stages](#publicrequest_stages) · [public.resolutions](#publicresolutions) · [public.revenue_allocations](#publicrevenue_allocations) · [public.risk_register](#publicrisk_register) · [public.role_permissions](#publicrole_permissions) · [public.roles](#publicroles) · [public.sequences](#publicsequences) · [public.service_categories](#publicservice_categories) · [public.service_prices](#publicservice_prices) · [public.service_requests](#publicservice_requests) · [public.services](#publicservices) · [public.sessions](#publicsessions) · [public.settings](#publicsettings) · [public.subscriptions](#publicsubscriptions) · [public.successions](#publicsuccessions) · [public.task_comments](#publictask_comments) · [public.tasks](#publictasks) · [public.trustee_appointments](#publictrustee_appointments) · [public.trustees](#publictrustees) · [public.user_roles](#publicuser_roles) · [public.users](#publicusers) · [public.valuations](#publicvaluations) · [public.violations](#publicviolations) · [public.votes](#publicvotes) · [public.waqf_classifications](#publicwaqf_classifications) · [public.waqf_deeds](#publicwaqf_deeds) · [public.waqf_exceptions](#publicwaqf_exceptions) · [public.waqf_governance_profiles](#publicwaqf_governance_profiles) · [public.waqf_keys](#publicwaqf_keys) · [public.waqf_memberships](#publicwaqf_memberships) · [public.waqf_registrations](#publicwaqf_registrations) · [public.waqf_timeline_events](#publicwaqf_timeline_events) · [public.waqfs](#publicwaqfs) · [public.workflow_templates](#publicworkflow_templates) · [restricted.screening_results](#restrictedscreening_results) · [restricted.suspicion_reports](#restrictedsuspicion_reports)
 
 ### public.action_plans
 
@@ -45,7 +45,7 @@ RLS: enabled — waqf_isolation (ALL)
 
 ### public.ai_interactions
 
-RLS: enabled — waqf_isolation (ALL)
+RLS: enabled — nullwaqf_owner (ALL), waqf_isolation (ALL)
 
 | Column | Type | Null | Default / FK |
 |---|---|---|---|
@@ -167,7 +167,7 @@ RLS: enabled — waqf_isolation (ALL)
 
 ### public.assessments
 
-RLS: enabled — waqf_isolation (ALL)
+RLS: enabled — nullwaqf_owner (ALL), waqf_isolation (ALL)
 
 | Column | Type | Null | Default / FK |
 |---|---|---|---|
@@ -662,7 +662,7 @@ RLS: off
 
 ### public.contracts
 
-RLS: enabled — waqf_isolation (ALL)
+RLS: enabled — nullwaqf_owner (ALL), waqf_isolation (ALL)
 
 | Column | Type | Null | Default / FK |
 |---|---|---|---|
@@ -958,7 +958,7 @@ RLS: enabled — waqf_isolation (ALL)
 
 ### public.documents
 
-RLS: enabled — waqf_isolation (ALL)
+RLS: enabled — nullwaqf_owner (ALL), waqf_isolation (ALL)
 
 | Column | Type | Null | Default / FK |
 |---|---|---|---|
@@ -1226,7 +1226,7 @@ RLS: enabled — waqf_isolation (ALL)
 
 ### public.invoices
 
-RLS: enabled — waqf_isolation (ALL)
+RLS: enabled — nullwaqf_owner (ALL), waqf_isolation (ALL)
 
 | Column | Type | Null | Default / FK |
 |---|---|---|---|
@@ -1439,6 +1439,78 @@ RLS: enabled — waqf_isolation (ALL)
 | updated_at | timestamp with time zone |  | `now()` |
 | created_by | uuid | yes |  |
 | updated_by | uuid | yes |  |
+
+### public.nazara_engagements
+
+RLS: enabled — waqf_isolation (ALL)
+
+| Column | Type | Null | Default / FK |
+|---|---|---|---|
+| id | uuid |  | `gen_random_uuid()` |
+| number | text |  |  |
+| waqf_id | uuid |  | → waqfs |
+| request_id | uuid | yes |  |
+| status | text |  | `'intake'::text` |
+| is_practice | boolean |  | `false` |
+| lead_user_id | uuid | yes |  |
+| checklist | jsonb |  | `'[]'::jsonb` |
+| intake_notes | text | yes |  |
+| decision | text | yes |  |
+| decision_reason | text | yes |  |
+| decided_by | uuid | yes |  |
+| decided_at | timestamp with time zone | yes |  |
+| appointment_decision_no | text | yes |  |
+| appointment_decision_date | date | yes |  |
+| appointment_authority | authority_kind | yes |  |
+| appointment_document_id | uuid | yes |  |
+| powers | text | yes |  |
+| fee_terms | text | yes |  |
+| responsibilities | text | yes |  |
+| trustee_id | uuid | yes |  |
+| started_on | date | yes |  |
+| activated_by | uuid | yes |  |
+| end_reason | text | yes |  |
+| end_note | text | yes |  |
+| ended_on | date | yes |  |
+| successor_name | text | yes |  |
+| handover | jsonb |  | `'[]'::jsonb` |
+| created_at | timestamp with time zone |  | `now()` |
+| updated_at | timestamp with time zone |  | `now()` |
+| created_by | uuid | yes |  |
+| updated_by | uuid | yes |  |
+
+### public.nazara_events
+
+RLS: enabled — waqf_isolation (ALL)
+
+| Column | Type | Null | Default / FK |
+|---|---|---|---|
+| id | uuid |  | `gen_random_uuid()` |
+| engagement_id | uuid |  | → nazara_engagements |
+| waqf_id | uuid |  |  |
+| action | text |  |  |
+| from_status | text | yes |  |
+| to_status | text | yes |  |
+| note | text | yes |  |
+| actor_user_id | uuid | yes |  |
+| at | timestamp with time zone |  | `now()` |
+
+### public.nazara_team
+
+RLS: enabled — waqf_isolation (ALL)
+
+| Column | Type | Null | Default / FK |
+|---|---|---|---|
+| id | uuid |  | `gen_random_uuid()` |
+| engagement_id | uuid |  | → nazara_engagements |
+| waqf_id | uuid |  |  |
+| user_id | uuid |  |  |
+| team_role | text |  |  |
+| membership_id | uuid | yes |  |
+| added_by | uuid | yes |  |
+| added_at | timestamp with time zone |  | `now()` |
+| removed_at | timestamp with time zone | yes |  |
+| removed_by | uuid | yes |  |
 
 ### public.needs
 
@@ -1833,7 +1905,7 @@ RLS: off
 
 ### public.projects
 
-RLS: enabled — waqf_isolation (ALL)
+RLS: enabled — nullwaqf_owner (ALL), waqf_isolation (ALL)
 
 | Column | Type | Null | Default / FK |
 |---|---|---|---|
@@ -2054,6 +2126,9 @@ RLS: enabled — waqf_isolation (ALL)
 | generated_by | uuid | yes |  |
 | generated_at | timestamp with time zone |  | `now()` |
 | revoked_at | timestamp with time zone | yes |  |
+| status | text |  | `'final'::text` |
+| approved_by | uuid | yes |  |
+| approved_at | timestamp with time zone | yes |  |
 
 ### public.request_events
 
@@ -2237,7 +2312,7 @@ RLS: off
 
 ### public.service_requests
 
-RLS: enabled — waqf_isolation (ALL)
+RLS: enabled — nullwaqf_owner (ALL), waqf_isolation (ALL)
 
 | Column | Type | Null | Default / FK |
 |---|---|---|---|
@@ -2344,7 +2419,7 @@ RLS: off
 
 ### public.subscriptions
 
-RLS: enabled — waqf_isolation (ALL)
+RLS: enabled — nullwaqf_owner (ALL), waqf_isolation (ALL)
 
 | Column | Type | Null | Default / FK |
 |---|---|---|---|
@@ -2395,7 +2470,7 @@ RLS: enabled — waqf_isolation (ALL)
 
 ### public.tasks
 
-RLS: enabled — waqf_isolation (ALL)
+RLS: enabled — nullwaqf_owner (ALL), waqf_isolation (ALL)
 
 | Column | Type | Null | Default / FK |
 |---|---|---|---|
