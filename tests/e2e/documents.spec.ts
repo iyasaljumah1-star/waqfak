@@ -91,6 +91,11 @@ test.describe.serial("secure document vault", () => {
   let docId = "";
   let shareUrl = "";
 
+  // The upload limit (60 per user per hour) is real; other specs upload as the same demo users, so start this one from zero.
+  test.beforeAll(async () => {
+    await sysQuery("delete from rate_limits where key like 'upload:%'");
+  });
+
   test("nazir uploads a PDF; it is listed, previewable and encrypted on disk", async ({ browser, viewport }) => {
     const page = await sessionPage(browser, "nazir", viewport);
     await page.goto(`/app/w/${W()}/documents`);
