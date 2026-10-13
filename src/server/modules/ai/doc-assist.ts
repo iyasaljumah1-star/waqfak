@@ -1,5 +1,5 @@
 import "server-only";
-import { and, desc, eq, inArray, isNull, ne } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import { withContext, type Tx } from "@/server/db";
 import { aiInteractions, documentVersions, documents, extractedFields } from "@/server/db/schema";
 import { ForbiddenError, loadWaqfAccess, type Auth, type WaqfAccess } from "@/server/authz/context";
@@ -41,7 +41,8 @@ export async function listAssistableDocuments(tx: Tx, auth: Auth, access: WaqfAc
     .from(documents)
     .innerJoin(documentVersions, and(eq(documentVersions.documentId, documents.id), eq(documentVersions.version, documents.currentVersion)))
     .where(and(eq(documents.waqfId, access.waqf.id), isNull(documents.archivedAt), ne(documents.status, "rejected"), ne(documents.confidentiality, "secret"), inArray(documentVersions.mimeType, ASSIST_MIMES)))
-    .orderBy(desc(documents.updatedAt))
+    // documents of the waqf file first (deeds, certificates, statements), then request attachments; newest first
+    .orderBy(sql`${documents.requestId} is null desc`, desc(documents.updatedAt))
     .limit(60);
   return rows.filter((r) => r.scan === "clean" && canSeeDocumentSync(docAccess(auth, access), r.d)).map((r) => ({ id: r.d.id, title: r.d.title, docType: r.d.docType, mime: r.mime }));
 }
