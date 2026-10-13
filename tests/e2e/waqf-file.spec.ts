@@ -108,7 +108,10 @@ test.describe("waqf file & establish wizard", () => {
     await page.waitForURL(/\/intake$/);
     await page.getByRole("radio", { name: "الواقف أو من يريد إنشاء الوقف" }).check();
     await page.getByRole("button", { name: "التالي" }).click();
+    // T03 v2: the ten clauses of the drafting guide as structured questions
+    await page.getByLabel(/رقم هوية الواقف/).fill("1000000004");
     await page.getByLabel(/الاسم المقترح للوقف/).fill("وقف اختبار المعالج (تجريبي)");
+    await page.getByLabel(/^نوع الوقف/).selectOption("ahli");
     await page.getByRole("button", { name: "التالي" }).click();
     await page.getByLabel(/^نوع الأصل/).selectOption("real_estate");
     await page.getByLabel(/وصف الأصل بما يميزه/).fill("أرض تجريبية للاختبار الآلي.");
@@ -116,11 +119,22 @@ test.describe("waqf file & establish wizard", () => {
     await page.getByRole("group", { name: /مملوك ومسجل باسم الواقف/ }).getByRole("radio", { name: "نعم" }).check();
     await page.getByRole("group", { name: /هل الأصل مرهون/ }).getByRole("radio", { name: "لا" }).check();
     await page.getByRole("radio", { name: "كامل الأصل" }).check();
+    await page.getByRole("radio", { name: /يشمل الوقف الأصل بجميع حقوقه/ }).check();
     await page.getByRole("button", { name: "التالي" }).click();
-    await page.getByLabel(/مصارف الوقف وطبقات/).fill("صياغة نهائية لوثيقة الوقف من مسودة المعالج (اختبار آلي).");
-    await page.getByLabel(/من يتولى النظارة/).fill("الواقف ثم الأرشد من أولاده (تجريبي).");
+    await page.getByTestId("table-masarif").getByRole("button", { name: /أضف صفًا/ }).click();
+    await page.locator("#q-masarif-0-tier").fill("1");
+    await page.locator("#q-masarif-0-beneficiary").fill("أولاد الواقف (تجريبي)");
+    await page.getByLabel(/المصرف البديل/).fill("الفقراء والمساكين");
+    await page.getByRole("group", { name: /تستثني لنفسك الانتفاع/ }).getByRole("radio", { name: "لا" }).check();
     await page.getByRole("button", { name: "التالي" }).click();
-    await page.getByRole("button", { name: "التالي" }).click();
+    await page.getByRole("radio", { name: "الواقف نفسه حال حياته" }).check();
+    await page.getByRole("radio", { name: "الأصلح فالأصلح من الموقوف عليهم" }).check();
+    await page.getByRole("group", { name: /تجيز للناظر استثمار/ }).getByRole("radio", { name: "نعم" }).check();
+    for (let i = 0; i < 20 && !(await page.getByTestId("slot-ownership").isVisible()); i++) {
+      const nb = page.getByRole("button", { name: "التالي" });
+      if ((await nb.count()) && (await nb.isEnabled())) await nb.click();
+      await page.waitForTimeout(400); // the wizard saves the step before moving on
+    }
     await page.getByTestId("slot-ownership").getByTestId("document-file-input").setInputFiles({ name: "ownership.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4\n1 0 obj << /Type /Catalog >> endobj\ntrailer << /Root 1 0 R >>\n%%EOF") });
     await expect(page.getByTestId("slot-ownership").getByText("أُرفق")).toBeVisible({ timeout: 30_000 });
     await page.getByRole("button", { name: "التالي" }).click();
