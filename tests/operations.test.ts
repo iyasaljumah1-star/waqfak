@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { SERVICES, WORKFLOWS } from "@/server/seed/data/services";
 import { executeRight, nextTaskStatus, planExecTasks, taskActions, workStages } from "@/server/modules/operations/exec-pure";
-import { DEED_CLAUSES, OUTPUT_SERVICE_CODES, outputsFor, TEMPLATES, type Profile } from "@/server/modules/outputs/catalog";
+import { OUTPUT_SERVICE_CODES, outputsFor, TEMPLATES, type Profile } from "@/server/modules/outputs/catalog";
 import { buildDraft, type OutputContext } from "@/server/modules/outputs/build";
 import { applyEdits, approvalCheck, diffVersions, emptySpecialist, mergeRegenerated, readiness } from "@/server/modules/outputs/pure";
 import { guardTransition, type GuardInput } from "@/server/modules/requests/workflow";
@@ -94,7 +94,7 @@ describe("draft builder", () => {
       const def = { key: "X.main", title: "مخرج", specialty: "finance" as const, profile: p, review: "self_allowed" as const };
       const d = buildDraft(baseCtx(), def);
       expect(d.sections.length, p).toBeGreaterThan(2);
-      expect(emptySpecialist(d.sections).length, p).toBe(TEMPLATES[p].analysis.length + (p === "deed_draft" ? DEED_CLAUSES.length : 0));
+      expect(emptySpecialist(d.sections).length, p).toBe(TEMPLATES[p].analysis.length);
       expect(d.sections.at(-1)!.key).toBe("references");
     }
   });
@@ -122,12 +122,13 @@ describe("draft builder", () => {
     expect(JSON.stringify(cond)).toContain("«يصرف الريع على الفقراء»");
   });
 
-  it("deed draft maps the ten clauses and blocks on a mortgaged asset", () => {
+  it("deed draft writes clauses from structured answers and blocks on a mortgaged asset", () => {
     const def = outputsFor({ code: "T03" })[0];
-    const raw = { waqifName: { key: "waqifName", label: "الواقف", value: "فلان" }, mortgaged: { key: "mortgaged", label: "مرهون", value: "نعم" } };
-    const d = buildDraft(baseCtx({ raw }), def);
+    const d = buildDraft(baseCtx({ keys: { waqifName: "فلان", mortgaged: "yes" }, tables: {}, formDocs: [] }), def);
     expect(d.gaps.some((g) => g.key === "mortgaged" && g.severity === "blocking")).toBe(true);
-    expect(d.gaps.some((g) => g.key === "clause:masarif")).toBe(true);
+    expect(d.gaps.some((g) => g.key === "field:masarif" && g.owner === "client")).toBe(true);
+    const sec = d.sections.find((s) => s.key === "deed_clauses")!;
+    expect(sec.blocks.filter((b) => b.type === "clause").length).toBeGreaterThanOrEqual(7);
   });
 
   it("nazara study requires the linked nazara file and its received checklist", () => {

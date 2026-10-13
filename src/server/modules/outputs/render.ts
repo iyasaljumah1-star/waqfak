@@ -22,13 +22,21 @@ function block(b: OutputBlock, final: boolean): string {
       return b.text.trim()
         ? `<p style="white-space:pre-line">${esc(b.text)}</p>`
         : `<div class="box critical">لم يُكتب بعد: ${esc(b.prompt)}</div>`;
+    case "clause":
+      return `<div class="clause"><p><strong>${esc(b.n)}. ${esc(b.title)}</strong></p><p style="white-space:pre-line">${esc(b.text)}</p>${final ? "" : `<p class="small muted">${prov(b.text === b.generated ? b.prov : "specialist")}${b.refs?.length ? ` — ${esc(b.refs.join("؛ "))}` : ""}</p>`}</div>`;
+    case "signatures":
+      return `<table class="sign"><thead><tr><th>الصفة</th><th>الاسم</th><th>التوقيع</th><th>التاريخ</th></tr></thead><tbody>${b.rows.map((r) => `<tr><td>${esc(r.role)}</td><td>${esc(r.name)}</td><td class="line"></td><td class="line"></td></tr>`).join("")}</tbody></table><p class="small muted">خانات توقيع تُستكمل عند التوثيق لدى الجهة المختصة أو بالإشهاد؛ لا تُعد توقيعًا إلكترونيًا.</p>`;
   }
 }
 
 export type OutputDocMeta = {
   number: string; title: string; specialty: string; serviceLine: string; requestNumber: string; waqfName: string | null; version: number; status: string;
   preparedBy: string | null; approvedBy: string | null; approvedAt: string | null; selfApproved: boolean; signedBy: string | null; isDemo: boolean;
+  /** Date of this version, and where it stands: draft, under review, or approved. */
+  versionDate?: string; workflowStatus?: "draft" | "in_review" | "approved";
 };
+
+const DOC_STATUS: Record<string, string> = { draft: "مسودة غير معتمدة", in_review: "بانتظار المراجعة والاعتماد", approved: "معتمد" };
 
 export function outputHtml(meta: OutputDocMeta, sections: OutputSection[]): string {
   const final = meta.status === "approved";
@@ -37,12 +45,14 @@ export function outputHtml(meta: OutputDocMeta, sections: OutputSection[]): stri
 <h1>${esc(meta.title)}</h1>
 <dl class="kv small">
 <dt>رقم المخرج</dt><dd dir="ltr" class="tabular">${esc(meta.number)} · v${meta.version}</dd>
+<dt>الحالة</dt><dd>${esc(DOC_STATUS[meta.workflowStatus ?? (final ? "approved" : "draft")])}${final ? " — الاعتماد داخلي من «وقفك»، ولا يغني عن التوثيق لدى الجهة المختصة متى لزم" : ""}</dd>
+${meta.versionDate ? `<dt>تاريخ النسخة</dt><dd class="tabular">${esc(meta.versionDate)}</dd>` : ""}
 <dt>الخدمة</dt><dd>${esc(meta.serviceLine)}</dd>
 <dt>الطلب</dt><dd dir="ltr" class="tabular">${esc(meta.requestNumber)}</dd>
 ${meta.waqfName ? `<dt>الوقف</dt><dd>${esc(meta.waqfName)}</dd>` : ""}
 <dt>التخصص</dt><dd>${esc(meta.specialty)}</dd>
 <dt>أعدّه</dt><dd>${esc(meta.preparedBy ?? "—")}</dd>
-${final ? `<dt>اعتمده</dt><dd>${esc(meta.approvedBy ?? "—")}${meta.selfApproved ? " (اعتماد ذاتي وفق سياسة المخرج)" : ""} — ${esc(meta.approvedAt ?? "")}</dd>` : ""}
+${final ? `<dt>راجعه واعتمده</dt><dd>${esc(meta.approvedBy ?? "—")}${meta.selfApproved ? " (اعتماد ذاتي وفق سياسة المخرج)" : ""} — ${esc(meta.approvedAt ?? "")}</dd>` : ""}
 ${meta.signedBy ? `<dt>التوقيع</dt><dd>${esc(meta.signedBy)}</dd>` : ""}
 </dl>
 ${final ? "" : `<div class="box critical">مسودة داخلية غير معتمدة — لا تُسلَّم للعميل. الوسوم بجانب كل معلومة تبين مصدرها.</div>`}
@@ -51,4 +61,6 @@ ${body}`;
 }
 
 export const OUTPUT_PDF_CSS = `.prov{font-size:9px;color:#7a6a3a;background:#f5eedf;border-radius:3px;padding:0 4px;white-space:nowrap}
-tr.total td{border-top:2px solid #333}`;
+tr.total td{border-top:2px solid #333}
+.clause{margin:0 0 10px;page-break-inside:avoid}.clause p{margin:2px 0}
+table.sign td.line{height:34px;min-width:110px;border-bottom:1px solid #333}`;

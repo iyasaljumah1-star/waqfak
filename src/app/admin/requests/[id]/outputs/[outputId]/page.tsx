@@ -51,6 +51,21 @@ function Block({ b }: { b: OutputBlock }) {
       return b.text.trim()
         ? <div className="rounded-md border-s-4 border-seal bg-seal-soft/30 p-3"><p className="whitespace-pre-line text-[15px] leading-8">{b.text}</p><Prov p="specialist" /></div>
         : <Alert tone="fine" title="يكتبه المختص">{b.prompt}</Alert>;
+    case "clause":
+      return (
+        <div className="rounded-md border border-line p-3" data-testid={`clause-${b.key}`}>
+          <p className="font-semibold">{b.n}. {b.title}</p>
+          <p className="whitespace-pre-line text-[15px] leading-8">{b.text}</p>
+          <p className="mt-1 text-[12px] text-muted"><Prov p={b.text === b.generated ? b.prov : "specialist"} />{b.refs?.length ? ` ${b.refs.join("؛ ")}` : ""}</p>
+        </div>
+      );
+    case "signatures":
+      return (
+        <table className="w-full text-[14px]">
+          <thead><tr className="border-b border-line text-muted"><th className="px-2 py-1 text-start font-medium">الصفة</th><th className="px-2 py-1 text-start font-medium">الاسم</th><th className="px-2 py-1 text-start font-medium">التوقيع</th></tr></thead>
+          <tbody>{b.rows.map((r, i) => <tr key={i} className="border-b border-line/60"><td className="px-2 py-2">{r.role}</td><td className="px-2 py-2">{r.name || "—"}</td><td className="px-2 py-2 text-muted">يُوقَّع عند التوثيق</td></tr>)}</tbody>
+        </table>
+      );
   }
 }
 
@@ -135,6 +150,10 @@ export default async function OutputPage({ params, searchParams }: { params: Pro
                     <fieldset key={s.key} className="space-y-3 rounded-lg border border-line p-3">
                       <legend className="px-1 font-medium">{s.title}</legend>
                       {s.blocks.map((b, bi) => {
+                        if (b.type === "clause") {
+                          const k = `clause:${s.key}:${b.key}`;
+                          return <Field key={k} label={`${b.n}. ${b.title}`} name={fid(k)} hint={b.text !== b.generated ? "معدّل يدويًا: يبقى نصك عند إعادة التوليد." : undefined}><Textarea id={fid(k)} name={k} defaultValue={b.text} className="min-h-20" /></Field>;
+                        }
                         if (b.type === "specialist") {
                           const k = `spec:${s.key}:${si++}`;
                           return <Field key={k} label={b.prompt} name={fid(k)}><Textarea id={fid(k)} name={k} defaultValue={b.text} className="min-h-32" /></Field>;

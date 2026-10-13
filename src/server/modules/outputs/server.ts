@@ -91,6 +91,7 @@ export async function outputDocHtml(tx: Tx, rc: RequestCtx, o: OutputRow, v: Ver
     waqfName: w?.name ?? null, version: v.version, status: isApprovedVersion ? "approved" : "draft",
     preparedBy: n.get(o.submittedBy ?? v.createdBy ?? "") ?? null, approvedBy: n.get(o.approvedBy ?? "") ?? null,
     approvedAt: o.approvedAt ? o.approvedAt.toISOString().slice(0, 10) : null, selfApproved: o.selfApproved, signedBy, isDemo: !!w?.isDemo,
+    versionDate: v.createdAt.toISOString().slice(0, 10), workflowStatus: isApprovedVersion ? "approved" : o.status === "in_review" && o.currentVersion === v.version ? "in_review" : "draft",
   }, v.sections);
   return pdfShell(o.title, html, OUTPUT_PDF_CSS);
 }

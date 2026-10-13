@@ -372,7 +372,7 @@ const FORMS: Record<string, Omit<ServiceForm, "steps"> & { steps: Step[] }> = {
             { key: "percent", label: "النسبة من التركة", type: "percent", required: true, showIf: { col: "basis", in: ["share"] } },
             { key: "amount", label: "المبلغ (ر.س)", type: "money", required: true, showIf: { col: "basis", in: ["amount"] } },
             { key: "asset", label: "وصف العين", type: "text", required: true, showIf: { col: "basis", in: ["asset"] } },
-          ], { ...R, minRows: 1, hint: "ما زاد على ثلث التركة أو كان لوارث لا ينفذ إلا بإجازة الورثة (100 سؤال، س16 وس75)." }),
+          ], { ...R, minRows: 1, hint: "الوقف المعلق على الموت لا يلزم فيما زاد على ثلث التركة إلا بإجازة الورثة (100 سؤال، س16 وس75). والوصية لأحد الورثة يراجع المستشار الشرعي حكمها." }),
           money("estimatedEstate", "تقدير إجمالي التركة (اختياري)", { hint: "يساعد على التحقق من حد الثلث في الوصايا بالمبالغ. لا يُطبع في الوصية." }),
         ],
       },

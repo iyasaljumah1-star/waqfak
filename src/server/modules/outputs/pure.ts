@@ -14,7 +14,10 @@ export const PROV_LABEL: Record<Provenance, string> = {
 /** Empty specialist parts of the draft (their sections must be written before approval). */
 export function emptySpecialist(sections: OutputSection[]): { section: string; prompt: string }[] {
   const out: { section: string; prompt: string }[] = [];
-  for (const s of sections.filter((x) => !x.removed)) for (const b of s.blocks) if (b.type === "specialist" && !b.text.trim()) out.push({ section: s.title, prompt: b.prompt });
+  for (const s of sections.filter((x) => !x.removed)) for (const b of s.blocks) {
+    if (b.type === "specialist" && !b.text.trim()) out.push({ section: s.title, prompt: b.prompt });
+    if (b.type === "clause" && !b.text.trim()) out.push({ section: `${s.title} — البند ${b.n}`, prompt: b.title });
+  }
   return out;
 }
 
@@ -43,6 +46,8 @@ const blockText = (b: OutputBlock): string => {
   switch (b.type) {
     case "para": return b.text;
     case "specialist": return b.text;
+    case "clause": return `${b.n}. ${b.title}: ${b.text}`;
+    case "signatures": return b.rows.map((r) => `${r.role}: ${r.name} — التوقيع: ________`).join("\n");
     case "facts": return b.rows.map((r) => `${r.label}: ${r.value}`).join("\n");
     case "table": return [b.head.join(" | "), ...b.rows.map((r) => r.join(" | ")), ...(b.total ? [b.total.join(" | ")] : [])].join("\n");
     case "list": return b.items.map((i) => `- ${i.text}`).join("\n");
@@ -73,7 +78,16 @@ export function mergeRegenerated(prev: OutputSection[], fresh: OutputSection[], 
     let si = 0;
     const editedFacts = new Map<string, { value: string; orig?: string }>();
     for (const b of p.blocks) if (b.type === "facts") for (const r of b.rows) if (r.prov === "specialist") editedFacts.set(r.label, { value: r.value, orig: r.ref });
+    const prevClauses = new Map(p.blocks.filter((b): b is Extract<OutputBlock, { type: "clause" }> => b.type === "clause").map((b) => [b.key, b]));
     const blocks: OutputBlock[] = f.blocks.map((b) => {
+      if (b.type === "clause") {
+        const pc = prevClauses.get(b.key);
+        if (!pc || pc.text === pc.generated) return b; // untouched clause: the fresh wording follows the fresh data
+        kept++;
+        if (pc.generated !== b.generated)
+          gaps.push({ key: `conflict:${f.key}:${b.key}`, label: `البند «${b.title}» عدّله إنسان، وتغيّرت بياناته بعد ذلك`, severity: "warning", hint: "قارن نصه بالصياغة الجديدة المولدة من البيانات الحالية قبل الاعتماد.", owner: "specialist" });
+        return { ...b, text: pc.text };
+      }
       if (b.type === "specialist") {
         const t = specialistTexts[si++] ?? "";
         if (t) kept++;
@@ -140,6 +154,17 @@ export function applyEdits(sections: OutputSection[], fields: Record<string, str
     }
     let si = 0;
     const blocks: OutputBlock[] = s.blocks.map((b, bi) => {
+      if (b.type === "clause") {
+        const k = `clause:${s.key}:${b.key}`;
+        if (k in fields) {
+          const t = fields[k].trim().slice(0, 20_000);
+          if (t && t !== b.text) {
+            changed = true;
+            return { ...b, text: t, prov: "specialist" as Provenance };
+          }
+        }
+        return b;
+      }
       if (b.type === "specialist") {
         const k = `spec:${s.key}:${si++}`;
         if (k in fields) {

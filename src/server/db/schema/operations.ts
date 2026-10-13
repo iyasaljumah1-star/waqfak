@@ -71,7 +71,12 @@ export type OutputBlock =
   | { type: "table"; head: string[]; rows: string[][]; prov: Provenance; ref?: string; total?: string[] }
   | { type: "list"; items: { text: string; prov?: Provenance; ref?: string }[]; ordered?: boolean }
   /** Text the specialist must write; blocks approval while empty. */
-  | { type: "specialist"; prompt: string; text: string };
+  | { type: "specialist"; prompt: string; text: string }
+  /** A drafted clause of a document (will, deed, policy): `generated` is the text built from the data; `text` is what
+   *  the document says now (equal to `generated` until a person edits it). `refs` = where the rule behind it comes from. */
+  | { type: "clause"; key: string; n: number; title: string; text: string; generated: string; prov: Provenance; refs?: string[] }
+  /** Signature lines printed on the document (wet or official signing outside the platform; not an e-signature). */
+  | { type: "signatures"; rows: { role: string; name: string }[] };
 
 export type OutputSection = {
   key: string;
@@ -85,7 +90,8 @@ export type OutputSection = {
   blocks: OutputBlock[];
 };
 
-export type OutputGap = { key: string; label: string; severity: "blocking" | "warning"; hint?: string };
+/** A gap never gets invented content: it names the missing field or document and who must complete it. */
+export type OutputGap = { key: string; label: string; severity: "blocking" | "warning"; hint?: string; field?: string; owner?: "client" | "specialist" | "team" };
 export type OutputSource = { code: string; label: string; status: "verified" | "pending_verification" | "operational" | "internal"; detail?: string };
 
 export const outputs = pgTable("outputs", {

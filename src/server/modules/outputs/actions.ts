@@ -89,7 +89,7 @@ export async function saveOutputEdits(_: ActionState, fd: FormData): Promise<Act
   const base = Number(fd.get("baseVersion"));
   if (!uuid.safeParse(outputId).success || !uuid.safeParse(requestId).success || !Number.isInteger(base)) return { error: "طلب غير صالح." };
   const fields: Record<string, string> = {};
-  for (const [k, v] of fd.entries()) if (typeof v === "string" && /^(spec|fact|note|drop):|^new_(title|body)$/.test(k)) fields[k] = v;
+  for (const [k, v] of fd.entries()) if (typeof v === "string" && /^(spec|fact|note|drop|clause):|^new_(title|body)$/.test(k)) fields[k] = v;
   return userAction(async (c) => {
     if (!c.auth.perms.has("staff.deliver") && !c.auth.perms.has("staff.quality_review")) throw new ForbiddenError("تعديل المخرجات لمن يعدّها أو يراجعها.");
     const { o } = await loadOutput(c, outputId, requestId);

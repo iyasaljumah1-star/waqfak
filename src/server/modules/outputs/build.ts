@@ -5,7 +5,8 @@
  */
 import { createHash } from "node:crypto";
 import type { OutputBlock, OutputGap, OutputSection, OutputSource, Provenance } from "@/server/db/schema/operations";
-import { DEED_CLAUSES, PROFILE_REFS, TEMPLATES, type OutputDef, type SectionKind } from "./catalog";
+import { PROFILE_REFS, TEMPLATES, type OutputDef, type SectionKind } from "./catalog";
+import { draftDeed, draftWill } from "./drafting";
 
 export type CtxDoc = { id: string; title: string; docType: string; typeLabel: string; number: string | null; issuedOn: string | null; expiresOn: string | null; scope: "request" | "waqf"; slot: string | null };
 export type CtxField = { key: string; label: string; value: string };
@@ -18,6 +19,10 @@ export type OutputContext = {
   answers: { title: string; rows: CtxField[] }[];
   /** Raw answers by field key (for clause mapping). */
   raw: Record<string, CtxField>;
+  /** Stored values of visible scalar fields (option keys, numbers as text) — for drafting rules. */
+  keys?: Record<string, string>;
+  /** Rows of visible table fields (option keys as stored). */
+  tables?: Record<string, Record<string, string>[]>;
   formSources: string[];
   /** Waqf documents not listed (other types or older copies). */
   omittedDocs?: number;
@@ -249,25 +254,19 @@ function build(kind: SectionKind, c: OutputContext, def: OutputDef): Built {
       ]));
     }
     case "deed_clauses":
-      return out(section("deed_clauses", "بنود وثيقة الوقف", DEED_CLAUSES.flatMap((cl) => {
-        const rows = cl.fields.map((k) => c.raw[k]).filter((r): r is CtxField => !!r && has(r.value));
-        if (cl.fields.length && !rows.length) gaps.push({ key: `clause:${cl.key}`, label: `بند «${cl.title}» بلا بيانات من العميل`, severity: cl.key === "board" || cl.key === "exception" || cl.key === "closing" ? "warning" : "blocking" });
-        if (cl.key === "asset" && c.raw.mortgaged?.value === "نعم") gaps.push({ key: "mortgaged", label: "الأصل مرهون: لا يوقف إلا بعد سداد الرهن أو موافقة المرتهن (100 سؤال، س28)", severity: "blocking" });
-        if (cl.key === "asset" && c.raw.registeredToWaqif?.value === "لا") gaps.push({ key: "ownership", label: "الأصل غير مسجل باسم الواقف بصك ساري", severity: "blocking" });
-        return [
-          { type: "para" as const, text: `${cl.title}:` },
-          ...(rows.length ? [{ type: "facts" as const, rows: rows.map((r) => ({ label: r.label, value: r.value, prov: "client" as Provenance })) }] : []),
-          { type: "specialist" as const, prompt: `صياغة بند «${cl.title}»${cl.key === "signature" ? " (مكان توقيع الواقف والشهود وجهة التوثيق)" : ""}`, text: "" },
-        ];
-      })));
     case "will_clauses": {
-      const keys: [string, string][] = [["hasPreviousWill", "الوصايا السابقة"], ["previousWillDate", "تاريخ الوصية السابقة"], ["includesWaqf", "الوصية بوقف بعد الوفاة"], ["waqfShare", "مقدار الموصى به"], ["estate", "الأموال ومقاصد الوصية"], ["executor", "الوصي أو المنفذ المقترح"]];
-      const rows = keys.map(([k, label]) => (c.raw[k] && has(c.raw[k].value) ? { label, value: c.raw[k].value, prov: "client" as Provenance } : null)).filter(Boolean) as { label: string; value: string; prov: Provenance }[];
-      if (!c.raw.executor || !has(c.raw.executor.value)) gaps.push({ key: "executor", label: "لم يُحدد الوصي أو المنفذ", severity: "warning" });
-      return out(section("will_clauses", "عناصر الوصية من بيانات الموصي", [
-        { type: "facts", rows: [{ label: "الموصي", value: c.requester.name, prov: "client" }, ...rows] },
-        { type: "para", text: "حدود الوصية (الثلث، ولغير وارث إلا بإجازة الورثة) يتحقق منها المستشار الشرعي من بيانات التركة، ولا تُفترض.", prov: "unverified" },
-      ]));
+      const input = { keys: c.keys ?? {}, tables: c.tables ?? {}, attached: Object.fromEntries(c.formDocs.map((f) => [f.key, f.attached])), requesterName: c.requester.name };
+      const dr = kind === "will_clauses" ? draftWill(input) : draftDeed(input);
+      gaps.push(...dr.gaps);
+      const sections: OutputSection[] = [
+        section(kind, `${dr.title} (مسودة مولدة من بيانات النموذج)`, [
+          { type: "para", text: "صيغت البنود من اختيارات العميل في نموذج الطلب وفق مبادئ الصياغة في المراجع المذكورة مع كل بند. ما بين معقوفين [يُستكمل: …] لم يُقدَّم بعد ولا يُفترض. البند الذي يعدّله المختص يبقى بنصه عند إعادة التوليد.", prov: "system" },
+          ...dr.clauses,
+          { type: "signatures", rows: dr.signatures },
+        ]),
+        section(`${kind}:checks`, "فحوص الصياغة", [{ type: "list", items: dr.checks.map((x) => ({ text: `${x.ok ? "✓" : "✗"} ${x.label}${x.detail ? ` — ${x.detail}` : ""}`, prov: "computed" as Provenance })) }], false),
+      ];
+      return { sections, gaps };
     }
     case "checklist": {
       const rows = c.formDocs.map((s) => [s.label, s.required ? "مطلوب" : "عند الحاجة", s.attached ? `مرفق (${s.attached})` : "لم يُرفق"]);

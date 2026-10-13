@@ -13,7 +13,7 @@ import { ACCOUNTS } from "@/server/modules/waqf-file/labels";
 import { docTypeLabel } from "@/server/modules/documents/labels";
 import { CHECK_STATUS_AR, STATUS_AR } from "@/server/modules/nazara/pure";
 import type { RequestCtx } from "@/server/modules/requests/access";
-import { docRequired, findField, summarize, visibleDocs } from "@/server/modules/requests/intake/engine";
+import { docRequired, findField, sanitizeAnswers, summarize, tableRows, visibleDocs, visibleFields, visibleSteps } from "@/server/modules/requests/intake/engine";
 import { intakeOf, serviceForm } from "@/server/modules/requests/intake/server";
 import type { OutputContext } from "./build";
 import { lastFiscalPeriod } from "./fiscal";
@@ -36,6 +36,15 @@ export async function collectContext(tx: Tx, rc: RequestCtx): Promise<OutputCont
   const sum = summarize(form, answers);
   const raw: OutputContext["raw"] = {};
   for (const s of sum) for (const r of s.rows) raw[r.key] = { key: r.key, label: r.label, value: r.value };
+  const keys: Record<string, string> = {};
+  const tables: Record<string, Record<string, string>[]> = {};
+  const clean = sanitizeAnswers(form, answers);
+  for (const st of visibleSteps(form, clean)) for (const f of visibleFields(st, clean)) {
+    const v = clean[f.key];
+    if (v === undefined || v === null || v === "") continue;
+    if (f.type === "table") tables[f.key] = tableRows(v);
+    else keys[f.key] = Array.isArray(v) ? v.join(",") : String(v);
+  }
   const capField = findField(form, "capacity");
   const capacity = capField && typeof answers.capacity === "string" ? capField.field.options?.find(([k]) => k === answers.capacity)?.[1] ?? null : null;
 
@@ -64,6 +73,8 @@ export async function collectContext(tx: Tx, rc: RequestCtx): Promise<OutputCont
     requester: { name: requester?.name ?? "مقدّم الطلب", capacity },
     answers: sum.map((s) => ({ title: s.title, rows: s.rows.map((r) => ({ key: r.key, label: r.label, value: r.value })) })),
     raw,
+    keys,
+    tables,
     formSources: form.sources,
     omittedDocs: omitted,
     formDocs: visibleDocs(form, answers).filter((d) => !["poa", "authorization"].includes(d.key) || docRequired(d, answers)).map((d) => ({ key: d.key, label: d.label, required: docRequired(d, answers), attached: docMap[d.key]?.length ?? 0 })),

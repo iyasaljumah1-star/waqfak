@@ -119,14 +119,14 @@ export const TEMPLATES: Record<Profile, ProfileTemplate> = {
     disclaimer: NO_FATWA,
   },
   will_text: {
-    sections: ["meta", "request", "will_clauses", "documents", "references"],
+    sections: ["meta", "will_clauses", "request", "documents", "references"],
     analysis: [
-      { key: "wording", title: "نص الوصية المقترح", prompt: "صِغ نص الوصية من البيانات أعلاه، ويراجعه مستشار شرعي مستقل (حدود الثلث وغير الوارث)." },
+      { key: "review_note", title: "ملاحظات المختص على الصياغة", prompt: "راجع البنود المولدة وفحوص الصياغة (حد الثلث، الوصية لوارث إن وجدت، وضوح الموصى به والمصارف) واكتب ملاحظاتك وما عدّلته. يعتمد النصَّ مستشار شرعي مستقل." },
     ],
     disclaimer: NO_FATWA,
   },
   deed_draft: {
-    sections: ["meta", "request", "deed_clauses", "documents", "references"],
+    sections: ["meta", "deed_clauses", "request", "documents", "references"],
     analysis: [
       { key: "review_note", title: "مذكرة المراجعة الشرعية والقانونية", prompt: "اكتب ملاحظات المراجعة على البنود ومواطن الغموض قبل التوثيق." },
     ],
