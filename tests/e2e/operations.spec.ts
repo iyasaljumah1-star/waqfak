@@ -95,7 +95,7 @@ async function submitRequest(page: Page, service: string, waqf: string, answers:
 }
 
 async function act(page: Page, name: string | RegExp) {
-  await page.getByRole("button", { name }).first().click();
+  await page.getByRole("button", typeof name === "string" ? { name, exact: true } : { name }).first().click();
 }
 
 test.describe.serial("service flows as one operating system", () => {
@@ -136,9 +136,9 @@ test.describe.serial("service flows as one operating system", () => {
     await go(admin, `/admin/requests/${reqId}`);
     await ex(admin.getByTestId("task-intake")).toBeVisible();
     await act(admin, "بدء الفرز");
-    await ex(admin.getByRole("button", { name: "تحققت من البيانات والمستندات" })).toBeVisible();
+    await ex(admin.getByRole("button", { name: "تحققت من البيانات والمستندات", exact: true })).toBeVisible();
     await act(admin, "تحققت من البيانات والمستندات");
-    await ex(admin.getByRole("button", { name: "اقبل الطلب للخدمة" })).toBeVisible();
+    await ex(admin.getByRole("button", { name: "اقبل الطلب للخدمة", exact: true })).toBeVisible();
     await act(admin, "اقبل الطلب للخدمة");
     await ex.poll(async () => (await sql<{ status: string }>("select status from tasks where request_id = $1 and kind = 'intake'", [reqId]))[0].status).toBe("done");
 
@@ -266,12 +266,15 @@ test.describe.serial("service flows as one operating system", () => {
     const nazir = await as(browser, "nazir", viewport);
     const n01 = async () => submitRequest(nazir, "N01", A(), async (p) => {
       await p.getByRole("radio", { name: "الواقف يريد تعيين «وقفك»" }).check();
-      await p.getByLabel(/سبب طلب تولي/).fill("طلب اختبار آلي لربط الطلبات بملف النظارة.");
-      await p.getByLabel(/ملخص أصول الوقف/).fill("أصول تجريبية.");
+      await p.getByRole("checkbox", { name: "اختيار الواقف" }).check();
+      await p.getByRole("button", { name: "التالي" }).click();
+      await p.getByTestId("table-assets").getByRole("button", { name: /أضف صفًا/ }).click();
+      await p.locator("#q-assets-0-type").selectOption({ index: 1 });
+      await p.locator("#q-assets-0-description").fill("أصل تجريبي (اختبار آلي)");
       await p.getByRole("group", { name: /حساب بنكي باسمه/ }).getByRole("radio", { name: "نعم" }).check();
+      await p.getByRole("group", { name: /قوائم أو بيانات مالية/ }).getByRole("radio", { name: "لا" }).check();
       await p.getByRole("group", { name: /دعاوى أو مطالبات/ }).getByRole("radio", { name: "لا" }).check();
-      await p.getByRole("button", { name: "التالي" }).click();
-      await p.getByRole("button", { name: "التالي" }).click();
+      for (let i = 0; i < 3 && !(await p.getByTestId("slot-svc_waqf_deed").isVisible()); i++) await p.getByRole("button", { name: "التالي" }).click();
       const slot = p.getByTestId("slot-svc_waqf_deed");
       await slot.waitFor({ timeout: 15_000 });
       await slot.getByTestId("document-file-input").setInputFiles({ name: "deed.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4\n1 0 obj << /Type /Catalog >> endobj\ntrailer << /Root 1 0 R >>\n%%EOF") });
@@ -298,9 +301,12 @@ test.describe.serial("service flows as one operating system", () => {
     await ex(admin.getByTestId("output-N01.main").getByRole("button", { name: "أعدّ المسودة من بيانات الطلب" })).toBeVisible();
     await admin.getByTestId("output-N01.main").getByRole("button", { name: "أعدّ المسودة من بيانات الطلب" }).click();
     await ex.poll(async () => JSON.stringify((await sql<{ sections: unknown }>("select v.sections from output_versions v join outputs o on o.id = v.output_id where o.request_id = $1", [first]))[0]?.sections ?? "")).toContain(`ملف النظارة ${engs[0].number}`);
+    // uploaded is not verified: the deed is verified document by document before the intake check
+    await admin.getByTestId("docslot-svc_waqf_deed").getByRole("button", { name: "تحققت منه" }).click();
+    await ex(admin.getByTestId("docslot-svc_waqf_deed")).toContainText("متحقق منه");
     // N01 acceptance goes through the nazara file decision, not the request button
     await act(admin, "تحققت من البيانات والمستندات");
-    await ex(admin.getByRole("button", { name: "اقبل الطلب للخدمة" })).toBeVisible();
+    await ex(admin.getByRole("button", { name: "اقبل الطلب للخدمة", exact: true })).toBeVisible();
     await act(admin, "اقبل الطلب للخدمة");
     await ex(admin.getByText(/يُقبل طلب النظارة باعتماد قبول ملف النظارة/)).toBeVisible();
 

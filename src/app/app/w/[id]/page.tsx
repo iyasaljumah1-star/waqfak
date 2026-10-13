@@ -84,6 +84,10 @@ export default async function WaqfOverview({ params, searchParams }: { params: P
 
       <div className="grid gap-6 2xl:grid-cols-[minmax(0,1fr)_22rem]">
         <div className="min-w-0 space-y-6">
+          {center ? (
+            <WaqfCenterPanel items={centerItems} nazara={center.nazara} counts={{ required: centerItems.filter((i) => i.state === "required").length, soon: centerItems.filter((i) => i.state === "soon").length, done: centerItems.filter((i) => i.state === "done").length }}
+              nazaraHref={auth.perms.has("nazara.view") && center.facts.nazara ? `/admin/nazara/${center.facts.nazara.id}` : null} />
+          ) : null}
           {editing ? (
             <Panel id="profile" title="تعديل ملف الوقف" description="ما تحفظه هنا يحدد الالتزامات النظامية ومواعيدها، ويُسجَّل في سجل العمليات.">
               <WaqfProfileForm
@@ -136,10 +140,6 @@ export default async function WaqfOverview({ params, searchParams }: { params: P
           </Panel>
           )}
 
-          {center ? (
-            <WaqfCenterPanel items={centerItems} nazara={center.nazara} counts={{ required: centerItems.filter((i) => i.state === "required").length, soon: centerItems.filter((i) => i.state === "soon").length, done: centerItems.filter((i) => i.state === "done").length }}
-              nazaraHref={auth.perms.has("nazara.view") && center.facts.nazara ? `/admin/nazara/${center.facts.nazara.id}` : null} />
-          ) : null}
 
           {can("compliance.view") ? (
             <Panel title="الامتثال" description="حالة الالتزامات النظامية المترتبة على هذا الوقف." actions={<SectionLink href={`${base}/compliance`}>كل الالتزامات</SectionLink>}>

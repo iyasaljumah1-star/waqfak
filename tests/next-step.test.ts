@@ -130,3 +130,20 @@ describe("execution plan", () => {
     expect(p.held?.text).toContain("المحكمة");
   });
 });
+
+describe("execution plan: paid service started as an operations package", () => {
+  it("skips quote and contract once work has started without them", () => {
+    const p = planRequest(snap({ paid: true, status: "in_progress", intake: { legacy: false, invalidFields: [], missingDocs: [], unverifiedDocs: [], verified: true, accepted: true } }));
+    expect(p.steps.find((x) => x.key === "quote")?.state).toBe("skipped");
+    expect(p.steps.find((x) => x.key === "contract")?.state).toBe("skipped");
+    expect(p.current?.key).toBe("prep:W01.main");
+  });
+});
+
+describe("execution plan: corporate nazara acceptance", () => {
+  it("points to the nazara file decision instead of accepting from the request", () => {
+    const p = planRequest(snap({ intake: { legacy: false, invalidFields: [], missingDocs: [], unverifiedDocs: [], verified: true, accepted: false }, acceptVia: { href: "/admin/nazara/x", label: "قرار القبول في ملف النظارة", who: "ops" } }));
+    expect(p.primary).toEqual({ kind: "link", href: "/admin/nazara/x", label: "قرار القبول في ملف النظارة" });
+    expect(p.current?.owner).toBe("ops");
+  });
+});

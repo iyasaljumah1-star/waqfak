@@ -61,6 +61,8 @@ export type Snapshot = {
   opinion: boolean;
   selfQA: boolean;
   waqf: { linked: boolean; name: string | null };
+  /** Acceptance decided elsewhere (corporate nazara: the nazara file's acceptance decision accepts the request). */
+  acceptVia?: { href: string; label: string; who: Who } | null;
 };
 
 const RANK: Record<string, number> = {
@@ -98,7 +100,7 @@ export function planRequest(s: Snapshot): { steps: Step[]; current: Step | null;
     if (s.items.clientOpen) b.push({ text: `${s.items.clientOpen} من النواقص بانتظار العميل`, who: "client", href: anchor(s.id, "items") });
     if (s.items.awaitingReview) b.push({ text: `${s.items.awaitingReview} مما استكمله العميل بانتظار مراجعتك`, who: "team", href: anchor(s.id, "items") });
     if (s.intake.unverifiedDocs.length) b.push({ text: `مستندات مرفوعة لم يُتحقق منها: ${s.intake.unverifiedDocs.join("، ")}`, who: "team", href: anchor(s.id, "doc-review") });
-    const done = s.intake.verified;
+    const done = s.intake.verified || rank >= 5; // work started (legacy requests and operations packages predate the check)
     const st: Step = { key: "verify", title: "اكتمال البيانات والتحقق من المستندات", owner: "team", blockers: done ? [] : b, output: "بيانات ومستندات متحقق منها", state: done ? "done" : rank < 2 ? "pending" : "current" };
     if (!done && rank >= 2) {
       const clientOnly = b.length > 0 && b.every((x) => x.who === "client");
@@ -112,16 +114,19 @@ export function planRequest(s: Snapshot): { steps: Step[]; current: Step | null;
   // 3) Acceptance
   add({
     key: "accept", title: "قبول الطلب للخدمة", owner: "team", blockers: [], output: "طلب مقبول للخدمة",
-    state: s.intake.accepted ? "done" : s.intake.verified && rank >= 2 ? "current" : "pending",
-    ...(!s.intake.accepted && s.intake.verified && worker && eff === "triage" ? { action: { kind: "run" as const, key: "accept" as const, label: "اقبل الطلب للخدمة" } } : {}),
+    state: s.intake.accepted || rank >= 5 ? "done" : s.intake.verified && rank >= 2 ? "current" : "pending",
+    ...(!s.intake.accepted && s.intake.verified && worker && eff === "triage" ? { action: s.acceptVia ? { kind: "link" as const, href: s.acceptVia.href, label: s.acceptVia.label } : { kind: "run" as const, key: "accept" as const, label: "اقبل الطلب للخدمة" } } : {}),
+    ...(s.acceptVia ? { owner: s.acceptVia.who, detail: "يُقبل طلب النظارة بقرار قبول ملف النظارة، لا من صفحة الطلب" } : {}),
   });
 
   // 4–6) Commercial path for paid services
   if (s.paid) {
     const q = s.quote;
     const quoteDone = !!q && q.status === "accepted";
-    const qs: Step = { key: "quote", title: "نطاق العمل وعرض السعر", owner: "team", blockers: [], output: "عرض سعر مقبول", state: quoteDone ? "done" : s.intake.accepted ? "current" : "pending" };
-    if (!quoteDone && s.intake.accepted) {
+    const startedWithout = rank >= 5 && !quoteDone; // started as an operations package, with no quote (allowed by the workflow)
+    const qs: Step = { key: "quote", title: "نطاق العمل وعرض السعر", owner: "team", blockers: [], output: "عرض سعر مقبول", state: quoteDone ? "done" : startedWithout ? "skipped" : s.intake.accepted ? "current" : "pending" };
+    if (startedWithout) qs.detail = "بدأ التنفيذ دون عرض سعر (اتفاق تشغيلي أو باقة)";
+    if (!quoteDone && !startedWithout && s.intake.accepted) {
       if (!q || ["withdrawn", "rejected", "expired", "superseded"].includes(q.status) || q.expired && q.status === "sent") {
         qs.blockers.push({ text: q ? "لا عرض سارٍ: أعدّ نسخة جديدة" : "لم يُعدّ نطاق العمل وعرض السعر (يحدده المختص: البنود والمبالغ وشروط الدفع)", who: "team", href: anchor(s.id, "quote") });
         qs.state = "blocked";
@@ -142,8 +147,8 @@ export function planRequest(s: Snapshot): { steps: Step[]; current: Step | null;
 
     const k = s.contract;
     const kDone = !!k?.executed;
-    const ks: Step = { key: "contract", title: "العقد وتوقيعه", owner: "team", blockers: [], output: "عقد نافذ موقّع من الأطراف", state: kDone ? "done" : quoteDone ? "current" : "pending" };
-    if (!kDone && quoteDone) {
+    const ks: Step = { key: "contract", title: "العقد وتوقيعه", owner: "team", blockers: [], output: "عقد نافذ موقّع من الأطراف", state: kDone ? "done" : startedWithout ? "skipped" : quoteDone ? "current" : "pending" };
+    if (!kDone && quoteDone && rank < 5) {
       if (!k) {
         ks.state = "blocked"; ks.blockers.push({ text: "لم يُعدّ العقد: حدّد الأطراف وصفاتهم ومستندات التفويض", who: "team", href: anchor(s.id, "contract") });
         if (worker) ks.action = { kind: "link", href: anchor(s.id, "contract"), label: "أعدّ العقد" };
@@ -177,7 +182,7 @@ export function planRequest(s: Snapshot): { steps: Step[]; current: Step | null;
 
   // 7) Start of execution
   {
-    const ready = s.intake.accepted && (!s.paid || (s.contract?.executed && s.prestart.every((t) => t.paid)));
+    const ready = (s.intake.accepted || rank >= 5) && (!s.paid || (s.contract?.executed && s.prestart.every((t) => t.paid)));
     const started = rank >= 5;
     add({
       key: "start", title: "بدء التنفيذ", owner: "team", blockers: [], output: "مهام التنفيذ ومراحله",

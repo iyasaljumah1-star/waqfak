@@ -86,11 +86,12 @@ function BlockerList({ items }: { items: Blocker[] }) {
 
 function PrimaryAction({ action, requestId, token, primary, current, held }: { action: Act; requestId: string; token: string; primary: StepAction | null; current: Step; held: boolean }) {
   const [s, a] = useActionState(action, initialState);
+  // the result of the last click stays visible even when the new step is a link or waits on someone else
   if (!primary) {
     const who = held ? "الطرف المعلّق عليه" : WHO_AR[current.owner];
-    return <p className="text-[14px] text-muted" data-testid="no-action">لا إجراء متاح لك في هذه الخطوة. {current.state === "waiting" || held ? `بانتظار ${who}.` : "يتولاها من يملك الصلاحية."}</p>;
+    return <div className="space-y-2"><FormMessage state={s} /><p className="text-[14px] text-muted" data-testid="no-action">لا إجراء متاح لك في هذه الخطوة. {current.state === "waiting" || held ? `بانتظار ${who}.` : "يتولاها من يملك الصلاحية."}</p></div>;
   }
-  if (primary.kind === "link") return <ButtonLink href={primary.href} data-testid="next-step-link">{primary.label}</ButtonLink>;
+  if (primary.kind === "link") return <div className="space-y-2"><FormMessage state={s} /><ButtonLink href={primary.href} data-testid="next-step-link">{primary.label}</ButtonLink></div>;
   const href = (s.data as { href?: string } | undefined)?.href;
   return (
     <form action={a} className="space-y-2">

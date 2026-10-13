@@ -1,8 +1,8 @@
 import "server-only";
-import { asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import type { Tx } from "@/server/db";
 import type { Auth } from "@/server/authz/context";
-import { deliverables, outputs, outputVersions, requestItems, requestStages, users } from "@/server/db/schema";
+import { deliverables, outputs, outputVersions, requestItems, requestLinks, requestStages, users } from "@/server/db/schema";
 import type { RequestCtx } from "@/server/modules/requests/access";
 import { contractState } from "@/server/modules/requests/access";
 import { currentPlan, selfApprovalCoversQA } from "@/server/modules/requests/engine";
@@ -86,6 +86,7 @@ export async function requestSnapshot(tx: Tx, auth: Auth, rc: RequestCtx): Promi
   const isDeliverer = rc.deliverers.includes(me);
   const selfQA = rc.req.status === "quality_review" && rc.isOps && isDeliverer ? await selfApprovalCoversQA(tx, id, outRows) : false;
 
+  const [nz] = rc.service.code === "N01" ? await tx.select({ id: requestLinks.entityId }).from(requestLinks).where(and(eq(requestLinks.requestId, id), eq(requestLinks.entityType, "nazara_engagement"))).limit(1) : [];
   const assignee = rc.req.assignedToUserId ? (await tx.select({ name: users.fullName }).from(users).where(eq(users.id, rc.req.assignedToUserId)).limit(1))[0]?.name ?? null : null;
   return {
     id, status: rc.req.status as RequestStatus, resumeTo: rc.resumeTo, holdParty: rc.req.holdParty, holdLabel: rc.req.holdParty ? HOLD_PARTY_LABEL[rc.req.holdParty] ?? null : null,
@@ -121,6 +122,7 @@ export async function requestSnapshot(tx: Tx, auth: Auth, rc: RequestCtx): Promi
     opinion,
     selfQA,
     waqf: { linked: !!rc.req.waqfId, name: rc.waqf?.name ?? null },
+    acceptVia: rc.service.code === "N01" ? { href: nz ? `/admin/nazara/${nz.id}` : "/admin/nazara", label: "قرار القبول في ملف النظارة", who: "ops" } : null,
   };
 }
 

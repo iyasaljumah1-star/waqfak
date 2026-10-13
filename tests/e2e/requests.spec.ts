@@ -270,7 +270,7 @@ test.describe.serial("service request lifecycle", () => {
     await form.getByRole("button", { name: "سجّل البند" }).click();
     await ex(emp.getByTestId("item-2")).toBeVisible();
     // verification refused while a required client item is open
-    await ex(emp.getByRole("button", { name: "تحققت من البيانات والمستندات" })).toBeVisible();
+    await ex(emp.getByRole("button", { name: "تحققت من البيانات والمستندات", exact: true })).toBeVisible();
 
     const naz = await as(browser, "nazir", viewport);
     await naz.goto(`/app/requests/${reqId}?t=${Date.now()}`);
@@ -306,11 +306,21 @@ test.describe.serial("service request lifecycle", () => {
     // the item history is immutable
     await expect(sql("update request_item_events set note = 'x' where request_id = $1", [reqId])).rejects.toThrow(/append-only/);
 
-    await emp.getByRole("button", { name: "تحققت من البيانات والمستندات" }).click();
+    // uploaded is not verified: each required form document is verified before the intake check
+    await emp.reload();
+    const review = emp.getByTestId("doc-review");
+    for (let i = 0; i < 10; i++) {
+      const btn = review.getByRole("button", { name: "تحققت منه" });
+      if (!(await btn.count())) break;
+      await btn.first().click();
+      await ex(review.getByRole("status").first()).toBeVisible();
+      await emp.reload();
+    }
+    await emp.getByRole("button", { name: "تحققت من البيانات والمستندات", exact: true }).click();
     await ex(emp.getByTestId("request-states")).toContainText("تحقق الفريق من البيانات والمستندات: تم");
-    await emp.getByRole("button", { name: "اقبل الطلب للخدمة" }).click();
+    await emp.getByRole("button", { name: "اقبل الطلب للخدمة", exact: true }).click();
     await ex(emp.getByTestId("request-states")).toContainText("قُبل الطلب للخدمة: تم");
-    await ex(emp.getByTestId("next-action")).toContainText("إعداد نطاق العمل وعرض السعر");
+    await ex(emp.getByTestId("current-step")).toContainText("نطاق العمل وعرض السعر");
     await emp.screenshot({ path: `${shots}/req-items-${info.project.name}.png`, fullPage: true });
   });
 
@@ -348,7 +358,8 @@ test.describe.serial("service request lifecycle", () => {
     await ex(naz.getByText("طلب العميل تعديله").first()).toBeVisible();
 
     await emp.reload();
-    await ex(emp.getByTestId("next-action")).toContainText("نسخة معدلة");
+    await ex(emp.getByTestId("blockers")).toContainText("طلب العميل تعديل العرض");
+    await ex(emp.getByTestId("next-step-link")).toHaveText("أعدّ نسخة معدلة من العرض");
     await openDetails(emp, "أعدّ نسخة جديدة من العرض");
     await emp.getByTestId("quote-editor").getByLabel("سعر وحدة البند 1").fill("900");
     await emp.getByTestId("quote-editor").getByRole("button", { name: "احفظ مسودة العرض" }).click();
