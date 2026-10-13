@@ -8,6 +8,8 @@ import { ADMIN_NAV } from "@/config/nav";
 import { cn, fmtNumber, fmtSAR } from "@/lib/utils";
 import { requireStaff } from "@/server/authz/context";
 import { dashboardData } from "@/server/modules/admin/dashboard";
+import { workQueues } from "@/server/modules/admin/work-queues";
+import { WorkQueues } from "@/components/admin/work-queues";
 import { STATUS_LABEL } from "@/server/modules/requests/workflow";
 
 export const metadata: Metadata = { title: "لوحة الشركة" };
@@ -32,7 +34,7 @@ function Tile({ href, label, value, sub, tone }: { href?: string; label: string;
 export default async function AdminDashboard({ searchParams }: { searchParams: Promise<{ denied?: string }> }) {
   const auth = await requireStaff("admin.access");
   const sp = await searchParams;
-  const d = await dashboardData(auth);
+  const [d, queues] = await Promise.all([dashboardData(auth), workQueues(auth)]);
   const max = Math.max(1, ...(d.requests?.byStatus.map((s) => s.n) ?? [1]));
   const shortcuts = ADMIN_NAV.filter((n) => n.href !== "/admin" && n.perm && auth.perms.has(n.perm));
   const tiles: ReactNode[] = [];
@@ -45,7 +47,7 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
     );
   if (d.obligations)
     tiles.push(<Tile key="o" href="/admin/waqfs" label="التزامات نظامية متأخرة" value={fmtNumber(d.obligations.overdue)} tone={d.obligations.overdue ? "critical" : "ok"} sub={`في ${fmtNumber(d.obligations.waqfsAffected)} وقف · ${fmtNumber(d.obligations.dueSoon)} تقترب`} />);
-  if (d.invoices) tiles.push(<Tile key="i" href="/admin/finance" label="فواتير غير مسددة" value={fmtSAR(d.invoices.amount)} tone={d.invoices.overdue ? "fine" : undefined} sub={`${fmtNumber(d.invoices.outstanding)} فاتورة · ${fmtNumber(d.invoices.overdue)} متأخرة`} />);
+  if (d.invoices) tiles.push(<Tile key="i" href="/admin/finance" label="فواتير غير مسددة" value={fmtSAR(d.invoices.amount)} tone={d.invoices.overdue ? "fine" : undefined} sub={`المتبقي على ${fmtNumber(d.invoices.outstanding)} فاتورة · ${fmtNumber(d.invoices.overdue)} متأخرة`} />);
   if (d.assessments) tiles.push(<Tile key="a" href="/admin/assessments" label="تقييمات بانتظار المراجعة" value={fmtNumber(d.assessments.awaitingReview)} tone={d.assessments.awaitingReview ? "fine" : undefined} />);
   if (d.contact) tiles.push(<Tile key="m" href="/admin/clients/messages" label="رسائل تواصل جديدة" value={fmtNumber(d.contact.new)} tone={d.contact.new ? "fine" : undefined} />);
   if (d.privacy) tiles.push(<Tile key="p" href="/admin/notifications/privacy" label="طلبات بيانات شخصية مفتوحة" value={fmtNumber(d.privacy.open)} tone={d.privacy.overdue ? "critical" : undefined} sub={d.privacy.overdue ? `${fmtNumber(d.privacy.overdue)} تجاوز المهلة النظامية` : "ضمن المهلة"} />);
@@ -63,6 +65,8 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
           دورك في فريق وقفك لا يشمل الصفحة التي طلبتها، فأعدناك إلى اللوحة. إن كنت تحتاجها فاطلب من مسؤول النظام تعديل دورك.
         </Alert>
       ) : null}
+
+      <WorkQueues queues={queues} />
 
       {tiles.length ? <section aria-label="مؤشرات الشركة" className="grid grid-cols-2 gap-2 sm:gap-3 xl:grid-cols-4">{tiles}</section> : null}
 

@@ -11,6 +11,7 @@ import { roleName } from "@/server/authz/catalog";
 import { hasActiveBreakGlass, recordBreakGlassView } from "@/server/modules/admin/breakglass/queries";
 import { waqfSummary } from "@/server/modules/admin/waqfs/queries";
 import { STATUS_LABEL as REQ_STATUS } from "@/server/modules/requests/workflow";
+import { STATUS_AR as NAZARA_STATUS } from "@/server/modules/nazara/pure";
 
 export const metadata: Metadata = { title: "ملف وقف" };
 
@@ -72,6 +73,13 @@ export default async function AdminWaqfPage({ params }: { params: Promise<{ id: 
               <p className="p-4 text-muted">لا التزامات قائمة.</p>
             )}
           </Panel>
+          {d.engagements.length ? (
+            <Panel title="ملفات النظارة الاعتبارية">
+              <ul className="space-y-1 text-[15px]">
+                {d.engagements.map((e) => <li key={e.id}><Link className="text-ink hover:underline" href={`/admin/nazara/${e.id}`}><span dir="ltr" className="tabular">{e.number}</span></Link> — {NAZARA_STATUS[e.status as keyof typeof NAZARA_STATUS] ?? e.status}</li>)}
+              </ul>
+            </Panel>
+          ) : null}
           <Panel title="الطلبات" tight>
             <div className="px-3 md:px-2">
               <DataTable
@@ -80,7 +88,7 @@ export default async function AdminWaqfPage({ params }: { params: Promise<{ id: 
                 empty={<p className="p-4 text-muted">لا طلبات.</p>}
                 columns={[
                   { key: "n", label: "الطلب", render: (r) => <Link href={`/admin/requests/${r.id}`} dir="ltr" className="tabular text-ink hover:underline">{r.number}</Link> },
-                  { key: "s", label: "الخدمة", render: (r) => r.service ?? "—" },
+                  { key: "s", label: "الخدمة", render: (r) => <>{r.service ?? "—"}{r.origin ? <Badge tone="seal" icon={false} className="ms-1">فتح الملف</Badge> : null}{r.engagement ? <span className="ms-1 text-[12px] text-muted">ملف النظارة {r.engagement}</span> : null}</> },
                   { key: "st", label: "الحالة", render: (r) => <Badge tone="neutral" icon={false}>{REQ_STATUS[r.status as keyof typeof REQ_STATUS] ?? r.status}</Badge> },
                   { key: "a", label: "المسند إليه", render: (r) => r.assignee ?? <span className="text-muted">غير مسند</span>, hideOnMobile: true },
                 ]}

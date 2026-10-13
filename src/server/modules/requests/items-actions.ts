@@ -13,6 +13,8 @@ import { loadRequestCtx, type RequestCtx } from "./access";
 import { logEvent, transition, type ActCtx } from "./engine";
 import { awaitingClient, blocking, ITEM_KIND_LABEL } from "./items-pure";
 import type { RequestStatus } from "./workflow";
+import { syncTask } from "@/server/modules/operations/exec";
+import { linksOfRequest } from "@/server/modules/operations/links";
 
 const uuid = z.string().uuid("قيمة غير صالحة.");
 const reval = (id: string) => [`/app/requests/${id}`, `/admin/requests/${id}`, "/admin/requests", "/app/requests"];
@@ -228,7 +230,13 @@ export async function acceptRequest(_: ActionState, fd: FormData): Promise<Actio
     if (!rc.req.intakeVerifiedAt) throw new UserError("تحقق من البيانات والمستندات أولًا.");
     if (rc.req.conflictCheck === "blocked") throw new UserError("تعارض استقلال قائم: يقرر فيه مدير التشغيل أولًا.");
     if (rc.req.acceptedAt) throw new UserError("قُبل الطلب مسبقًا.");
+    if (rc.service.code === "N01") {
+      // The acceptance of a nazara request is the acceptance decision on its nazara file (nazara.approve).
+      const eng = (await linksOfRequest(c.tx, d.id)).find((l) => l.entityType === "nazara_engagement");
+      if (!eng || !["accepted", "active", "suspended", "ending"].includes(eng.status ?? "")) throw new UserError("يُقبل طلب النظارة باعتماد قبول ملف النظارة المرتبط به من لوحة «النظارة الاعتبارية».");
+    }
     await c.tx.update(serviceRequests).set({ acceptedAt: new Date(), acceptedBy: c.auth.user.id, updatedBy: c.auth.user.id }).where(eq(serviceRequests.id, d.id));
+    await syncTask(c.tx, d.id, "intake", undefined, "done", c.auth.user.id, "قُبل الطلب للخدمة");
     await logEvent(c.tx, rc.req, c.auth.user.id, `قُبل الطلب للخدمة${d.note ? ` — ${d.note}` : ""}`);
     await audit(c.tx, { actorUserId: c.auth.user.id, action: "requests.accept", entityType: "service_request", entityId: d.id, waqfId: rc.req.waqfId, ip: c.ip, userAgent: c.userAgent, after: { note: d.note || undefined } });
     await notify(rc.req.requesterUserId, "request.status", { number: rc.req.number, status: rc.service.pricingModel === "free" ? "قُبل طلبك وسيبدأ تنفيذه" : "قُبل طلبك، ويُعدّ الآن نطاق العمل وعرض السعر" }, { waqfId: rc.req.waqfId, link: `/app/requests/${d.id}`, tx: c.tx });

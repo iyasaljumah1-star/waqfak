@@ -22,6 +22,7 @@ import {
 } from "@/server/modules/nazara/pure";
 import { engagementDetail, teamCandidates } from "@/server/modules/nazara/queries";
 import { readSetting } from "@/server/modules/requests/catalog";
+import { STATUS_LABEL as REQ_STATUS } from "@/server/modules/requests/workflow";
 
 export const metadata: Metadata = { title: "ملف نظارة" };
 
@@ -65,7 +66,11 @@ export default async function EngagementPage({ params }: { params: Promise<{ id:
             <Badge tone="neutral" icon={false}><span dir="ltr" className="tabular">{e.number}</span></Badge>
             {e.isPractice ? <Badge tone="seal" icon={false}>نظارة تجريبية</Badge> : null}
             {w.isDemo ? <Badge tone="seal" icon={false}>وقف تجريبي</Badge> : null}
-            {d.request ? <Link href={`/admin/requests/${d.request.id}`} className="text-[14px] text-ink hover:underline">الطلب <span dir="ltr" className="tabular">{d.request.number}</span></Link> : null}
+            {d.requests.map((rq) => (
+              <Link key={rq.id} href={`/admin/requests/${rq.id}`} className="text-[14px] text-ink hover:underline" data-testid="nazara-request-link">
+                الطلب <span dir="ltr" className="tabular">{rq.number}</span> ({REQ_STATUS[rq.status as keyof typeof REQ_STATUS] ?? rq.status}{rq.relation === "origin" ? "، فتح الملف" : "، مرتبط"})
+              </Link>
+            ))}
           </span>
         }
         actions={

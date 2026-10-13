@@ -1,7 +1,9 @@
 import "server-only";
 import { and, eq, inArray, isNull, notInArray, or } from "drizzle-orm";
 import type { Tx } from "@/server/db";
-import { documents, recommendations, serviceRequests, services, users, waqfs, workflowTemplates } from "@/server/db/schema";
+import { documents, nazaraEvents, recommendations, serviceRequests, services, users, waqfs, workflowTemplates } from "@/server/db/schema";
+import { ensureIntakeTask } from "@/server/modules/operations/exec";
+import { linkRequest } from "@/server/modules/operations/links";
 import { audit } from "@/server/lib/audit";
 import { notify } from "@/server/modules/notify";
 import { UserError } from "@/server/modules/_shared";
@@ -92,10 +94,16 @@ export async function submitDraft(c: ActCtx, rc: RequestCtx, answersRaw: unknown
   await logEvent(tx, rc.req, auth.user.id, conflict.result === "blocked" ? "أُرسل الطلب وأُحيل إلى مدير التشغيل لمراجعة الاستقلالية" : "أُرسل الطلب مكتمل البيانات والمستندات", "draft", "submitted");
   if (rc.req.source === "recommendation" && rc.req.sourceRef)
     await tx.update(recommendations).set({ status: "converted", serviceRequestId: rc.req.id }).where(eq(recommendations.id, rc.req.sourceRef));
+  await ensureIntakeTask(tx, rc.req, auth.user.id);
   if (svc.code === "N01" && rc.waqf) {
+    // One open nazara file per waqf: the request opens it, or is linked to the file already open (never a duplicate).
     const eng = await openEngagementTx(tx, { waqfId: rc.waqf.id, requestId: rc.req.id, actorId: auth.user.id, ip: c.ip, userAgent: c.userAgent });
+    await linkRequest(tx, { requestId: rc.req.id, waqfId: rc.waqf.id, entityType: "nazara_engagement", entityId: eng.id, relation: eng.created ? "origin" : "related", actorId: auth.user.id });
+    if (!eng.created)
+      await tx.insert(nazaraEvents).values({ engagementId: eng.id, waqfId: rc.waqf.id, action: "request_linked", note: `رُبط به الطلب ${rc.req.number} (الملف مفتوح مسبقًا لهذا الوقف)`, actorUserId: auth.user.id });
+    await logEvent(tx, rc.req, auth.user.id, eng.created ? `فُتح ملف النظارة ${eng.number} لهذا الطلب` : `رُبط الطلب بملف النظارة المفتوح ${eng.number}`);
     for (const mid of await nazaraManagerIds(tx))
-      await notify(mid, "nazara.update", { number: eng.number, status: "طلب نظارة جديد", waqf: "", note: `من الطلب ${rc.req.number}` }, { waqfId: rc.waqf.id, link: `/admin/nazara/${eng.id}`, tx });
+      await notify(mid, "nazara.update", { number: eng.number, status: eng.created ? "طلب نظارة جديد" : "طلب جديد على ملف مفتوح", waqf: "", note: `من الطلب ${rc.req.number}` }, { waqfId: rc.waqf.id, link: `/admin/nazara/${eng.id}`, tx });
   }
   await audit(tx, {
     actorUserId: auth.user.id, action: "requests.submit", entityType: "service_request", entityId: rc.req.id, waqfId: rc.req.waqfId, ip: c.ip, userAgent: c.userAgent,

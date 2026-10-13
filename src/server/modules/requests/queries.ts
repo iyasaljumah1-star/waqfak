@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, desc, eq, inArray, isNull, lt, notInArray, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNull, lt, lte, notInArray, type SQL } from "drizzle-orm";
 import {
   deliverables, documents, recommendations, requestEvents, requestItemEvents, requestItems, requestNotes, requestStages, roles, serviceRequests, services, userRoles, users,
   waqfMemberships, waqfs,
@@ -8,7 +8,7 @@ import { ForbiddenError, loadWaqfAccess, type Auth } from "@/server/authz/contex
 import { read } from "@/server/modules/_shared";
 import type { Tx } from "@/server/db";
 import { assignableRoleKeys, clientRequestFilter, contractState, loadRequestCtx, memberWaqfIdsWith, staffRequestFilter, userHasWaqfPerm } from "./access";
-import { availableTransitions, HOLD_PARTY_LABEL, type RequestStatus } from "./workflow";
+import { availableTransitions, HOLD_PARTY_LABEL, STATUS_LABEL, type RequestStatus } from "./workflow";
 import { itemCounts } from "./items-pure";
 import { nextAction } from "./journey";
 import { todayISO } from "@/server/engines/dates";
@@ -68,10 +68,18 @@ export const QUEUE_TABS: { key: QueueTab; label: string; opsOnly?: boolean }[] =
 ];
 const CLOSED: RequestStatus[] = ["closed", "cancelled", "rejected"];
 
-/** Staff queue. Non-ops staff see ONLY requests assigned to them, whatever the tab. */
-export async function staffQueue(auth: Auth, tab: QueueTab, q?: string) {
+export type QueueFilters = { service?: string; status?: string; assignee?: string; from?: string; to?: string };
+
+/** Staff queue. Non-ops staff see ONLY requests assigned to them, whatever the tab or filter. */
+export async function staffQueue(auth: Auth, tab: QueueTab, q?: string, f: QueueFilters = {}) {
   return read(auth, async (tx) => {
     const conds: (SQL | undefined)[] = [staffRequestFilter(auth)];
+    if (f.service && /^[A-Z]\d{2}$/.test(f.service)) conds.push(eq(services.code, f.service));
+    if (f.status && f.status in STATUS_LABEL) conds.push(eq(serviceRequests.status, f.status as RequestStatus));
+    if (f.assignee === "none") conds.push(isNull(serviceRequests.assignedToUserId));
+    else if (f.assignee && /^[0-9a-f-]{36}$/i.test(f.assignee)) conds.push(eq(serviceRequests.assignedToUserId, f.assignee));
+    if (f.from && /^\d{4}-\d{2}-\d{2}$/.test(f.from)) conds.push(gte(serviceRequests.createdAt, new Date(`${f.from}T00:00:00+03:00`)));
+    if (f.to && /^\d{4}-\d{2}-\d{2}$/.test(f.to)) conds.push(lte(serviceRequests.createdAt, new Date(`${f.to}T23:59:59+03:00`)));
     const ops = auth.perms.has("admin.requests.all");
     switch (tab) {
       case "mine":
@@ -149,7 +157,10 @@ export async function requestDetail(auth: Auth, id: string, side: "client" | "st
       .from(requestNotes)
       .where(staff ? eq(requestNotes.requestId, id) : and(eq(requestNotes.requestId, id), eq(requestNotes.visibility, "client")))
       .orderBy(asc(requestNotes.createdAt));
-    const dels = await tx.select().from(deliverables).where(eq(deliverables.requestId, id)).orderBy(desc(deliverables.createdAt));
+    const allDels = await tx.select().from(deliverables).where(eq(deliverables.requestId, id)).orderBy(desc(deliverables.createdAt));
+    // The client sees the work once it is released after quality review (or approved), never while in preparation.
+    const released = ["awaiting_client_approval", "completed", "closed"].includes(rc.req.status);
+    const dels = staff ? allDels : allDels.filter((x) => x.status === "approved" || x.status === "revision_requested" || (released && x.status !== "draft"));
     const docs = await tx.select({ id: documents.id, title: documents.title, confidentiality: documents.confidentiality, docType: documents.docType }).from(documents).where(and(eq(documents.requestId, id), isNull(documents.archivedAt)));
     const cs = await contractState(tx, id);
 

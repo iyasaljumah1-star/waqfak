@@ -35,6 +35,7 @@ export async function DocumentList({ waqfId, requestId, link, emptyText, allowUp
         userId: auth.user.id,
         perms: d.waqfId ? await ensure(d.waqfId) : auth.perms,
         requestParty: d.requestId ? (d.requestId === requestId ? party : (await isRequestParty(tx, auth, d.requestId)).party) : false,
+        staff: auth.isStaff,
       };
       if (canSeeDocumentSync(access, d)) visible.push({ ...d, canOpenDetail: !!d.waqfId && access.perms.has("documents.view") });
     }

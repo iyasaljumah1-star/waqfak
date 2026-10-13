@@ -200,6 +200,8 @@ export const deliverables = pgTable("deliverables", {
   approvedAt: timestamp({ withTimezone: true }),
   approvedBy: uuid(),
   revisionNote: text(),
+  /** Set when the deliverable is an output drafted and approved on the platform (see outputs). */
+  outputId: uuid(),
   ...tracking(),
 });
 
@@ -232,8 +234,16 @@ export const tasks = pgTable("tasks", {
   progress: integer().default(0).notNull(),
   visibility: text().default("shared").notNull(), // shared | internal
   completedAt: timestamp({ withTimezone: true }),
+  /** Request execution tasks: stage = one workflow stage; prepare_output / review_output = one service output. */
+  kind: text(),
+  stageKey: text(),
+  outputKey: text(),
+  /** Who executed (may differ from the assignee: an authorized manager can execute directly). */
+  startedAt: timestamp({ withTimezone: true }),
+  startedBy: uuid(),
+  completedBy: uuid(),
   ...tracking(),
-}, (t) => [index("tasks_waqf_idx").on(t.waqfId), index("tasks_assignee_idx").on(t.assigneeUserId)]);
+}, (t) => [index("tasks_waqf_idx").on(t.waqfId), index("tasks_assignee_idx").on(t.assigneeUserId), index("tasks_request_idx").on(t.requestId)]);
 
 export const taskComments = pgTable("task_comments", {
   id: id(),

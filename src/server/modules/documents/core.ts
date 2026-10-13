@@ -26,7 +26,13 @@ export type VersionRow = typeof documentVersions.$inferSelect;
  * - `requestParty`: requester / assigned staff / admin.requests.all on the document's request.
  * A WaqfAccess can be passed directly together with `userId`.
  */
-export type DocAccess = { userId: string; perms: ReadonlySet<string>; requestParty?: boolean };
+export type DocAccess = { userId: string; perms: ReadonlySet<string>; requestParty?: boolean; staff?: boolean };
+
+type GateDoc = Pick<DocRow, "waqfId" | "ownerUserId" | "confidentiality" | "requestId"> & Partial<Pick<DocRow, "docType" | "approvalStatus">>;
+
+/** A service deliverable uploaded by the team is internal until it is released to the client (quality review passed). */
+export const unreleasedDeliverable = (doc: Partial<Pick<DocRow, "docType" | "approvalStatus" | "requestId">>) =>
+  doc.docType === "deliverable" && !!doc.requestId && doc.approvalStatus === "in_review";
 
 export const CONF_PERM: Record<Confidentiality, string> = {
   internal: "documents.view",
@@ -40,12 +46,13 @@ export const CONF_PERM: Record<Confidentiality, string> = {
  *  - personal / request-only documents (no waqf): the owner always; request parties for internal/confidential.
  *    Note: RLS treats waqf_id IS NULL rows as visible, so this gate is the only barrier for them.
  */
-export async function canSeeDocument(access: DocAccess | null | undefined, doc: Pick<DocRow, "waqfId" | "ownerUserId" | "confidentiality" | "requestId">): Promise<boolean> {
+export async function canSeeDocument(access: DocAccess | null | undefined, doc: GateDoc): Promise<boolean> {
   return canSeeDocumentSync(access, doc);
 }
 
-export function canSeeDocumentSync(access: DocAccess | null | undefined, doc: Pick<DocRow, "waqfId" | "ownerUserId" | "confidentiality" | "requestId">): boolean {
+export function canSeeDocumentSync(access: DocAccess | null | undefined, doc: GateDoc): boolean {
   if (!access) return false;
+  if (unreleasedDeliverable(doc) && !access.staff && doc.ownerUserId !== access.userId) return false;
   if (doc.waqfId) return access.perms.has(CONF_PERM[doc.confidentiality]);
   if (doc.ownerUserId === access.userId) return true;
   if (doc.requestId && access.requestParty) return doc.confidentiality !== "secret";

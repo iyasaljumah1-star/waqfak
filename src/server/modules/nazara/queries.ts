@@ -162,7 +162,11 @@ export async function engagementDetail(auth: Auth, id: string) {
         recent: recent.map((r) => ({ id: r.id, action: r.action, at: r.at, actor: r.actor })),
       };
     }
-    return { e, w, team, events, docs, request: req[0] ?? null, reports: rpts, ops, today };
+    const { requestsLinkedTo } = await import("@/server/modules/operations/links");
+    const requests = await requestsLinkedTo(tx, "nazara_engagement", e.id);
+    // legacy: a file opened before explicit links keeps its single request
+    if (req[0] && !requests.some((r) => r.id === req[0].id)) requests.push({ ...req[0], relation: "origin", service: "تولي النظارة (ناظر اعتباري)", code: "N01", createdAt: new Date(0) });
+    return { e, w, team, events, docs, request: req[0] ?? null, requests, reports: rpts, ops, today };
   });
 }
 

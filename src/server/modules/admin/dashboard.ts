@@ -1,5 +1,5 @@
 import "server-only";
-import { and, count, eq, gt, inArray, isNull, lt, notInArray, sql, sum } from "drizzle-orm";
+import { and, count, eq, gt, inArray, isNull, lt, notInArray, sql } from "drizzle-orm";
 import type { Auth } from "@/server/authz/context";
 import {
   assessments, breakGlassAccess, contactMessages, dataSubjectRequests, invoices, obligationInstances, outboxMessages,
@@ -84,14 +84,15 @@ export async function dashboardData(auth: Auth): Promise<DashboardData> {
     }
 
     if (can("admin.finance")) {
+      // Payable invoices only (no proformas or credit notes); the amount is what remains after confirmed payments.
       const [i] = await tx
         .select({
           outstanding: count(),
-          amount: sum(invoices.total).mapWith(Number),
+          amount: sql<number>`coalesce(sum(${invoices.total} - coalesce((select sum(p.amount) from payments p where p.invoice_id = ${invoices.id} and p.status = 'paid'), 0)), 0)`.mapWith(Number),
           overdue: sql<number>`count(*) filter (where ${invoices.status} = 'overdue' or (${invoices.dueOn} is not null and ${invoices.dueOn} < current_date))`.mapWith(Number),
         })
         .from(invoices)
-        .where(inArray(invoices.status, ["issued", "overdue"]));
+        .where(and(inArray(invoices.status, ["issued", "partially_paid", "overdue"]), notInArray(invoices.kind, ["proforma", "credit_note"])));
       out.invoices = { outstanding: i.outstanding, amount: i.amount ?? 0, overdue: i.overdue };
     }
 

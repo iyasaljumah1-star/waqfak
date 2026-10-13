@@ -1,4 +1,5 @@
 import "server-only";
+import { nazaraEngagements, requestLinks } from "@/server/db/schema";
 import { and, asc, count, desc, eq, ilike, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
 import type { Auth } from "@/server/authz/context";
 import {
@@ -83,6 +84,11 @@ export async function waqfSummary(auth: Auth, id: string) {
       tx.select({ id: assessments.id, kind: assessments.kind, status: assessments.status, completedAt: assessments.completedAt }).from(assessments).where(eq(assessments.waqfId, id)).orderBy(desc(assessments.startedAt)).limit(5),
       tx.select({ id: auditLogs.id, at: auditLogs.at, action: auditLogs.action, actorUserId: auditLogs.actorUserId }).from(auditLogs).where(eq(auditLogs.waqfId, id)).orderBy(desc(auditLogs.id)).limit(10),
     ]);
-    return { waqf: w, members, requests: reqs, obligations: obls, invoices: invs, assessments: ass, recent };
+    // Operational links: the request that opened this file, and the nazara files of the waqf (each with its requests)
+    const origin = await tx.select({ requestId: requestLinks.requestId }).from(requestLinks).where(and(eq(requestLinks.entityType, "waqf"), eq(requestLinks.entityId, id), eq(requestLinks.relation, "origin"))).limit(1);
+    const engagements = await tx.select({ id: nazaraEngagements.id, number: nazaraEngagements.number, status: nazaraEngagements.status }).from(nazaraEngagements).where(eq(nazaraEngagements.waqfId, id)).orderBy(desc(nazaraEngagements.createdAt));
+    const linked = engagements.length ? await tx.select({ requestId: requestLinks.requestId, engagementId: requestLinks.entityId }).from(requestLinks).where(and(eq(requestLinks.entityType, "nazara_engagement"), inArray(requestLinks.entityId, engagements.map((e) => e.id)))) : [];
+    const requests = reqs.map((r) => ({ ...r, origin: origin[0]?.requestId === r.id, engagement: engagements.find((e) => linked.some((l) => l.requestId === r.id && l.engagementId === e.id))?.number ?? null }));
+    return { waqf: w, members, requests, obligations: obls, invoices: invs, assessments: ass, recent, engagements };
   });
 }

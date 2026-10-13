@@ -1,0 +1,1 @@
+ALTER TABLE "deliverables" ADD COLUMN "output_id" uuid;

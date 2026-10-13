@@ -16,6 +16,7 @@ import { staffAction } from "@/server/modules/admin/guard";
 import { notify } from "@/server/modules/notify";
 import type { ActionState } from "@/lib/utils";
 import { openEngagementTx } from "./engine";
+import { syncRequestsFromNazara } from "@/server/modules/operations/links";
 import { buildPeriodicSnapshot, buildRecordSnapshot } from "./report";
 import { randomToken } from "@/server/lib/crypto";
 import { activationGate, NAZARA_LICENSE_KEY, type LicenceRecord } from "./licence";
@@ -61,6 +62,7 @@ async function setStatus(c: Ctx, e: Engagement, action: keyof typeof TRANSITIONS
   await c.tx.update(nazaraEngagements).set({ ...patch, status: t.to, updatedBy: c.auth.user.id }).where(eq(nazaraEngagements.id, e.id));
   await logEvent(c, e, action, t.to, note, extra);
   await notifyTeam(c, e, STATUS_AR[t.to], note ?? t.label);
+  await syncRequestsFromNazara(c, e, action, note ?? null);
 }
 
 // ───────────────────────── team & memberships ─────────────────────────

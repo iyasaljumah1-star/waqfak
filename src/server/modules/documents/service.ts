@@ -37,7 +37,7 @@ export async function resolveDocAccess(tx: Tx, auth: Auth, doc: Pick<DocRow, "wa
     perms = waqf?.perms ?? new Set();
   }
   const requestParty = doc.requestId ? (await isRequestParty(tx, auth, doc.requestId)).party : false;
-  return { access: { userId: auth.user.id, perms, requestParty }, waqf };
+  return { access: { userId: auth.user.id, perms, requestParty, staff: auth.isStaff }, waqf };
 }
 
 // ───────────── Upload / ingest ─────────────
@@ -132,6 +132,8 @@ export async function ingestUpload(tx: Tx, auth: Auth, meta: { ip: string; userA
         waqfId, ownerUserId: auth.user.id, requestId, docType: input.docType, title: input.title, number: input.number || null,
         issuer: input.issuer || null, issuedOn: input.issuedOn || null, issuedOnHijri: input.issuedOnHijri || null,
         expiresOn: input.expiresOn || null, confidentiality, status: "quarantine", currentVersion: 1,
+        // a deliverable uploaded by the team stays internal until it is released to the client
+        ...(input.docType === "deliverable" && requestId && auth.isStaff ? { approvalStatus: "in_review" as const } : {}),
         createdBy: auth.user.id, updatedBy: auth.user.id,
       })
       .returning();

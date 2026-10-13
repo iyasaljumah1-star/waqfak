@@ -10,6 +10,7 @@ import { parseForm, userAction, UserError } from "@/server/modules/_shared";
 import type { ActionState } from "@/lib/utils";
 import { assignableRoleKeys, loadRequestCtx } from "./access";
 import { advance, logEvent, transition, type ActCtx } from "./engine";
+import { moveOpenTasks } from "@/server/modules/operations/exec";
 import { HOLD_PARTY_LABEL, STATUS_LABEL, type RequestStatus } from "./workflow";
 
 const uuid = z.string().uuid("قيمة غير صالحة.");
@@ -141,6 +142,7 @@ export async function assignRequest(_: ActionState, fd: FormData): Promise<Actio
     if (!emp) throw new UserError("اختر موظفًا يحمل دورًا تشغيليًا.");
     const before = rc.req.assignedToUserId;
     await c.tx.update(serviceRequests).set({ assignedToUserId: emp.id, updatedBy: c.auth.user.id }).where(eq(serviceRequests.id, d.id));
+    await moveOpenTasks(c.tx, d.id, before, emp.id, c.auth.user.id);
     await logEvent(c.tx, rc.req, c.auth.user.id, `أُسند الطلب إلى ${emp.name ?? "موظف"}`);
     await audit(c.tx, { actorUserId: c.auth.user.id, action: "requests.assign", entityType: "service_request", entityId: d.id, waqfId: rc.req.waqfId, ip: c.ip, userAgent: c.userAgent, before: { assignedTo: before }, after: { assignedTo: emp.id } });
     const waqfName = rc.waqf?.name ?? "بلا وقف";

@@ -134,6 +134,12 @@ export type GuardInput = {
   contractExecuted?: boolean;
   /** Installments marked "before start" that are not fully paid. */
   prestartUnpaid?: number;
+  /** Platform outputs still being drafted (draft/returned) and waiting for review. */
+  outputsUnfinished?: number;
+  outputsInReview?: number;
+  /** Every delivery comes from an output approved under a self-approval policy and the actor is an authorized manager:
+   *  the four-eyes rule of quality review is satisfied by the output policy (recorded). */
+  selfApprovalCoversQA?: boolean;
 };
 
 /** Returns an Arabic error when a guard blocks the transition, otherwise null. */
@@ -151,9 +157,11 @@ export function guardTransition(g: GuardInput): string | null {
   if (g.from === "awaiting_contract" && g.to === "in_progress" && g.contractExecuted === false) return "يبدأ التنفيذ بعد اكتمال توقيع جميع أطراف العقد.";
   if (g.from === "awaiting_contract" && g.to === "in_progress" && (g.prestartUnpaid ?? 0) > 0) return "لم تُسدد الدفعة التي يشترط العرض سدادها قبل البدء.";
   if ((g.to === "completed" || g.to === "closed") && (g.blockingItems ?? 0) > 0) return `لا يكتمل الطلب وفيه ${g.blockingItems} من النواقص أو الاستفسارات المطلوبة غير المغلقة.`;
+  if (g.to === "quality_review" && (g.outputsUnfinished ?? 0) > 0) return `في الطلب ${g.outputsUnfinished} من المخرجات قيد الإعداد: أرسلها للمراجعة أولًا.`;
   if (g.to === "quality_review" && g.submittedDeliverables === 0) return "ارفع مخرجًا واحدًا على الأقل قبل الإرسال لمراجعة الجودة.";
   if (g.from === "quality_review" && g.to === "awaiting_client_approval") {
-    if (g.deliverers.includes(g.actorUserId)) return "مبدأ العينين الأربع: يراجع جودةَ العمل زميلٌ آخر غير من أعدّه.";
+    if ((g.outputsUnfinished ?? 0) + (g.outputsInReview ?? 0) > 0) return "لا يُرسل للعميل قبل اعتماد كل المخرجات المعدّة في المنصة.";
+    if (g.deliverers.includes(g.actorUserId) && !g.selfApprovalCoversQA) return "مبدأ العينين الأربع: يراجع جودةَ العمل زميلٌ آخر غير من أعدّه.";
     if (g.workflowCode === "opinion" && g.unsignedOpinionDeliverables > 0)
       return "الرأي المتخصص يجب أن يكون موقّعًا باسم المستشار وصفته قبل إرساله للعميل.";
   }

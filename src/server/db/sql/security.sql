@@ -63,6 +63,9 @@ REVOKE UPDATE, DELETE, TRUNCATE ON document_access_log FROM waqfak_app;
 REVOKE UPDATE, DELETE, TRUNCATE ON request_item_events FROM waqfak_app;
 REVOKE UPDATE, DELETE, TRUNCATE ON request_notes FROM waqfak_app;
 REVOKE UPDATE, DELETE, TRUNCATE ON contract_signatures FROM waqfak_app;
+-- Execution history and output versions are append-only too.
+REVOKE UPDATE, DELETE, TRUNCATE ON task_events FROM waqfak_app;
+REVOKE UPDATE, DELETE, TRUNCATE ON output_versions FROM waqfak_app;
 
 -- Restricted schema: only reachable after SET LOCAL ROLE waqfak_mlro (done by the app for the MLRO role).
 REVOKE ALL ON SCHEMA restricted FROM PUBLIC;
@@ -187,7 +190,11 @@ BEGIN
     ('request_notes', 'EXISTS (SELECT 1 FROM service_requests r WHERE r.id = request_notes.request_id AND (r.requester_user_id = app_current_user() OR r.assigned_to_user_id = app_current_user()))'),
     ('request_events', 'EXISTS (SELECT 1 FROM service_requests r WHERE r.id = request_events.request_id AND (r.requester_user_id = app_current_user() OR r.assigned_to_user_id = app_current_user()))'),
     ('request_stages', 'EXISTS (SELECT 1 FROM service_requests r WHERE r.id = request_stages.request_id AND (r.requester_user_id = app_current_user() OR r.assigned_to_user_id = app_current_user()))'),
-    ('deliverables', 'EXISTS (SELECT 1 FROM service_requests r WHERE r.id = deliverables.request_id AND (r.requester_user_id = app_current_user() OR r.assigned_to_user_id = app_current_user()))')
+    ('deliverables', 'EXISTS (SELECT 1 FROM service_requests r WHERE r.id = deliverables.request_id AND (r.requester_user_id = app_current_user() OR r.assigned_to_user_id = app_current_user()))'),
+    ('request_links', 'EXISTS (SELECT 1 FROM service_requests r WHERE r.id = request_links.request_id AND (r.requester_user_id = app_current_user() OR r.assigned_to_user_id = app_current_user()))'),
+    ('outputs', 'EXISTS (SELECT 1 FROM service_requests r WHERE r.id = outputs.request_id AND r.assigned_to_user_id = app_current_user())'),
+    ('output_versions', 'EXISTS (SELECT 1 FROM service_requests r WHERE r.id = output_versions.request_id AND r.assigned_to_user_id = app_current_user())'),
+    ('task_events', 'EXISTS (SELECT 1 FROM tasks t WHERE t.id = task_events.task_id AND (t.assignee_user_id = app_current_user() OR t.created_by = app_current_user()))')
   ) AS v(tbl, expr)
   LOOP
     EXECUTE format('DROP POLICY IF EXISTS nullwaqf_owner ON %I', p.tbl);
@@ -196,3 +203,20 @@ BEGIN
       p.tbl, p.expr, p.expr);
   END LOOP;
 END $$;
+
+-- ───────────── Staff-only work records ─────────────
+-- Output drafts and request execution history belong to the team: waqf members (clients) never read them, even with
+-- access to the waqf. Clients receive an output only as the approved, delivered document.
+CREATE OR REPLACE FUNCTION app_is_staff() RETURNS boolean
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
+  SELECT coalesce((SELECT is_staff FROM users WHERE id = app_current_user()), false)
+$$;
+REVOKE ALL ON FUNCTION app_is_staff() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION app_is_staff() TO waqfak_app;
+
+DROP POLICY IF EXISTS staff_only ON outputs;
+CREATE POLICY staff_only ON outputs AS RESTRICTIVE FOR ALL TO waqfak_app USING (app_current_user() IS NULL OR app_is_staff()) WITH CHECK (app_current_user() IS NULL OR app_is_staff());
+DROP POLICY IF EXISTS staff_only ON output_versions;
+CREATE POLICY staff_only ON output_versions AS RESTRICTIVE FOR ALL TO waqfak_app USING (app_current_user() IS NULL OR app_is_staff()) WITH CHECK (app_current_user() IS NULL OR app_is_staff());
+DROP POLICY IF EXISTS staff_only ON task_events;
+CREATE POLICY staff_only ON task_events AS RESTRICTIVE FOR ALL TO waqfak_app USING (request_id IS NULL OR app_current_user() IS NULL OR app_is_staff()) WITH CHECK (request_id IS NULL OR app_current_user() IS NULL OR app_is_staff());

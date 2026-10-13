@@ -1,7 +1,7 @@
 import "server-only";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import type { Tx } from "@/server/db";
-import { deliverables, holidays, quotes, requestEvents, requestItems, requestStages, roles, serviceRequests, services, userRoles, users, workflowTemplates } from "@/server/db/schema";
+import { deliverables, documents, holidays, quotes, requestEvents, requestItems, requestStages, roles, serviceRequests, services, userRoles, users, workflowTemplates } from "@/server/db/schema";
 import { prestartUnpaid } from "@/server/modules/commerce/state";
 import { blocking } from "./items-pure";
 import { addBusinessDays, todayISO } from "@/server/engines/dates";
@@ -10,6 +10,9 @@ import { notify } from "@/server/modules/notify";
 import { UserError } from "@/server/modules/_shared";
 import type { Auth } from "@/server/authz/context";
 import { contractState, loadRequestCtx, type RequestCtx } from "./access";
+import { cancelOpenTasks, ensureExecTasks, syncStageTasks } from "@/server/modules/operations/exec";
+import { syncNazaraFromRequest } from "@/server/modules/operations/links";
+import { outputGate, releaseApprovedOutputs, type OutputRow } from "@/server/modules/outputs/server";
 import {
   advanceStage, availableTransitions, findTransition, guardTransition, planStages, STATUS_LABEL, WAITING_ON_CLIENT,
   type PlanStage, type RequestStatus,
@@ -149,7 +152,12 @@ export async function transition(c: ActCtx, rc: RequestCtx, input: TransitionInp
   const t = findTransition(from, to);
   if (!t) throw new UserError(`لا يمكن نقل الطلب من «${STATUS_LABEL[from]}» إلى «${STATUS_LABEL[to]}».`);
   const allowed = input.system || availableTransitions(from, rc.actors, { resumeTo: rc.resumeTo }).some((x) => x.to === to);
-  if (!allowed) {
+  const outs = await outputGate(tx, rc.req.id);
+  // Quality review by the preparer is allowed only when every delivery is an output approved under a self-approval
+  // policy and the actor is an authorized manager (the output approval is the recorded quality check).
+  const selfQA = from === "quality_review" && to === "awaiting_client_approval" && rc.isOps && rc.deliverers.includes(auth.user.id)
+    && (await selfApprovalCoversQA(tx, rc.req.id, outs.rows));
+  if (!allowed && !(selfQA && rc.actors.includes("ops"))) {
     if (from === "quality_review" && to === "awaiting_client_approval" && rc.deliverers.includes(auth.user.id))
       throw new UserError("مبدأ العينين الأربع: يراجع جودةَ العمل زميلٌ آخر غير من أعدّه.");
     throw new UserError("ليست لديك صلاحية لهذا الإجراء على الطلب في حالته الحالية.");
@@ -174,6 +182,7 @@ export async function transition(c: ActCtx, rc: RequestCtx, input: TransitionInp
     hasQuotes: qs.length > 0, quoteAccepted: qs.some((q) => q.status === "accepted"),
     contractExecuted: cs.contract && cs.parties.length ? cs.executed : undefined,
     prestartUnpaid: from === "awaiting_contract" && to === "in_progress" ? await prestartUnpaid(tx, rc.req.id) : 0,
+    outputsUnfinished: outs.unfinished, outputsInReview: outs.inReview, selfApprovalCoversQA: selfQA,
   });
   if (err) throw new UserError(err);
 
@@ -202,7 +211,23 @@ export async function transition(c: ActCtx, rc: RequestCtx, input: TransitionInp
   const restarted = await applyStagePlan(tx, rc.req.id, next, auth.user.id);
   await recomputeSla(tx, rc.req.id, { restartActive: restarted || from === "on_hold" });
 
-  const eventNote = [t.label, note].filter(Boolean).join(" — ");
+  // Linked operational records (explicit rules; see operations/exec.ts and operations/links.ts)
+  const returned = to === "in_progress" && (from === "quality_review" || from === "awaiting_client_approval");
+  if (to === "in_progress" && !returned) await ensureExecTasks(tx, rc, auth.user.id);
+  await syncStageTasks(tx, rc.req.id, auth.user.id, `${STATUS_LABEL[from]} ← ${STATUS_LABEL[to]}`, { reopen: returned });
+  if (to === "cancelled" || to === "rejected") {
+    await cancelOpenTasks(tx, rc.req.id, auth.user.id, `${to === "cancelled" ? "أُلغي" : "رُفض"} الطلب${note ? `: ${note}` : ""}`);
+    await syncNazaraFromRequest(c, rc.req, to, note);
+  }
+  if (to === "awaiting_client_approval") {
+    await releaseApprovedOutputs(tx, rc, auth.user.id, { ip: c.ip, userAgent: c.userAgent });
+    // files of the delivered work become visible to the client now (they were internal while in preparation)
+    const delDocs = (await tx.select({ documentId: deliverables.documentId }).from(deliverables).where(and(eq(deliverables.requestId, rc.req.id), eq(deliverables.status, "submitted"))))
+      .map((x) => x.documentId).filter((x): x is string => !!x);
+    if (delDocs.length) await tx.update(documents).set({ approvalStatus: "approved" }).where(and(inArray(documents.id, delDocs), eq(documents.approvalStatus, "in_review")));
+  }
+
+  const eventNote = [t.label, note, selfQA ? "اعتماد الجودة بسياسة الاعتماد الذاتي للمخرجات المعتمدة" : ""].filter(Boolean).join(" — ");
   await logEvent(tx, rc.req, auth.user.id, eventNote, from, to);
   await audit(tx, {
     actorUserId: auth.user.id, action: `requests.transition.${to}`, entityType: "service_request", entityId: rc.req.id, waqfId: rc.req.waqfId,
@@ -220,6 +245,16 @@ export async function transition(c: ActCtx, rc: RequestCtx, input: TransitionInp
     await notify(rc.req.assignedToUserId, "request.status", vars, { waqfId: rc.req.waqfId, link: `/admin/requests/${rc.req.id}`, tx });
 }
 
+/** Every delivery of the request is an output approved under a self-approval policy. */
+async function selfApprovalCoversQA(tx: Tx, requestId: string, rows: OutputRow[]) {
+  const dels = await tx.select({ outputId: deliverables.outputId, status: deliverables.status }).from(deliverables).where(and(eq(deliverables.requestId, requestId), eq(deliverables.status, "submitted")));
+  if (!dels.length) return false;
+  return dels.every((d) => {
+    const o = d.outputId ? rows.find((x) => x.id === d.outputId) : null;
+    return !!o && o.status === "approved" && o.reviewPolicy === "self_allowed";
+  });
+}
+
 /** Completes the active work stage and activates the next one (inside in_progress). */
 export async function advance(c: ActCtx, rc: RequestCtx) {
   if (rc.req.status !== "in_progress") throw new UserError("تُنقل المراحل الداخلية أثناء التنفيذ فقط.");
@@ -230,6 +265,7 @@ export async function advance(c: ActCtx, rc: RequestCtx) {
   const a = plan.findIndex((p) => p.status === "active");
   await applyStagePlan(c.tx, rc.req.id, next, c.auth.user.id);
   await recomputeSla(c.tx, rc.req.id, { restartActive: true });
+  await syncStageTasks(c.tx, rc.req.id, c.auth.user.id, "اكتملت المرحلة");
   const def = rc.stagesDef[a];
   await logEvent(c.tx, rc.req, c.auth.user.id, `اكتملت مرحلة «${def?.name ?? plan[a].key}»`);
   await audit(c.tx, { actorUserId: c.auth.user.id, action: "requests.stage_advance", entityType: "service_request", entityId: rc.req.id, waqfId: rc.req.waqfId, ip: c.ip, userAgent: c.userAgent, after: { completed: plan[a].key } });

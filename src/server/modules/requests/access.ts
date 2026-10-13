@@ -84,8 +84,9 @@ export type RequestCtx = {
   resumeTo: RequestStatus | null;
 };
 
-/** Loads a request with the caller's capacities. Throws ForbiddenError when the caller may not see it from `side`. */
-export async function loadRequestCtx(tx: Tx, auth: Auth, id: string, side: "client" | "staff" | "any" = "any"): Promise<RequestCtx> {
+/** Loads a request with the caller's capacities. Throws ForbiddenError when the caller may not see it from `side`
+ *  ("system" = a platform rule acting for the caller; the row must still be readable under RLS). */
+export async function loadRequestCtx(tx: Tx, auth: Auth, id: string, side: "client" | "staff" | "any" | "system" = "any"): Promise<RequestCtx> {
   if (!/^[0-9a-f-]{36}$/i.test(id)) throw new ForbiddenError("الطلب غير موجود أو لا تملك صلاحية عرضه.");
   const [row] = await tx
     .select({ req: serviceRequests, service: services })
@@ -109,6 +110,7 @@ export async function loadRequestCtx(tx: Tx, auth: Auth, id: string, side: "clie
   const isAssignee = auth.isStaff && req.assignedToUserId === auth.user.id && auth.perms.has("staff.requests.assigned");
   const clientSide = isRequester || memberView;
   const staffSide = isOps || isAssignee;
+  // "system": an event-driven rule run by the platform on behalf of the actor (e.g. a nazara decision); no capacities.
   if ((side === "client" && !clientSide) || (side === "staff" && !staffSide) || (side === "any" && !clientSide && !staffSide))
     throw new ForbiddenError("الطلب غير موجود أو لا تملك صلاحية عرضه.");
 
@@ -116,7 +118,7 @@ export async function loadRequestCtx(tx: Tx, auth: Auth, id: string, side: "clie
   const deliverers = await loadDeliverers(tx, req.id);
   const actors = actorsFor({ userId: auth.user.id, isRequester, memberCanCreate: memberCreate, isAssignee, perms: auth.isStaff ? auth.perms : new Set(), deliverers });
   // Client capacities apply only from the client side; staff capacities only from the staff side.
-  const sided = side === "client" ? actors.filter((a) => a === "client") : side === "staff" ? actors.filter((a) => a !== "client") : actors;
+  const sided = side === "system" ? [] : side === "client" ? actors.filter((a) => a === "client") : side === "staff" ? actors.filter((a) => a !== "client") : actors;
   let resumeTo: RequestStatus | null = null;
   if (req.status === "on_hold") {
     const [ev] = await tx.select({ from: requestEvents.fromStatus }).from(requestEvents)

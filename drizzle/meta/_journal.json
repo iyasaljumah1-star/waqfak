@@ -22,6 +22,20 @@
       "when": 1791876593464,
       "tag": "0002_requests_commerce",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1791893247928,
+      "tag": "0003_service_operations",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1791893357292,
+      "tag": "0004_deliverable_output",
+      "breakpoints": true
     }
   ]
 }

@@ -29,6 +29,9 @@ import { INVOICE_STATUS_LABEL, INVOICE_STATUS_TONE } from "@/server/modules/bill
 import { DOC_TYPE_OPTIONS } from "@/server/modules/documents/labels";
 import { visibleSteps, visibleFields } from "@/server/modules/requests/intake/engine";
 import type { RequestItemStatus } from "@/server/db/schema/commerce";
+import { LinksPanel, OutputsPanel, TasksPanel } from "@/components/operations/panels";
+import { read } from "@/server/modules/_shared";
+import { requestOperations } from "@/server/modules/operations/queries";
 
 export const metadata: Metadata = { title: "طلب — مساحة العمل" };
 
@@ -53,6 +56,7 @@ export default async function StaffRequest({ params }: { params: Promise<{ id: s
   const docTitle = new Map(docs.map((x) => [x.id, x.title]));
   const canApproveQuote = auth.perms.has("requests.quotes.approve");
   const canApproveContract = auth.perms.has("admin.contracts.approve");
+  const ops2 = await read(auth, (tx) => requestOperations(tx, auth, rc));
 
   // Quotes
   const initial = d.quotes.filter((q) => q.kind === "initial");
@@ -112,7 +116,7 @@ export default async function StaffRequest({ params }: { params: Promise<{ id: s
         crumbs={[{ href: "/admin/requests", label: "الطلبات" }, { label: r.number }]}
         title={rc.service.nameAr}
         description={<span className="flex flex-wrap items-center gap-2"><span dir="ltr" className="tabular">{r.number}</span><StatusBadge status={r.status} /><ConflictBadge value={r.conflictCheck} /><SlaBadge due={r.slaDueAt} status={r.status} /></span>}
-        actions={r.waqfId ? <ButtonLink href={`/app/w/${r.waqfId}`} variant="secondary" size="sm"><FolderOpen aria-hidden className="size-4" />ملف الوقف</ButtonLink> : null}
+        actions={r.waqfId ? <ButtonLink href={auth.perms.has("admin.waqfs.all") ? `/admin/waqfs/${r.waqfId}` : `/app/w/${r.waqfId}`} variant="secondary" size="sm"><FolderOpen aria-hidden className="size-4" />ملف الوقف</ButtonLink> : null}
       />
 
       {r.conflictCheck === "blocked" ? (
@@ -158,6 +162,8 @@ export default async function StaffRequest({ params }: { params: Promise<{ id: s
               </div>
             ) : null}
           </Panel>
+
+          <TasksPanel ops={ops2} requestId={r.id} staff={staff} today={today} />
 
           {ops && !terminal ? (
             <Panel title="الإسناد" description={assigneeName ? `مسند حاليًا إلى ${assigneeName}` : "الطلب غير مسند"}>
@@ -386,7 +392,9 @@ export default async function StaffRequest({ params }: { params: Promise<{ id: s
             </Panel>
           ) : null}
 
-          <Panel title="المخرجات" description={isOpinion ? "رأي متخصص: يُوقَّع المخرج باسم المستشار وصفته قبل اعتماد الجودة." : undefined}>
+          <Panel id="outputs" title="المخرجات" description={`تُعدّ المسودة من بيانات الطلب والوقف والمراجع، ويكمل المختص ما يحتاج رأيه، ثم تُعتمد وفق سياسة كل مخرج وتُسلَّم للعميل بعد مراجعة الجودة.${isOpinion ? " الرأي المتخصص يُوقَّع باسم المستشار وصفته." : ""}`}>
+            <OutputsPanel ops={ops2} requestId={r.id} status={r.status} canDeliver={auth.perms.has("staff.deliver") && worker} canReview={auth.perms.has("staff.quality_review")} isManager={ops} me={auth.user.id} opinion={isOpinion} />
+            <h3 className="mb-2 mt-4 text-[15px] font-medium">التسليمات إلى العميل</h3>
             {deliverables.length ? (
               <ul className="mb-4 divide-y divide-line">
                 {deliverables.map((x) => (
@@ -400,9 +408,11 @@ export default async function StaffRequest({ params }: { params: Promise<{ id: s
                   </li>
                 ))}
               </ul>
-            ) : <p className="mb-4 text-sm text-muted">لا مخرجات بعد.</p>}
+            ) : <p className="mb-4 text-sm text-muted">لا تسليمات بعد. يصبح المخرج المعتمد تسليمًا، ويظهر للعميل بعد مراجعة الجودة.</p>}
             {["in_progress", "quality_review"].includes(r.status) && auth.perms.has("staff.deliver") ? (
-              <div className="space-y-4 border-t border-line pt-4">
+              <details className="border-t border-line pt-4">
+              <summary className="cursor-pointer text-[15px] font-medium text-ink">أو ارفع ملفًا أُعدّ خارج المنصة</summary>
+              <div className="mt-3 space-y-4">
                 <DocumentUploader requestId={r.id} waqfId={r.waqfId} docType="deliverable" defaultTitle={rc.service.outputs ?? ""} compact />
                 <ActionForm action={addDeliverable} hidden={{ id: r.id }} submit="سجّل المخرج" size="md">
                   <Field label="عنوان المخرج" name="title" required>
@@ -418,6 +428,7 @@ export default async function StaffRequest({ params }: { params: Promise<{ id: s
                   ) : null}
                 </ActionForm>
               </div>
+              </details>
             ) : null}
           </Panel>
 
@@ -433,11 +444,12 @@ export default async function StaffRequest({ params }: { params: Promise<{ id: s
 
         <aside className="min-w-0 space-y-4">
           <Panel title="حالة الطلب"><RequestStates states={d.states} /></Panel>
+          <LinksPanel ops={ops2} requestId={r.id} waqf={rc.waqf ? { id: rc.waqf.id, name: rc.waqf.name } : null} canLink={worker && !terminal} suggestedName={String(ans.waqfName ?? "")} />
           <Panel title="المراحل"><StageTimeline stages={stages} /></Panel>
           <Panel title="بيانات أساسية">
             <DefinitionList cols={1} items={[
               { label: "العميل", value: <>{requesterName}{d.requesterPhone ? <span dir="ltr" className="ms-2 text-[13px] text-muted">{staffPhone(auth, d.requesterPhone)}</span> : null}</> },
-              { label: "الوقف", value: rc.waqf ? <Link className="text-ink hover:underline" href={`/app/w/${rc.waqf.id}`}>{rc.waqf.name}</Link> : "بلا وقف" },
+              { label: "الوقف", value: rc.waqf ? <Link className="text-ink hover:underline" href={auth.perms.has("admin.waqfs.all") ? `/admin/waqfs/${rc.waqf.id}` : `/app/w/${rc.waqf.id}`}>{rc.waqf.name}</Link> : "بلا وقف" },
               { label: "دور وقفك في الوقف", value: rc.waqf ? WAQFAK_ROLE_LABEL[rc.waqf.waqfakRole] ?? rc.waqf.waqfakRole : "—" },
               { label: "المختص", value: assigneeName ?? "غير مسند" },
               { label: "الأولوية", value: PRIORITY_LABEL[r.priority] ?? r.priority },
