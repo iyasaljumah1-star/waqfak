@@ -105,7 +105,11 @@ test.describe.serial("corporate nazara", () => {
     await page.getByRole("group", { name: /حساب بنكي باسمه/ }).getByRole("radio", { name: "نعم" }).check();
     await page.getByRole("group", { name: /قوائم أو بيانات مالية/ }).getByRole("radio", { name: "لا" }).check();
     await page.getByRole("group", { name: /دعاوى أو مطالبات/ }).getByRole("radio", { name: "لا" }).check();
-    for (let i = 0; i < 3 && !(await page.getByTestId("slot-svc_waqf_deed").isVisible()); i++) await page.getByRole("button", { name: "التالي" }).click();
+    for (let i = 0; i < 20 && !(await page.getByTestId("slot-svc_waqf_deed").isVisible()); i++) {
+      const nb = page.getByRole("button", { name: "التالي" });
+      if ((await nb.count()) && (await nb.isEnabled())) await nb.click();
+      await page.waitForTimeout(400); // the wizard saves the step before moving on
+    }
     await page.getByTestId("slot-svc_waqf_deed").getByTestId("document-file-input").setInputFiles({ name: "deed.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4\n1 0 obj << /Type /Catalog >> endobj\ntrailer << /Root 1 0 R >>\n%%EOF") });
     await expect(page.getByTestId("slot-svc_waqf_deed").getByText("أُرفق")).toBeVisible({ timeout: 30_000 });
     await page.getByRole("button", { name: "التالي" }).click();

@@ -274,7 +274,11 @@ test.describe.serial("service flows as one operating system", () => {
       await p.getByRole("group", { name: /حساب بنكي باسمه/ }).getByRole("radio", { name: "نعم" }).check();
       await p.getByRole("group", { name: /قوائم أو بيانات مالية/ }).getByRole("radio", { name: "لا" }).check();
       await p.getByRole("group", { name: /دعاوى أو مطالبات/ }).getByRole("radio", { name: "لا" }).check();
-      for (let i = 0; i < 3 && !(await p.getByTestId("slot-svc_waqf_deed").isVisible()); i++) await p.getByRole("button", { name: "التالي" }).click();
+      for (let i = 0; i < 20 && !(await p.getByTestId("slot-svc_waqf_deed").isVisible()); i++) {
+        const nb = p.getByRole("button", { name: "التالي" });
+        if ((await nb.count()) && (await nb.isEnabled())) await nb.click();
+        await p.waitForTimeout(400); // the wizard saves the step before moving on
+      }
       const slot = p.getByTestId("slot-svc_waqf_deed");
       await slot.waitFor({ timeout: 15_000 });
       await slot.getByTestId("document-file-input").setInputFiles({ name: "deed.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4\n1 0 obj << /Type /Catalog >> endobj\ntrailer << /Root 1 0 R >>\n%%EOF") });
