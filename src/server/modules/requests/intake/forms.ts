@@ -246,12 +246,18 @@ const FORMS: Record<string, Omit<ServiceForm, "steps"> & { steps: Step[] }> = {
     }],
   },
   T05: {
-    code: "T05", version: 1, sources: ["الدليل الإرشادي لاختيار الأصول الوقفية: المعايير الستة لاختيار الأصل"],
+    code: "T05", version: 2, sources: ["الدليل الإرشادي لاختيار الأصول الوقفية: المعايير الستة لاختيار الأصل"],
     docs: [doc("assets", "ownership_deed", "مستندات الأصول المرشحة")],
     steps: [{
       key: "assets", title: "الأصول المرشحة والمعايير",
       fields: [
-        area("candidates", "الأصول المتاحة لك للوقف", { ...R, hint: "اذكر كل أصل ونوعه وقيمته التقريبية." }),
+        table("candidates", "الأصول المتاحة لك للوقف", [
+          { key: "type", label: "نوع الأصل", type: "select", required: true, options: ASSET_TYPES },
+          { key: "description", label: "الوصف والموقع", type: "text", required: true },
+          { key: "value", label: "القيمة التقريبية (ر.س)", type: "money" },
+          { key: "income", label: "الدخل السنوي الحالي إن وجد (ر.س)", type: "money" },
+          { key: "owned", label: "مملوك ومسجل باسمك بصك ساري؟", type: "select", options: [["yes", "نعم"], ["no", "لا"], ["partial", "حصة مشاعة"]] },
+        ], { ...R, minRows: 1, hint: "صف كل أصل في صف: يُقارن بالمعايير الستة في الدليل." }),
         radio("duration", "مدة الوقف", [["perpetual", "مؤبد"], ["temporary", "مؤقت"], ["undecided", "لم أحدد"]], R),
         sel("sizeEstimate", "الحجم المتوقع للوقف", SIZE, R),
         sel("beneficiaryKind", "نوع الموقوف عليهم", WAQF_KIND, R),
@@ -661,9 +667,9 @@ const FORMS: Record<string, Omit<ServiceForm, "steps"> & { steps: Step[] }> = {
     steps: [{ key: "opp", title: "الفرصة", fields: [sel("type", "نوع الفرصة", [["real_estate", "تطوير أو شراء عقار"], ["fund", "صندوق استثماري"], ["business", "مشروع تجاري"], ["other", "أخرى"]], R), area("description", "وصف الفرصة", { ...R, minLength: 20 }), money("cost", "التكلفة التقديرية (ر.س)"), text("location", "الموقع")] }],
   },
   I04: {
-    code: "I04", version: 1, sources: ["لائحة تنظيم أعمال النظارة م12/3: لا استبدال إلا بإذن الجهة المختصة، وإشعار الهيئة خلال 10 أيام عمل من إتمامه"],
+    code: "I04", version: 2, sources: ["لائحة تنظيم أعمال النظارة م12/3: لا استبدال إلا بإذن الجهة المختصة، وإشعار الهيئة خلال 10 أيام عمل من إتمامه"],
     docs: [doc("ownership", "ownership_deed", "صك الأصل المراد استبداله", { required: true }), doc("valuation", "valuation", "تقييمات الأصل", { showIf: yes("valuations") })],
-    steps: [{ key: "swap", title: "الأصل والاستبدال", fields: [area("asset", "الأصل المراد استبداله", R), sel("reason", "سبب الاستبدال", [["ruin", "خراب الأصل أو تعطله"], ["benefit", "الغبطة والمصلحة"], ["expropriation", "نزع ملكية"], ["other", "سبب آخر"]], R), area("replacement", "البديل المقترح"), yn("valuations", "هل لديك تقييمات للأصل؟", R)] }],
+    steps: [{ key: "swap", title: "الأصل والاستبدال", fields: [sel("assetType", "نوع الأصل المراد استبداله", ASSET_TYPES, R), area("asset", "وصف الأصل وموقعه", { ...R, minLength: 10 }), text("assetDeedNo", "رقم صك الأصل", R), money("assetValue", "القيمة التقديرية الحالية (ر.س)"), sel("reason", "سبب الاستبدال", [["ruin", "خراب الأصل أو تعطله"], ["benefit", "الغبطة والمصلحة"], ["expropriation", "نزع ملكية"], ["other", "سبب آخر"]], R), area("replacement", "البديل المقترح"), yn("valuations", "هل لديك تقييمات للأصل؟", R)] }],
   },
   I05: {
     code: "I05", version: 1, sources: ["لائحة المنتجات الاستثمارية الوقفية م24/2: محتوى اتفاقية الإدارة مع مؤسسة السوق المالية"], docs: [doc("draft", "contract", "مسودة اتفاقية الإدارة", { showIf: yes("hasDraft") })],
