@@ -8,7 +8,7 @@ import { ForbiddenError, loadWaqfAccess, type Auth } from "@/server/authz/contex
 import { read } from "@/server/modules/_shared";
 import type { Tx } from "@/server/db";
 import { assignableRoleKeys, clientRequestFilter, contractState, loadRequestCtx, memberWaqfIdsWith, staffRequestFilter, userHasWaqfPerm } from "./access";
-import { availableTransitions, HOLD_PARTY_LABEL, STATUS_LABEL, type RequestStatus } from "./workflow";
+import { availableTransitions, findTransition, HOLD_PARTY_LABEL, STATUS_LABEL, type RequestStatus } from "./workflow";
 import { itemCounts } from "./items-pure";
 import { nextAction } from "./journey";
 import { todayISO } from "@/server/engines/dates";
@@ -81,7 +81,11 @@ export async function staffQueue(auth: Auth, tab: QueueTab, q?: string, f: Queue
     if (f.from && /^\d{4}-\d{2}-\d{2}$/.test(f.from)) conds.push(gte(serviceRequests.createdAt, new Date(`${f.from}T00:00:00+03:00`)));
     if (f.to && /^\d{4}-\d{2}-\d{2}$/.test(f.to)) conds.push(lte(serviceRequests.createdAt, new Date(`${f.to}T23:59:59+03:00`)));
     const ops = auth.perms.has("admin.requests.all");
-    switch (tab) {
+    // an explicit status filter replaces the tab's status scope (so closed or cancelled requests can be found)
+    if (f.status) {
+      if (tab === "mine") conds.push(eq(serviceRequests.assignedToUserId, auth.user.id));
+      if (tab === "unassigned") conds.push(isNull(serviceRequests.assignedToUserId));
+    } else switch (tab) {
       case "mine":
         conds.push(eq(serviceRequests.assignedToUserId, auth.user.id), notInArray(serviceRequests.status, CLOSED));
         break;
@@ -190,6 +194,15 @@ export async function requestDetail(auth: Auth, id: string, side: "client" | "st
     const names = new Map(people.map((p) => [p.id, { name: p.name ?? "مستخدم", isStaff: p.isStaff }]));
     const requester = people.find((p) => p.id === rc.req.requesterUserId);
     const transitions = availableTransitions(rc.req.status as RequestStatus, rc.actors, { resumeTo: rc.resumeTo });
+    // an authorized manager who prepared outputs approved under a self-approval policy may pass quality review (recorded)
+    if (staff && rc.req.status === "quality_review" && rc.isOps && rc.deliverers.includes(auth.user.id) && !transitions.some((t) => t.to === "awaiting_client_approval")) {
+      const { selfApprovalCoversQA } = await import("./engine");
+      const { outputsOf } = await import("@/server/modules/outputs/server");
+      if (await selfApprovalCoversQA(tx, id, await outputsOf(tx, id))) {
+        const t = findTransition("quality_review", "awaiting_client_approval");
+        if (t) transitions.push(t);
+      }
+    }
 
     // Intake answers in the form's own words
     const form = serviceForm(rc.service);

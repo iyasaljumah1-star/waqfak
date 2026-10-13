@@ -19,6 +19,8 @@ export type OutputContext = {
   /** Raw answers by field key (for clause mapping). */
   raw: Record<string, CtxField>;
   formSources: string[];
+  /** Waqf documents not listed (other types or older copies). */
+  omittedDocs?: number;
   formDocs: { key: string; label: string; required: boolean; attached: number }[];
   documents: CtxDoc[];
   waqf: null | {
@@ -91,7 +93,9 @@ function build(kind: SectionKind, c: OutputContext, def: OutputDef): Built {
       const expired = c.documents.filter((d) => d.expiresOn && d.expiresOn < c.today);
       for (const d of expired) gaps.push({ key: `expired:${d.id}`, label: `مستند منتهي الصلاحية: ${d.title} (${d.expiresOn})`, severity: "warning" });
       return out(section("documents", "المستندات التي بُني عليها المخرج", rows.length
-        ? [{ type: "table", head: ["المستند", "النوع", "الرقم", "تاريخ الإصدار", "المصدر"], rows, prov: "document" }, { type: "para", text: "محتوى المستندات لا يُستخرج آليًا؛ ما يُنقل منها إلى المخرج يتحقق منه المختص بالرجوع إلى المستند نفسه.", prov: "unverified" }]
+        ? [{ type: "table", head: ["المستند", "النوع", "الرقم", "تاريخ الإصدار", "المصدر"], rows, prov: "document" },
+          ...(c.omittedDocs ? [{ type: "para" as const, text: `وفي ملف الوقف ${c.omittedDocs} مستندًا آخر من أنواع أخرى أو نسخ أقدم، لم تُدرج هنا.`, prov: "system" as Provenance }] : []),
+          { type: "para", text: "محتوى المستندات لا يُستخرج آليًا؛ ما يُنقل منها إلى المخرج يتحقق منه المختص بالرجوع إلى المستند نفسه.", prov: "unverified" }]
         : [{ type: "para", text: "لا مستندات مرفقة بالطلب أو بملف الوقف.", prov: "system" }]));
     }
     case "waqf": {

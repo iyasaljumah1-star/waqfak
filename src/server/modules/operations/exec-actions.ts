@@ -7,7 +7,7 @@ import { ForbiddenError } from "@/server/authz/context";
 import { audit } from "@/server/lib/audit";
 import { parseForm, userAction, UserError } from "@/server/modules/_shared";
 import { assignableRoleKeys, loadRequestCtx } from "@/server/modules/requests/access";
-import { advance, logEvent, type ActCtx } from "@/server/modules/requests/engine";
+import { advance, type ActCtx } from "@/server/modules/requests/engine";
 import { advanceStage, type PlanStage } from "@/server/modules/requests/workflow";
 import type { ActionState } from "@/lib/utils";
 import { EXEC_KIND_LABEL, executeRight, nextTaskStatus, taskActions, type ExecKind, type TaskAction } from "./exec-pure";
@@ -121,8 +121,6 @@ export async function taskAction(_: ActionState, fd: FormData): Promise<ActionSt
     } else if (documentId || note) {
       await taskEvent(c.tx, fresh, { action: documentId ? "attach" : "note", actorId: c.auth.user.id, note, documentId });
     }
-    const who = right.direct ? " (تنفيذ مباشر من مدير مخوّل)" : "";
-    await logEvent(c.tx, rc.req, c.auth.user.id, `${t.title}: ${({ start: "بدأ التنفيذ", complete: "أُكملت", return: "أُعيدت للاستكمال", cancel: "أُلغيت", reopen: "أُعيد فتحها" } as Record<string, string>)[action]}${who}${d.note ? ` — ${d.note}` : ""}`);
     await audit(c.tx, {
       actorUserId: c.auth.user.id, action: `tasks.${action}`, entityType: "task", entityId: t.id, waqfId: t.waqfId, ip: c.ip, userAgent: c.userAgent,
       before: { status: t.status }, after: { status: to, kind: t.kind, direct: right.direct, owner: t.assigneeUserId, note: d.note || undefined },
@@ -149,4 +147,20 @@ export async function taskNote(_: ActionState, fd: FormData): Promise<ActionStat
     await audit(c.tx, { actorUserId: c.auth.user.id, action: "tasks.note", entityType: "task", entityId: t.id, waqfId: t.waqfId, ip: c.ip, userAgent: c.userAgent, after: { documentId } });
     return { ok: true, message: documentId ? "أُرفق المستند بالمهمة." : "أُضيفت الملاحظة." };
   }, { revalidate: reval(d.requestId) });
+}
+
+/** Requests already in execution before tasks existed: create their execution tasks (idempotent). */
+export async function createExecTasks(_: ActionState, fd: FormData): Promise<ActionState> {
+  const r = parseForm(z.object({ requestId: uuid }), fd);
+  if ("state" in r) return r.state;
+  return userAction(async (c) => {
+    const rc = await loadRequestCtx(c.tx, c.auth, r.data.requestId, "staff");
+    if (!rc.isOps && !rc.isAssignee) throw new ForbiddenError();
+    if (!["in_progress", "quality_review", "awaiting_client_approval"].includes(rc.req.status)) throw new UserError("تُنشأ مهام التنفيذ عند بدء العمل.");
+    const { ensureExecTasks, syncStageTasks } = await import("./exec");
+    const n = await ensureExecTasks(c.tx, rc, c.auth.user.id);
+    await syncStageTasks(c.tx, rc.req.id, c.auth.user.id, "مزامنة مع مراحل الطلب الحالية");
+    await audit(c.tx, { actorUserId: c.auth.user.id, action: "tasks.backfill", entityType: "service_request", entityId: rc.req.id, waqfId: rc.req.waqfId, ip: c.ip, userAgent: c.userAgent, after: { created: n } });
+    return { ok: true, message: n ? `أُنشئت ${n} مهمة من مسار الطلب.` : "المهام موجودة مسبقًا." };
+  }, { revalidate: reval(r.data.requestId) });
 }

@@ -44,8 +44,13 @@ export async function collectContext(tx: Tx, rc: RequestCtx): Promise<OutputCont
   const docRows = await tx.select().from(documents).where(and(docScope, isNull(documents.archivedAt), eq(documents.status, "active"))).orderBy(desc(documents.createdAt)).limit(200);
   const slotOf = new Map<string, string>();
   for (const [k, ids] of Object.entries(docMap)) for (const d of ids) slotOf.set(d, k);
-  // documents produced by this request's own outputs are not inputs
-  const docsList = docRows.filter((d) => d.docType !== "deliverable" || d.requestId !== req.id);
+  // inputs: every document of the request; from the waqf file, the reference types only (latest of each title), capped
+  const KEY_TYPES = new Set(["waqf_deed", "nazara_deed", "registration_certificate", "ownership_deed", "financial_statement", "bank_statement", "valuation", "policy", "regulation", "lease", "contract", "resolution", "minutes", "permission", "judgment", "official_letter"]);
+  const reqDocs = docRows.filter((d) => d.requestId === req.id && d.docType !== "deliverable");
+  const seen = new Set<string>();
+  const waqfDocs = docRows.filter((d) => d.requestId !== req.id && KEY_TYPES.has(d.docType) && !seen.has(`${d.docType}:${d.title}`) && seen.add(`${d.docType}:${d.title}`));
+  const docsList = [...reqDocs, ...waqfDocs.slice(0, 25)];
+  const omitted = Math.max(0, docRows.filter((d) => d.requestId !== req.id).length - Math.min(25, waqfDocs.length));
 
   const [quote] = await tx.select().from(quotes).where(and(eq(quotes.requestId, req.id), eq(quotes.kind, "initial"), eq(quotes.status, "accepted"))).orderBy(desc(quotes.version)).limit(1);
   const [contract] = await tx.select({ number: contracts.number, status: contracts.status, executedAt: contracts.executedAt }).from(contracts).where(and(eq(contracts.requestId, req.id), ne(contracts.status, "void"))).orderBy(desc(contracts.createdAt)).limit(1);
@@ -60,6 +65,7 @@ export async function collectContext(tx: Tx, rc: RequestCtx): Promise<OutputCont
     answers: sum.map((s) => ({ title: s.title, rows: s.rows.map((r) => ({ key: r.key, label: r.label, value: r.value })) })),
     raw,
     formSources: form.sources,
+    omittedDocs: omitted,
     formDocs: visibleDocs(form, answers).filter((d) => !["poa", "authorization"].includes(d.key) || docRequired(d, answers)).map((d) => ({ key: d.key, label: d.label, required: docRequired(d, answers), attached: docMap[d.key]?.length ?? 0 })),
     documents: docsList.map((d) => ({ id: d.id, title: d.title, docType: d.docType, typeLabel: docTypeLabel(d.docType), number: d.number, issuedOn: d.issuedOn, expiresOn: d.expiresOn, scope: d.requestId === req.id ? "request" : "waqf", slot: slotOf.get(d.id) ?? null })),
     waqf: null, conditions: [], parties: [], beneficiaries: null, assets: [], leases: { active: 0, arrears: 0, endingIn90: 0 },

@@ -227,11 +227,11 @@ export async function transition(c: ActCtx, rc: RequestCtx, input: TransitionInp
     if (delDocs.length) await tx.update(documents).set({ approvalStatus: "approved" }).where(and(inArray(documents.id, delDocs), eq(documents.approvalStatus, "in_review")));
   }
 
-  const eventNote = [t.label, note, selfQA ? "اعتماد الجودة بسياسة الاعتماد الذاتي للمخرجات المعتمدة" : ""].filter(Boolean).join(" — ");
+  const eventNote = [t.label, note].filter(Boolean).join(" — ");
   await logEvent(tx, rc.req, auth.user.id, eventNote, from, to);
   await audit(tx, {
     actorUserId: auth.user.id, action: `requests.transition.${to}`, entityType: "service_request", entityId: rc.req.id, waqfId: rc.req.waqfId,
-    ip: c.ip, userAgent: c.userAgent, before: { status: from }, after: { status: to, note: note || undefined, holdParty: input.holdParty },
+    ip: c.ip, userAgent: c.userAgent, before: { status: from }, after: { status: to, note: note || undefined, holdParty: input.holdParty, selfApprovalQA: selfQA || undefined },
   });
 
   // Notifications: the client hears about every change; staff hear about client actions.
@@ -246,7 +246,7 @@ export async function transition(c: ActCtx, rc: RequestCtx, input: TransitionInp
 }
 
 /** Every delivery of the request is an output approved under a self-approval policy. */
-async function selfApprovalCoversQA(tx: Tx, requestId: string, rows: OutputRow[]) {
+export async function selfApprovalCoversQA(tx: Tx, requestId: string, rows: OutputRow[]) {
   const dels = await tx.select({ outputId: deliverables.outputId, status: deliverables.status }).from(deliverables).where(and(eq(deliverables.requestId, requestId), eq(deliverables.status, "submitted")));
   if (!dels.length) return false;
   return dels.every((d) => {

@@ -7,7 +7,7 @@ import { ForbiddenError } from "@/server/authz/context";
 import { audit } from "@/server/lib/audit";
 import { parseForm, userAction, UserError } from "@/server/modules/_shared";
 import { loadRequestCtx, type RequestCtx } from "@/server/modules/requests/access";
-import { logEvent, type ActCtx } from "@/server/modules/requests/engine";
+import type { ActCtx } from "@/server/modules/requests/engine";
 import { syncTask, taskEvent } from "@/server/modules/operations/exec";
 import type { ActionState } from "@/lib/utils";
 import { outputsFor, SPECIALTY_LABEL } from "./catalog";
@@ -18,7 +18,8 @@ import { addVersion, ensureOutput, preparersOf, versionOf, type OutputRow } from
 
 /**
  * Service outputs: generate a draft from the request's data, edit it, submit it for review, return or approve it.
- * Generation never approves; approval follows the output's review policy; every step is a version or an event.
+ * Generation never approves; approval follows the output's review policy; every step is a version, a task event or an
+ * audit entry — all internal: the client's request history shows the work only when it is handed over.
  */
 
 const uuid = z.string().uuid("قيمة غير صالحة.");
@@ -75,7 +76,6 @@ export async function generateOutput(_: ActionState, fd: FormData): Promise<Acti
     }
     if (prepTask && prepTask.status === "todo") await syncTask(c.tx, rc.req.id, "prepare_output", { outputKey: def.key }, "in_progress", c.auth.user.id, "بدأ إعداد المسودة");
     if (prepTask) await taskEvent(c.tx, prepTask, { action: "output", actorId: c.auth.user.id, note: `${version === 1 ? "وُلّدت المسودة" : "أُعيد توليد المسودة"} (نسخة ${version})`, outputId: o.id });
-    await logEvent(c.tx, rc.req, c.auth.user.id, `${version === 1 ? "أُعدّت مسودة" : "أُعيد توليد مسودة"} «${def.title}» (${o.number}، نسخة ${version}) من بيانات النظام`);
     await audit(c.tx, { actorUserId: c.auth.user.id, action: version === 1 ? "outputs.generate" : "outputs.regenerate", entityType: "output", entityId: o.id, waqfId: rc.req.waqfId, ip: c.ip, userAgent: c.userAgent, after: { number: o.number, version, gaps: fresh.gaps.length, keptEdits: kept } });
     return { ok: true, message: version === 1 ? "أُعدّت المسودة من بيانات الطلب والوقف. راجعها وأكمل ما يكتبه المختص." : `أُعيد توليد المسودة (نسخة ${version}).`, data: { outputId: o.id } };
   }, { revalidate: reval(d.id) });
@@ -124,7 +124,6 @@ export async function submitOutput(_: ActionState, fd: FormData): Promise<Action
     }
     await c.tx.update(outputs).set({ status: "in_review", submittedBy: c.auth.user.id, submittedAt: new Date(), reviewNote: null, updatedBy: c.auth.user.id }).where(eq(outputs.id, o.id));
     await syncTask(c.tx, rc.req.id, "prepare_output", { outputKey: o.outputKey }, "done", c.auth.user.id, `أُرسلت المسودة (نسخة ${o.currentVersion}) للمراجعة`);
-    await logEvent(c.tx, rc.req, c.auth.user.id, `أُرسل المخرج «${o.title}» (${o.number}، نسخة ${o.currentVersion}) للمراجعة والاعتماد`);
     await audit(c.tx, { actorUserId: c.auth.user.id, action: "outputs.submit", entityType: "output", entityId: o.id, waqfId: o.waqfId, ip: c.ip, userAgent: c.userAgent, after: { number: o.number, version: o.currentVersion, warnings: ready.warnings.length } });
     return { ok: true, message: "أُرسل المخرج للمراجعة." };
   }, { revalidate: reval(r.data.requestId) });
@@ -140,7 +139,6 @@ export async function returnOutput(_: ActionState, fd: FormData): Promise<Action
     if (o.status !== "in_review") throw new UserError("المخرج ليس بانتظار المراجعة.");
     await c.tx.update(outputs).set({ status: "returned", reviewNote: r.data.note, updatedBy: c.auth.user.id }).where(eq(outputs.id, o.id));
     await syncTask(c.tx, rc.req.id, "prepare_output", { outputKey: o.outputKey }, "todo", c.auth.user.id, `أُعيد المخرج للتعديل: ${r.data.note}`);
-    await logEvent(c.tx, rc.req, c.auth.user.id, `أُعيد المخرج «${o.title}» للتعديل: ${r.data.note}`);
     await audit(c.tx, { actorUserId: c.auth.user.id, action: "outputs.return", entityType: "output", entityId: o.id, waqfId: o.waqfId, ip: c.ip, userAgent: c.userAgent, after: { number: o.number, note: r.data.note } });
     return { ok: true, message: "أُعيد المخرج للتعديل." };
   }, { revalidate: reval(r.data.requestId) });
@@ -173,7 +171,6 @@ export async function approveOutput(_: ActionState, fd: FormData): Promise<Actio
     }).returning({ id: deliverables.id });
     await c.tx.update(outputs).set({ deliverableId: del.id }).where(eq(outputs.id, o.id));
     await syncTask(c.tx, rc.req.id, "review_output", { outputKey: o.outputKey }, "done", c.auth.user.id, check.self ? "اعتماد ذاتي وفق سياسة المخرج" : "اعتُمد المخرج");
-    await logEvent(c.tx, rc.req, c.auth.user.id, `اعتُمد المخرج «${o.title}» (${o.number}، نسخة ${o.currentVersion})${check.self ? " — اعتماد ذاتي من مدير مخوّل وفق سياسة المخرج" : ""}`);
     await audit(c.tx, { actorUserId: c.auth.user.id, action: "outputs.approve", entityType: "output", entityId: o.id, waqfId: o.waqfId, ip: c.ip, userAgent: c.userAgent, after: { number: o.number, version: o.currentVersion, selfApproved: check.self, policy: o.reviewPolicy, specialty: SPECIALTY_LABEL[o.specialty], note: r.data.note || undefined } });
     return { ok: true, message: check.self ? "اعتُمد المخرج (اعتماد ذاتي مسجّل)." : "اعتُمد المخرج." };
   }, { revalidate: reval(r.data.requestId) });
@@ -191,7 +188,6 @@ export async function reviseOutput(_: ActionState, fd: FormData): Promise<Action
     await c.tx.update(outputs).set({ status: "draft", documentId: null, deliverableId: null, updatedBy: c.auth.user.id }).where(eq(outputs.id, o.id));
     await syncTask(c.tx, rc.req.id, "prepare_output", { outputKey: o.outputKey }, "todo", c.auth.user.id, `فُتحت مراجعة جديدة للمخرج${r.data.note ? `: ${r.data.note}` : ""}`);
     await syncTask(c.tx, rc.req.id, "review_output", { outputKey: o.outputKey }, "todo", c.auth.user.id, "بانتظار اعتماد المراجعة الجديدة");
-    await logEvent(c.tx, rc.req, c.auth.user.id, `فُتحت مراجعة جديدة للمخرج «${o.title}» بعد اعتماد النسخة ${o.approvedVersion}`);
     await audit(c.tx, { actorUserId: c.auth.user.id, action: "outputs.revise", entityType: "output", entityId: o.id, waqfId: o.waqfId, ip: c.ip, userAgent: c.userAgent, before: { status: "approved", version: o.approvedVersion } });
     return { ok: true, message: "فُتحت مراجعة جديدة للمخرج." };
   }, { revalidate: reval(r.data.requestId) });

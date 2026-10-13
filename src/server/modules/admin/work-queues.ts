@@ -63,19 +63,19 @@ export async function workQueues(auth: Auth): Promise<Queue[]> {
 
       // Quotes
       const qRows = await tx.select({ id: quotes.id, requestId: quotes.requestId, number: quotes.number, version: quotes.version, status: quotes.status, preparedBy: quotes.preparedBy, validUntil: quotes.validUntil, req: serviceRequests.number })
-        .from(quotes).innerJoin(serviceRequests, eq(serviceRequests.id, quotes.requestId)).where(and(inArray(quotes.status, ["draft", "sent"]), scope)).orderBy(asc(quotes.createdAt));
+        .from(quotes).innerJoin(serviceRequests, eq(serviceRequests.id, quotes.requestId)).where(and(inArray(quotes.status, ["draft", "sent"]), scope, notInArray(serviceRequests.status, ["closed", "cancelled", "rejected"]))).orderBy(asc(quotes.createdAt));
       const qItem = (q: (typeof qRows)[number], meta: string): QueueItem => ({ id: q.id, href: `/admin/requests/${q.requestId}#quote`, title: `${q.number} نسخة ${q.version}`, meta: `${q.req} · ${meta}`, due: q.validUntil, overdue: !!q.validUntil && q.validUntil < today });
       push("quotes_approve", "عروض بانتظار الاعتماد", "مسودات عروض يعتمدها شخص غير معدّها", qRows.filter((q) => q.status === "draft").map((q) => qItem(q, q.preparedBy === auth.user.id ? "أعددتها أنت" : "")));
       push("quotes_client", "عروض بانتظار رد العميل", "عروض أُرسلت ولم يقبلها العميل أو يرفضها", qRows.filter((q) => q.status === "sent").map((q) => qItem(q, "صالح حتى")));
 
       // Contracts
       const cRows = await tx.select({ id: contracts.id, requestId: contracts.requestId, number: contracts.number, status: contracts.status, req: serviceRequests.number })
-        .from(contracts).innerJoin(serviceRequests, eq(serviceRequests.id, contracts.requestId)).where(and(inArray(contracts.status, ["draft", "approved", "sent", "partially_signed"]), scope));
+        .from(contracts).innerJoin(serviceRequests, eq(serviceRequests.id, contracts.requestId)).where(and(inArray(contracts.status, ["draft", "approved", "sent", "partially_signed"]), scope, notInArray(serviceRequests.status, ["closed", "cancelled", "rejected"])));
       push("contracts", "عقود بانتظار اعتماد أو توقيع", "مسودات بانتظار الاعتماد، أو عقود أُرسلت ولم يوقعها كل الأطراف", cRows.map((k) => ({ id: k.id, href: `/admin/requests/${k.requestId}#contract`, title: k.number, meta: `${k.req} · ${({ draft: "مسودة", approved: "معتمد ولم يُرسل", sent: "أُرسل للتوقيع", partially_signed: "وُقّع جزئيًا" } as Record<string, string>)[k.status] ?? k.status}` })));
 
       // Outputs
       const oRows = await tx.select({ id: outputs.id, requestId: outputs.requestId, number: outputs.number, title: outputs.title, status: outputs.status, submittedBy: outputs.submittedBy, req: serviceRequests.number })
-        .from(outputs).innerJoin(serviceRequests, eq(serviceRequests.id, outputs.requestId)).where(and(inArray(outputs.status, ["in_review", "draft", "returned"]), scope));
+        .from(outputs).innerJoin(serviceRequests, eq(serviceRequests.id, outputs.requestId)).where(and(inArray(outputs.status, ["in_review", "draft", "returned"]), scope, notInArray(serviceRequests.status, ["closed", "cancelled", "rejected"])));
       push("outputs_review", "مخرجات بانتظار المراجعة والاعتماد", "مخرجات أُرسلت للمراجعة", oRows.filter((o) => o.status === "in_review").map((o) => ({ id: o.id, href: `/admin/requests/${o.requestId}/outputs/${o.id}`, title: o.title, meta: `${o.req} · ${o.number}${o.submittedBy === auth.user.id ? " · أعددته أنت" : ""}` })));
       push("outputs_draft", "مخرجات قيد الإعداد", "مسودات لم تُرسل للمراجعة أو أُعيدت للتعديل", oRows.filter((o) => o.status !== "in_review").map((o) => ({ id: o.id, href: `/admin/requests/${o.requestId}/outputs/${o.id}`, title: o.title, meta: `${o.req} · ${o.status === "returned" ? "أُعيدت للتعديل" : "مسودة"}` })));
 

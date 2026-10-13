@@ -219,4 +219,5 @@ CREATE POLICY staff_only ON outputs AS RESTRICTIVE FOR ALL TO waqfak_app USING (
 DROP POLICY IF EXISTS staff_only ON output_versions;
 CREATE POLICY staff_only ON output_versions AS RESTRICTIVE FOR ALL TO waqfak_app USING (app_current_user() IS NULL OR app_is_staff()) WITH CHECK (app_current_user() IS NULL OR app_is_staff());
 DROP POLICY IF EXISTS staff_only ON task_events;
-CREATE POLICY staff_only ON task_events AS RESTRICTIVE FOR ALL TO waqfak_app USING (request_id IS NULL OR app_current_user() IS NULL OR app_is_staff()) WITH CHECK (request_id IS NULL OR app_current_user() IS NULL OR app_is_staff());
+-- Platform rules running in a client's action (e.g. submission creates the intake task) may write events; only staff read them.
+CREATE POLICY staff_only ON task_events AS RESTRICTIVE FOR SELECT TO waqfak_app USING (request_id IS NULL OR app_current_user() IS NULL OR app_is_staff());

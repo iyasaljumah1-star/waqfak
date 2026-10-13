@@ -163,7 +163,7 @@ export default async function StaffRequest({ params }: { params: Promise<{ id: s
             ) : null}
           </Panel>
 
-          <TasksPanel ops={ops2} requestId={r.id} staff={staff} today={today} />
+          <TasksPanel ops={ops2} requestId={r.id} staff={staff} today={today} status={r.status} canWork={worker} />
 
           {ops && !terminal ? (
             <Panel title="الإسناد" description={assigneeName ? `مسند حاليًا إلى ${assigneeName}` : "الطلب غير مسند"}>
@@ -444,7 +444,7 @@ export default async function StaffRequest({ params }: { params: Promise<{ id: s
 
         <aside className="min-w-0 space-y-4">
           <Panel title="حالة الطلب"><RequestStates states={d.states} /></Panel>
-          <LinksPanel ops={ops2} requestId={r.id} waqf={rc.waqf ? { id: rc.waqf.id, name: rc.waqf.name } : null} canLink={worker && !terminal} suggestedName={String(ans.waqfName ?? "")} />
+          <LinksPanel ops={ops2} requestId={r.id} waqf={rc.waqf ? { id: rc.waqf.id, name: rc.waqf.name } : null} canLink={worker && !terminal} suggestedName={String(ans.waqfName ?? (r.intake as { answers?: Record<string, unknown> } | null)?.answers?.waqfName ?? "")} />
           <Panel title="المراحل"><StageTimeline stages={stages} /></Panel>
           <Panel title="بيانات أساسية">
             <DefinitionList cols={1} items={[

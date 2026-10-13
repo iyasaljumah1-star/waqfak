@@ -4,7 +4,7 @@ import { Badge, Panel } from "@/components/ui";
 import { Field, Input, Select, Textarea } from "@/components/ui/form";
 import { ActionForm } from "@/components/requests/forms";
 import { fmtDate, fmtDateTime } from "@/lib/utils";
-import { taskAction } from "@/server/modules/operations/exec-actions";
+import { createExecTasks, taskAction } from "@/server/modules/operations/exec-actions";
 import { createWaqfFromRequest, linkRequestToWaqf } from "@/server/modules/operations/link-actions";
 import { EXEC_KIND_LABEL, TASK_EVENT_LABEL, type ExecKind } from "@/server/modules/operations/exec-pure";
 import { approveOutput, generateOutput, returnOutput, reviseOutput, submitOutput } from "@/server/modules/outputs/actions";
@@ -18,7 +18,8 @@ const TASK_TONE: Record<string, "neutral" | "info" | "ok" | "fine"> = { todo: "n
 const WAQF_STATUS: Record<string, string> = { idea: "فكرة", draft: "مسودة", documenting: "قيد التوثيق", documented: "موثق", registered: "مسجل", active: "نشط", suspended: "موقوف", ended: "منتهٍ" };
 
 /** Tasks of the request: who is responsible, who executed, and the actions the viewer may take (rights enforced by the server). */
-export function TasksPanel({ ops, requestId, staff, today }: { ops: Ops; requestId: string; staff: { id: string; name: string }[]; today: string }) {
+export function TasksPanel({ ops, requestId, staff, today, status, canWork }: { ops: Ops; requestId: string; staff: { id: string; name: string }[]; today: string; status: string; canWork: boolean }) {
+  const missingExec = canWork && ["in_progress", "quality_review", "awaiting_client_approval"].includes(status) && !ops.tasks.some((t) => t.kind && t.kind !== "intake");
   const name = (id: string | null | undefined) => (id ? ops.people.get(id) ?? "—" : null);
   return (
     <Panel id="tasks" title="المهام والإجراءات" description="تُنشأ من مسار الطلب: مراجعة الاكتمال، ومراحل العمل، وإعداد كل مخرج ومراجعته. ينفذها المكلّف، أو مدير مخوّل مباشرة دون إسناد.">
@@ -91,6 +92,12 @@ export function TasksPanel({ ops, requestId, staff, today }: { ops: Ops; request
           })}
         </ol>
       ) : <p className="text-sm text-muted">لا مهام بعد. تُنشأ مهمة المراجعة عند الإرسال، ومهام التنفيذ عند بدء العمل.</p>}
+      {missingExec ? (
+        <div className="mt-3 border-t border-line pt-3">
+          <p className="mb-2 text-[13px] text-muted">بدأ تنفيذ هذا الطلب قبل إضافة المهام إلى المنصة.</p>
+          <ActionForm action={createExecTasks} hidden={{ requestId }} submit="أنشئ مهام التنفيذ من مسار الطلب" size="sm" variant="secondary" />
+        </div>
+      ) : null}
     </Panel>
   );
 }
