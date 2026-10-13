@@ -1,7 +1,9 @@
 import "server-only";
 import { and, asc, eq } from "drizzle-orm";
 import type { Tx } from "@/server/db";
-import { deliverables, holidays, requestEvents, requestStages, roles, serviceRequests, services, userRoles, users, workflowTemplates } from "@/server/db/schema";
+import { deliverables, holidays, quotes, requestEvents, requestItems, requestStages, roles, serviceRequests, services, userRoles, users, workflowTemplates } from "@/server/db/schema";
+import { prestartUnpaid } from "@/server/modules/commerce/state";
+import { blocking } from "./items-pure";
 import { addBusinessDays, todayISO } from "@/server/engines/dates";
 import { audit } from "@/server/lib/audit";
 import { notify } from "@/server/modules/notify";
@@ -129,7 +131,12 @@ export async function opsManagerIds(tx: Tx): Promise<string[]> {
   return [...new Set(rows.map((r) => r.id))];
 }
 
-export type TransitionInput = { to: RequestStatus; note?: string; holdParty?: string; holdFollowUpOn?: string };
+export type TransitionInput = {
+  to: RequestStatus; note?: string; holdParty?: string; holdFollowUpOn?: string;
+  /** Event-driven change made by the platform on behalf of the actor (e.g. all deficiencies answered). Skips the
+   *  actor-capacity table, never the business guards. */
+  system?: boolean;
+};
 
 /**
  * The single entry point for status changes: checks the actor's capacity against the transition table and the
@@ -141,7 +148,7 @@ export async function transition(c: ActCtx, rc: RequestCtx, input: TransitionInp
   const to = input.to;
   const t = findTransition(from, to);
   if (!t) throw new UserError(`لا يمكن نقل الطلب من «${STATUS_LABEL[from]}» إلى «${STATUS_LABEL[to]}».`);
-  const allowed = availableTransitions(from, rc.actors, { resumeTo: rc.resumeTo }).some((x) => x.to === to);
+  const allowed = input.system || availableTransitions(from, rc.actors, { resumeTo: rc.resumeTo }).some((x) => x.to === to);
   if (!allowed) {
     if (from === "quality_review" && to === "awaiting_client_approval" && rc.deliverers.includes(auth.user.id))
       throw new UserError("مبدأ العينين الأربع: يراجع جودةَ العمل زميلٌ آخر غير من أعدّه.");
@@ -149,16 +156,24 @@ export async function transition(c: ActCtx, rc: RequestCtx, input: TransitionInp
   }
   const note = input.note?.trim() ?? "";
   if (t.needsNote && note.length < 3) throw new UserError("اكتب سببًا أو ملاحظة توضح هذا الإجراء.");
+  if (from === "triage" && to === "in_progress" && rc.service.pricingModel !== "free" && !rc.isOps && !input.system)
+    throw new UserError("الخدمة مدفوعة: يبدأ تنفيذها بعد عرض السعر والعقد، أو بقرار من مدير التشغيل (كخدمة مشمولة بباقة).");
   if (to === "on_hold" && !input.holdParty) throw new UserError("حدّد الجهة التي ينتظرها الطلب.");
 
   const subs = await tx.select({ status: deliverables.status, signedBy: deliverables.signedBy }).from(deliverables).where(eq(deliverables.requestId, rc.req.id));
   const submitted = subs.filter((d) => d.status === "submitted" || d.status === "approved");
   const cs = await contractState(tx, rc.req.id);
+  const items = await tx.select({ kind: requestItems.kind, status: requestItems.status, visibility: requestItems.visibility, required: requestItems.required }).from(requestItems).where(eq(requestItems.requestId, rc.req.id));
+  const qs = await tx.select({ status: quotes.status }).from(quotes).where(and(eq(quotes.requestId, rc.req.id), eq(quotes.kind, "initial")));
   const err = guardTransition({
     from, to, actorUserId: auth.user.id, conflictCheck: rc.req.conflictCheck, workflowCode: rc.workflowCode, deliverers: rc.deliverers,
     submittedDeliverables: submitted.length, unsignedOpinionDeliverables: submitted.filter((d) => !d.signedBy?.trim()).length,
     contractSignedByClient: cs.clientSigned, hasContract: !!cs.contract, quoteAmount: rc.req.quoteAmount ? Number(rc.req.quoteAmount) : null,
     pricingModel: rc.service.pricingModel,
+    verified: !!rc.req.intakeVerifiedAt, accepted: !!rc.req.acceptedAt, blockingItems: items.filter(blocking).length,
+    hasQuotes: qs.length > 0, quoteAccepted: qs.some((q) => q.status === "accepted"),
+    contractExecuted: cs.contract && cs.parties.length ? cs.executed : undefined,
+    prestartUnpaid: from === "awaiting_contract" && to === "in_progress" ? await prestartUnpaid(tx, rc.req.id) : 0,
   });
   if (err) throw new UserError(err);
 
@@ -171,7 +186,8 @@ export async function transition(c: ActCtx, rc: RequestCtx, input: TransitionInp
   if (to === "submitted") patch.submittedAt = now;
   if (to === "completed") patch.completedAt = now;
   if (to === "closed") patch.closedAt = now;
-  if (to === "awaiting_contract" && rc.req.quoteAmount) patch.agreedPrice = rc.req.quoteAmount;
+  if (to === "awaiting_contract" && rc.req.quoteAmount && !patch.agreedPrice) patch.agreedPrice = rc.req.quoteAmount;
+  if (to === "in_progress" && !rc.req.startApprovedAt) Object.assign(patch, { startApprovedAt: now, startApprovedBy: auth.user.id });
   await tx.update(serviceRequests).set(patch).where(eq(serviceRequests.id, rc.req.id));
 
   // Deliverable side-effects

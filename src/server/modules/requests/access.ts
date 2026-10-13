@@ -1,5 +1,6 @@
 import "server-only";
-import { and, desc, eq, inArray, isNotNull, or } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, or } from "drizzle-orm";
+import { signingState } from "@/server/modules/commerce/state";
 import type { Tx } from "@/server/db";
 import {
   contracts, contractSignatures, deliverables, requestEvents, serviceRequests, services, waqfMemberships, waqfs, workflowTemplates,
@@ -35,6 +36,17 @@ export async function memberWaqfIdsWith(tx: Tx, auth: Auth, perm: string): Promi
     if (a?.delegation && a.perms.has(perm)) ids.add(w);
   }
   return [...ids];
+}
+
+/** Whether another user's own (non-agent) active membership in a waqf grants `perm`. */
+export async function userHasWaqfPerm(tx: Tx, userId: string, waqfId: string, perm: string) {
+  const rows = await tx
+    .select({ roleKey: waqfMemberships.roleKey, endsAt: waqfMemberships.endsAt })
+    .from(waqfMemberships)
+    .where(and(eq(waqfMemberships.userId, userId), eq(waqfMemberships.waqfId, waqfId), eq(waqfMemberships.status, "active")));
+  const map = await rolePermissionMap();
+  const now = new Date();
+  return rows.some((r) => (!r.endsAt || r.endsAt > now) && r.roleKey !== "agent" && !!map.get(r.roleKey)?.has(perm));
 }
 
 export async function memberCan(tx: Tx, auth: Auth, waqfId: string, perm: string) {
@@ -124,14 +136,26 @@ export async function loadDeliverers(tx: Tx, requestId: string): Promise<string[
   return [...new Set([...d.map((x) => x.by!), ...e.map((x) => x.by).filter((x): x is string => !!x)])];
 }
 
+/**
+ * The request's current main contract (not an amendment, not void) and its signing state. Drafts and internally
+ * approved contracts are returned too (`stage`), but only sent/signed ones count for signatures.
+ */
 export async function contractState(tx: Tx, requestId: string) {
-  const [c] = await tx.select().from(contracts).where(and(eq(contracts.requestId, requestId), inArray(contracts.status, ["sent", "signed"]))).orderBy(desc(contracts.createdAt)).limit(1);
-  if (!c) return { contract: null, clientSigned: false, companySigned: false, signatures: [] as (typeof contractSignatures.$inferSelect)[] };
+  const [c] = await tx.select().from(contracts)
+    .where(and(eq(contracts.requestId, requestId), isNull(contracts.parentContractId), inArray(contracts.status, ["draft", "approved", "sent", "partially_signed", "signed"])))
+    .orderBy(desc(contracts.createdAt)).limit(1);
+  if (!c) return { contract: null, stage: null, clientSigned: false, companySigned: false, executed: false, parties: [] as (typeof contracts.$inferSelect)["parties"], pending: [] as (typeof contracts.$inferSelect)["parties"], signatures: [] as (typeof contractSignatures.$inferSelect)[] };
   const sigs = await tx.select().from(contractSignatures).where(eq(contractSignatures.contractId, c.id));
+  const st = signingState(c, sigs);
+  const live = ["sent", "partially_signed", "signed"].includes(c.status);
   return {
-    contract: c,
-    clientSigned: sigs.some((s) => s.method === "otp"),
-    companySigned: sigs.some((s) => s.method === "company_countersign"),
+    contract: live ? c : null,
+    stage: c,
+    clientSigned: live && st.clientSigned,
+    companySigned: live && st.companySigned,
+    executed: c.status === "signed" && st.executed,
+    parties: c.parties,
+    pending: st.pending,
     signatures: sigs,
   };
 }

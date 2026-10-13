@@ -41,6 +41,11 @@ export async function saveCompanyProfile(_: ActionState, fd: FormData): Promise<
   if (next.vatNumber && !/^3\d{13}3$/.test(next.vatNumber)) fieldErrors.vatNumber = "الرقم الضريبي 15 رقمًا يبدأ وينتهي بالرقم 3.";
   if (next.crNumber && !/^\d{10}$/.test(next.crNumber)) fieldErrors.crNumber = "رقم السجل التجاري 10 أرقام.";
   if (next.unifiedNumber && !/^7\d{9}$/.test(next.unifiedNumber)) fieldErrors.unifiedNumber = "الرقم الوطني الموحد 10 أرقام يبدأ بالرقم 7.";
+  if (next.vatRegistration && !["registered", "not_registered"].includes(next.vatRegistration)) fieldErrors.vatRegistration = "اختر حالة التسجيل.";
+  if (next.vatRegistration === "registered" && !next.vatNumber) fieldErrors.vatNumber = "أدخل الرقم الضريبي للشركة المسجلة.";
+  if (next.vatRegistration === "not_registered" && next.vatNumber) fieldErrors.vatNumber = "الشركة غير مسجلة: احذف الرقم الضريبي أو غيّر حالة التسجيل.";
+  next.iban = next.iban.replace(/\s+/g, "").toUpperCase();
+  if (next.iban && !/^SA\d{22}$/.test(next.iban)) fieldErrors.iban = "الآيبان السعودي يبدأ بـ SA ويتبعه 22 رقمًا.";
   if (Object.keys(fieldErrors).length) return { error: "راجع الحقول المظللة.", fieldErrors };
   return staffAction("admin.settings", async ({ auth, tx, ip, userAgent }) => {
     const before = await readValue<Record<string, string>>(tx, "company.profile", {});

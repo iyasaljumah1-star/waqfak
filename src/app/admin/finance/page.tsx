@@ -21,6 +21,7 @@ type Tab = (typeof TABS)[number]["key"];
 const STATUS_FILTERS = [
   { value: "", label: "كل الحالات" },
   { value: "issued", label: "مستحقة" },
+  { value: "partially_paid", label: "مدفوعة جزئيًا" },
   { value: "overdue", label: "متأخرة" },
   { value: "paid", label: "مدفوعة" },
   { value: "void", label: "ملغاة" },

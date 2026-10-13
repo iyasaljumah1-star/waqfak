@@ -12,8 +12,10 @@ export const metadata: Metadata = { title: "الفواتير والمدفوعا�
 export default async function BillingPage() {
   const auth = await requireAuth({ next: "/app/billing" });
   const { invoices, payments, numbers } = await myInvoices(auth);
-  const due = invoices.filter((i) => i.status === "issued" || i.status === "overdue");
-  const dueTotal = due.reduce((s, i) => s + Number(i.inv.total), 0);
+  const payable = (i: (typeof invoices)[number]) => ["tax_invoice", "non_tax_invoice"].includes(i.inv.kind);
+  const due = invoices.filter((i) => payable(i) && ["issued", "overdue", "partially_paid"].includes(i.status));
+  const paidOn = (id: string) => payments.filter((p) => p.invoiceId === id && p.status === "paid").reduce((s, p) => s + Number(p.amount), 0);
+  const dueTotal = due.reduce((s, i) => s + Number(i.inv.total) - paidOn(i.inv.id), 0);
   const paidTotal = invoices.filter((i) => i.status === "paid").reduce((s, i) => s + Number(i.inv.total), 0);
 
   return (
@@ -36,7 +38,7 @@ export default async function BillingPage() {
               { key: "t", label: "الإجمالي", render: (r) => <span className="tabular">{fmtSAR(r.inv.total)}</span> },
               { key: "s", label: "الحالة", render: (r) => <Badge tone={INVOICE_STATUS_TONE[r.status] ?? "neutral"} icon={false}>{INVOICE_STATUS_LABEL[r.status] ?? r.status}</Badge> },
               { key: "d", label: "الاستحقاق", render: (r) => <span className="text-sm text-muted">{fmtDate(r.inv.dueOn ?? r.inv.issuedOn)}</span>, hideOnMobile: true },
-              { key: "a", label: "", render: (r) => (r.status === "issued" || r.status === "overdue" ? <ButtonLink href={`/app/billing/${r.inv.id}`} size="sm">ادفع</ButtonLink> : null) },
+              { key: "a", label: "", render: (r) => (payable(r) && ["issued", "overdue", "partially_paid"].includes(r.status) ? <ButtonLink href={`/app/billing/${r.inv.id}`} size="sm">ادفع</ButtonLink> : null) },
             ]}
           />
         </div>

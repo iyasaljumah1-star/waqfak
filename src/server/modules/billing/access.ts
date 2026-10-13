@@ -38,18 +38,18 @@ export async function loadInvoice(tx: Tx, id: string) {
   return inv ?? null;
 }
 
-export const INVOICE_STATUS_LABEL: Record<string, string> = { issued: "مستحقة", paid: "مدفوعة", void: "ملغاة", overdue: "متأخرة", credit_note: "إشعار دائن" };
-export const INVOICE_STATUS_TONE: Record<string, "ok" | "warn" | "critical" | "neutral" | "info"> = { issued: "warn", paid: "ok", void: "neutral", overdue: "critical", credit_note: "info" };
+export const INVOICE_STATUS_LABEL: Record<string, string> = { issued: "مستحقة", partially_paid: "مدفوعة جزئيًا", paid: "مدفوعة", void: "ملغاة", overdue: "متأخرة", credit_note: "إشعار دائن" };
+export const INVOICE_STATUS_TONE: Record<string, "ok" | "warn" | "critical" | "neutral" | "info"> = { issued: "warn", partially_paid: "info", paid: "ok", void: "neutral", overdue: "critical", credit_note: "info" };
 export const PAYMENT_STATUS_LABEL: Record<string, string> = { initiated: "بدأت", paid: "ناجحة", failed: "مرفوضة", refunded: "مستردة" };
 /** ZATCA e-invoicing status. Flag einvoice.zatca off → "pending" (not sent; integration not live). */
 export const EINVOICE_STATUS_LABEL: Record<string, string> = {
   pending: "بانتظار الربط مع منصة فاتورة", pending_integration: "بانتظار الربط مع منصة فاتورة", queued: "في قائمة الإرسال إلى منصة فاتورة",
-  reported: "مُبلّغ عنها", cleared: "معتمدة", rejected: "مرفوضة من المنصة",
+  reported: "مُبلّغ عنها", cleared: "معتمدة", rejected: "مرفوضة من المنصة", not_applicable: "لا تنطبق (ليست فاتورة ضريبية)",
 };
-export const PROVIDER_LABEL: Record<string, string> = { sandbox: "بيئة تجريبية", bank_transfer: "تحويل بنكي", moyasar: "ميسر", hyperpay: "هايبر باي" };
+export const PROVIDER_LABEL: Record<string, string> = { sandbox: "بيئة تجريبية", bank_transfer: "تحويل بنكي", cash: "نقدًا", cheque: "شيك", moyasar: "ميسر", hyperpay: "هايبر باي" };
 
 /** Display status: issued + past due → overdue. */
 export function effectiveStatus(inv: Pick<InvoiceRow, "status" | "dueOn">, today: string) {
-  if (inv.status === "issued" && inv.dueOn && inv.dueOn < today) return "overdue";
+  if ((inv.status === "issued" || inv.status === "partially_paid") && inv.dueOn && inv.dueOn < today) return "overdue";
   return inv.status;
 }

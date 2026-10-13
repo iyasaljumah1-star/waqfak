@@ -4,6 +4,8 @@ export type NumericSetting = { key: string; label: string; hint: string; unit: s
 export const GENERAL_SETTINGS: NumericSetting[] = [
   { key: "requests.default_vat_rate", label: "نسبة ضريبة القيمة المضافة", hint: "تُطبق على الفواتير وعروض الأسعار الجديدة فقط؛ لا تتغير الفواتير الصادرة.", unit: "%", min: 0, max: 100, step: 0.01, fallback: 15 },
   { key: "requests.default_sla_days", label: "المهلة الافتراضية للخدمة", hint: "تُستخدم للخدمات التي لم تُحدد لها مهلة خاصة.", unit: "يوم عمل", min: 1, max: 120, fallback: 10 },
+  { key: "quotes.validity_days", label: "مدة صلاحية عرض السعر", hint: "القيمة المقترحة عند إعداد عرض جديد؛ يمكن تعديلها في كل عرض. بعد انقضائها لا يُقبل العرض.", unit: "يوم", min: 1, max: 180, fallback: 30 },
+  { key: "invoices.due_days", label: "مهلة سداد الفاتورة", hint: "من تاريخ إصدار الفاتورة.", unit: "يوم", min: 0, max: 120, fallback: 14 },
   { key: "complaints.sla_days", label: "مهلة الرد على شكاوى المستفيدين", hint: "تحسب من تاريخ استلام الشكوى.", unit: "يوم", min: 1, max: 60, fallback: 10 },
   { key: "documents.max_upload_mb", label: "الحد الأقصى لحجم الملف المرفوع", hint: "يطبق على كل رفع جديد.", unit: "ميغابايت", min: 1, max: 200, fallback: 50 },
   { key: "assessment.reassess_months", label: "التذكير بإعادة التقييم بعد", hint: "عدد الأشهر بعد آخر تقييم منشور.", unit: "شهر", min: 1, max: 24, fallback: 6 },
@@ -21,14 +23,19 @@ export const RETENTION_FIELDS: { key: keyof RetentionPolicy; label: string; hint
   { key: "deletedAccountGraceDays", label: "مهلة التراجع عن حذف الحساب", hint: "المدة بين طلب الحذف وتنفيذه، يستطيع المستخدم خلالها التراجع.", unit: "يوم", min: 7, max: 90 },
 ];
 
-export const COMPANY_FIELDS: { key: string; label: string; dir?: "ltr"; type?: string }[] = [
+export const COMPANY_FIELDS: { key: string; label: string; dir?: "ltr"; type?: string; hint?: string; options?: [string, string][] }[] = [
   { key: "nameAr", label: "الاسم التجاري بالعربية" },
   { key: "nameEn", label: "الاسم بالإنجليزية", dir: "ltr" },
   { key: "legalForm", label: "الشكل النظامي" },
   { key: "crNumber", label: "رقم السجل التجاري", dir: "ltr" },
   { key: "unifiedNumber", label: "الرقم الوطني الموحد", dir: "ltr" },
+  { key: "vatRegistration", label: "التسجيل في ضريبة القيمة المضافة", hint: "تصدر الفاتورة الضريبية فقط إذا كانت الشركة مسجلة ورقمها الضريبي مدخلًا. وفي غير ذلك تصدر فاتورة أولية غير ضريبية.", options: [["", "لم يُحدد بعد"], ["registered", "مسجلة"], ["not_registered", "غير مسجلة (لا تُحصّل ضريبة)"]] },
   { key: "vatNumber", label: "الرقم الضريبي", dir: "ltr" },
   { key: "nationalAddress", label: "العنوان الوطني" },
+  { key: "signatoryName", label: "اسم المفوّض بالتوقيع عن الشركة", hint: "يظهر في العقود. يوقّع إلكترونيًا موظف يملك صلاحية اعتماد العقود." },
+  { key: "signatoryTitle", label: "صفة المفوّض بالتوقيع", hint: "مثل: المدير العام، بموجب عقد التأسيس." },
+  { key: "bankName", label: "البنك (للتحويل)" },
+  { key: "iban", label: "رقم الآيبان لحساب الشركة", dir: "ltr" },
   { key: "phone", label: "الهاتف", dir: "ltr", type: "tel" },
   { key: "email", label: "البريد الإلكتروني", dir: "ltr", type: "email" },
   { key: "website", label: "الموقع الإلكتروني", dir: "ltr" },

@@ -122,6 +122,18 @@ export type GuardInput = {
   hasContract: boolean;
   quoteAmount: number | null;
   pricingModel: string;
+  /** Intake verified by staff / request accepted for service (undefined = not tracked, legacy callers). */
+  verified?: boolean;
+  accepted?: boolean;
+  /** Required deficiency items not accepted or cancelled. */
+  blockingItems?: number;
+  /** The request has versioned quotes, and one of them is accepted. */
+  hasQuotes?: boolean;
+  quoteAccepted?: boolean;
+  /** New-style contract with parties: all required parties signed. */
+  contractExecuted?: boolean;
+  /** Installments marked "before start" that are not fully paid. */
+  prestartUnpaid?: number;
 };
 
 /** Returns an Arabic error when a guard blocks the transition, otherwise null. */
@@ -129,10 +141,16 @@ export function guardTransition(g: GuardInput): string | null {
   const starting = (g.to === "quote" || g.to === "in_progress") && (g.from === "triage" || g.from === "awaiting_client" || g.from === "awaiting_contract");
   if (starting && g.conflictCheck === "blocked")
     return "تعارض في الاستقلال: يبدأ العمل بعد اعتماد مدير التشغيل استثناءً مسببًا.";
+  if ((g.to === "quote" || (g.from === "triage" && g.to === "in_progress")) && g.verified === false) return "تحقق من بيانات الطلب ومستنداته أولًا (لا نواقص مطلوبة مفتوحة).";
+  if ((g.to === "quote" || (g.from === "triage" && g.to === "in_progress")) && g.accepted === false) return "اقبل الطلب للخدمة أولًا.";
   if (g.to === "quote" && !(g.quoteAmount && g.quoteAmount > 0)) return "حدّد مبلغ عرض السعر أولًا.";
+  if (g.from === "quote" && g.to === "awaiting_contract" && g.hasQuotes && !g.quoteAccepted) return "يُقبل العرض من لوحة «عرض السعر» حتى يُسجَّل قبول النسخة المعروضة.";
   if (g.from === "triage" && g.to === "in_progress" && g.pricingModel !== "free" && g.hasContract && !g.contractSignedByClient)
     return "لم يوقّع العميل العقد بعد.";
   if (g.from === "awaiting_contract" && g.to === "in_progress" && !g.contractSignedByClient) return "يبدأ التنفيذ بعد توقيع العميل على العقد.";
+  if (g.from === "awaiting_contract" && g.to === "in_progress" && g.contractExecuted === false) return "يبدأ التنفيذ بعد اكتمال توقيع جميع أطراف العقد.";
+  if (g.from === "awaiting_contract" && g.to === "in_progress" && (g.prestartUnpaid ?? 0) > 0) return "لم تُسدد الدفعة التي يشترط العرض سدادها قبل البدء.";
+  if ((g.to === "completed" || g.to === "closed") && (g.blockingItems ?? 0) > 0) return `لا يكتمل الطلب وفيه ${g.blockingItems} من النواقص أو الاستفسارات المطلوبة غير المغلقة.`;
   if (g.to === "quality_review" && g.submittedDeliverables === 0) return "ارفع مخرجًا واحدًا على الأقل قبل الإرسال لمراجعة الجودة.";
   if (g.from === "quality_review" && g.to === "awaiting_client_approval") {
     if (g.deliverers.includes(g.actorUserId)) return "مبدأ العينين الأربع: يراجع جودةَ العمل زميلٌ آخر غير من أعدّه.";

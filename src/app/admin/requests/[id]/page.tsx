@@ -1,25 +1,34 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { FileCheck2, FolderOpen } from "lucide-react";
+import { CheckCircle2, FileCheck2, FileDown, FolderOpen } from "lucide-react";
 import { Alert, Badge, ButtonLink, DefinitionList, PageHeader, Panel } from "@/components/ui";
-import { Checkbox, Field, Input, Select, Textarea } from "@/components/ui/form";
+import { Field, Input, Select, Textarea } from "@/components/ui/form";
 import { DocumentList } from "@/components/documents/list";
 import { DocumentUploader } from "@/components/documents/uploader";
-import { CONFLICT_LABEL, ConflictBadge, ContractPaper, CONTACT_LABEL, EventList, NotesThread, PRIORITY_LABEL, SlaBadge, StageTimeline, StatusBadge } from "@/components/requests/bits";
-import { ActionForm, NoteForm, TransitionPanel } from "@/components/requests/forms";
+import {
+  CONFLICT_LABEL, ConflictBadge, ContractPaper, CONTACT_LABEL, EventList, IntakeSummaryView, NextActionBanner, NotesThread, PartiesList, PRIORITY_LABEL,
+  QuoteDocument, RequestStates, SlaBadge, StageTimeline, StatusBadge,
+} from "@/components/requests/bits";
+import { ActionForm, SignContractForm, TransitionPanel } from "@/components/requests/forms";
+import { ContractPrepareForm, NoteFormWithAttachment, QuoteEditor, RaiseItemForm, ReviewItemForms, type QuoteSeed } from "@/components/requests/commerce";
 import { fmtBoth, fmtDate, fmtDateTime, fmtSAR, WAQFAK_ROLE_LABEL } from "@/lib/utils";
+import { addDays as addDaysISO } from "@/server/engines/dates";
 import { staffPhone } from "@/server/modules/admin/guard";
 import { requireStaff } from "@/server/authz/context";
-import {
-  addDeliverable, advanceStageAction, assignRequest, overrideConflict, postStaffNote, setQuote, staffTransition,
-} from "@/server/modules/requests/actions";
+import { addDeliverable, advanceStageAction, assignRequest, overrideConflict, postStaffNote, staffTransition } from "@/server/modules/requests/actions";
+import { acceptRequest, raiseItem, reviewItem, verifyIntake } from "@/server/modules/requests/items-actions";
 import { assignableStaff, requestDetail } from "@/server/modules/requests/queries";
 import { HOLD_PARTY_LABEL } from "@/server/modules/requests/workflow";
-import { countersignContract, generateContract } from "@/server/modules/contracts/actions";
+import { ITEM_EVENT_LABEL, ITEM_KIND_LABEL, ITEM_STATUS_TONE, itemStatusLabel } from "@/server/modules/requests/items-pure";
+import { approveContract, countersignContract, prepareContract, requestSignOtp, sendContract, signContract, voidContract } from "@/server/modules/contracts/actions";
+import { approveQuote, saveQuote, sendQuote, withdrawQuote } from "@/server/modules/commerce/quote-actions";
 import { issueInvoice } from "@/server/modules/billing/actions";
-import { computeInvoice } from "@/server/modules/billing/calc";
+import { CONTRACT_STATUS_LABEL, INVOICE_KIND_LABEL, QUOTE_STATUS_LABEL, QUOTE_STATUS_TONE, quoteDisplayStatus, splitInstallments, TERM_DUE_LABEL } from "@/server/modules/commerce/pure";
 import { INVOICE_STATUS_LABEL, INVOICE_STATUS_TONE } from "@/server/modules/billing/access";
+import { DOC_TYPE_OPTIONS } from "@/server/modules/documents/labels";
+import { visibleSteps, visibleFields } from "@/server/modules/requests/intake/engine";
+import type { RequestItemStatus } from "@/server/db/schema/commerce";
 
 export const metadata: Metadata = { title: "طلب — مساحة العمل" };
 
@@ -29,19 +38,73 @@ export default async function StaffRequest({ params }: { params: Promise<{ id: s
   if (!auth.perms.has("staff.requests.assigned") && !auth.perms.has("admin.requests.all")) notFound();
   const d = await requestDetail(auth, id, "staff");
   if (!d) notFound();
-  const { rc, stages, events, notes, deliverables, docs, contract, invoices, names } = d;
+  const { rc, stages, events, notes, deliverables, docs, names, today } = d;
   const r = rc.req;
   const ops = rc.isOps;
+  const worker = rc.isAssignee || ops;
   const staff = ops ? await assignableStaff(auth) : [];
   const terminal = ["closed", "cancelled", "rejected"].includes(r.status);
-  const k = contract.contract;
-  const quote = r.quoteAmount ? computeInvoice(Number(r.quoteAmount), d.vatRate) : null;
-  const activeInvoice = invoices.find((i) => ["issued", "paid"].includes(i.status));
-  const canInvoice = !activeInvoice && !["draft", "submitted", "cancelled", "rejected"].includes(r.status) && (k ? contract.clientSigned : !!(r.agreedPrice ?? r.quoteAmount));
   const iDelivered = rc.deliverers.includes(auth.user.id);
   const isOpinion = rc.workflowCode === "opinion";
+  const paid = rc.service.pricingModel !== "free";
   const requesterName = names.get(r.requesterUserId)?.name ?? "—";
   const assigneeName = r.assignedToUserId ? names.get(r.assignedToUserId)?.name : null;
+  const docOpts = docs.map((x) => ({ id: x.id, title: x.title }));
+  const docTitle = new Map(docs.map((x) => [x.id, x.title]));
+  const canApproveQuote = auth.perms.has("requests.quotes.approve");
+  const canApproveContract = auth.perms.has("admin.contracts.approve");
+
+  // Quotes
+  const initial = d.quotes.filter((q) => q.kind === "initial");
+  const amendments = d.quotes.filter((q) => q.kind === "amendment");
+  const acceptedInitial = initial.find((q) => q.status === "accepted");
+  const openDraft = (kind: string) => d.quotes.find((q) => q.kind === kind && q.status === "draft");
+  const canNewInitial = paid && worker && !acceptedInitial && (["triage", "awaiting_client", "quote"].includes(r.status) || (r.status === "awaiting_contract" && !initial.length && !d.contract.stage));
+  const canNewAmendment = paid && worker && !!acceptedInitial && d.contract.executed && ["awaiting_contract", "in_progress", "quality_review", "awaiting_client_approval"].includes(r.status);
+  const seedFrom = (kind: "initial" | "amendment"): QuoteSeed => {
+    const draft = openDraft(kind);
+    const base = draft ?? d.quotes.find((q) => q.kind === kind);
+    const validUntil = draft?.validUntil && draft.validUntil >= today ? draft.validUntil : addDaysISO(today, d.validityDays);
+    if (base) {
+      return {
+        quoteId: draft?.id, kind, scope: base.scope, deliverables: base.deliverables ?? "", exclusions: base.exclusions ?? "", assumptions: base.assumptions ?? "",
+        clientObligations: base.clientObligations ?? "", durationDays: String(base.durationDays ?? ""), discount: String(Number(base.discount)), validUntil,
+        lines: base.lines.map((l) => ({ description: l.description, qty: String(l.qty), unit: String(l.unit) })),
+        terms: base.paymentTerms.map((t) => ({ label: t.label, percent: String(t.percent), due: t.due, beforeStart: t.beforeStart })),
+      };
+    }
+    const days = rc.service.slaDays ?? rc.stagesDef.reduce((s, x) => s + x.slaDays, 0);
+    return {
+      kind, scope: kind === "amendment" ? "" : rc.service.summary, deliverables: kind === "amendment" ? "" : rc.service.outputs ?? "", exclusions: "", assumptions: "", clientObligations: "",
+      durationDays: days ? String(days) : "", discount: "0", validUntil,
+      lines: [{ description: kind === "amendment" ? "" : `${rc.service.nameAr} (${rc.service.code})`, qty: "1", unit: rc.service.basePrice ? String(Number(rc.service.basePrice)) : "" }],
+      terms: [],
+    };
+  };
+
+  // Contracts
+  const contractsByQuote = (qid: string) => d.contracts.filter((k) => k.quoteId === qid);
+  const liveContract = (qid: string) => contractsByQuote(qid).find((k) => k.status !== "void");
+  const needsContract = d.quotes.filter((q) => q.status === "accepted" && !liveContract(q.id) && (q.kind === "initial" ? r.status === "awaiting_contract" : d.contract.executed));
+  const ans = d.answers;
+  const partySeed = (() => {
+    const cap = String(ans.capacity ?? "");
+    const base = { idLabel: "", idNumber: "", signerUserId: r.requesterUserId, authorityRef: "", authorityDocumentId: "" };
+    if (cap === "agent") return [{ ...base, name: String(ans.principalName ?? ""), capacity: "عميل", authorityType: "agent", authorityRef: String(ans.poaNumber ?? ""), authorityDocumentId: d.intakeDocs.poa?.[0] ?? "" }];
+    if (cap === "entity_rep") return [{ ...base, name: String(ans.entityName ?? ""), capacity: "جهة اعتبارية", idLabel: "الرقم الوطني الموحد", idNumber: String(ans.entityNumber ?? ""), authorityType: "legal_rep", authorityRef: String(ans.entityPosition ?? ""), authorityDocumentId: d.intakeDocs.authorization?.[0] ?? "" }];
+    if (cap === "nazir" && rc.waqf) return [{ ...base, name: rc.waqf.name, capacity: "وقف", authorityType: "nazir" }];
+    return [{ ...base, name: String(ans.contactName ?? requesterName), capacity: cap === "waqif" ? "واقف" : "عميل", authorityType: "self" }];
+  })();
+
+  // Billing
+  const acceptedQuotes = d.quotes.filter((q) => q.status === "accepted");
+  const invOf = (qid: string, key: string) => d.invoices.filter((i) => i.quoteId === qid && i.installmentKey === key && i.status !== "void" && i.kind !== "credit_note");
+  const legacyInvoice = !d.quotes.length && !d.invoices.some((i) => ["issued", "partially_paid", "paid"].includes(i.status) && i.kind !== "proforma") && !["draft", "submitted", "cancelled", "rejected"].includes(r.status) && (d.contract.contract ? d.contract.clientSigned : !!(r.agreedPrice ?? r.quoteAmount));
+
+  // Item form helpers
+  const fieldOptions = visibleSteps(d.form, ans).flatMap((st) => visibleFields(st, ans).map((f) => ({ value: f.key, label: `${st.title}: ${f.label}` })));
+  const itemEvents = (itemId: string) => d.itemEvents.filter((e) => e.itemId === itemId);
+  const staffTransitions = d.transitions.filter((t) => t.to !== "quote" && !(r.status === "quote" && t.to === "awaiting_contract"));
 
   return (
     <div className="space-y-6">
@@ -77,12 +140,19 @@ export default async function StaffRequest({ params }: { params: Promise<{ id: s
       {r.status === "quality_review" && iDelivered ? (
         <Alert tone="info" title="مبدأ العينين الأربع">أنت من أعدّ المخرجات، لذلك تُراجع الجودة من زميل آخر يحمل صلاحية مراجعة الجودة.</Alert>
       ) : null}
+      {d.consistency.length ? (
+        <Alert tone={d.consistency.some((x) => x.level === "error") ? "critical" : "fine"} title="فحص الاتساق بين العرض والعقد والفواتير والمدفوعات">
+          <ul className="list-disc ps-5">{d.consistency.map((x) => <li key={x.text}>{x.text}</li>)}</ul>
+        </Alert>
+      ) : null}
+
+      <NextActionBanner next={d.next} viewer="staff" />
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
         <div className="min-w-0 space-y-4">
-          <Panel title="سير العمل" description="الإجراءات المتاحة لك حسب الحالة ودورك.">
-            <TransitionPanel action={staffTransition} id={r.id} transitions={d.transitions} holdParties={HOLD_PARTY_LABEL} />
-            {r.status === "in_progress" && (rc.isAssignee || ops) ? (
+          <Panel title="سير العمل" description="الإجراءات المتاحة لك حسب الحالة ودورك. يُرسل عرض السعر ويُقبل من لوحته.">
+            <TransitionPanel action={staffTransition} id={r.id} transitions={staffTransitions} holdParties={HOLD_PARTY_LABEL} />
+            {r.status === "in_progress" && worker ? (
               <div className="mt-3 border-t border-line pt-3">
                 <ActionForm action={advanceStageAction} hidden={{ id: r.id }} submit="أنجزت المرحلة الحالية" variant="secondary" size="sm" />
               </div>
@@ -99,52 +169,220 @@ export default async function StaffRequest({ params }: { params: Promise<{ id: s
             </Panel>
           ) : null}
 
-          {["triage", "quote", "awaiting_client"].includes(r.status) ? (
-            <Panel title="عرض السعر" description={quote ? `الحالي: ${fmtSAR(quote.net)} + ضريبة ${fmtSAR(quote.vat)} = ${fmtSAR(quote.total)}` : "حدّد المبلغ قبل الضريبة."}>
-              <ActionForm action={setQuote} hidden={{ id: r.id }} submit="احفظ العرض">
-                <Field label="المبلغ قبل الضريبة (ر.س)" name="amount" required>
-                  <Input name="amount" type="number" min="1" step="0.01" inputMode="decimal" dir="ltr" required defaultValue={r.quoteAmount ?? ""} className="tabular max-w-60 text-start" />
-                </Field>
-                {r.status === "triage" ? <Checkbox name="send" label="أرسل العرض للعميل الآن" defaultChecked /> : null}
-              </ActionForm>
+          <Panel id="intake" title="بيانات الطلب كما قدّمها العميل" description={r.intakeFormVersion ? `نموذج الخدمة — الإصدار ${r.intakeFormVersion}` : "طلب سابق لنماذج الخدمات: التفاصيل نص حر."}>
+            {d.intakeSummary ? (
+              <IntakeSummaryView sections={d.intakeSummary} docTitles={docTitle}
+                docs={d.form.docs.filter((s) => d.intakeDocs[s.key]?.length || s.required).map((s) => ({ label: s.label, ids: d.intakeDocs[s.key] ?? [] }))} />
+            ) : <p className="whitespace-pre-line text-[15px]">{r.details}</p>}
+            {worker && ["triage", "awaiting_client"].includes(r.status) ? (
+              <div className="mt-4 flex flex-wrap gap-2 border-t border-line pt-4">
+                {!r.intakeVerifiedAt ? <ActionForm action={verifyIntake} hidden={{ id: r.id }} submit="تحققت من البيانات والمستندات" size="sm" inline /> : null}
+                {r.intakeVerifiedAt && !r.acceptedAt && r.status === "triage" ? <ActionForm action={acceptRequest} hidden={{ id: r.id }} submit="اقبل الطلب للخدمة" size="sm" variant="seal" inline /> : null}
+              </div>
+            ) : null}
+          </Panel>
+
+          <Panel id="items" title="النواقص والاستفسارات" description={`${d.counts.clientOpen} بانتظار العميل · ${d.counts.awaitingReview} بانتظار مراجعتك · ${d.counts.blocking} مطلوب غير مغلق`}>
+            {d.items.length ? (
+              <ol className="space-y-3">
+                {d.items.map((it) => (
+                  <li key={it.id} className={it.visibility === "internal" ? "rounded-lg border border-dashed border-seal bg-seal-soft/30 p-3" : "rounded-lg border border-line p-3"} data-testid={`item-${it.seq}`}>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="font-medium">{it.seq}. {it.title}</p>
+                      <span className="flex flex-wrap gap-1">
+                        <Badge tone="neutral" icon={false}>{ITEM_KIND_LABEL[it.kind]}</Badge>
+                        {it.visibility === "internal" ? <Badge tone="seal" icon={false}>داخلي</Badge> : null}
+                        {it.required ? <Badge tone="neutral" icon={false}>مطلوب</Badge> : null}
+                        <Badge tone={ITEM_STATUS_TONE[it.status as RequestItemStatus]} icon={false}>{itemStatusLabel(it)}</Badge>
+                      </span>
+                    </div>
+                    {it.body ? <p className="mt-1 whitespace-pre-line text-[15px]">{it.body}</p> : null}
+                    {it.fieldKey ? <p className="text-[13px] text-muted">الحقل: {fieldOptions.find((f) => f.value === it.fieldKey)?.label ?? it.fieldKey}</p> : null}
+                    {it.dueOn ? <p className="text-[13px] text-muted">مطلوب بحلول {fmtDate(it.dueOn)}</p> : null}
+                    {it.responseText || it.responseDocumentId ? (
+                      <div className="mt-2 rounded-md bg-surface-2 p-2 text-[15px]">
+                        <p className="text-[13px] text-muted">رد العميل {it.answeredAt ? fmtDateTime(it.answeredAt) : ""}</p>
+                        {it.responseText ? <p className="whitespace-pre-line">{it.responseText}</p> : null}
+                        {it.responseDocumentId ? <a href={`/api/files/${it.responseDocumentId}?disposition=inline`} target="_blank" rel="noopener" className="text-ink underline">{docTitle.get(it.responseDocumentId) ?? "المستند"}</a> : null}
+                      </div>
+                    ) : null}
+                    <details className="mt-2 text-[13px] text-muted">
+                      <summary className="cursor-pointer">السجل ({itemEvents(it.id).length})</summary>
+                      <ul className="mt-1 space-y-0.5">{itemEvents(it.id).map((e) => <li key={e.id}>{fmtDateTime(e.at)} — {ITEM_EVENT_LABEL[e.action] ?? e.action} — {names.get(e.actorUserId ?? "")?.name ?? ""}{e.note ? `: ${e.note}` : ""}</li>)}</ul>
+                    </details>
+                    {worker && !terminal ? <ReviewItemForms action={reviewItem} itemId={it.id} status={it.status} internal={it.visibility === "internal"} /> : null}
+                  </li>
+                ))}
+              </ol>
+            ) : <p className="text-sm text-muted">لا نواقص أو استفسارات مسجلة.</p>}
+            {worker && !terminal && r.status !== "draft" ? (
+              <details className="mt-4 border-t border-line pt-4">
+                <summary className="cursor-pointer font-medium text-ink">سجّل بندًا جديدًا</summary>
+                <div className="mt-3"><RaiseItemForm action={raiseItem} id={r.id} fields={fieldOptions} docTypes={DOC_TYPE_OPTIONS.map((o) => ({ value: o.value, label: o.label }))} /></div>
+              </details>
+            ) : null}
+          </Panel>
+
+          {paid ? (
+            <Panel id="quote" title="نطاق العمل وعرض السعر" description={d.vatRate === null ? "نسبة الضريبة غير مضبوطة في الإعدادات." : `الضريبة المطبقة على العروض الجديدة ${d.vatRate}٪ (من الإعدادات).`}>
+              {d.quotes.length ? (
+                <div className="space-y-4">
+                  {[...initial, ...amendments].map((q, i) => {
+                    const st = quoteDisplayStatus(q, today);
+                    const latest = i === 0 || (q.kind === "amendment" && amendments[0]?.id === q.id);
+                    return (
+                      <details key={q.id} open={latest || ["draft", "approved", "sent", "accepted"].includes(q.status)} className="rounded-lg border border-line p-3" data-testid={`quote-${q.number}-v${q.version}`}>
+                        <summary className="flex cursor-pointer flex-wrap items-center gap-2">
+                          <span className="font-medium">{q.kind === "amendment" ? "ملحق تعديل" : "عرض"} <span dir="ltr" className="tabular">{q.number}</span> — نسخة {q.version}</span>
+                          <Badge tone={QUOTE_STATUS_TONE[st]} icon={false}>{QUOTE_STATUS_LABEL[st]}</Badge>
+                          <span className="tabular text-[14px] text-muted">{fmtSAR(q.total)}</span>
+                        </summary>
+                        <div className="mt-3"><QuoteDocument q={q} today={today} names={names} /></div>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {q.status === "draft" && canApproveQuote && q.preparedBy !== auth.user.id ? <ActionForm action={approveQuote} hidden={{ quoteId: q.id }} submit="اعتمد العرض" size="sm" inline /> : null}
+                          {q.status === "draft" && q.preparedBy === auth.user.id ? <p className="text-[13px] text-muted">يعتمده زميل يملك صلاحية اعتماد العروض.</p> : null}
+                          {q.status === "approved" && worker ? <ActionForm action={sendQuote} hidden={{ quoteId: q.id }} submit="أرسل العرض للعميل" size="sm" variant="seal" inline /> : null}
+                          <a href={`/app/requests/${r.id}/quote/${q.id}`} className="inline-flex h-8 items-center gap-1 rounded-md px-2 text-sm text-ink hover:bg-ink-soft"><FileDown aria-hidden className="size-4" />PDF</a>
+                        </div>
+                        {["draft", "approved", "sent"].includes(q.status) && worker ? (
+                          <details className="mt-2">
+                            <summary className="cursor-pointer text-[14px] text-critical">اسحب العرض</summary>
+                            <div className="mt-2"><ActionForm action={withdrawQuote} hidden={{ quoteId: q.id }} submit="اسحب العرض" variant="danger" size="sm">
+                              <Field label="السبب" name={`withdraw-${q.id}`} required><Textarea name="note" id={`withdraw-${q.id}`} required minLength={5} className="min-h-16" /></Field>
+                            </ActionForm></div>
+                          </details>
+                        ) : null}
+                      </details>
+                    );
+                  })}
+                </div>
+              ) : <p className="text-sm text-muted">لم يُعدّ عرض بعد.{!r.acceptedAt ? " يُرسل العرض بعد التحقق من البيانات وقبول الطلب." : ""}</p>}
+              {canNewInitial && d.vatRate !== null ? (
+                <details className="mt-4 border-t border-line pt-4" open={!d.quotes.length || !!openDraft("initial")}>
+                  <summary className="cursor-pointer font-medium text-ink">{openDraft("initial") ? "عدّل مسودة العرض" : d.quotes.length ? "أعدّ نسخة جديدة من العرض" : "أعدّ نطاق العمل وعرض السعر"}</summary>
+                  <div className="mt-3"><QuoteEditor action={saveQuote} requestId={r.id} seed={seedFrom("initial")} vatRate={d.vatRate} today={today} title={openDraft("initial") ? "مسودة العرض" : "عرض جديد"} /></div>
+                </details>
+              ) : null}
+              {canNewAmendment && d.vatRate !== null ? (
+                <details className="mt-4 border-t border-line pt-4">
+                  <summary className="cursor-pointer font-medium text-ink">{openDraft("amendment") ? "عدّل مسودة ملحق التعديل" : "أعدّ ملحق تعديل (تغيير في النطاق أو السعر)"}</summary>
+                  <div className="mt-3"><QuoteEditor action={saveQuote} requestId={r.id} seed={seedFrom("amendment")} vatRate={d.vatRate} today={today} title="ملحق تعديل" /></div>
+                </details>
+              ) : null}
             </Panel>
           ) : null}
 
-          {r.status === "awaiting_contract" || k ? (
-            <Panel id="contract" title={k ? `العقد ${k.number}` : "العقد"}
-              actions={k ? <Badge tone={contract.clientSigned ? "ok" : "warn"} icon={false}>{contract.clientSigned ? (contract.companySigned ? "موقّع من الطرفين" : "وقّعه العميل") : "بانتظار توقيع العميل"}</Badge> : null}>
-              {k ? (
-                <details>
-                  <summary className="mb-3 cursor-pointer text-[15px] text-ink">اعرض نص العقد</summary>
-                  <ContractPaper body={k.body} number={k.number} hash={k.contentHash} />
-                </details>
-              ) : <p className="text-[15px] text-muted">قبل العميل عرض السعر. أنشئ العقد من القالب المعتمد ليوقّعه.</p>}
-              {contract.signatures.length ? (
-                <ul className="mt-3 space-y-1 text-[13px] text-muted">
-                  {contract.signatures.map((s) => <li key={s.id}>{s.method === "otp" ? "العميل" : "الشركة"}: {names.get(s.userId)?.name ?? "—"} · {fmtDateTime(s.signedAt)} · IP <span dir="ltr">{s.ip ?? "—"}</span></li>)}
-                </ul>
+          {paid && (d.contracts.length || needsContract.length || d.contract.contract) ? (
+            <Panel id="contract" title="العقد">
+              {d.companyGaps.length ? (
+                <Alert tone="fine" title="بيانات الشركة ناقصة" className="mb-3" action={auth.perms.has("admin.settings") ? <ButtonLink href="/admin/settings" size="sm" variant="secondary">الإعدادات</ButtonLink> : null}>
+                  لا يُعدّ عقد قبل استكمال: {d.companyGaps.join("، ")}.
+                </Alert>
               ) : null}
-              <div className="mt-3 flex flex-wrap gap-2">
-                {r.status === "awaiting_contract" && !contract.clientSigned ? <ActionForm action={generateContract} hidden={{ id: r.id }} submit={k ? "أعد إنشاء العقد" : "أنشئ العقد وأرسله"} variant="secondary" size="sm" inline /> : null}
-                {k && contract.clientSigned && !contract.companySigned && ops ? <ActionForm action={countersignContract} hidden={{ contractId: k.id }} submit="وقّع عن الشركة" variant="seal" size="sm" inline /> : null}
+              <div className="space-y-4">
+                {d.contracts.map((k) => {
+                  const myCompanySign = canApproveContract && k.parties.length && ["sent", "partially_signed"].includes(k.status) && k.signing.pending.some((p) => p.side === "company");
+                  return (
+                    <div key={k.id} className="rounded-lg border border-line p-3" data-testid={`contract-${k.number}`}>
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="font-medium">{k.parentContractId ? "ملحق تعديل" : "العقد"} <span dir="ltr" className="tabular">{k.number}</span> — إصدار {k.version}</p>
+                        <Badge tone={k.status === "signed" ? "ok" : k.status === "void" ? "neutral" : "warn"} icon={false}>{CONTRACT_STATUS_LABEL[k.status] ?? k.status}</Badge>
+                      </div>
+                      {k.voidReason ? <p className="text-[13px] text-muted">سبب الإلغاء: {k.voidReason}</p> : null}
+                      {k.parties.length ? <div className="mt-2"><PartiesList parties={k.parties} signatures={k.signatures} /></div> : (
+                        <ul className="mt-2 space-y-1 text-[13px] text-muted">{k.signatures.map((s) => <li key={s.id}>{s.method === "otp" ? "العميل" : "الشركة"}: {names.get(s.userId)?.name ?? "—"} · {fmtDateTime(s.signedAt)}</li>)}</ul>
+                      )}
+                      <details className="mt-2">
+                        <summary className="cursor-pointer text-[15px] text-ink">نص العقد</summary>
+                        <div className="mt-2"><ContractPaper body={k.body} number={k.number} hash={k.contentHash} /></div>
+                      </details>
+                      <div className="mt-3 flex flex-wrap items-start gap-2">
+                        {k.status === "draft" && canApproveContract && k.createdBy !== auth.user.id && k.updatedBy !== auth.user.id ? <ActionForm action={approveContract} hidden={{ contractId: k.id }} submit="اعتمد العقد" size="sm" inline /> : null}
+                        {k.status === "draft" && (k.createdBy === auth.user.id || k.updatedBy === auth.user.id) ? <p className="text-[13px] text-muted">يعتمده زميل يملك صلاحية اعتماد العقود.</p> : null}
+                        {k.status === "approved" && worker ? <ActionForm action={sendContract} hidden={{ contractId: k.id }} submit="أرسل للتوقيع" size="sm" variant="seal" inline /> : null}
+                        {!k.parties.length && k.signing.clientSigned && !k.signing.companySigned && ops && k.status !== "void" ? <ActionForm action={countersignContract} hidden={{ contractId: k.id }} submit="وقّع عن الشركة" variant="seal" size="sm" inline /> : null}
+                        {["sent", "partially_signed", "signed"].includes(k.status) ? <a href={`/app/requests/${r.id}/contract/${k.id}`} className="inline-flex h-8 items-center gap-1 rounded-md px-2 text-sm text-ink hover:bg-ink-soft"><FileDown aria-hidden className="size-4" />{k.status === "signed" ? "النسخة الموقّعة PDF" : "PDF"}</a> : null}
+                      </div>
+                      {myCompanySign ? (
+                        <div className="mt-3 border-t border-line pt-3"><SignContractForm requestOtp={requestSignOtp} sign={signContract} contractId={k.id} partyKey="company" asLabel={`عن «${k.parties.find((p) => p.side === "company")?.name}» بصفتك مفوّضًا بالتوقيع`} /></div>
+                      ) : null}
+                      {["draft", "approved", "sent", "partially_signed"].includes(k.status) && (k.status === "draft" ? worker : ops) ? (
+                        <details className="mt-2">
+                          <summary className="cursor-pointer text-[14px] text-critical">ألغِ العقد قبل نفاذه</summary>
+                          <div className="mt-2"><ActionForm action={voidContract} hidden={{ contractId: k.id }} submit="ألغِ العقد" variant="danger" size="sm">
+                            <Field label="السبب" name={`void-${k.id}`} required hint="تسقط التوقيعات السابقة، ويُصدر إصدار جديد يوقّعه الجميع."><Textarea name="reason" id={`void-${k.id}`} required minLength={5} className="min-h-16" /></Field>
+                          </ActionForm></div>
+                        </details>
+                      ) : null}
+                      {k.status === "draft" && worker && k.quoteId ? (
+                        <details className="mt-2">
+                          <summary className="cursor-pointer text-[14px] text-ink">عدّل الأطراف وأعد إعداد المسودة</summary>
+                          <div className="mt-2"><ContractPrepareForm action={prepareContract} requestId={r.id} quoteId={k.quoteId} signers={d.signers} docs={docOpts} gaps={d.companyGaps}
+                            seed={k.parties.filter((p) => p.side === "client").map((p) => ({ name: p.name, capacity: p.capacity, idLabel: p.idLabel ?? "", idNumber: p.idNumber ?? "", signerUserId: p.signerUserId ?? r.requesterUserId, authorityType: p.authorityType, authorityRef: p.authorityRef ?? "", authorityDocumentId: p.authorityDocumentId ?? "" }))} /></div>
+                        </details>
+                      ) : null}
+                    </div>
+                  );
+                })}
+                {worker ? needsContract.map((q) => (
+                  <div key={q.id} className="rounded-lg border border-dashed border-line-strong p-3">
+                    <p className="mb-3 font-medium">أعدّ {q.kind === "amendment" ? "ملحق التعديل" : "العقد"} من العرض المقبول <span dir="ltr" className="tabular">{q.number}</span> (نسخة {q.version})</p>
+                    <ContractPrepareForm action={prepareContract} requestId={r.id} quoteId={q.id} signers={d.signers} docs={docOpts} gaps={d.companyGaps} seed={partySeed} />
+                  </div>
+                )) : null}
               </div>
             </Panel>
           ) : null}
 
-          {invoices.length || canInvoice ? (
-            <Panel title="الفوترة">
-              {invoices.length ? (
-                <ul className="mb-3 divide-y divide-line">
-                  {invoices.map((i) => (
-                    <li key={i.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
-                      <Link href={`/app/billing/${i.id}`} className="tabular font-medium text-ink hover:underline" dir="ltr">{i.number}</Link>
+          {paid && (acceptedQuotes.length || d.invoices.length || legacyInvoice) ? (
+            <Panel id="billing" title="الفوترة والمدفوعات">
+              {d.invoicePolicy && d.invoicePolicy.kind !== "tax_invoice" ? (
+                <Alert tone={d.invoicePolicy.kind === "proforma" ? "fine" : "info"} title={d.invoicePolicy.kind === "proforma" ? "تصدر فاتورة أولية فقط" : "الشركة غير مسجلة في ضريبة القيمة المضافة"} className="mb-3">
+                  {d.invoicePolicy.kind === "proforma"
+                    ? `لا تصدر فاتورة ضريبية حتى تكتمل بيانات الشركة: ${d.invoicePolicy.gaps.join("، ")}. الفاتورة الأولية لا تُسدد ولا تُعد فاتورة ضريبية.`
+                    : "تصدر فاتورة بلا ضريبة وفق إعداد الشركة."}
+                </Alert>
+              ) : null}
+              {acceptedQuotes.map((q) => {
+                const k = d.contracts.find((x) => x.quoteId === q.id && x.status === "signed");
+                return (
+                  <div key={q.id} className="mb-4">
+                    <p className="mb-2 text-[15px] font-medium">دفعات {q.kind === "amendment" ? "ملحق التعديل" : "العرض"} <span dir="ltr" className="tabular">{q.number}</span>{k ? "" : " — تصدر الفواتير بعد نفاذ العقد"}</p>
+                    <ul className="divide-y divide-line rounded-lg border border-line">
+                      {splitInstallments(Number(q.net), Number(q.vatRate), q.paymentTerms).map((t) => {
+                        const invs = invOf(q.id, t.key);
+                        const real = invs.find((i) => i.kind !== "proforma");
+                        return (
+                          <li key={t.key} className="flex flex-col gap-2 px-3 py-2 sm:flex-row sm:items-center sm:justify-between" data-testid={`term-${t.key}`}>
+                            <span className="text-[15px]">{t.label} ({t.percent}٪) — <span className="tabular">{fmtSAR(t.total)}</span> <span className="text-[13px] text-muted">{TERM_DUE_LABEL[t.due]}{t.beforeStart ? " · شرط للبدء" : ""}</span></span>
+                            <span className="flex flex-wrap items-center gap-2">
+                              {invs.map((i) => (
+                                <Link key={i.id} href={`/admin/finance/${i.id}`} className="text-[14px] text-ink hover:underline">
+                                  <span dir="ltr" className="tabular">{i.number}</span> · {INVOICE_STATUS_LABEL[i.status] ?? i.status}{i.kind === "proforma" ? " (أولية)" : i.balance > 0 && i.status !== "void" ? ` · المتبقي ${fmtSAR(i.balance)}` : ""}
+                                </Link>
+                              ))}
+                              {k && !real && worker ? <ActionForm action={issueInvoice} hidden={{ id: r.id, quoteId: q.id, termKey: t.key }} submit={d.invoicePolicy?.kind === "proforma" ? "أصدر فاتورة أولية" : "أصدر الفاتورة"} variant="secondary" size="sm" inline /> : null}
+                            </span>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                );
+              })}
+              {legacyInvoice && worker ? <ActionForm action={issueInvoice} hidden={{ id: r.id }} submit="أصدر الفاتورة" variant="secondary" size="sm" inline /> : null}
+              {d.invoices.length ? (
+                <ul className="divide-y divide-line border-t border-line">
+                  {d.invoices.map((i) => (
+                    <li key={i.id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-[15px]">
+                      <Link href={`/admin/finance/${i.id}`} className="tabular font-medium text-ink hover:underline" dir="ltr">{i.number}</Link>
+                      <span className="text-[13px] text-muted">{INVOICE_KIND_LABEL[i.kind as keyof typeof INVOICE_KIND_LABEL] ?? i.kind}</span>
                       <span className="tabular">{fmtSAR(i.total)}</span>
                       <Badge tone={INVOICE_STATUS_TONE[i.status] ?? "neutral"} icon={false}>{INVOICE_STATUS_LABEL[i.status] ?? i.status}</Badge>
                     </li>
                   ))}
                 </ul>
               ) : null}
-              {canInvoice ? <ActionForm action={issueInvoice} hidden={{ id: r.id }} submit="أصدر الفاتورة" variant="secondary" size="sm" inline /> : null}
             </Panel>
           ) : null}
 
@@ -183,9 +421,9 @@ export default async function StaffRequest({ params }: { params: Promise<{ id: s
             ) : null}
           </Panel>
 
-          <Panel title="الملاحظات والمراسلات" description="الملاحظات الداخلية لا يراها العميل.">
-            <NotesThread notes={notes} names={names} me={auth.user.id} showVisibility />
-            {!terminal ? <div className="mt-4 border-t border-line pt-4"><NoteForm action={postStaffNote} id={r.id} staff /></div> : null}
+          <Panel title="الملاحظات والمراسلات" description="الملاحظات الداخلية لا يراها العميل. السجل لا يُحذف ولا يُعدّل.">
+            <NotesThread notes={notes} names={names} me={auth.user.id} showVisibility docTitles={docTitle} />
+            {!terminal ? <div className="mt-4 border-t border-line pt-4"><NoteFormWithAttachment action={postStaffNote} id={r.id} staff requestId={r.id} waqfId={r.waqfId} docs={docOpts} /></div> : null}
           </Panel>
 
           <Panel title="مستندات الطلب">
@@ -194,8 +432,9 @@ export default async function StaffRequest({ params }: { params: Promise<{ id: s
         </div>
 
         <aside className="min-w-0 space-y-4">
+          <Panel title="حالة الطلب"><RequestStates states={d.states} /></Panel>
           <Panel title="المراحل"><StageTimeline stages={stages} /></Panel>
-          <Panel title="بيانات الطلب">
+          <Panel title="بيانات أساسية">
             <DefinitionList cols={1} items={[
               { label: "العميل", value: <>{requesterName}{d.requesterPhone ? <span dir="ltr" className="ms-2 text-[13px] text-muted">{staffPhone(auth, d.requesterPhone)}</span> : null}</> },
               { label: "الوقف", value: rc.waqf ? <Link className="text-ink hover:underline" href={`/app/w/${rc.waqf.id}`}>{rc.waqf.name}</Link> : "بلا وقف" },
@@ -206,10 +445,13 @@ export default async function StaffRequest({ params }: { params: Promise<{ id: s
               { label: "فحص الاستقلال", value: CONFLICT_LABEL[r.conflictCheck] ?? r.conflictCheck },
               { label: "المصدر", value: r.source === "recommendation" ? "توصية تقييم" : "طلب مباشر" },
               { label: "أُرسل", value: fmtDate(r.submittedAt) },
+              { label: "السعر المتفق عليه", value: r.agreedPrice ? fmtSAR(r.agreedPrice) + " قبل الضريبة" : "—" },
               { label: "التقييم", value: r.rating ? `${r.rating} من 5${r.ratingComment ? ` — ${r.ratingComment}` : ""}` : "—" },
-              { label: "التفاصيل", value: <span className="whitespace-pre-line">{r.details}</span> },
             ]} />
           </Panel>
+          {d.consistency.length === 0 && (d.quotes.length || d.invoices.length) ? (
+            <p className="flex items-center gap-2 text-[13px] text-muted"><CheckCircle2 aria-hidden className="size-4 text-ok" />فحص الاتساق: لا فروق بين العرض المقبول والعقود والفواتير والمدفوعات.</p>
+          ) : null}
           <Panel title="سجل الطلب"><EventList events={events} names={names} /></Panel>
         </aside>
       </div>

@@ -1,112 +1,22 @@
 "use server";
 
-import { openEngagementTx } from "@/server/modules/nazara/engine";
-import { nazaraManagerIds } from "@/server/modules/nazara/queries";
-
-import { redirect } from "next/navigation";
-import { and, eq, inArray, notInArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
-import {
-  deliverables, documents, priceQuoteHistory, recommendations, requestNotes, serviceRequests, services, userRoles, roles, users, waqfs, workflowTemplates,
-} from "@/server/db/schema";
+import { deliverables, documents, requestNotes, serviceRequests, userRoles, roles, users } from "@/server/db/schema";
 import { ForbiddenError } from "@/server/authz/context";
-import { audit, nextNumber } from "@/server/lib/audit";
+import { audit } from "@/server/lib/audit";
 import { notify } from "@/server/modules/notify";
 import { parseForm, userAction, UserError } from "@/server/modules/_shared";
 import type { ActionState } from "@/lib/utils";
-import { assignableRoleKeys, loadRequestCtx, memberCan } from "./access";
-import { flagMap, readSetting, serviceAvailability, type License } from "./catalog";
-import { advance, createStages, logEvent, opsManagerIds, transition, type ActCtx } from "./engine";
-import { evaluateConflict, HOLD_PARTY_LABEL, STATUS_LABEL, type RequestStatus } from "./workflow";
+import { assignableRoleKeys, loadRequestCtx } from "./access";
+import { advance, logEvent, transition, type ActCtx } from "./engine";
+import { HOLD_PARTY_LABEL, STATUS_LABEL, type RequestStatus } from "./workflow";
 
 const uuid = z.string().uuid("قيمة غير صالحة.");
 const STATUSES = Object.keys(STATUS_LABEL) as [RequestStatus, ...RequestStatus[]];
 const revalidateReq = (id: string) => [`/app/requests/${id}`, `/admin/requests/${id}`, "/app/requests", "/admin/requests"];
 
-// ───────────────────────── Client: create ─────────────────────────
-
-const createSchema = z.object({
-  service: z.string().min(2, "اختر الخدمة."),
-  waqf: z.string().optional().default(""),
-  details: z.string().trim().min(10, "صف طلبك في 10 أحرف على الأقل.").max(4000, "النص طويل جدًا (4000 حرف كحد أقصى)."),
-  priority: z.enum(["low", "normal", "high", "urgent"], { message: "اختر الأولوية." }),
-  contact: z.enum(["platform", "phone", "email", "whatsapp"], { message: "اختر وسيلة التواصل." }),
-  rec: z.string().optional().default(""),
-});
-
-export async function createRequest(_: ActionState, fd: FormData): Promise<ActionState> {
-  const r = parseForm(createSchema, fd);
-  if ("state" in r) return r.state;
-  const d = r.data;
-  let newId = "";
-  const res = await userAction(async ({ auth, tx, ip, userAgent }) => {
-    const [svc] = await tx.select().from(services).where(and(eq(services.code, d.service.toUpperCase()), eq(services.isPublished, true))).limit(1);
-    if (!svc) throw new UserError("الخدمة غير موجودة.");
-    const avail = serviceAvailability(svc, await flagMap(tx), await readSetting<License[]>(tx, "company.licenses", []));
-    if (!avail.available) throw new UserError(`الخدمة غير متاحة حاليًا: ${avail.reason}`);
-
-    let waqf: { id: string; waqfakRole: string } | null = null;
-    if (svc.code === "N01" && (!d.waqf || d.waqf === "none")) throw new UserError("اختر الوقف المطلوب تولي نظارته. إن لم يكن له ملف بعد، أنشئه من «أوقافي» ثم قدّم الطلب.");
-    if (d.waqf && d.waqf !== "none") {
-      if (!uuid.safeParse(d.waqf).success) throw new UserError("اختر وقفًا صحيحًا.");
-      if (!(await memberCan(tx, auth, d.waqf, "requests.create"))) throw new ForbiddenError("لا تملك صلاحية طلب خدمات لهذا الوقف.");
-      const [w] = await tx.select({ id: waqfs.id, waqfakRole: waqfs.waqfakRole }).from(waqfs).where(eq(waqfs.id, d.waqf)).limit(1);
-      if (!w) throw new ForbiddenError("لا يمكنك الوصول إلى هذا الوقف.");
-      waqf = w;
-    }
-
-    // Separation of duties / independence check
-    let openCodes: string[] = [];
-    if (waqf) {
-      const open = await tx
-        .select({ code: services.code })
-        .from(serviceRequests)
-        .innerJoin(services, eq(services.id, serviceRequests.serviceId))
-        .where(and(eq(serviceRequests.waqfId, waqf.id), notInArray(serviceRequests.status, ["closed", "cancelled", "rejected", "draft"])));
-      openCodes = open.map((o) => o.code);
-    }
-    const conflict = svc.conflictRule === "none" ? { result: "passed" as const, note: null } : evaluateConflict({ rule: svc.conflictRule, waqfakRole: waqf?.waqfakRole ?? null, openServiceCodes: openCodes, hasWaqf: !!waqf });
-
-    // Recommendation source
-    let recId: string | null = null;
-    if (d.rec) {
-      if (!uuid.safeParse(d.rec).success) throw new UserError("التوصية غير صالحة.");
-      const [rec] = await tx.select().from(recommendations).where(eq(recommendations.id, d.rec)).limit(1);
-      if (!rec) throw new UserError("التوصية غير موجودة.");
-      if (rec.waqfId && rec.waqfId !== waqf?.id) throw new UserError("التوصية تخص وقفًا آخر.");
-      recId = rec.id;
-    }
-
-    const [wf] = await tx.select().from(workflowTemplates).where(eq(workflowTemplates.code, svc.workflowTemplateCode)).limit(1);
-    const number = await nextNumber(tx, "REQ");
-    const [req] = await tx
-      .insert(serviceRequests)
-      .values({
-        number, serviceId: svc.id, waqfId: waqf?.id ?? null, requesterUserId: auth.user.id, status: "submitted", priority: d.priority,
-        source: recId ? "recommendation" : "manual", sourceRef: recId, details: d.details, intake: { preferredContact: d.contact },
-        departmentKey: svc.departmentKey, conflictCheck: conflict.result, conflictNote: conflict.note, submittedAt: new Date(), createdBy: auth.user.id,
-      })
-      .returning();
-    newId = req.id;
-    await createStages(tx, req.id, req.waqfId, wf?.stages ?? []);
-    await logEvent(tx, req, auth.user.id, conflict.result === "blocked" ? "أُرسل الطلب وأُحيل إلى مدير التشغيل لمراجعة الاستقلالية" : "أُرسل الطلب", "draft", "submitted");
-    if (recId) await tx.update(recommendations).set({ status: "converted", serviceRequestId: req.id }).where(eq(recommendations.id, recId));
-    // Corporate nazara: the request opens the engagement's intake (study and documents); the licence gates activation only.
-    if (svc.code === "N01" && waqf) {
-      const eng = await openEngagementTx(tx, { waqfId: waqf.id, requestId: req.id, actorId: auth.user.id, ip, userAgent });
-      for (const mid of await nazaraManagerIds(tx))
-        await notify(mid, "nazara.update", { number: eng.number, status: "طلب نظارة جديد", waqf: "", note: `من الطلب ${number}` }, { waqfId: waqf.id, link: `/admin/nazara/${eng.id}`, tx });
-    }
-    await audit(tx, {
-      actorUserId: auth.user.id, action: "requests.create", entityType: "service_request", entityId: req.id, waqfId: req.waqfId, ip, userAgent,
-      after: { number, service: svc.code, priority: d.priority, conflictCheck: conflict.result, source: recId ? "recommendation" : "manual" },
-    });
-    for (const opsId of await opsManagerIds(tx))
-      await notify(opsId, "request.status", { number, status: `طلب جديد بانتظار التوزيع — ${svc.nameAr}${conflict.result === "blocked" ? " (تعارض استقلال)" : ""}` }, { waqfId: req.waqfId, link: `/admin/requests/${req.id}`, tx });
-  });
-  if (res.error) return res;
-  redirect(`/app/requests/${newId}?created=1`);
-}
+// Client: creating a request is the intake flow (./intake/actions.ts: startRequest → saveIntake → submitIntake).
 
 // ───────────────────────── Shared: transitions ─────────────────────────
 
@@ -154,7 +64,12 @@ export async function advanceStageAction(_: ActionState, fd: FormData): Promise<
 
 // ───────────────────────── Notes ─────────────────────────
 
-const noteSchema = z.object({ id: uuid, body: z.string().trim().min(2, "اكتب نص الرسالة.").max(4000, "النص طويل جدًا."), visibility: z.enum(["client", "internal"]).optional().default("client") });
+const noteSchema = z.object({
+  id: uuid,
+  body: z.string().trim().min(2, "اكتب نص الرسالة.").max(4000, "النص طويل جدًا."),
+  visibility: z.enum(["client", "internal"]).optional().default("client"),
+  documentId: z.string().optional().default(""),
+});
 
 async function addNote(side: "client" | "staff", fd: FormData): Promise<ActionState> {
   const r = parseForm(noteSchema, fd);
@@ -162,9 +77,18 @@ async function addNote(side: "client" | "staff", fd: FormData): Promise<ActionSt
   const d = r.data;
   return userAction(async (c: ActCtx) => {
     const rc = await loadRequestCtx(c.tx, c.auth, d.id, side);
+    if (side === "client" && !rc.isRequester && !rc.memberCreate) throw new ForbiddenError("لا تملك صلاحية المراسلة على هذا الطلب.");
+    if (["closed", "cancelled", "rejected"].includes(rc.req.status)) throw new UserError("الطلب منتهٍ؛ لا تُضاف إليه رسائل.");
     const visibility = side === "client" ? "client" : d.visibility;
-    await c.tx.insert(requestNotes).values({ requestId: rc.req.id, waqfId: rc.req.waqfId, authorId: c.auth.user.id, visibility, body: d.body });
-    await audit(c.tx, { actorUserId: c.auth.user.id, action: "requests.note", entityType: "service_request", entityId: rc.req.id, waqfId: rc.req.waqfId, ip: c.ip, userAgent: c.userAgent, after: { visibility } });
+    let documentId: string | null = null;
+    if (d.documentId) {
+      if (!uuid.safeParse(d.documentId).success) throw new UserError("المرفق غير صالح.");
+      const [doc] = await c.tx.select({ id: documents.id }).from(documents).where(and(eq(documents.id, d.documentId), eq(documents.requestId, rc.req.id))).limit(1);
+      if (!doc) throw new UserError("المرفق ليس من وثائق هذا الطلب.");
+      documentId = doc.id;
+    }
+    await c.tx.insert(requestNotes).values({ requestId: rc.req.id, waqfId: rc.req.waqfId, authorId: c.auth.user.id, visibility, body: d.body, documentId });
+    await audit(c.tx, { actorUserId: c.auth.user.id, action: "requests.note", entityType: "service_request", entityId: rc.req.id, waqfId: rc.req.waqfId, ip: c.ip, userAgent: c.userAgent, after: { visibility, documentId } });
     const vars = { number: rc.req.number, status: STATUS_LABEL[rc.req.status as RequestStatus], note: "رسالة جديدة على الطلب" };
     if (side === "client" && rc.req.assignedToUserId) await notify(rc.req.assignedToUserId, "request.status", { ...vars, status: "رسالة جديدة من العميل" }, { waqfId: rc.req.waqfId, link: `/admin/requests/${rc.req.id}`, tx: c.tx });
     if (side === "staff" && visibility === "client" && rc.req.requesterUserId !== c.auth.user.id) await notify(rc.req.requesterUserId, "request.status", { ...vars, status: "رسالة جديدة من فريق وقفك" }, { waqfId: rc.req.waqfId, link: `/app/requests/${rc.req.id}`, tx: c.tx });
@@ -230,28 +154,7 @@ export async function assignRequest(_: ActionState, fd: FormData): Promise<Actio
   }, { perm: "admin.requests.all", revalidate: revalidateReq(d.id) });
 }
 
-// ───────────────────────── Staff: quote ─────────────────────────
-
-const quoteSchema = z.object({ id: uuid, amount: z.coerce.number({ message: "أدخل مبلغًا صحيحًا." }).positive("المبلغ يجب أن يكون أكبر من صفر.").max(100_000_000), send: z.string().optional() });
-export async function setQuote(_: ActionState, fd: FormData): Promise<ActionState> {
-  const r = parseForm(quoteSchema, fd);
-  if ("state" in r) return r.state;
-  const d = r.data;
-  return userAction(async (c) => {
-    const rc = await loadRequestCtx(c.tx, c.auth, d.id, "staff");
-    if (!["triage", "quote", "awaiting_client"].includes(rc.req.status)) throw new UserError("يُحدد عرض السعر أثناء الفرز فقط.");
-    const amount = d.amount.toFixed(2);
-    await c.tx.update(serviceRequests).set({ quoteAmount: amount, updatedBy: c.auth.user.id }).where(eq(serviceRequests.id, d.id));
-    await c.tx.insert(priceQuoteHistory).values({ entityType: "service_request", entityId: d.id, field: "quoteAmount", oldValue: rc.req.quoteAmount, newValue: amount, actorUserId: c.auth.user.id });
-    await audit(c.tx, { actorUserId: c.auth.user.id, action: "requests.quote", entityType: "service_request", entityId: d.id, waqfId: rc.req.waqfId, ip: c.ip, userAgent: c.userAgent, before: { quoteAmount: rc.req.quoteAmount }, after: { quoteAmount: amount } });
-    if (d.send && rc.req.status === "triage") {
-      const fresh = await loadRequestCtx(c.tx, c.auth, d.id, "staff");
-      await transition(c, fresh, { to: "quote", note: `عرض السعر: ${amount} ر.س قبل الضريبة` });
-      return { ok: true, message: "أُرسل عرض السعر للعميل." };
-    }
-    return { ok: true, message: "حُفظ مبلغ العرض." };
-  }, { perm: "staff.requests.assigned", revalidate: revalidateReq(d.id) });
-}
+// Staff: quotes are versioned documents (scope, lines, VAT, payment terms, validity) — see ../commerce/quote-actions.ts.
 
 // ───────────────────────── Ops: conflict override ─────────────────────────
 

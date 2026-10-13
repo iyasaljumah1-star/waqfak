@@ -3,10 +3,14 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Briefcase, Landmark } from "lucide-react";
 import { Alert, ButtonLink, EmptyState, PageHeader, Panel } from "@/components/ui";
-import { NewRequestFields, NewRequestForm } from "@/components/requests/forms";
+import { StartRequestForm } from "@/components/requests/forms";
 import { fmtSAR } from "@/lib/utils";
 import { requireAuth } from "@/server/authz/context";
-import { createRequest } from "@/server/modules/requests/actions";
+import { startRequest } from "@/server/modules/requests/intake/actions";
+import { serviceForm } from "@/server/modules/requests/intake/server";
+import { visibleDocs, docRequired } from "@/server/modules/requests/intake/engine";
+import { clientJourney } from "@/server/modules/requests/journey";
+import { myDraftFor } from "@/server/modules/requests/queries";
 import { loadServiceByCode, PRICE_UNKNOWN } from "@/server/modules/requests/catalog";
 import { recommendationForPrefill, requestableWaqfs } from "@/server/modules/requests/queries";
 
@@ -43,10 +47,14 @@ export default async function NewRequestPage({ searchParams }: { searchParams: P
     );
   }
   const { service: s, availability, price } = svc;
+  const form = serviceForm(s);
+  const formDocs = visibleDocs(form, {});
+  const conditionalDocs = form.docs.filter((d) => d.showIf || d.requiredIf).length;
+  const journey = clientJourney(s, svc.workflow?.stages ?? []);
+  const draft = await myDraftFor(auth, s.id);
   const waqfs = await requestableWaqfs(auth);
   const allowNoWaqf = s.audiences.some((a) => a === "waqif" || a === "entity" || a === "beneficiary") || ["T", "W"].includes(svc.category?.code ?? "");
   const defaultWaqf = rec?.waqfId ?? (sp.waqf && waqfs.some((w) => w.id === sp.waqf) ? sp.waqf : undefined);
-  const defaultDetails = rec ? `${rec.titleAr}\n${rec.reasonAr}${rec.reference ? `\nالمرجع: ${rec.reference}` : ""}` : undefined;
 
   return (
     <div className="space-y-6">
@@ -65,29 +73,36 @@ export default async function NewRequestPage({ searchParams }: { searchParams: P
               لا يوجد وقف تملك فيه صلاحية طلب الخدمات. سجّل الوقف أولًا، أو اطلب من ناظره دعوتك.
             </EmptyState>
           ) : (
-            <NewRequestForm action={createRequest} service={s.code} rec={rec?.id}>
-              {rec ? <Alert tone="info" title="من توصية التقييم">عبّأنا التفاصيل من التوصية. عدّلها إن شئت.</Alert> : null}
-              <NewRequestFields waqfs={waqfs.map((w) => ({ id: w.id, name: w.name }))} defaultWaqf={defaultWaqf} allowNoWaqf={allowNoWaqf} defaultDetails={defaultDetails} />
-            </NewRequestForm>
+            <div className="space-y-4">
+              {rec ? <Alert tone="info" title="من توصية التقييم">{rec.titleAr}. سيرتبط الطلب بالتوصية عند إرساله.</Alert> : null}
+              {draft ? (
+                <Alert tone="seal" title="لديك مسودة لهذه الخدمة" action={<ButtonLink href={`/app/requests/${draft.id}/intake`} size="sm">أكمل المسودة</ButtonLink>}>
+                  المسودة <span dir="ltr" className="tabular">{draft.number}</span>{draft.waqfName ? ` — ${draft.waqfName}` : ""}. تحفظ إجاباتك ومستنداتك حتى ترسلها.
+                </Alert>
+              ) : null}
+              <p className="text-[15px] leading-7 text-muted">
+                نموذج هذه الخدمة من {form.steps.length + (form.docs.length ? 2 : 1)} خطوات: صفتك وبيانات التواصل، ثم أسئلة الخدمة{form.docs.length ? "، ثم المستندات" : ""}، ثم مراجعة قبل الإرسال. تُحفظ إجاباتك مسودةً في كل خطوة.
+              </p>
+              <StartRequestForm action={startRequest} service={s.code} rec={rec?.id} waqfs={waqfs.map((w) => ({ id: w.id, name: w.name }))} defaultWaqf={defaultWaqf} allowNoWaqf={allowNoWaqf} />
+            </div>
           )}
         </Panel>
         <aside className="space-y-4">
           <Panel title="ماذا يحدث بعد الإرسال؟">
             <ol className="list-decimal space-y-2 ps-5 text-[15px] leading-7 marker:text-muted">
-              <li>يُسند الطلب لمختص ويُفرز خلال 5 أيام عمل.</li>
-              <li>تصلك تفاصيل النطاق وعرض السعر.</li>
-              <li>توقّع العقد إلكترونيًا برمز يصل جوالك، ثم تصدر الفاتورة.</li>
-              <li>تتابع المراحل والمراسلات والمخرجات من صفحة الطلب.</li>
+              {journey.map((j) => <li key={j}>{j}</li>)}
             </ol>
+            <p className="mt-3 text-[13px] text-muted">المدد معيارية من سير عمل الخدمة، وتُلزم بعد توقيع العقد بما ينص عليه.</p>
           </Panel>
           <Panel title="السعر">
             <p>{s.pricingModel === "free" ? "مجانية" : price === null ? PRICE_UNKNOWN : <span className="tabular">{fmtSAR(price)} قبل الضريبة</span>}</p>
           </Panel>
           {CONFLICT_HINT[s.conflictRule] ? <Alert tone="warn" title="قاعدة استقلال">{CONFLICT_HINT[s.conflictRule]}</Alert> : null}
-          {s.requiredDocuments.length ? (
+          {formDocs.length || conditionalDocs ? (
             <Panel title="جهّز هذه المستندات">
-              <ul className="list-disc space-y-1 ps-5 text-[15px]">{s.requiredDocuments.map((d) => <li key={d.docType}>{d.label}{d.required ? "" : " (إن وجد)"}</li>)}</ul>
-              <p className="mt-2 text-[13px] text-muted">ترفعها من صفحة الطلب بعد إرساله.</p>
+              <ul className="list-disc space-y-1 ps-5 text-[15px]">{formDocs.map((d) => <li key={d.key}>{d.label}{docRequired(d, {}) ? "" : " (إن وجد)"}</li>)}</ul>
+              {conditionalDocs ? <p className="mt-2 text-[13px] text-muted">وقد تُطلب مستندات أخرى بحسب إجاباتك (مثل الوكالة إن قدّمت الطلب وكيلًا).</p> : null}
+              <p className="mt-2 text-[13px] text-muted">ترفعها في خطوة «المستندات» قبل الإرسال.</p>
             </Panel>
           ) : null}
           <p className="text-[13px] text-muted">تريد خدمة أخرى؟ <Link href="/app/services" className="text-ink underline">عُد إلى الكتالوج</Link>.</p>

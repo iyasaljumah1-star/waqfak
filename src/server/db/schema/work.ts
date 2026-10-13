@@ -2,6 +2,7 @@ import {
   bigserial, boolean, date, index, integer, jsonb, numeric, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid,
 } from "drizzle-orm/pg-core";
 import { createdAt, id, tracking } from "./_common";
+import type { ContractParty } from "./commerce";
 import { channel, notifSeverity, outboxStatus, pricingModel, publishStatus, requestStatus, taskStatus } from "./enums";
 
 // ───────────────────────── Service catalog (fully admin-configurable) ─────────────────────────
@@ -127,6 +128,17 @@ export const serviceRequests = pgTable("service_requests", {
   rejectReason: text(),
   rating: integer(),
   ratingComment: text(),
+  /** Version of the service intake form the answers in `intake.answers` follow. */
+  intakeFormVersion: integer(),
+  /** Staff verified the submitted data and documents (no open required items). */
+  intakeVerifiedAt: timestamp({ withTimezone: true }),
+  intakeVerifiedBy: uuid(),
+  /** Waqfak accepted the request for service (study done, independence check passed). */
+  acceptedAt: timestamp({ withTimezone: true }),
+  acceptedBy: uuid(),
+  /** Work was approved to start (contract executed and pre-start payments settled). */
+  startApprovedAt: timestamp({ withTimezone: true }),
+  startApprovedBy: uuid(),
   submittedAt: timestamp({ withTimezone: true }),
   completedAt: timestamp({ withTimezone: true }),
   closedAt: timestamp({ withTimezone: true }),
@@ -170,6 +182,8 @@ export const requestNotes = pgTable("request_notes", {
   authorId: uuid().notNull(),
   visibility: text().default("client").notNull(), // client | internal
   body: text().notNull(),
+  /** Optional attachment (a document of the same request). */
+  documentId: uuid(),
   createdAt: createdAt(),
 });
 
@@ -255,8 +269,19 @@ export const contracts = pgTable("contracts", {
   body: text().notNull(),
   contentHash: text().notNull(),
   amount: numeric({ precision: 18, scale: 2 }),
-  status: text().default("sent").notNull(), // draft | sent | signed | void
+  /** draft → approved → sent → partially_signed → signed (executed: all required parties signed) | void */
+  status: text().default("sent").notNull(),
   signedAt: timestamp({ withTimezone: true }),
+  quoteId: uuid(),
+  /** Amendment contracts point to the contract they amend. */
+  parentContractId: uuid(),
+  version: integer().default(1).notNull(),
+  parties: jsonb().$type<ContractParty[]>().default([]).notNull(),
+  approvedBy: uuid(),
+  approvedAt: timestamp({ withTimezone: true }),
+  sentAt: timestamp({ withTimezone: true }),
+  executedAt: timestamp({ withTimezone: true }),
+  voidReason: text(),
   ...tracking(),
 }, (t) => [uniqueIndex("contracts_number_uq").on(t.number)]);
 
@@ -270,6 +295,9 @@ export const contractSignatures = pgTable("contract_signatures", {
   ip: text(),
   userAgent: text(),
   contentHash: text().notNull(),
+  partyKey: text(),
+  signerName: text(),
+  capacity: text(),
 });
 
 export const subscriptions = pgTable("subscriptions", {
@@ -301,7 +329,18 @@ export const invoices = pgTable("invoices", {
   vat: numeric({ precision: 18, scale: 2 }).notNull(),
   total: numeric({ precision: 18, scale: 2 }).notNull(),
   currency: text().default("SAR").notNull(),
-  status: text().default("issued").notNull(), // issued | paid | void | overdue
+  status: text().default("issued").notNull(), // issued | partially_paid | paid | void | credit_note (overdue is derived)
+  /** tax_invoice = فاتورة ضريبية (seller VAT number on file); non_tax_invoice = فاتورة بلا ضريبة (seller declared not
+   *  VAT-registered); proforma = فاتورة أولية غير ضريبية (not payable); credit_note = إشعار دائن. */
+  kind: text().default("tax_invoice").notNull(),
+  quoteId: uuid(),
+  installmentKey: text(),
+  installmentLabel: text(),
+  /** The invoice this credit note reverses. */
+  creditOfId: uuid(),
+  /** Seller and buyer data frozen at issue (the invoice never changes when settings change later). */
+  sellerSnapshot: jsonb().$type<Record<string, string>>(),
+  buyerSnapshot: jsonb().$type<Record<string, string>>(),
   issuedOn: date().notNull(),
   dueOn: date(),
   paidOn: date(),
@@ -321,6 +360,9 @@ export const payments = pgTable("payments", {
   amount: numeric({ precision: 18, scale: 2 }).notNull(),
   status: text().default("initiated").notNull(), // initiated | paid | failed | refunded
   paidAt: timestamp({ withTimezone: true }),
+  /** RCT-000001, assigned when the payment is confirmed. */
+  receiptNumber: text(),
+  note: text(),
   raw: jsonb().$type<Record<string, unknown>>(),
   ...tracking(),
 });

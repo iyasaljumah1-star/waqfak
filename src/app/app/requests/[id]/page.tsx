@@ -1,20 +1,28 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { FileCheck2, Receipt } from "lucide-react";
+import { FileCheck2, FileDown, Receipt } from "lucide-react";
 import { Alert, Badge, ButtonLink, DefinitionList, PageHeader, Panel } from "@/components/ui";
 import { DocumentList } from "@/components/documents/list";
 import { DocumentUploader } from "@/components/documents/uploader";
-import { ConflictBadge, ContractPaper, CONTACT_LABEL, EventList, NotesThread, PRIORITY_LABEL, SlaBadge, StageTimeline, StatusBadge } from "@/components/requests/bits";
-import { NoteForm, RatingForm, SignContractForm, TransitionPanel } from "@/components/requests/forms";
+import {
+  ConflictBadge, ContractPaper, EventList, IntakeSummaryView, NextActionBanner, NotesThread, PartiesList, PRIORITY_LABEL, QuoteDocument, RequestStates, SlaBadge,
+  StageTimeline, StatusBadge,
+} from "@/components/requests/bits";
+import { RatingForm, SignContractForm, TransitionPanel } from "@/components/requests/forms";
+import { AnswerItemForm, NoteFormWithAttachment, QuoteResponseForm } from "@/components/requests/commerce";
 import { fmtBoth, fmtDate, fmtDateTime, fmtSAR } from "@/lib/utils";
 import { requireAuth } from "@/server/authz/context";
 import { clientTransition, postClientNote, rateRequest } from "@/server/modules/requests/actions";
+import { answerItem } from "@/server/modules/requests/items-actions";
 import { requestDetail } from "@/server/modules/requests/queries";
 import { HOLD_PARTY_LABEL } from "@/server/modules/requests/workflow";
+import { ITEM_KIND_LABEL, ITEM_STATUS_LABEL, ITEM_STATUS_TONE } from "@/server/modules/requests/items-pure";
 import { requestSignOtp, signContract } from "@/server/modules/contracts/actions";
-import { computeInvoice } from "@/server/modules/billing/calc";
+import { respondQuote } from "@/server/modules/commerce/quote-actions";
+import { AUTHORITY_LABEL, CONTRACT_STATUS_LABEL, INVOICE_KIND_LABEL, QUOTE_STATUS_LABEL, QUOTE_STATUS_TONE, quoteDisplayStatus } from "@/server/modules/commerce/pure";
 import { INVOICE_STATUS_LABEL, INVOICE_STATUS_TONE } from "@/server/modules/billing/access";
+import type { RequestItemStatus } from "@/server/db/schema/commerce";
 
 export const metadata: Metadata = { title: "تفاصيل الطلب" };
 
@@ -24,16 +32,19 @@ export default async function RequestPage({ params, searchParams }: { params: Pr
   const auth = await requireAuth({ next: `/app/requests/${id}` });
   const d = await requestDetail(auth, id, "client");
   if (!d) notFound();
-  const { rc, stages, events, notes, deliverables, contract, invoices, names } = d;
+  const { rc, stages, events, notes, deliverables, names, today } = d;
   const r = rc.req;
   const canAct = rc.isRequester || rc.memberCreate;
+  const canRespondQuote = rc.isRequester || rc.memberSign;
+  const terminal = ["closed", "cancelled", "rejected"].includes(r.status);
   const submittedDels = deliverables.filter((x) => x.status === "submitted");
-  const quote = r.quoteAmount ? computeInvoice(Number(r.quoteAmount), d.vatRate) : null;
   const assignee = r.assignedToUserId ? names.get(r.assignedToUserId) : null;
-  const k = contract.contract;
-  const canSign = !!k && k.status === "sent" && (k.partyUserId === auth.user.id || rc.memberSign);
-  const openInvoices = invoices.filter((i) => i.status === "issued");
-  const others = d.transitions.filter((t) => !(r.status === "awaiting_client_approval" && (t.to === "completed" || t.to === "in_progress")) && !(r.status === "quote" && t.to === "awaiting_contract"));
+  const docOpts = d.docs.map((x) => ({ id: x.id, title: x.title }));
+  const docTitle = new Map(d.docs.map((x) => [x.id, x.title]));
+  const legacyQuote = !d.quotes.length && r.status === "quote" && r.quoteAmount;
+  const others = d.transitions.filter((t) => !(r.status === "awaiting_client_approval" && (t.to === "completed" || t.to === "in_progress")) && !(r.status === "quote" && t.to === "awaiting_contract") && !(r.status === "awaiting_client" && t.to === "triage" && d.items.length > 0));
+  const openItems = d.items.filter((i) => ["open", "correction_requested"].includes(i.status));
+  const contracts = d.contracts.filter((k) => k.status !== "void" || k.signatures.length);
 
   return (
     <div className="space-y-6">
@@ -44,8 +55,13 @@ export default async function RequestPage({ params, searchParams }: { params: Pr
         actions={r.waqfId ? <ButtonLink href={`/app/w/${r.waqfId}`} variant="secondary" size="sm">ملف الوقف</ButtonLink> : null}
       />
 
-      {created ? <Alert tone="ok" title="أُرسل طلبك">سيُسند لمختص ويُفرز خلال 5 أيام عمل. ارفع المستندات المطلوبة الآن لتسريع العمل.</Alert> : null}
-      {signed && contract.clientSigned ? <Alert tone="ok" title="تم توقيع العقد">حُفظ توقيعك مع بصمة نص العقد. تصدر الفاتورة بعد ذلك وتصلك في «الفواتير».</Alert> : null}
+      {r.status === "draft" ? (
+        <Alert tone="seal" title="مسودة لم تُرسل" action={canAct ? <ButtonLink href={`/app/requests/${r.id}/intake`} size="sm">أكمل النموذج</ButtonLink> : null}>
+          حُفظت إجاباتك ومستنداتك. لا يصل الطلب إلى الفريق حتى ترسله من خطوة «المراجعة والإرسال».
+        </Alert>
+      ) : null}
+      {created ? <Alert tone="ok" title={`أُرسل طلبك ${r.number}`}>وصلنا الطلب ببياناته ومستنداته. يتابعه الآن مدير التشغيل بإسناده إلى مختص، وستجد الخطوة التالية ومن عليه أعلى هذه الصفحة دائمًا.</Alert> : null}
+      {signed && d.contract.stage ? <Alert tone="ok" title="سُجّل توقيعك">حُفظ توقيعك مع بصمة نص العقد. {d.contract.executed ? "نفذ العقد بتوقيع جميع الأطراف، ونسخته الموقّعة متاحة أدناه." : "يُستكمل العقد بتوقيع بقية الأطراف."}</Alert> : null}
       {r.conflictCheck === "blocked" ? (
         <Alert tone="critical" title="الطلب قيد مراجعة الاستقلالية">
           <p className="whitespace-pre-line">{r.conflictNote}</p>
@@ -62,60 +78,132 @@ export default async function RequestPage({ params, searchParams }: { params: Pr
       {r.status === "rejected" && r.rejectReason ? <Alert tone="critical" title="رُفض الطلب">{r.rejectReason}</Alert> : null}
       {r.status === "cancelled" ? <Alert tone="neutral" title="أُلغي الطلب">{r.cancelReason}</Alert> : null}
 
+      {r.status !== "draft" ? <NextActionBanner next={d.next} viewer="client" /> : null}
+
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
         <div className="min-w-0 space-y-4">
-          {/* Quote */}
-          {r.status === "quote" && quote ? (
-            <Panel title="عرض السعر" description="راجع العرض. بعد قبوله يصلك العقد للتوقيع.">
-              <dl className="grid grid-cols-3 gap-3 text-center">
-                <div><dt className="text-[13px] text-muted">قبل الضريبة</dt><dd className="tabular text-lg font-semibold">{fmtSAR(quote.net)}</dd></div>
-                <div><dt className="text-[13px] text-muted">الضريبة {d.vatRate}%</dt><dd className="tabular text-lg">{fmtSAR(quote.vat)}</dd></div>
-                <div><dt className="text-[13px] text-muted">الإجمالي</dt><dd className="tabular text-lg font-semibold text-ink">{fmtSAR(quote.total)}</dd></div>
-              </dl>
-              {canAct ? (
-                <div className="mt-4">
-                  <TransitionPanel action={clientTransition} id={r.id} transitions={d.transitions.filter((t) => t.to === "awaiting_contract").map((t) => ({ ...t, label: "أقبل عرض السعر" }))} />
-                </div>
-              ) : null}
+          {/* Deficiencies and queries */}
+          {d.items.length ? (
+            <Panel id="items" title="النواقص والاستفسارات" description={openItems.length ? `${openItems.length} بانتظار ردك. أجب عن كل بند على حدة.` : "لا بنود بانتظار ردك."}>
+              <ol className="space-y-3">
+                {d.items.map((it) => (
+                  <li key={it.id} className="rounded-lg border border-line p-3" data-testid={`item-${it.seq}`}>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="font-medium">{it.seq}. {it.title}</p>
+                      <span className="flex flex-wrap gap-1">
+                        <Badge tone="neutral" icon={false}>{ITEM_KIND_LABEL[it.kind]}</Badge>
+                        <Badge tone={ITEM_STATUS_TONE[it.status as RequestItemStatus]} icon={false}>{ITEM_STATUS_LABEL[it.status as RequestItemStatus]}</Badge>
+                      </span>
+                    </div>
+                    {it.body ? <p className="mt-1 whitespace-pre-line text-[15px]">{it.body}</p> : null}
+                    {it.dueOn ? <p className="text-[13px] text-muted">مطلوب بحلول {fmtDate(it.dueOn)}</p> : null}
+                    {d.itemEvents.filter((e) => e.itemId === it.id && e.action === "correction_requested").slice(-1).map((e) => (
+                      <p key={e.id} className="mt-1 rounded-md bg-fine-soft/50 px-2 py-1 text-[14px] text-fine">مطلوب تصحيحه: {e.note}</p>
+                    ))}
+                    {it.responseText || it.responseDocumentId ? (
+                      <div className="mt-2 rounded-md bg-surface-2 p-2 text-[15px]">
+                        <p className="text-[13px] text-muted">ردك {it.answeredAt ? fmtDateTime(it.answeredAt) : ""}</p>
+                        {it.responseText ? <p className="whitespace-pre-line">{it.responseText}</p> : null}
+                        {it.responseDocumentId ? <a href={`/api/files/${it.responseDocumentId}?disposition=inline`} target="_blank" rel="noopener" className="text-ink underline">{docTitle.get(it.responseDocumentId) ?? "المستند"}</a> : null}
+                      </div>
+                    ) : null}
+                    {canAct && ["open", "correction_requested"].includes(it.status) && !terminal ? (
+                      <AnswerItemForm action={answerItem} itemId={it.id} kind={it.kind} requestId={r.id} waqfId={r.waqfId} docs={docOpts} docType={it.docType} />
+                    ) : null}
+                  </li>
+                ))}
+              </ol>
             </Panel>
           ) : null}
 
-          {/* Contract */}
-          {k ? (
-            <Panel id="contract" title={`العقد ${k.number}`} description={k.status === "signed" ? `موقّع ${fmtDateTime(k.signedAt)}` : "بانتظار توقيعك"}
-              actions={<Badge tone={k.status === "signed" ? "ok" : "warn"} icon={false}>{k.status === "signed" ? (contract.companySigned ? "موقّع من الطرفين" : "وقّعه العميل — بانتظار توقيع الشركة") : "بانتظار التوقيع"}</Badge>}>
-              <details open={k.status === "sent"} className="group">
-                <summary className="mb-3 cursor-pointer text-[15px] text-ink">{k.status === "sent" ? "نص العقد" : "اعرض نص العقد"}</summary>
-                <ContractPaper body={k.body} number={k.number} hash={k.contentHash}
-                  footer={contract.signatures.length ? (
-                    <ul className="mt-4 space-y-1 font-sans text-[13px] leading-6">
-                      {contract.signatures.map((s) => (
-                        <li key={s.id}>{s.method === "otp" ? "توقيع العميل" : "توقيع الشركة"}: {names.get(s.userId)?.name ?? "—"} · {fmtDateTime(s.signedAt)}{s.method === "otp" ? " · برمز تحقق" : ""}</li>
-                      ))}
-                    </ul>
-                  ) : null}
-                />
-              </details>
-              {canSign ? <div className="mt-4 border-t border-line pt-4"><SignContractForm requestOtp={requestSignOtp} sign={signContract} contractId={k.id} /></div> : null}
+          {/* Quote */}
+          {d.quotes.length ? (
+            <Panel id="quote" title="نطاق العمل وعرض السعر">
+              <div className="space-y-4">
+                {d.quotes.map((q, i) => {
+                  const st = quoteDisplayStatus(q, today);
+                  const actionable = q.status === "sent" && st !== "expired";
+                  return (
+                    <details key={q.id} open={i === 0 || actionable || q.status === "accepted"} className="rounded-lg border border-line p-3" data-testid={`quote-${q.number}-v${q.version}`}>
+                      <summary className="flex cursor-pointer flex-wrap items-center gap-2">
+                        <span className="font-medium">{q.kind === "amendment" ? "ملحق تعديل" : "عرض"} <span dir="ltr" className="tabular">{q.number}</span> — نسخة {q.version}</span>
+                        <Badge tone={QUOTE_STATUS_TONE[st]} icon={false}>{QUOTE_STATUS_LABEL[st]}</Badge>
+                        <span className="tabular text-[14px] text-muted">{fmtSAR(q.total)}</span>
+                      </summary>
+                      <div className="mt-3"><QuoteDocument q={q} today={today} /></div>
+                      <div className="mt-2"><a href={`/app/requests/${r.id}/quote/${q.id}`} className="inline-flex items-center gap-1 text-[14px] text-ink hover:underline"><FileDown aria-hidden className="size-4" />تنزيل PDF</a></div>
+                      {actionable && canRespondQuote ? (
+                        <div className="mt-3 border-t border-line pt-3">
+                          <p className="mb-2 text-[13px] text-muted">قبولك يكون للنسخة المعروضة كما هي. يصلك العقد بعدها للتوقيع.</p>
+                          <QuoteResponseForm action={respondQuote} quoteId={q.id} hash={q.contentHash ?? ""} />
+                        </div>
+                      ) : st === "expired" ? <p className="mt-3 text-[14px] text-fine">انتهت صلاحية هذا العرض ولا يمكن قبوله. سيصدر لك الفريق نسخة جديدة إن رغبت؛ اكتب لنا في المراسلات.</p> : null}
+                    </details>
+                  );
+                })}
+              </div>
+            </Panel>
+          ) : legacyQuote ? (
+            <Panel title="عرض السعر" description="عرض صدر قبل نماذج العروض المفصلة.">
+              <p className="tabular text-lg font-semibold">{fmtSAR(r.quoteAmount!)} قبل الضريبة</p>
+              {canAct ? <div className="mt-4"><TransitionPanel action={clientTransition} id={r.id} transitions={d.transitions.filter((t) => t.to === "awaiting_contract").map((t) => ({ ...t, label: "أقبل عرض السعر" }))} /></div> : null}
+            </Panel>
+          ) : null}
+
+          {/* Contracts */}
+          {contracts.length ? (
+            <Panel id="contract" title="العقد">
+              <div className="space-y-4">
+                {contracts.map((k) => {
+                  const mine = k.parties.length ? k.signing.pending.filter((p) => p.side === "client" && p.signerUserId === auth.user.id) : (!k.signing.clientSigned && ["sent"].includes(k.status) && (k.partyUserId === auth.user.id || rc.memberSign) ? [null] : []);
+                  return (
+                    <div key={k.id} className="rounded-lg border border-line p-3" data-testid={`contract-${k.number}`}>
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="font-medium">{k.parentContractId ? "ملحق تعديل" : "العقد"} <span dir="ltr" className="tabular">{k.number}</span>{k.version > 1 ? ` — إصدار ${k.version}` : ""}</p>
+                        <Badge tone={k.status === "signed" ? "ok" : k.status === "void" ? "neutral" : "warn"} icon={false}>{CONTRACT_STATUS_LABEL[k.status] ?? k.status}</Badge>
+                      </div>
+                      {k.voidReason ? <p className="text-[13px] text-muted">أُلغي: {k.voidReason}</p> : null}
+                      {k.parties.length ? <div className="mt-2"><PartiesList parties={k.parties} signatures={k.signatures} /></div> : null}
+                      <details open={mine.length > 0} className="mt-2">
+                        <summary className="cursor-pointer text-[15px] text-ink">نص العقد</summary>
+                        <div className="mt-2">
+                          <ContractPaper body={k.body} number={k.number} hash={k.contentHash}
+                            footer={!k.parties.length && k.signatures.length ? (
+                              <ul className="mt-4 space-y-1 font-sans text-[13px] leading-6">
+                                {k.signatures.map((s) => <li key={s.id}>{s.method === "otp" ? "توقيع العميل" : "توقيع الشركة"}: {names.get(s.userId)?.name ?? "—"} · {fmtDateTime(s.signedAt)}</li>)}
+                              </ul>
+                            ) : null} />
+                        </div>
+                      </details>
+                      {k.status !== "void" ? <a href={`/app/requests/${r.id}/contract/${k.id}`} className="mt-2 inline-flex items-center gap-1 text-[14px] text-ink hover:underline"><FileDown aria-hidden className="size-4" />{k.status === "signed" ? "النسخة الموقّعة (PDF)" : "تنزيل PDF"}</a> : null}
+                      {k.status !== "void" ? mine.map((p) => (
+                        <div key={p?.key ?? "legacy"} className="mt-4 border-t border-line pt-4">
+                          <SignContractForm requestOtp={requestSignOtp} sign={signContract} contractId={k.id} partyKey={p?.key ?? ""} asLabel={p ? `${AUTHORITY_LABEL[p.authorityType]} عن «${p.name}»` : undefined} />
+                        </div>
+                      )) : null}
+                    </div>
+                  );
+                })}
+              </div>
             </Panel>
           ) : r.status === "awaiting_contract" ? (
-            <Panel title="العقد"><p className="text-[15px] text-muted">قبلت عرض السعر. يجهز الفريق العقد الآن وسيصلك إشعار عند جاهزيته للتوقيع.</p></Panel>
+            <Panel title="العقد"><p className="text-[15px] text-muted">قبلت عرض السعر. يُعدّ الفريق العقد ويعتمده، ثم يصلك إشعار عند جاهزيته للتوقيع.</p></Panel>
           ) : null}
 
           {/* Invoices */}
-          {invoices.length ? (
-            <Panel title="الفواتير">
+          {d.invoices.length ? (
+            <Panel title="الفواتير والمدفوعات">
               <ul className="divide-y divide-line">
-                {invoices.map((i) => (
+                {d.invoices.map((i) => (
                   <li key={i.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
                     <span className="flex items-center gap-2"><Receipt aria-hidden className="size-4 text-muted" /><Link href={`/app/billing/${i.id}`} className="tabular font-medium text-ink hover:underline" dir="ltr">{i.number}</Link></span>
+                    <span className="text-[13px] text-muted">{INVOICE_KIND_LABEL[i.kind as keyof typeof INVOICE_KIND_LABEL] ?? i.kind}{i.installmentLabel ? ` — ${i.installmentLabel}` : ""}</span>
                     <span className="tabular">{fmtSAR(i.total)}</span>
                     <Badge tone={INVOICE_STATUS_TONE[i.status] ?? "neutral"} icon={false}>{INVOICE_STATUS_LABEL[i.status] ?? i.status}</Badge>
-                    {i.status === "issued" ? <ButtonLink href={`/app/billing/${i.id}`} size="sm">ادفع</ButtonLink> : null}
+                    {["issued", "partially_paid"].includes(i.status) && i.kind !== "proforma" && i.kind !== "credit_note" ? <ButtonLink href={`/app/billing/${i.id}`} size="sm">ادفع {i.status === "partially_paid" ? `المتبقي ${fmtSAR(i.balance)}` : ""}</ButtonLink> : null}
                   </li>
                 ))}
               </ul>
-              {openInvoices.length ? <p className="mt-2 text-[13px] text-muted">تستحق الفاتورة خلال 14 يومًا من إصدارها.</p> : null}
             </Panel>
           ) : null}
 
@@ -146,37 +234,46 @@ export default async function RequestPage({ params, searchParams }: { params: Pr
             </Panel>
           ) : null}
 
-          {/* Rating */}
           {(r.status === "completed" || r.status === "closed") && canAct ? (
             <Panel title="قيّم الخدمة" description="رأيك يساعدنا على تحسين الخدمة.">
               <RatingForm action={rateRequest} id={r.id} current={r.rating} comment={r.ratingComment} />
             </Panel>
           ) : null}
 
-          <Panel title="المراسلات" description="رسائلك مع فريق وقفك حول هذا الطلب.">
-            <NotesThread notes={notes} names={names} me={auth.user.id} />
-            {!["closed", "cancelled", "rejected"].includes(r.status) ? <div className="mt-4 border-t border-line pt-4"><NoteForm action={postClientNote} id={r.id} /></div> : null}
-          </Panel>
+          {d.intakeSummary ? (
+            <Panel title="بيانات طلبك">
+              <details>
+                <summary className="cursor-pointer text-[15px] text-ink">اعرض ما قدّمته في النموذج</summary>
+                <div className="mt-3"><IntakeSummaryView sections={d.intakeSummary} /></div>
+              </details>
+            </Panel>
+          ) : null}
 
-          <Panel title="المستندات" description={rc.service.requiredDocuments.length ? `المطلوب: ${rc.service.requiredDocuments.map((x) => x.label).join("، ")}` : undefined}>
+          {r.status !== "draft" ? (
+            <Panel title="المراسلات" description="رسائلك مع فريق وقفك حول هذا الطلب. تبقى الرسائل كما أُرسلت ولا تُحذف.">
+              <NotesThread notes={notes} names={names} me={auth.user.id} docTitles={docTitle} />
+              {!terminal && canAct ? <div className="mt-4 border-t border-line pt-4"><NoteFormWithAttachment action={postClientNote} id={r.id} requestId={r.id} waqfId={r.waqfId} docs={docOpts} /></div> : null}
+            </Panel>
+          ) : null}
+
+          <Panel title="المستندات">
             <div className="space-y-4">
               <DocumentList requestId={r.id} emptyText="لم تُرفع مستندات لهذا الطلب بعد." />
-              {canAct && !["closed", "cancelled", "rejected"].includes(r.status) ? <DocumentUploader requestId={r.id} waqfId={r.waqfId} compact /> : null}
+              {canAct && !terminal && r.status !== "draft" ? <DocumentUploader requestId={r.id} waqfId={r.waqfId} compact /> : null}
             </div>
           </Panel>
         </div>
 
         <aside className="min-w-0 space-y-4">
+          <Panel title="حالة الطلب"><RequestStates states={d.states} /></Panel>
           <Panel title="المراحل"><StageTimeline stages={stages} /></Panel>
           <Panel title="بيانات الطلب">
             <DefinitionList cols={1} items={[
               { label: "الوقف", value: rc.waqf ? <Link className="text-ink hover:underline" href={`/app/w/${rc.waqf.id}`}>{rc.waqf.name}</Link> : "بلا وقف" },
               { label: "الأولوية", value: PRIORITY_LABEL[r.priority] ?? r.priority },
-              { label: "التواصل المفضل", value: CONTACT_LABEL[String((r.intake as { preferredContact?: string } | null)?.preferredContact ?? "platform")] },
               { label: "المختص", value: assignee?.name ?? "لم يُسند بعد" },
-              { label: "أُرسل", value: fmtDate(r.submittedAt) },
+              { label: "أُرسل", value: r.submittedAt ? fmtDate(r.submittedAt) : "لم يُرسل" },
               { label: "المهلة الحالية", value: <SlaBadge due={r.slaDueAt} status={r.status} /> },
-              { label: "التفاصيل", value: <span className="whitespace-pre-line">{r.details}</span> },
             ]} />
           </Panel>
           {canAct && others.length ? (

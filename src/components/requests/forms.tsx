@@ -118,7 +118,7 @@ export function RatingForm({ action, id, current, comment }: { action: Act; id: 
 }
 
 /** E-signature with an OTP sent to the signer's phone (demo mode shows the code on screen). */
-export function SignContractForm({ requestOtp, sign, contractId }: { requestOtp: Act; sign: Act; contractId: string }) {
+export function SignContractForm({ requestOtp, sign, contractId, partyKey = "", asLabel }: { requestOtp: Act; sign: Act; contractId: string; partyKey?: string; asLabel?: string }) {
   const [o, sendOtp] = useActionState(requestOtp, initialState);
   const [s, doSign] = useActionState(sign, initialState);
   const challengeId = (o.data?.challengeId as string) ?? "";
@@ -128,6 +128,8 @@ export function SignContractForm({ requestOtp, sign, contractId }: { requestOtp:
       {!challengeId ? (
         <form action={sendOtp} className="space-y-3">
           <input type="hidden" name="contractId" value={contractId} />
+          <input type="hidden" name="partyKey" value={partyKey} />
+          {asLabel ? <p className="text-[15px] font-medium">توقّع {asLabel}</p> : null}
           <p className="text-[15px] text-muted">التوقيع بالموافقة الموثقة: نرسل رمزًا إلى جوالك المسجل، وتحفظ المنصة بصمة نص العقد ووقت التوقيع وعنوان الجهاز.</p>
           <FormMessage state={o} />
           <SubmitButton variant="seal" pendingText="جارٍ الإرسال…">أرسل رمز التوقيع</SubmitButton>
@@ -135,6 +137,7 @@ export function SignContractForm({ requestOtp, sign, contractId }: { requestOtp:
       ) : (
         <form action={doSign} className="space-y-3">
           <input type="hidden" name="contractId" value={contractId} />
+          <input type="hidden" name="partyKey" value={partyKey} />
           <input type="hidden" name="challengeId" value={challengeId} />
           <p className="text-[15px] text-muted">أرسلنا رمزًا من 6 أرقام إلى <span dir="ltr" className="font-medium text-text">{String(o.data?.masked ?? "")}</span>. الرمز صالح 5 دقائق.</p>
           {o.data?.demoCode ? (
@@ -159,44 +162,21 @@ export function SignContractForm({ requestOtp, sign, contractId }: { requestOtp:
   );
 }
 
-export function NewRequestFields({ waqfs, defaultWaqf, allowNoWaqf, defaultDetails }: {
-  waqfs: { id: string; name: string }[]; defaultWaqf?: string; allowNoWaqf: boolean; defaultDetails?: string;
+/** First step of a request: pick the waqf (or none) and open the draft. The rest of the form is the intake wizard. */
+export function StartRequestForm({ action, service, rec, waqfs, defaultWaqf, allowNoWaqf }: {
+  action: Act; service: string; rec?: string; waqfs: { id: string; name: string }[]; defaultWaqf?: string; allowNoWaqf: boolean;
 }) {
-  const options = [...waqfs.map((w) => ({ value: w.id, label: w.name })), ...(allowNoWaqf ? [{ value: "none", label: "لا يوجد وقف بعد (تأسيس أو وصية)" }] : [])];
-  return (
-    <>
-      <Field label="الوقف" name="waqf" required hint="تظهر الأوقاف التي تملك فيها صلاحية طلب الخدمات.">
-        <Select name="waqf" required options={options} defaultValue={defaultWaqf ?? (options.length === 1 ? options[0].value : "")} placeholder="اختر الوقف" />
-      </Field>
-      <Field label="تفاصيل الطلب" name="details" required hint="ما المطلوب؟ ما الموعد الذي يهمك؟ هل لديك مستندات جاهزة؟">
-        <Textarea name="details" required minLength={10} defaultValue={defaultDetails} className="min-h-36" />
-      </Field>
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="الأولوية" name="priority" required>
-          <Select name="priority" defaultValue="normal" options={[{ value: "normal", label: "عادية" }, { value: "high", label: "مرتفعة" }, { value: "urgent", label: "عاجل (موعد نظامي قريب)" }, { value: "low", label: "منخفضة" }]} />
-        </Field>
-        <Field label="وسيلة التواصل المفضلة" name="contact" required>
-          <Select name="contact" defaultValue="platform" options={[{ value: "platform", label: "رسائل المنصة" }, { value: "phone", label: "اتصال هاتفي" }, { value: "email", label: "البريد الإلكتروني" }, { value: "whatsapp", label: "واتساب" }]} />
-        </Field>
-      </div>
-    </>
-  );
-}
-
-export function NewRequestForm({ action, service, rec, children }: { action: Act; service: string; rec?: string; children: ReactNode }) {
   const [s, a] = useActionState(action, initialState);
+  const options = [...waqfs.map((w) => ({ value: w.id, label: w.name })), ...(allowNoWaqf ? [{ value: "none", label: "لا يوجد وقف بعد (تأسيس أو وصية)" }] : [])];
   return (
     <form action={a} className="space-y-4">
       <input type="hidden" name="service" value={service} />
       <input type="hidden" name="rec" value={rec ?? ""} />
-      {children}
-      {s.fieldErrors ? (
-        <ul className="space-y-1 text-[13px] text-critical">
-          {Object.entries(s.fieldErrors).map(([k, v]) => (v ? <li key={k}>{v}</li> : null))}
-        </ul>
-      ) : null}
+      <Field label="الوقف المعني بالطلب" name="waqf" required hint="تظهر الأوقاف التي تملك فيها صلاحية طلب الخدمات. تُرفق مستندات الطلب بملف الوقف المختار." error={s.fieldErrors?.waqf}>
+        <Select name="waqf" required options={options} defaultValue={defaultWaqf ?? (options.length === 1 ? options[0].value : "")} placeholder="اختر الوقف" />
+      </Field>
       <FormMessage state={s} />
-      <SubmitButton size="lg" pendingText="جارٍ الإرسال…">أرسل الطلب</SubmitButton>
+      <SubmitButton size="lg" pendingText="جارٍ الفتح…">ابدأ نموذج الطلب</SubmitButton>
     </form>
   );
 }

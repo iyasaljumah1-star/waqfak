@@ -7,7 +7,8 @@ import { ActionForm } from "@/components/requests/forms";
 import { fmtBoth, fmtDate, fmtDateTime, fmtSAR } from "@/lib/utils";
 import { requireStaff } from "@/server/authz/context";
 import { todayISO } from "@/server/engines/dates";
-import { cancelInvoice, markPaidManual } from "@/server/modules/billing/actions";
+import { cancelInvoice, recordPayment } from "@/server/modules/billing/actions";
+import { INVOICE_KIND_LABEL } from "@/server/modules/commerce/pure";
 import { EINVOICE_STATUS_LABEL, INVOICE_STATUS_LABEL, INVOICE_STATUS_TONE, PAYMENT_STATUS_LABEL, PROVIDER_LABEL } from "@/server/modules/billing/access";
 import { invoiceView } from "@/server/modules/billing/queries";
 
@@ -19,16 +20,18 @@ export default async function AdminInvoice({ params }: { params: Promise<{ invoi
   const v = await invoiceView(auth, invoiceId);
   if (!v) notFound();
   const { inv } = v;
-  const unpaid = inv.status === "issued";
-  const cancellable = inv.status === "issued" || inv.status === "paid";
+  const payableKind = ["tax_invoice", "non_tax_invoice"].includes(inv.kind);
+  const unpaid = payableKind && ["issued", "partially_paid"].includes(inv.status) && v.balance > 0;
+  const cancellable = ["issued", "partially_paid", "paid"].includes(inv.status) && inv.kind !== "credit_note";
+  const hasPaid = v.paid > 0;
 
   return (
     <div className="space-y-6">
       <PageHeader
         crumbs={[{ href: "/admin/finance", label: "الفواتير والمدفوعات" }, { label: inv.number }]}
-        title={`${inv.status === "credit_note" ? "إشعار دائن" : "فاتورة"} ${inv.number}`}
+        title={`${INVOICE_KIND_LABEL[inv.kind as keyof typeof INVOICE_KIND_LABEL] ?? "فاتورة"} ${inv.number}`}
         description={<span className="flex flex-wrap items-center gap-2"><Badge tone={INVOICE_STATUS_TONE[v.status] ?? "neutral"} icon={false}>{INVOICE_STATUS_LABEL[v.status] ?? v.status}</Badge><span>{inv.billedToName}</span></span>}
-        actions={<ButtonLink href={`/app/billing/${inv.id}`} variant="secondary" size="sm">النسخة الضريبية للطباعة</ButtonLink>}
+        actions={<ButtonLink href={`/app/billing/${inv.id}`} variant="secondary" size="sm">نسخة العميل للطباعة</ButtonLink>}
       />
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
         <div className="min-w-0 space-y-4">
@@ -37,6 +40,9 @@ export default async function AdminInvoice({ params }: { params: Promise<{ invoi
               { label: "المجموع قبل الضريبة", value: <span className="tabular">{fmtSAR(Number(inv.subtotal) - Number(inv.discount))}</span> },
               { label: `الضريبة (${Number(inv.vatRate)}%)`, value: <span className="tabular">{fmtSAR(inv.vat)}</span> },
               { label: "الإجمالي", value: <span className="tabular font-semibold">{fmtSAR(inv.total)}</span> },
+              { label: "المدفوع", value: <span className="tabular">{fmtSAR(v.paid)}</span> },
+              { label: "المتبقي", value: <span className="tabular">{fmtSAR(v.balance)}</span> },
+              { label: "الدفعة", value: inv.installmentLabel ?? "—" },
               { label: "تاريخ الإصدار", value: fmtBoth(inv.issuedOn) },
               { label: "الاستحقاق", value: inv.dueOn ? fmtBoth(inv.dueOn) : "—" },
               { label: "السداد", value: inv.paidOn ? fmtDate(inv.paidOn) : "—" },
@@ -59,6 +65,7 @@ export default async function AdminInvoice({ params }: { params: Promise<{ invoi
                     <span className="tabular">{fmtSAR(p.amount)}</span>
                     <Badge tone={p.status === "paid" ? "ok" : p.status === "failed" ? "critical" : "neutral"} icon={false}>{PAYMENT_STATUS_LABEL[p.status] ?? p.status}</Badge>
                     <span className="text-[13px] text-muted">{fmtDateTime(p.paidAt ?? p.createdAt)}</span>
+                    {p.receiptNumber ? <a href={`/app/billing/${inv.id}/receipt/${p.id}`} className="text-[13px] text-ink hover:underline">الإيصال <span dir="ltr" className="tabular">{p.receiptNumber}</span></a> : null}
                   </li>
                 ))}
               </ul>
@@ -67,9 +74,15 @@ export default async function AdminInvoice({ params }: { params: Promise<{ invoi
         </div>
         <aside className="min-w-0 space-y-4">
           {unpaid ? (
-            <Panel title="تسجيل سداد بتحويل بنكي" description="بعد التحقق من وصول المبلغ إلى حساب الشركة.">
-              <ActionForm action={markPaidManual} hidden={{ invoiceId: inv.id }} submit="سجّل السداد" size="md">
-                <Field label="مرجع التحويل" name="reference" required>
+            <Panel title="تسجيل سداد" description="بعد التحقق من وصول المبلغ. يُقبل السداد الجزئي، ويصدر إيصال لكل دفعة.">
+              <ActionForm action={recordPayment} hidden={{ invoiceId: inv.id }} submit="سجّل السداد" size="md">
+                <Field label="المبلغ (ر.س)" name="amount" required hint={`الرصيد المستحق ${fmtSAR(v.balance)}`}>
+                  <Input name="amount" type="number" step="0.01" min="0.01" max={v.balance} required defaultValue={v.balance.toFixed(2)} dir="ltr" className="tabular text-start" />
+                </Field>
+                <Field label="الطريقة" name="method" required>
+                  <Select name="method" defaultValue="transfer" options={[{ value: "transfer", label: "تحويل بنكي" }, { value: "cheque", label: "شيك" }, { value: "cash", label: "نقدًا" }]} />
+                </Field>
+                <Field label="المرجع" name="reference" required hint="رقم التحويل أو الشيك أو سند القبض.">
                   <Input name="reference" required minLength={4} dir="ltr" className="text-start" />
                 </Field>
                 <Field label="تاريخ السداد" name="paidOn" required>
@@ -79,11 +92,11 @@ export default async function AdminInvoice({ params }: { params: Promise<{ invoi
             </Panel>
           ) : null}
           {cancellable ? (
-            <Panel title="إلغاء الفاتورة" description={inv.status === "paid" ? "الفاتورة مدفوعة: تُلغى بإشعار دائن فقط." : "إلغاء مباشر لفاتورة لم تُسدد، أو بإشعار دائن."}>
+            <Panel title="إلغاء الفاتورة" description={hasPaid ? "على الفاتورة دفعات: تُلغى بإشعار دائن فقط، ويُسجّل رد المبلغ خارج المنصة." : inv.kind === "proforma" ? "الفاتورة الأولية تُلغى مباشرة." : "إلغاء مباشر لفاتورة لم يُسدد منها شيء، أو بإشعار دائن."}>
               <ActionForm action={cancelInvoice} hidden={{ invoiceId: inv.id }} submit="ألغِ الفاتورة" variant="danger" size="md">
                 <Field label="الطريقة" name="mode" required>
-                  <Select name="mode" required defaultValue={inv.status === "paid" ? "credit" : "void"}
-                    options={inv.status === "paid" ? [{ value: "credit", label: "إشعار دائن" }] : [{ value: "void", label: "إلغاء مباشر" }, { value: "credit", label: "إشعار دائن" }]} />
+                  <Select name="mode" required defaultValue={hasPaid ? "credit" : "void"}
+                    options={hasPaid ? [{ value: "credit", label: "إشعار دائن" }] : inv.kind === "proforma" ? [{ value: "void", label: "إلغاء مباشر" }] : [{ value: "void", label: "إلغاء مباشر" }, { value: "credit", label: "إشعار دائن" }]} />
                 </Field>
                 <Field label="السبب" name="reason" required hint="يُسجل في سجل العمليات.">
                   <Textarea name="reason" required minLength={5} className="min-h-20" />

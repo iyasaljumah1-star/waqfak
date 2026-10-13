@@ -59,6 +59,10 @@ GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO waqfak_app;
 -- Audit log is append-only for the application.
 REVOKE UPDATE, DELETE, TRUNCATE ON audit_logs FROM waqfak_app;
 REVOKE UPDATE, DELETE, TRUNCATE ON document_access_log FROM waqfak_app;
+-- Request histories and messages are append-only for the application (corrections are new entries).
+REVOKE UPDATE, DELETE, TRUNCATE ON request_item_events FROM waqfak_app;
+REVOKE UPDATE, DELETE, TRUNCATE ON request_notes FROM waqfak_app;
+REVOKE UPDATE, DELETE, TRUNCATE ON contract_signatures FROM waqfak_app;
 
 -- Restricted schema: only reachable after SET LOCAL ROLE waqfak_mlro (done by the app for the MLRO role).
 REVOKE ALL ON SCHEMA restricted FROM PUBLIC;
@@ -176,7 +180,14 @@ BEGIN
     ('contracts',        'party_user_id = app_current_user() OR created_by = app_current_user() OR EXISTS (SELECT 1 FROM service_requests r WHERE r.id = contracts.request_id AND (r.requester_user_id = app_current_user() OR r.assigned_to_user_id = app_current_user()))'),
     ('tasks',            'assignee_user_id = app_current_user() OR created_by = app_current_user() OR EXISTS (SELECT 1 FROM service_requests r WHERE r.id = tasks.request_id AND (r.requester_user_id = app_current_user() OR r.assigned_to_user_id = app_current_user()))'),
     ('subscriptions',    'user_id = app_current_user() OR created_by = app_current_user()'),
-    ('projects',         'owner_user_id = app_current_user() OR created_by = app_current_user()')
+    ('projects',         'owner_user_id = app_current_user() OR created_by = app_current_user()'),
+    ('request_items', 'EXISTS (SELECT 1 FROM service_requests r WHERE r.id = request_items.request_id AND (r.requester_user_id = app_current_user() OR r.assigned_to_user_id = app_current_user()))'),
+    ('request_item_events', 'EXISTS (SELECT 1 FROM service_requests r WHERE r.id = request_item_events.request_id AND (r.requester_user_id = app_current_user() OR r.assigned_to_user_id = app_current_user()))'),
+    ('quotes', 'EXISTS (SELECT 1 FROM service_requests r WHERE r.id = quotes.request_id AND (r.requester_user_id = app_current_user() OR r.assigned_to_user_id = app_current_user()))'),
+    ('request_notes', 'EXISTS (SELECT 1 FROM service_requests r WHERE r.id = request_notes.request_id AND (r.requester_user_id = app_current_user() OR r.assigned_to_user_id = app_current_user()))'),
+    ('request_events', 'EXISTS (SELECT 1 FROM service_requests r WHERE r.id = request_events.request_id AND (r.requester_user_id = app_current_user() OR r.assigned_to_user_id = app_current_user()))'),
+    ('request_stages', 'EXISTS (SELECT 1 FROM service_requests r WHERE r.id = request_stages.request_id AND (r.requester_user_id = app_current_user() OR r.assigned_to_user_id = app_current_user()))'),
+    ('deliverables', 'EXISTS (SELECT 1 FROM service_requests r WHERE r.id = deliverables.request_id AND (r.requester_user_id = app_current_user() OR r.assigned_to_user_id = app_current_user()))')
   ) AS v(tbl, expr)
   LOOP
     EXECUTE format('DROP POLICY IF EXISTS nullwaqf_owner ON %I', p.tbl);

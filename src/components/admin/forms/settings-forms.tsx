@@ -15,8 +15,14 @@ export function CompanyForm({ values }: { values: Record<string, string> }) {
       <FormMessage state={s} />
       <div className="grid gap-4 sm:grid-cols-2">
         {COMPANY_FIELDS.map((f) => (
-          <Field key={f.key} label={f.label} name={f.key} error={fe[f.key]} required={f.key === "nameAr"}>
-            <Input name={f.key} defaultValue={values[f.key] ?? ""} dir={f.dir} type={f.type ?? "text"} error={fe[f.key]} />
+          <Field key={f.key} label={f.label} name={f.key} error={fe[f.key]} required={f.key === "nameAr"} hint={f.hint}>
+            {f.options ? (
+              <select id={f.key} name={f.key} defaultValue={values[f.key] ?? ""} aria-invalid={!!fe[f.key]} className="block h-11 w-full rounded-md border border-line-strong bg-surface px-3 text-[15px] focus:border-ink focus:outline-none focus:ring-2 focus:ring-ink/20">
+                {f.options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              </select>
+            ) : (
+              <Input name={f.key} defaultValue={values[f.key] ?? ""} dir={f.dir} type={f.type ?? "text"} error={fe[f.key]} />
+            )}
           </Field>
         ))}
       </div>

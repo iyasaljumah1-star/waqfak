@@ -1,7 +1,7 @@
 export const SETTINGS: [string, unknown, string][] = [
   ["company.profile", {
-    nameAr: "شركة وقفك", nameEn: "Waqfak", legalForm: "شركة ذات مسؤولية محدودة", crNumber: "", unifiedNumber: "", vatNumber: "",
-    nationalAddress: "", phone: "", email: "", website: "waqfak.sa",
+    nameAr: "شركة وقفك", nameEn: "Waqfak", legalForm: "شركة ذات مسؤولية محدودة", crNumber: "", unifiedNumber: "", vatRegistration: "", vatNumber: "",
+    nationalAddress: "", signatoryName: "", signatoryTitle: "", bankName: "", iban: "", phone: "", email: "", website: "waqfak.sa",
   }, "بيانات الشركة المعروضة في التذييل والعقود والتقارير"],
   ["company.licenses", [
     { key: "legal_consulting", nameAr: "ترخيص الاستشارات القانونية", number: "", issuer: "", expiresOn: "" },
@@ -11,6 +11,8 @@ export const SETTINGS: [string, unknown, string][] = [
   ["assessment.maturity_bands", [{ min: 90, level: "رائد" }, { min: 75, level: "متقدم" }, { min: 60, level: "مُدار" }, { min: 40, level: "ناشئ" }, { min: 0, level: "تأسيسي" }], "حدود مستويات النضج"],
   ["assessment.reassess_months", 6, "تذكير بإعادة التقييم"],
   ["requests.default_vat_rate", 15, "نسبة ضريبة القيمة المضافة"],
+  ["quotes.validity_days", 30, "مدة صلاحية عرض السعر المقترحة (أيام)"],
+  ["invoices.due_days", 14, "مهلة سداد الفاتورة من تاريخ إصدارها (أيام)"],
   ["complaints.sla_days", 10, "مهلة الرد على شكاوى المستفيدين (أيام)"],
   ["documents.max_upload_mb", 50, "الحد الأقصى لحجم الملف"],
   ["security.session_idle_minutes", 30, "مهلة الخمول للبوابة"],
@@ -35,6 +37,8 @@ export const NOTIFICATION_TEMPLATES = [
   { key: "obligation.overdue", titleAr: "فات موعد التزام نظامي: {title}", bodyAr: "{waqf} — كان الموعد {due}. الجزاء المحتمل: {penalty}", severity: "critical" as const, channels: ["in_app", "email", "sms"], locked: true },
   { key: "request.status", titleAr: "تحديث على طلبك {number}", bodyAr: "الحالة الآن: {status}", severity: "info" as const, channels: ["in_app", "email"] },
   { key: "request.awaiting_client", titleAr: "طلبك {number} بانتظار إجراء منك", bodyAr: "{note}", severity: "important" as const, channels: ["in_app", "email"] },
+  { key: "contract.sign", titleAr: "عقد بانتظار توقيعك: {number}", bodyAr: "{note}", severity: "important" as const, channels: ["in_app", "email"] },
+  { key: "contract.executed", titleAr: "نفذ العقد {number} بتوقيع جميع أطرافه", bodyAr: "نسخته الموقّعة متاحة في صفحة الطلب {request}.", severity: "info" as const, channels: ["in_app", "email"] },
   { key: "request.assigned", titleAr: "طلب جديد مسند إليك: {number}", bodyAr: "{service} — {waqf}", severity: "important" as const, channels: ["in_app", "email"] },
   { key: "nazara.update", titleAr: "النظارة {number}: {status}", bodyAr: "{waqf} — {note}", severity: "important" as const, channels: ["in_app", "email"] },
   { key: "meeting.invite", titleAr: "دعوة لاجتماع: {title}", bodyAr: "{when} — {waqf}", severity: "important" as const, channels: ["in_app", "email"] },
@@ -90,6 +94,92 @@ const SERVICE_CONTRACT = `# عقد تقديم خدمة رقم {{number}}
 
 وقّع الطرف الثاني إلكترونيًا بالموافقة الموثقة برمز التحقق، وتحفظ المنصة بصمة نص العقد وتاريخ التوقيع.`;
 
+/**
+ * Contract templates v2: parties with capacity and authority, the scope annex from the accepted quote, payment terms,
+ * amendment by written agreement only, and execution only after every listed party signs. One clause differs by the
+ * nature of the service (workflow template). Placeholders are filled by src/server/modules/contracts/render.ts.
+ */
+const contractV2 = (title: string, natureClause: string) => `# ${title} رقم {{number}}
+
+أُبرم هذا العقد إلكترونيًا عبر منصة «وقفك» بتاريخ {{date}} بين:
+
+{{parties_block}}
+
+## 1. محل العقد
+يقدّم الطرف الأول للطرف الثاني خدمة «{{service_name}}» (رمز {{service_code}}) المطلوبة بالطلب {{request_number}}، وفق نطاق العمل والمخرجات المبينة في الملحق (1) المأخوذ من عرض السعر {{quote_ref}} الذي قبله الطرف الثاني.
+${natureClause}
+ولا يُعد الطرف الأول نائبًا أو وكيلًا عن الطرف الثاني في أي تصرف إلا بتفويض مستقل مكتوب.
+
+## 2. المدة
+{{duration_clause}}
+
+## 3. المقابل المالي وشروط الدفع
+{{price_clause}}
+{{payment_terms}}
+
+## 4. التزامات الطرف الثاني
+يلتزم الطرف الثاني بتقديم البيانات والمستندات اللازمة في مواعيدها، وبصحتها. {{client_obligations}}
+
+## 5. حدود الخدمة والقيود النظامية
+{{restriction}}
+المخرجات الآلية للمنصة، كالتقييمات والتذكيرات، تقديرية مبنية على البيانات المدخلة ولا تُعد رأيًا مهنيًا، ولا تصدر المنصة فتوى ولا رأيًا ملزمًا.
+
+## 6. السرية وحماية البيانات
+يلتزم الطرف الأول بسرية المعلومات، وبمعالجة البيانات الشخصية للغرض المتعاقد عليه فقط، ويبقى التزام السرية قائمًا بعد انتهاء العقد.
+
+## 7. المسؤولية
+لا تتجاوز مسؤولية الطرف الأول التعاقدية قيمة هذا العقد. ولا يسري هذا الحد في حالات الغش أو الخطأ الجسيم، ولا يخل بالمسؤولية عن الفعل الضار.
+
+## 8. تعديل العقد
+لا يُعدَّل هذا العقد إلا باتفاق مكتوب يوقّعه أطرافه (ملحق تعديل)، ويُعد كل ملحق موقّع جزءًا من العقد.
+
+## 9. الإشعارات
+يتفق الأطراف على أن الإشعار عبر المنصة والبريد الإلكتروني المسجل وسيلة معتمدة للتبليغ.
+
+## 10. القانون الواجب التطبيق
+يخضع هذا العقد لأنظمة المملكة العربية السعودية.
+
+## 11. التوقيع والنفاذ
+يوقّع كل طرف هذا العقد إلكترونيًا برمز تحقق يُرسل إلى جواله المسجل في المنصة، وتحفظ المنصة بصمة نص العقد ووقت كل توقيع وعنوان الجهاز. ولا ينفذ العقد إلا بعد توقيع جميع الأطراف المذكورين أعلاه، وتُتاح نسخته الموقّعة لكل طرف.
+
+---
+# الملحق (1): نطاق العمل والمقابل وفق العرض {{quote_ref}}
+{{annex}}`;
+
+const AMENDMENT_CONTRACT = `# ملحق تعديل رقم {{number}} على العقد {{parent_contract}}
+
+أُبرم هذا الملحق إلكترونيًا عبر منصة «وقفك» بتاريخ {{date}} بين:
+
+{{parties_block}}
+
+## 1. موضوع الملحق
+اتفق الأطراف على تعديل العقد {{parent_contract}} الخاص بالطلب {{request_number}} وفق ملحق التعديل {{quote_ref}} الذي قبله الطرف الثاني، والمبين في الملحق (1). ويبقى ما لم يُعدّل من أحكام العقد ساريًا.
+
+## 2. المدة
+{{duration_clause}}
+
+## 3. المقابل المالي للتعديل وشروط دفعه
+{{price_clause}}
+{{payment_terms}}
+
+## 4. التوقيع والنفاذ
+يوقّع كل طرف هذا الملحق إلكترونيًا برمز تحقق يُرسل إلى جواله المسجل، ولا ينفذ إلا بعد توقيع جميع الأطراف المذكورين أعلاه، ويُعد بعد نفاذه جزءًا من العقد {{parent_contract}}.
+
+---
+# الملحق (1): نطاق التعديل والمقابل وفق {{quote_ref}}
+{{annex}}`;
+
 export const CONTRACT_TEMPLATES = [
   { code: "service_standard", kind: "service", nameAr: "عقد تقديم خدمة", body: SERVICE_CONTRACT, version: 1 },
+  { code: "service_standard", kind: "service", nameAr: "عقد تقديم خدمة", version: 2,
+    body: contractV2("عقد تقديم خدمة", "وتُنفَّذ الخدمة وفق مراحل سير العمل المبينة في المنصة، ويُسلَّم كل مخرج للطرف الثاني لاعتماده.") },
+  { code: "service_opinion", kind: "service", nameAr: "عقد رأي متخصص", version: 1,
+    body: contractV2("عقد تقديم رأي متخصص", "ويصدر الرأي مكتوبًا موقّعًا باسم المستشار المختص وصفته، في حدود الوقائع والمستندات التي قدّمها الطرف الثاني، وهو رأي مهني لا يُعد حكمًا ولا قرارًا ملزمًا لأي جهة مختصة.") },
+  { code: "service_registration", kind: "service", nameAr: "عقد تجهيز التوثيق والتسجيل", version: 1,
+    body: contractV2("عقد تجهيز التوثيق والتسجيل", "ويجهّز الطرف الأول الحزمة بترتيب البوابة المختصة ويتابعها، ويبقى الإقرار والتقديم لدى الجهة المختصة بيد الطرف الثاني أو وكيله المفوّض بوكالة مستقلة، ولا يضمن الطرف الأول قرار الجهة المختصة.") },
+  { code: "service_subscription", kind: "subscription", nameAr: "عقد خدمة مستمرة", version: 1,
+    body: contractV2("عقد خدمة مستمرة", "والخدمة مستمرة طوال مدة العقد، ويقدّم الطرف الأول تقاريرها الدورية المبينة في الملحق (1)، ولا تتجدد المدة إلا باتفاق مكتوب.") },
+  { code: "nazara_service", kind: "nazara", nameAr: "عقد خدمة تولي النظارة", version: 1,
+    body: contractV2("عقد خدمة تولي النظارة", "ولا يباشر الطرف الأول النظارة إلا بعد صدور قرار تعيينه من الجهة المختصة وسريان ترخيص الهيئة العامة للأوقاف للناظر الاعتباري، ويكون أجر النظارة بشرط الواقف أو بقرار الجهة المختصة؛ وما ورد في الملحق (1) مقابل الخدمات المحددة فيه.") },
+  { code: "service_amendment", kind: "amendment", nameAr: "ملحق تعديل عقد", version: 1, body: AMENDMENT_CONTRACT },
 ];
