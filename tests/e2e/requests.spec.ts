@@ -221,6 +221,8 @@ test.describe.serial("service request lifecycle", () => {
     await page.waitForURL(/\/intake$/);
     noWaqfReqId = page.url().match(/requests\/([0-9a-f-]{36})/)![1];
     await page.getByRole("radio", { name: "الواقف أو من يريد إنشاء الوقف" }).check();
+    await page.getByRole("button", { name: "التالي" }).click();
+    await page.getByRole("checkbox", { name: "الحوكمة والنظارة" }).check(); // C01 v2: focus areas are required
     await page.getByRole("button", { name: /المراجعة والإرسال/ }).click();
     await page.getByLabel(/أقر بأن البيانات والمستندات/).check();
     await page.getByRole("button", { name: "أرسل الطلب" }).click();
