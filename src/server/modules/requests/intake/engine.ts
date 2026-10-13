@@ -13,7 +13,22 @@ export type Cond =
 
 export type FieldType =
   | "text" | "textarea" | "number" | "money" | "percent" | "date" | "select" | "radio" | "checkboxes" | "yesno"
-  | "phone" | "email" | "idnumber" | "ack";
+  | "phone" | "email" | "idnumber" | "ack"
+  /** Repeating rows (e.g. bequests, beneficiary classes, parties). Stored as a JSON string of row objects. */
+  | "table";
+
+/** A column of a table field. Cells are validated like fields of the same type. */
+export type Column = {
+  key: string;
+  label: string;
+  type: "text" | "number" | "money" | "percent" | "select" | "date" | "idnumber";
+  required?: boolean;
+  options?: readonly (readonly [string, string])[];
+  min?: number;
+  max?: number;
+  /** Shown only when another cell of the same row has a value (e.g. amount when kind = fixed). */
+  showIf?: { col: string; in: string[] };
+};
 
 export type PrefillKey =
   | "user.fullName" | "user.phone" | "user.email" | "waqf.name" | "waqf.sizeClass" | "waqf.deedNo" | "waqf.registrationCertNo"
@@ -36,7 +51,38 @@ export type Field = {
   prefill?: PrefillKey;
   /** Spans the full width in the two-column layout. */
   wide?: boolean;
+  /** Table fields: columns and row limits. */
+  columns?: Column[];
+  minRows?: number;
+  maxRows?: number;
 };
+
+export type TableRow = Record<string, string>;
+const MAX_ROWS = 30;
+
+/** Parses a table answer (JSON string) into rows; anything malformed becomes an empty list. */
+export function tableRows(v: AnswerValue | undefined): TableRow[] {
+  if (typeof v !== "string" || !v.trim().startsWith("[")) return [];
+  try {
+    const arr = JSON.parse(v) as unknown;
+    if (!Array.isArray(arr)) return [];
+    return arr.filter((r): r is Record<string, unknown> => !!r && typeof r === "object" && !Array.isArray(r))
+      .map((r) => Object.fromEntries(Object.entries(r).map(([k, x]) => [k, String(x ?? "").trim().slice(0, 1000)])));
+  } catch {
+    return [];
+  }
+}
+
+export const cellVisible = (c: Column, row: TableRow) => !c.showIf || c.showIf.in.includes(row[c.showIf.col] ?? "");
+
+function cleanTable(f: Field, v: unknown): string | undefined {
+  const cols = f.columns ?? [];
+  const rows = tableRows(typeof v === "string" ? v : JSON.stringify(v ?? []))
+    .map((r) => Object.fromEntries(cols.filter((c) => cellVisible(c, r) && r[c.key]).map((c) => [c.key, r[c.key]])))
+    .filter((r) => Object.keys(r).length)
+    .slice(0, Math.min(f.maxRows ?? MAX_ROWS, MAX_ROWS));
+  return rows.length ? JSON.stringify(rows) : undefined;
+}
 
 export type Step = { key: string; title: string; intro?: string; fields: Field[]; showIf?: Cond };
 
@@ -66,7 +112,8 @@ export type DocMap = Record<string, string[]>;
 
 const MAX_TEXT = 4000;
 
-const isEmpty = (v: AnswerValue | undefined) => v === undefined || v === null || (Array.isArray(v) ? v.length === 0 : String(v).trim() === "");
+const isEmpty = (v: AnswerValue | undefined) =>
+  v === undefined || v === null || (Array.isArray(v) ? v.length === 0 : String(v).trim() === "" || String(v).trim() === "[]");
 
 export function evalCond(c: Cond | undefined, a: Answers): boolean {
   if (!c) return true;
@@ -127,6 +174,17 @@ export function validateField(f: Field, v: AnswerValue | undefined, a: Answers):
       const arr = Array.isArray(v) ? v : [s];
       return arr.every((x) => f.options?.some(([k]) => k === x)) ? null : `«${f.label}»: اختيار غير صالح.`;
     }
+    case "table": {
+      const rows = tableRows(v);
+      if (rows.length < (f.minRows ?? (fieldRequired(f, a) ? 1 : 0))) return `«${f.label}»: أضف ${f.minRows ?? 1} صفًا على الأقل.`;
+      for (const [i, r] of rows.entries())
+        for (const c of (f.columns ?? []).filter((c) => cellVisible(c, r))) {
+          const cellField: Field = { key: c.key, label: `${f.label} — الصف ${i + 1}: ${c.label}`, type: c.type, required: c.required, options: c.options, min: c.min, max: c.max };
+          const e = validateField(cellField, r[c.key], a);
+          if (e) return e;
+        }
+      return null;
+    }
     default: {
       const min = f.minLength ?? 0;
       const max = Math.min(f.maxLength ?? MAX_TEXT, MAX_TEXT);
@@ -176,6 +234,11 @@ export function sanitizeAnswers(form: ServiceForm, raw: unknown): Answers {
   for (const [k, v] of Object.entries(input)) {
     const f = fields.get(k);
     if (!f) continue;
+    if (f.type === "table") {
+      const t = cleanTable(f, v);
+      if (t) out[k] = t;
+      continue;
+    }
     if (f.type === "checkboxes") {
       const arr = (Array.isArray(v) ? v : [v]).map((x) => String(x ?? "")).filter((x) => f.options?.some(([o]) => o === x));
       if (arr.length) out[k] = [...new Set(arr)];
@@ -210,6 +273,20 @@ export function displayValue(f: Field, v: AnswerValue | undefined): string {
   if (f.type === "select" || f.type === "radio") return label(v);
   if (f.type === "money") return `${Number(v).toLocaleString("ar-SA")} ر.س`;
   if (f.type === "percent") return `${v}٪`;
+  if (f.type === "table") return tableText(f, tableRows(v)) || "—";
+  return v;
+}
+
+/** One line per row: "label: value، …" (for summaries, documents and search). */
+export function tableText(f: Field, rows: TableRow[]) {
+  return rows.map((r, i) => `${i + 1}) ${(f.columns ?? []).filter((c) => cellVisible(c, r) && r[c.key]).map((c) => `${c.label}: ${cellDisplay(c, r[c.key])}`).join("، ")}`).join("\n");
+}
+
+export function cellDisplay(c: Column, v: string | undefined) {
+  if (!v) return "—";
+  if (c.type === "select") return c.options?.find(([k]) => k === v)?.[1] ?? v;
+  if (c.type === "money") return `${Number(v).toLocaleString("ar-SA")} ر.س`;
+  if (c.type === "percent") return `${v}٪`;
   return v;
 }
 

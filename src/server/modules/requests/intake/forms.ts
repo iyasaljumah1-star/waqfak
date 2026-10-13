@@ -24,6 +24,9 @@ const pct = f("percent");
 const date = f("date");
 const ack = (key: string, label: string) => f("ack")(key, label, { required: true, wide: true });
 const R = { required: true } as const;
+/** Repeating rows (bequests, beneficiary classes, assets, parties…). */
+const table = (key: string, label: string, columns: NonNullable<Field["columns"]>, o: Opt = {}) => f("table")(key, label, { columns, wide: true, ...o });
+const RELATION = [["no", "ليس وارثًا"], ["yes", "وارث"], ["entity", "جهة (ليست شخصًا)"]] as const;
 const when = (field: string, eq: string): Cond => ({ field, eq });
 const yes = (field: string): Cond => ({ field, eq: "yes" });
 
@@ -164,48 +167,67 @@ const FORMS: Record<string, Omit<ServiceForm, "steps"> & { steps: Step[] }> = {
     }],
   },
   T03: {
-    code: "T03", version: 1,
+    code: "T03", version: 2,
     sources: [
-      "الدليل الإرشادي لصياغة وثيقة الوقف: البنود العشرة (الواقف، الأصل، اسم الوقف، المصارف، الاستثناء، النظارة، واجبات الناظر، المجلس، الخاتمة، التوقيع)",
-      "الدليل الإرشادي لصياغة وثيقة الوقف م11–م14: وصف الأصل وصك ملكيته الساري وما يلحق به وحصة المشاع",
+      "الدليل الإرشادي لصياغة وثيقة الوقف (المبدأ الأول): البنود العشرة — المقدمة وبيانات الواقف، الأصل، اسم الوقف، المصارف وطبقاتها والترتيب بينها وبدائلها، استثناء الانتفاع، النظارة، واجبات الناظر، المجلس، الخاتمة، التوقيع والشهود",
+      "الدليل الإرشادي لصياغة وثيقة الوقف م11–م14: وصف الأصل بما يميزه وصك ملكيته الساري وما يلحق به وحصة المشاع",
+      "الدليل الإرشادي للواقفين (صياغة صك الوقفية): مصارف مصلحة الوقف من صيانة واستثمار، وآلية استخلاف الناظر",
       "100 سؤال وجواب س28: لا يوقف العقار المرهون إلا بعد سداد الرهن أو موافقة المرتهن",
     ],
     docs: [
-      doc("ownership", "ownership_deed", "صك ملكية الأصل الموقوف أو مستند ملكيته", { required: true, hint: "يشترط أن يكون الأصل مملوكًا للواقف ومسجلًا باسمه." }),
+      doc("ownership", "ownership_deed", "صك ملكية الأصل الموقوف أو مستند ملكيته", { required: true, hint: "يشترط أن يكون الأصل مملوكًا للواقف ومسجلًا باسمه بصك ساري." }),
       doc("waqifId", "id_document", "هوية الواقف"),
-      doc("mortgagee", "official_letter", "موافقة المرتهن", { showIf: yes("mortgaged") }),
+      doc("mortgagee", "official_letter", "موافقة المرتهن", { showIf: yes("mortgaged"), requiredIf: yes("mortgaged") }),
     ],
     steps: [
       {
         key: "waqif", title: "الواقف واسم الوقف",
         fields: [
           text("waqifName", "اسم الواقف كما في الهوية", { ...R, prefill: "user.fullName" }),
-          f("idnumber")("waqifId", "رقم هوية الواقف"),
+          f("idnumber")("waqifId", "رقم هوية الواقف", R),
           text("waqfName", "الاسم المقترح للوقف", R),
+          sel("waqfKind", "نوع الوقف", WAQF_KIND, R),
         ],
       },
       {
         key: "asset", title: "الأصل الموقوف",
         fields: [
           sel("assetType", "نوع الأصل", ASSET_TYPES, R),
-          area("assetDescription", "وصف الأصل بما يميزه", { ...R, hint: "للعقار: الموقع والحدود ورقم القطعة ورقم الصك وتاريخه." }),
+          area("assetDescription", "وصف الأصل بما يميزه", { ...R, minLength: 15, hint: "للعقار: المدينة والحي ورقم القطعة والحدود والمساحة. للأسهم: الشركة وعدد الأسهم." }),
           text("ownershipDeedNo", "رقم صك الملكية أو مستندها", R),
+          date("ownershipDeedDate", "تاريخ الصك"),
           yn("registeredToWaqif", "هل الأصل مملوك ومسجل باسم الواقف بصك ساري؟", R),
           yn("mortgaged", "هل الأصل مرهون؟", R),
-          area("mortgageNote", "حالة الرهن", { showIf: yes("mortgaged"), requiredIf: yes("mortgaged"), hint: "لا يوقف المرهون إلا بعد سداد الرهن أو موافقة المرتهن." }),
           radio("share", "هل الوقف على كامل الأصل أم على حصة منه؟", [["whole", "كامل الأصل"], ["share", "حصة مشاعة"]], R),
           pct("sharePercent", "نسبة الحصة", { showIf: when("share", "share"), requiredIf: when("share", "share") }),
+          radio("appurtenances", "ما يلحق بالأصل", [["all", "يشمل الوقف الأصل بجميع حقوقه وما فيه"], ["except", "يُستثنى منه جزء محدد"]], R),
+          text("exceptionPart", "الجزء المستثنى", { showIf: when("appurtenances", "except"), requiredIf: when("appurtenances", "except") }),
         ],
       },
       {
-        key: "terms", title: "المصارف والنظارة",
+        key: "masarif", title: "المصارف والمستحقون",
         fields: [
-          area("beneficiaries", "مصارف الوقف وطبقات المستحقين والترتيب بينهم", { ...R, hint: "واذكر البديل إذا انقطع المستحقون." }),
-          yn("selfBenefit", "هل تستثني لنفسك الانتفاع بالوقف في حياتك؟"),
-          area("nazara", "من يتولى النظارة وكيف يُستخلف الناظر؟", R),
-          yn("board", "هل تريد مجلس نظارة؟"),
-          yn("investmentAllowed", "هل تجيز استثمار الوقف وتنميته؟"),
-          yn("amendmentRight", "هل تشترط لنفسك حق تعديل بعض الشروط؟", { hint: "التعديل بعد الثبوت لا يتم إلا بموافقة الجهة المختصة." }),
+          table("masarif", "المصارف وطبقات المستحقين", [
+            { key: "tier", label: "الطبقة (الترتيب)", type: "number", required: true, min: 1, max: 20 },
+            { key: "beneficiary", label: "المصرف أو المستحق (اسمًا أو وصفًا)", type: "text", required: true },
+            { key: "share", label: "النصيب من الريع", type: "percent" },
+            { key: "division", label: "القسمة بين أهل الطبقة", type: "select", options: [["equal", "بالتساوي"], ["inheritance", "للذكر مثل حظ الأنثيين"], ["na", "لا ينطبق (جهة)"]] },
+          ], { ...R, minRows: 1, hint: "الطبقة 1 تستحق أولًا، ثم من بعدها عند انقطاعها. الواو بين المستحقين تقتضي التسوية (الدليل الاسترشادي لتصنيف الوقف)." }),
+          text("alternateMasraf", "المصرف البديل إذا انقطع المستحقون", { ...R, hint: "الدليل الإرشادي لصياغة وثيقة الوقف: بيان بدائل المصارف." }),
+          pct("reservePercent", "نسبة تُستقطع من الريع لعمارة الوقف وصيانته وتنميته", { hint: "اتركها فارغة إن تُركت لتقدير الناظر." }),
+          yn("selfBenefit", "هل تستثني لنفسك الانتفاع بالوقف في حياتك؟", R),
+          radio("selfBenefitScope", "مقدار الانتفاع", [["all", "كامل الريع"], ["part", "جزء من الريع"], ["use", "السكنى أو الانتفاع بالعين"]], { showIf: yes("selfBenefit"), requiredIf: yes("selfBenefit") }),
+        ],
+      },
+      {
+        key: "nazara", title: "النظارة",
+        fields: [
+          radio("nazirType", "من يتولى النظارة", [["self", "الواقف نفسه حال حياته"], ["named", "شخص يُسمّى"], ["board", "مجلس نظارة"], ["entity", "جهة اعتبارية (مثل شركة نظارة مرخصة)"]], R),
+          text("nazirName", "اسم الناظر أو الجهة", { showIf: { field: "nazirType", in: ["named", "entity"] }, requiredIf: { field: "nazirType", in: ["named", "entity"] } }),
+          num("boardSize", "عدد أعضاء المجلس", { showIf: when("nazirType", "board"), requiredIf: when("nazirType", "board"), min: 3, max: 15 }),
+          radio("succession", "استخلاف الناظر بعد خلو النظارة", [["eldest", "الأصلح فالأصلح من الموقوف عليهم"], ["named", "من يسميه الناظر قبله كتابةً"], ["board", "ينتخبه المجلس"], ["authority", "تعيّنه الجهة المختصة"]], R),
+          yn("investmentAllowed", "هل تجيز للناظر استثمار الوقف وتنميته؟", R),
+          yn("amendmentRight", "هل تشترط لنفسك حق تعديل بعض الشروط؟", { hint: "التعديل بعد الثبوت لا يتم إلا بموافقة الجهة المختصة (100 سؤال، س76)." }),
         ],
       },
     ],
@@ -312,20 +334,76 @@ const FORMS: Record<string, Omit<ServiceForm, "steps"> & { steps: Step[] }> = {
 
   // ── W الوصايا
   W01: {
-    code: "W01", version: 1,
-    sources: ["الدليل الإرشادي لصياغة وثيقة الوقف (المبدأ الثاني): وصية واحدة تبين حال ما قبلها", "تعريف الخدمة: ما زاد على الثلث أو لوارث يراجع بشريًا ويحتاج إجازة الورثة"],
-    docs: [doc("previousWill", "other", "الوصية السابقة", { showIf: yes("hasPreviousWill") })],
-    steps: [{
-      key: "will", title: "وصيتك",
-      fields: [
-        yn("hasPreviousWill", "هل لك وصية سابقة؟", R),
-        date("previousWillDate", "تاريخ الوصية السابقة", { showIf: yes("hasPreviousWill") }),
-        yn("includesWaqf", "هل تتضمن الوصية وقفًا بعد الوفاة؟", R),
-        radio("waqfShare", "مقدار ما توصي به", [["upto_third", "الثلث فأقل"], ["above_third", "أكثر من الثلث"], ["to_heir", "لوارث"]], { showIf: yes("includesWaqf"), requiredIf: yes("includesWaqf") }),
-        area("estate", "نظرة عامة على أموالك ومقاصد الوصية", R),
-        text("executor", "من تقترحه وصيًا أو منفذًا للوصية"),
-      ],
-    }],
+    code: "W01", version: 2,
+    sources: [
+      "الدليل الإرشادي لصياغة وثيقة الوقف (المبدأ الثاني): بيان حال ما قبلها من وصايا، والأفضل وصية واحدة، والنص على تاريخ المعدّلة أو إلغاء ما سبقها",
+      "100 سؤال وجواب س16 وس75: الوقف المعلق على الموت يأخذ حكم الوصية؛ يجوز الرجوع عنه قبل الموت، ولا يلزم إلا في حدود ثلث التركة إلا بإجازة الورثة",
+      "الدليل الإرشادي للواقفين: توثيق الوصية بالوقف عبر «ناجز» أصالة أو وكالة، ويلزم الإشهاد على الوصية غير الموثقة",
+    ],
+    docs: [
+      doc("previousWill", "other", "الوصية السابقة", { showIf: yes("hasPreviousWill"), requiredIf: yes("hasPreviousWill") }),
+      doc("testatorId", "id_document", "هوية الموصي"),
+      doc("assetDocs", "ownership_deed", "مستندات ملكية الأعيان الموصى بها (إن وُجدت)"),
+    ],
+    steps: [
+      {
+        key: "testator", title: "الموصي",
+        fields: [
+          text("testatorName", "اسم الموصي كما في الهوية", { ...R, prefill: "user.fullName" }),
+          f("idnumber")("testatorId", "رقم هوية الموصي", R),
+        ],
+      },
+      {
+        key: "previous", title: "الوصايا السابقة",
+        fields: [
+          yn("hasPreviousWill", "هل لك وصية سابقة؟", R),
+          date("previousWillDate", "تاريخ الوصية السابقة", { showIf: yes("hasPreviousWill"), requiredIf: yes("hasPreviousWill") }),
+          radio("previousWillAction", "ما حكم الوصية السابقة في هذه الوصية؟", [["revoke", "تُلغى الوصايا السابقة كلها وتحل هذه محلها"], ["amend", "تُعدَّل بما في هذه الوصية ويبقى ما لم يُعدَّل"]], { showIf: yes("hasPreviousWill"), requiredIf: yes("hasPreviousWill") }),
+        ],
+      },
+      {
+        key: "bequests", title: "الوصايا",
+        fields: [
+          table("bequests", "ما توصي به", [
+            { key: "kind", label: "نوع الوصية", type: "select", required: true, options: [["waqf", "وقف بعد الوفاة"], ["charity", "صدقة أو تبرع لجهة"], ["person", "لشخص معيّن"], ["other", "أخرى"]] },
+            { key: "recipient", label: "الموصى له (الجهة أو الشخص أو المصرف)", type: "text", required: true },
+            { key: "relation", label: "صفة الموصى له", type: "select", required: true, options: RELATION },
+            { key: "basis", label: "مقدار الوصية", type: "select", required: true, options: [["share", "نسبة من التركة"], ["amount", "مبلغ محدد"], ["asset", "عين محددة"]] },
+            { key: "percent", label: "النسبة من التركة", type: "percent", required: true, showIf: { col: "basis", in: ["share"] } },
+            { key: "amount", label: "المبلغ (ر.س)", type: "money", required: true, showIf: { col: "basis", in: ["amount"] } },
+            { key: "asset", label: "وصف العين", type: "text", required: true, showIf: { col: "basis", in: ["asset"] } },
+          ], { ...R, minRows: 1, hint: "ما زاد على ثلث التركة أو كان لوارث لا ينفذ إلا بإجازة الورثة (100 سؤال، س16 وس75)." }),
+          money("estimatedEstate", "تقدير إجمالي التركة (اختياري)", { hint: "يساعد على التحقق من حد الثلث في الوصايا بالمبالغ. لا يُطبع في الوصية." }),
+        ],
+      },
+      {
+        key: "waqf", title: "الوقف بعد الوفاة",
+        showIf: { field: "bequests", notEmpty: true },
+        fields: [
+          yn("includesWaqf", "هل في وصاياك وقف بعد الوفاة؟", R),
+          text("waqfName", "الاسم المقترح للوقف", { showIf: yes("includesWaqf") }),
+          table("waqfMasarif", "مصارف الوقف", [
+            { key: "beneficiary", label: "المصرف", type: "text", required: true },
+            { key: "share", label: "النصيب من الريع", type: "percent" },
+          ], { showIf: yes("includesWaqf"), requiredIf: yes("includesWaqf"), minRows: 1 }),
+          text("waqfNazir", "ناظر الوقف بعد الوفاة", { showIf: yes("includesWaqf"), requiredIf: yes("includesWaqf") }),
+          radio("waqfSuccession", "استخلاف الناظر", [["eldest", "الأصلح فالأصلح من الموقوف عليهم"], ["named", "من يسميه الناظر قبله كتابةً"], ["authority", "تعيّنه الجهة المختصة"]], { showIf: yes("includesWaqf"), requiredIf: yes("includesWaqf") }),
+        ],
+      },
+      {
+        key: "executor", title: "منفذ الوصية والتوثيق",
+        fields: [
+          text("executorName", "الوصي (منفذ الوصية)", R),
+          sel("executorRelation", "صفة الوصي", [["heir", "أحد الورثة"], ["relative", "قريب ليس وارثًا"], ["other", "شخص آخر"], ["entity", "جهة"]], R),
+          text("alternateExecutor", "وصي بديل إن تعذّر الأول"),
+          radio("documentation", "كيف ستوثّق الوصية؟", [["najiz", "لدى الجهة المختصة عبر «ناجز»"], ["witnesses", "بالإشهاد عليها الآن، والتوثيق لاحقًا"]], R),
+          table("witnesses", "الشهود", [
+            { key: "name", label: "اسم الشاهد", type: "text", required: true },
+            { key: "id", label: "رقم الهوية", type: "idnumber" },
+          ], { showIf: when("documentation", "witnesses"), requiredIf: when("documentation", "witnesses"), minRows: 1, hint: "يلزم الإشهاد على الوصية التي لم توثق لدى الجهة المختصة (الدليل الإرشادي للواقفين)." }),
+        ],
+      },
+    ],
   },
   W02: {
     code: "W02", version: 1, sources: ["الدليل الإرشادي للواقفين: التوثيق عبر «ناجز»، ويقدّم الوكيل بوكالة «إثبات وصية»"],
@@ -378,19 +456,36 @@ const FORMS: Record<string, Omit<ServiceForm, "steps"> & { steps: Step[] }> = {
 
   // ── N النظارة والإدارة
   N01: {
-    code: "N01", version: 1,
+    code: "N01", version: 2,
     sources: ["لائحة تنظيم أعمال النظارة م4–م7، م8، م15 (قائمة استلام ملف النظارة)", "الدليل المختصر لمهمات الناظر: حماية أصول الوقف وعقوده"],
     docs: [],
     steps: [{
       key: "nazara", title: "حال النظارة اليوم",
       fields: [
         radio("currentState", "حال النظارة", [["vacant", "شاغرة"], ["resigning", "الناظر الحالي يرغب في التخلي عنها"], ["waqif_appoints", "الواقف يريد تعيين «وقفك»"], ["authority", "بقرار من الجهة المختصة"], ["other", "حال أخرى"]], R),
-        text("currentNazir", "اسم الناظر الحالي أو السابق"),
-        area("reason", "سبب طلب تولي «وقفك» النظارة", R),
-        area("assetsSummary", "ملخص أصول الوقف وعقوده القائمة", R),
+        text("currentNazir", "اسم الناظر الحالي أو السابق", { showIf: { field: "currentState", in: ["resigning", "other"] } }),
+        checks("reasons", "أسباب طلب تولي «وقفك» النظارة", [["no_nazir", "لا يوجد ناظر قادر على القيام بها"], ["dispute", "خلاف بين المستحقين أو النظار"], ["professional", "الرغبة في إدارة مهنية مستقلة"], ["waqif_choice", "اختيار الواقف"], ["compliance", "تصحيح وضع نظامي متأخر"], ["other", "سبب آخر"]], R),
+        area("reason", "تفاصيل إضافية عن السبب (اختياري)", { maxLength: 1500 }),
+      ],
+    }, {
+      key: "assets", title: "أصول الوقف وعقوده",
+      fields: [
+        table("assets", "الأصول القائمة", [
+          { key: "type", label: "نوع الأصل", type: "select", required: true, options: ASSET_TYPES },
+          { key: "description", label: "الوصف", type: "text", required: true },
+          { key: "deedNo", label: "رقم الصك أو المستند", type: "text" },
+          { key: "value", label: "القيمة التقديرية (ر.س)", type: "money" },
+          { key: "leased", label: "عليه عقد إيجار أو استثمار؟", type: "select", options: [["yes", "نعم"], ["no", "لا"]] },
+        ], { ...R, minRows: 1 }),
+        num("beneficiariesCount", "عدد المستفيدين التقريبي", { min: 0 }),
         yn("bankAccount", "هل للوقف حساب بنكي باسمه؟", R),
+        yn("statements", "هل للوقف قوائم أو بيانات مالية لآخر سنة؟", R),
         yn("litigation", "هل على الوقف دعاوى أو مطالبات قائمة؟", R),
-        area("litigationNote", "بيان الدعاوى أو المطالبات", { showIf: yes("litigation"), requiredIf: yes("litigation") }),
+        table("cases", "الدعاوى والمطالبات", [
+          { key: "subject", label: "الموضوع", type: "text", required: true },
+          { key: "party", label: "الطرف الآخر", type: "text" },
+          { key: "stage", label: "المرحلة", type: "select", options: [["pre", "قبل رفع الدعوى"], ["filed", "منظورة"], ["judged", "صدر فيها حكم"]] },
+        ], { showIf: yes("litigation"), requiredIf: yes("litigation"), minRows: 1 }),
       ],
     }],
   },
@@ -594,8 +689,11 @@ const FORMS: Record<string, Omit<ServiceForm, "steps"> & { steps: Step[] }> = {
 
   // ── C الامتثال والتقارير والاستشارات
   C01: {
-    code: "C01", version: 1, sources: ["تعريف الخدمة في الكتالوج"], docs: [],
-    steps: [{ key: "basic", title: "التقييم الأساسي", fields: [area("goal", "ما الذي تريد أن يركز عليه التقييم؟")] }],
+    code: "C01", version: 2, sources: ["تعريف الخدمة في الكتالوج"], docs: [],
+    steps: [{ key: "basic", title: "التقييم الأساسي", fields: [
+      checks("focus", "ما الذي تريد أن يركز عليه التقييم؟", [["governance", "الحوكمة والنظارة"], ["finance", "المالية والصرف"], ["compliance", "الالتزامات النظامية"], ["assets", "الأصول والاستثمار"], ["beneficiaries", "المستفيدون"], ["documents", "الوثائق والتسجيل"]], R),
+      area("goal", "ملاحظة إضافية (اختياري)", { maxLength: 1500 }),
+    ] }],
   },
   C02: {
     code: "C02", version: 1, sources: ["تعريف الخدمة في الكتالوج"], docs: [],
@@ -627,8 +725,17 @@ const FORMS: Record<string, Omit<ServiceForm, "steps"> & { steps: Step[] }> = {
     steps: [{ key: "condition", title: "الشرط", fields: [area("conditionText", "نص الشرط كما ورد في الوثيقة", { ...R, minLength: 10 }), area("issue", "وجه الغموض أو الإشكال", { ...R, minLength: 15 }), yn("waqifAlive", "هل الواقف على قيد الحياة؟", R)] }],
   },
   C12: {
-    code: "C12", version: 1, sources: ["100 سؤال وجواب س47: اختصاص دوائر الأوقاف في محاكم الأحوال الشخصية"], docs: [doc("related", "other", "مستندات الخلاف")],
-    steps: [{ key: "dispute", title: "الخلاف", fields: [area("parties", "أطراف الخلاف وصفاتهم", R), area("subject", "موضوع الخلاف", { ...R, minLength: 15 }), yn("courtCase", "هل رُفعت دعوى؟", R), area("attempts", "محاولات التسوية السابقة")] }],
+    code: "C12", version: 2, sources: ["100 سؤال وجواب س47: اختصاص دوائر الأوقاف في محاكم الأحوال الشخصية"], docs: [doc("related", "other", "مستندات الخلاف")],
+    steps: [{ key: "dispute", title: "الخلاف", fields: [
+      table("parties", "أطراف الخلاف", [
+        { key: "name", label: "الاسم", type: "text", required: true },
+        { key: "capacity", label: "الصفة", type: "select", required: true, options: [["beneficiary", "مستحق"], ["nazir", "ناظر"], ["board", "عضو مجلس نظارة"], ["heir", "من ورثة الواقف"], ["other", "أخرى"]] },
+      ], { ...R, minRows: 2 }),
+      sel("disputeType", "نوع الخلاف", [["distribution", "قسمة الريع والاستحقاق"], ["nazara", "النظارة وتصرفات الناظر"], ["condition", "فهم شرط الواقف"], ["assets", "الأصول والعقود"], ["other", "أخرى"]], R),
+      area("subject", "موضوع الخلاف", { ...R, minLength: 15 }),
+      yn("courtCase", "هل رُفعت دعوى؟", R),
+      area("attempts", "محاولات التسوية السابقة"),
+    ] }],
   },
   C13: {
     code: "C13", version: 1, sources: ["100 سؤال وجواب س44، س47"], docs: [doc("caseDocs", "judgment", "صحيفة الدعوى أو الأحكام أو الخطابات")],

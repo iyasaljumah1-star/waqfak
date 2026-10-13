@@ -13,6 +13,8 @@ import { loadRequestCtx, type RequestCtx } from "./access";
 import { logEvent, transition, type ActCtx } from "./engine";
 import { awaitingClient, blocking, ITEM_KIND_LABEL } from "./items-pure";
 import type { RequestStatus } from "./workflow";
+
+export type DocReview = { status: "verified" | "rejected"; slot: string; by: string; at: string; note: string | null };
 import { syncTask } from "@/server/modules/operations/exec";
 import { linksOfRequest } from "@/server/modules/operations/links";
 
@@ -211,6 +213,8 @@ export async function verifyIntake(_: ActionState, fd: FormData): Promise<Action
     const items = await itemsOf(c, d.id);
     const pending = items.filter((i) => blocking(i) && i.visibility === "client");
     if (pending.length) throw new UserError(`لا يكتمل التحقق وفيه ${pending.length} من النواقص المطلوبة غير المقبولة.`);
+    const unverified = await unverifiedRequiredSlots(c, rc);
+    if (unverified.length) throw new UserError(`تحقق من المستندات المطلوبة أولًا (مرفوع لا يعني متحققًا منه): ${unverified.join("، ")}.`);
     await c.tx.update(serviceRequests).set({ intakeVerifiedAt: new Date(), intakeVerifiedBy: c.auth.user.id, updatedBy: c.auth.user.id }).where(eq(serviceRequests.id, d.id));
     await logEvent(c.tx, rc.req, c.auth.user.id, `تحقق الفريق من بيانات الطلب ومستنداته${d.note ? ` — ${d.note}` : ""}`);
     await audit(c.tx, { actorUserId: c.auth.user.id, action: "requests.verify_intake", entityType: "service_request", entityId: d.id, waqfId: rc.req.waqfId, ip: c.ip, userAgent: c.userAgent, after: { note: d.note || undefined } });
@@ -242,4 +246,66 @@ export async function acceptRequest(_: ActionState, fd: FormData): Promise<Actio
     await notify(rc.req.requesterUserId, "request.status", { number: rc.req.number, status: rc.service.pricingModel === "free" ? "قُبل طلبك وسيبدأ تنفيذه" : "قُبل طلبك، ويُعدّ الآن نطاق العمل وعرض السعر" }, { waqfId: rc.req.waqfId, link: `/app/requests/${d.id}`, tx: c.tx });
     return { ok: true, message: "قُبل الطلب للخدمة." };
   }, { revalidate: reval(d.id) });
+}
+
+// ───────────────────────── Staff: review of the documents attached in the form ─────────────────────────
+
+const docReviewSchema = z.object({
+  id: uuid,
+  documentId: uuid,
+  slot: z.string().min(1).max(60),
+  decision: z.enum(["verified", "rejected"]),
+  note: z.string().trim().max(1000).optional().default(""),
+});
+
+/**
+ * A document attached to the form is «uploaded», not «verified»: the team checks it against the form slot and records
+ * the result. A rejected document raises a required document item for the client (the deficiencies register), and the
+ * intake cannot be verified while a required slot has no verified document.
+ */
+export async function reviewIntakeDoc(_: ActionState, fd: FormData): Promise<ActionState> {
+  const r = parseForm(docReviewSchema, fd);
+  if ("state" in r) return r.state;
+  const d = r.data;
+  if (d.decision === "rejected" && d.note.length < 5) return { error: "اذكر سبب رفض المستند.", fieldErrors: { note: "اكتب السبب (5 أحرف على الأقل)." } };
+  return userAction(async (c) => {
+    const rc = await loadRequestCtx(c.tx, c.auth, d.id, "staff");
+    if (!rc.isAssignee && !rc.isOps) throw new ForbiddenError();
+    if (rc.req.status === "draft" || CLOSED.includes(rc.req.status)) throw new UserError("لا تُراجع مستندات طلب غير مرسل أو منتهٍ.");
+    const intake = (rc.req.intake ?? {}) as { docs?: Record<string, string[]>; docReview?: Record<string, DocReview> };
+    if (!(intake.docs?.[d.slot] ?? []).includes(d.documentId)) throw new UserError("المستند ليس مرفقًا في هذه الخانة من النموذج.");
+    const review: DocReview = { status: d.decision, slot: d.slot, by: c.auth.user.id, at: new Date().toISOString(), note: d.note || null };
+    await c.tx.update(serviceRequests).set({ intake: { ...intake, docReview: { ...(intake.docReview ?? {}), [d.documentId]: review } }, updatedBy: c.auth.user.id }).where(eq(serviceRequests.id, d.id));
+    await audit(c.tx, { actorUserId: c.auth.user.id, action: `requests.doc_${d.decision}`, entityType: "document", entityId: d.documentId, waqfId: rc.req.waqfId, ip: c.ip, userAgent: c.userAgent, after: { slot: d.slot, note: d.note || undefined } });
+    if (d.decision === "rejected") {
+      const [doc] = await c.tx.select({ title: documents.title, docType: documents.docType }).from(documents).where(eq(documents.id, d.documentId)).limit(1);
+      const [{ m }] = await c.tx.select({ m: max(requestItems.seq) }).from(requestItems).where(eq(requestItems.requestId, d.id));
+      const [item] = await c.tx.insert(requestItems).values({
+        requestId: d.id, waqfId: rc.req.waqfId, seq: (m ?? 0) + 1, kind: "document", title: `استبدال مستند: ${doc?.title ?? "مستند"}`, body: d.note,
+        docType: doc?.docType ?? null, required: true, visibility: "client", createdBy: c.auth.user.id,
+      }).returning();
+      await itemEvent(c, item, "raised", d.note);
+      await logEvent(c.tx, rc.req, c.auth.user.id, `رُفض مستند «${doc?.title ?? ""}»: ${d.note}`);
+      const held = await holdForClient(c, rc, `بانتظار استبدال مستند: ${doc?.title ?? ""}`);
+      if (!held) await notify(rc.req.requesterUserId, "request.awaiting_client", { number: rc.req.number, note: `مطلوب منك: استبدال ${doc?.title ?? "مستند"}` }, { waqfId: rc.req.waqfId, link: `/app/requests/${d.id}#items`, tx: c.tx });
+    }
+    return { ok: true, message: d.decision === "verified" ? "سُجّل التحقق من المستند." : "رُفض المستند وسُجّل بند لاستبداله." };
+  }, { revalidate: reval(d.id) });
+}
+
+/** Required form slots whose attached documents were not verified by the team (an accepted replacement item counts). */
+async function unverifiedRequiredSlots(c: ActCtx, rc: RequestCtx): Promise<string[]> {
+  const { serviceForm, intakeOf } = await import("./intake/server");
+  const { visibleDocs, docRequired } = await import("./intake/engine");
+  const form = serviceForm(rc.service);
+  const intake = intakeOf(rc.req) as ReturnType<typeof intakeOf> & { docReview?: Record<string, DocReview> };
+  const answers = intake.answers ?? {};
+  if (!intake.formVersion) return []; // legacy requests (before forms) keep the old check
+  const out: string[] = [];
+  for (const slot of visibleDocs(form, answers).filter((s) => docRequired(s, answers))) {
+    const ids = intake.docs?.[slot.key] ?? [];
+    const ok = ids.some((id) => intake.docReview?.[id]?.status === "verified");
+    if (!ok) out.push(slot.label);
+  }
+  return out;
 }

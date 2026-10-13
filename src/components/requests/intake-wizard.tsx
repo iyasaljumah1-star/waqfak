@@ -8,8 +8,8 @@ import { FormMessage, SubmitButton } from "@/components/ui/form";
 import { DocumentUploader } from "@/components/documents/uploader";
 import { cn, initialState, type ActionState } from "@/lib/utils";
 import {
-  checkIntake, docRequired, fieldRequired, intakeProgress, summarize, validateStep, visibleDocs, visibleFields, visibleSteps,
-  type Answers, type AnswerValue, type DocMap, type Field, type ServiceForm,
+  cellVisible, checkIntake, docRequired, fieldRequired, intakeProgress, summarize, tableRows, validateStep, visibleDocs, visibleFields, visibleSteps,
+  type Answers, type AnswerValue, type Column, type DocMap, type Field, type ServiceForm, type TableRow,
 } from "@/server/modules/requests/intake/engine";
 
 type Act = (prev: ActionState, fd: FormData) => Promise<ActionState>;
@@ -81,6 +81,15 @@ function FieldInput({ f, value, onChange, error, required }: { f: Field; value: 
         </fieldset>
       );
     }
+    case "table":
+      return (
+        <fieldset className="space-y-2 sm:col-span-2" aria-describedby={describedBy} aria-invalid={!!error} data-testid={`table-${f.key}`}>
+          <legend className="mb-1.5 text-[15px] font-medium">{label}</legend>
+          <TableInput f={f} value={value} onChange={onChange} />
+          {f.hint && !error ? <p id={`${id}-hint`} className="text-[13px] text-muted">{f.hint}</p> : null}
+          {error ? <p id={`${id}-error`} className="text-[13px] font-medium text-critical">{error}</p> : null}
+        </fieldset>
+      );
     case "ack":
       return (
         <div className="space-y-1 sm:col-span-2">
@@ -107,6 +116,56 @@ function FieldInput({ f, value, onChange, error, required }: { f: Field; value: 
       {control}
       {f.hint && !error ? <p id={`${id}-hint`} className="text-[13px] text-muted">{f.hint}</p> : null}
       {error ? <p id={`${id}-error`} className="text-[13px] font-medium text-critical">{error}</p> : null}
+    </div>
+  );
+}
+
+/** Repeating rows: each row is a small card of cells (works on phones), with add and remove. */
+function TableInput({ f, value, onChange }: { f: Field; value: AnswerValue | undefined; onChange: (v: AnswerValue | undefined) => void }) {
+  const rows = tableRows(value);
+  const cols = f.columns ?? [];
+  const max = f.maxRows ?? 30;
+  const set = (next: TableRow[]) => onChange(next.length ? JSON.stringify(next) : undefined);
+  const setCell = (i: number, c: Column, v: string) => set(rows.map((r, j) => (j === i ? { ...r, [c.key]: v } : r)));
+  const list = rows.length ? rows : [];
+  return (
+    <div className="space-y-2">
+      {list.map((r, i) => (
+        <div key={i} className="rounded-lg border border-line bg-surface-2/40 p-3" data-testid={`row-${f.key}-${i}`}>
+          <div className="mb-2 flex items-center justify-between">
+            <span className="text-[13px] font-medium text-muted">{i + 1}</span>
+            <button type="button" onClick={() => set(rows.filter((_, j) => j !== i))} className="inline-flex h-8 items-center gap-1 rounded-md px-2 text-[13px] text-critical hover:bg-critical-soft">
+              <X aria-hidden className="size-3.5" />احذف الصف
+            </button>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {cols.filter((c) => cellVisible(c, r)).map((c) => {
+              const cid = `q-${f.key}-${i}-${c.key}`;
+              const v = r[c.key] ?? "";
+              const numeric = ["number", "money", "percent", "idnumber"].includes(c.type);
+              return (
+                <div key={c.key} className="space-y-1">
+                  <label htmlFor={cid} className="block text-[14px]">{c.label}{c.required ? <span aria-hidden className="text-critical"> *</span> : null}</label>
+                  {c.type === "select" ? (
+                    <select id={cid} value={v} onChange={(e) => setCell(i, c, e.target.value)} className={cn(inputCls, "h-10")}>
+                      <option value="">اختر…</option>
+                      {c.options?.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                    </select>
+                  ) : (
+                    <input id={cid} type={c.type === "date" ? "date" : "text"} value={v} inputMode={numeric ? "decimal" : undefined} dir={numeric || c.type === "date" ? "ltr" : undefined}
+                      maxLength={300} onChange={(e) => setCell(i, c, e.target.value)} className={cn(inputCls, "h-10", numeric && "tabular text-start")} />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+      {rows.length < max ? (
+        <button type="button" onClick={() => set([...rows, {}])} className="inline-flex h-10 items-center rounded-md border border-dashed border-line-strong px-3 text-[14px] text-ink hover:bg-ink-soft">
+          أضف صفًا{rows.length ? "" : ` — ${f.label}`}
+        </button>
+      ) : null}
     </div>
   );
 }

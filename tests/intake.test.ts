@@ -107,8 +107,10 @@ describe("intake engine", () => {
 
   it("full check: fields and documents, progress and summary", () => {
     const answers = {
-      ...base, waqifName: "واقف تجريبي", waqfName: "وقف تجريبي", assetType: "real_estate", assetDescription: "أرض تجريبية", ownershipDeedNo: "000",
-      registeredToWaqif: "yes", mortgaged: "no", share: "whole", beneficiaries: "مصرف تجريبي", nazara: "ناظر تجريبي",
+      ...base, waqifName: "واقف تجريبي", waqifId: "1000000001", waqfName: "وقف تجريبي", waqfKind: "general", assetType: "real_estate",
+      assetDescription: "أرض تجريبية في حي تجريبي", ownershipDeedNo: "000", registeredToWaqif: "yes", mortgaged: "no", share: "whole", appurtenances: "all",
+      masarif: JSON.stringify([{ tier: "1", beneficiary: "مصرف تجريبي", share: "100", division: "na" }]), alternateMasraf: "الفقراء والمساكين",
+      selfBenefit: "no", nazirType: "self", succession: "authority", investmentAllowed: "yes",
     };
     const c1 = checkIntake(form, answers, {});
     expect(c1.fieldsComplete).toBe(true);
@@ -124,5 +126,32 @@ describe("intake engine", () => {
     // conditional documents appear only when relevant
     expect(visibleDocs(form, answers).some((d) => d.key === "mortgagee")).toBe(false);
     expect(visibleDocs(form, { ...answers, mortgaged: "yes" }).some((d) => d.key === "mortgagee")).toBe(true);
+  });
+});
+
+describe("table fields (repeating rows)", () => {
+  const f: ServiceForm = { code: "X", version: 1, sources: ["t"], docs: [], steps: [{ key: "s", title: "s", fields: [
+    { key: "rows", label: "الوصايا", type: "table", required: true, minRows: 1, columns: [
+      { key: "kind", label: "النوع", type: "select", required: true, options: [["a", "أ"], ["b", "ب"]] },
+      { key: "basis", label: "الأساس", type: "select", required: true, options: [["share", "نسبة"], ["amount", "مبلغ"]] },
+      { key: "percent", label: "النسبة", type: "percent", required: true, showIf: { col: "basis", in: ["share"] } },
+      { key: "amount", label: "المبلغ", type: "money", required: true, showIf: { col: "basis", in: ["amount"] } },
+    ] },
+  ] }] };
+  it("requires the minimum rows and validates each visible cell", () => {
+    expect(validateStep(f.steps[0], {}).rows).toMatch(/مطلوب|صفًا/);
+    expect(validateStep(f.steps[0], { rows: JSON.stringify([{ kind: "a", basis: "share" }]) }).rows).toMatch(/النسبة/);
+    expect(validateStep(f.steps[0], { rows: JSON.stringify([{ kind: "a", basis: "share", percent: "150" }]) }).rows).toMatch(/أكبر من 100/);
+    expect(validateStep(f.steps[0], { rows: JSON.stringify([{ kind: "a", basis: "amount", amount: "5000" }]) }).rows).toBeUndefined();
+  });
+  it("sanitizes: drops hidden cells, unknown columns, empty rows and malformed input", () => {
+    const a = sanitizeAnswers(f, { rows: JSON.stringify([{ kind: "a", basis: "amount", amount: "5", percent: "9", hack: "x" }, {}]) });
+    expect(JSON.parse(a.rows as string)).toEqual([{ kind: "a", basis: "amount", amount: "5" }]);
+    expect(sanitizeAnswers(f, { rows: "not json" }).rows).toBeUndefined();
+  });
+  it("displays one line per row", () => {
+    const sum = summarize(f, { rows: JSON.stringify([{ kind: "a", basis: "share", percent: "10" }, { kind: "b", basis: "amount", amount: "500" }]) });
+    expect(sum[0].rows[0].value).toContain("1) النوع: أ، الأساس: نسبة، النسبة: 10٪");
+    expect(sum[0].rows[0].value).toContain("2) النوع: ب");
   });
 });
