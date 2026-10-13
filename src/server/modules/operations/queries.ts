@@ -25,7 +25,8 @@ export async function requestOperations(tx: Tx, auth: Auth, rc: RequestCtx) {
   const order = (k: string | null) => ({ intake: 0, stage: 1, prepare_output: 2, review_output: 3 } as Record<string, number>)[k ?? ""] ?? 4;
   const taskList = taskRows.sort((a, b) => order(a.kind) - order(b.kind)).map((t) => {
     const right = executeRight({ isStaff: auth.isStaff, perms: auth.perms, userId: auth.user.id, taskAssignee: t.assigneeUserId, requestAssignee: rc.req.assignedToUserId });
-    return { ...t, right, actions: taskActions(t, right), events: events.filter((e) => e.taskId === t.id) };
+    const terminal = ["closed", "cancelled", "rejected"].includes(rc.req.status);
+    return { ...t, right, actions: terminal ? [] : taskActions(t, right), events: events.filter((e) => e.taskId === t.id) };
   });
   const defs = outputsFor(rc.service);
   const outputList = defs.map((def) => {

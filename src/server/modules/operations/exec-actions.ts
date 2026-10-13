@@ -73,6 +73,7 @@ export async function taskAction(_: ActionState, fd: FormData): Promise<ActionSt
   const d = r.data;
   return userAction(async (c) => {
     const { t, rc, right } = await loadTask(c, d.taskId, d.requestId);
+    if (["closed", "cancelled", "rejected"].includes(rc.req.status)) throw new UserError("الطلب منتهٍ؛ لا تُنفذ مهامه.");
     const action = d.action as TaskAction;
     if (!taskActions(t, right).includes(action)) throw new UserError("هذا الإجراء غير متاح للمهمة في حالتها الحالية.");
     const to = nextTaskStatus(t.status, action);
