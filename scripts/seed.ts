@@ -115,7 +115,7 @@ async function seedServices() {
     }).onConflictDoUpdate({
       // Refresh seeded copy only on rows nobody edited from the admin panel (updated_by stays null until then).
       target: s.services.code,
-      set: { nameAr: x.nameAr, summary: x.summary, outputs: x.outputs, regulatoryRestrictions: x.restriction ?? null },
+      set: { nameAr: x.nameAr, summary: x.summary, outputs: x.outputs, regulatoryRestrictions: x.restriction ?? null, requiredDocuments: x.docs ?? [] },
       setWhere: sql`${s.services.updatedBy} is null`,
     });
   }
