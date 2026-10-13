@@ -310,14 +310,13 @@ test.describe.serial("service request lifecycle", () => {
 
     // uploaded is not verified: each required form document is verified before the intake check
     await emp.reload();
-    const review = emp.getByTestId("doc-review");
-    for (let i = 0; i < 10; i++) {
-      const btn = review.getByRole("button", { name: "تحققت منه" });
-      if (!(await btn.count())) break;
-      await btn.first().click();
-      await ex(review.getByRole("status").first()).toBeVisible();
-      await emp.reload();
+    for (const slot of ["svc_waqf_deed", "svc_nazara_deed"]) {
+      const row = emp.getByTestId(`docslot-${slot}`);
+      await row.getByRole("button", { name: "تحققت منه" }).click();
+      await ex(row).toContainText("متحقق منه");
     }
+    await emp.reload();
+    await ex(emp.getByTestId("doc-review")).not.toContainText("لم يُتحقق منه");
     await emp.getByRole("button", { name: "تحققت من البيانات والمستندات", exact: true }).click();
     await ex(emp.getByTestId("request-states")).toContainText("تحقق الفريق من البيانات والمستندات: تم");
     await emp.getByRole("button", { name: "اقبل الطلب للخدمة", exact: true }).click();

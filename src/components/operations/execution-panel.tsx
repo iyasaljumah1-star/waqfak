@@ -91,14 +91,14 @@ function PrimaryAction({ action, requestId, token, primary, current, held }: { a
     const who = held ? "الطرف المعلّق عليه" : WHO_AR[current.owner];
     return <div className="space-y-2"><FormMessage state={s} /><p className="text-[14px] text-muted" data-testid="no-action">لا إجراء متاح لك في هذه الخطوة. {current.state === "waiting" || held ? `بانتظار ${who}.` : "يتولاها من يملك الصلاحية."}</p></div>;
   }
-  if (primary.kind === "link") return <div className="space-y-2"><FormMessage state={s} /><ButtonLink href={primary.href} data-testid="next-step-link">{primary.label}</ButtonLink></div>;
+  if (primary.kind === "link") return <div className="space-y-2"><FormMessage state={s} /><ButtonLink href={primary.href} data-testid="next-step-link" className="h-auto! min-h-11 max-w-full whitespace-normal! py-2! text-start">{primary.label}</ButtonLink></div>;
   const href = (s.data as { href?: string } | undefined)?.href;
   return (
     <form action={a} className="space-y-2">
       <input type="hidden" name="id" value={requestId} />
       <input type="hidden" name="key" value={primary.key} />
       <input type="hidden" name="token" value={token} />
-      <SubmitButton pendingText="جارٍ التنفيذ…" data-testid="next-step">نفّذ الخطوة التالية: {primary.label}</SubmitButton>
+      <SubmitButton pendingText="جارٍ التنفيذ…" data-testid="next-step" className="h-auto! min-h-11 max-w-full whitespace-normal! py-2! text-start" aria-label="نفّذ الخطوة التالية" title={primary.label}>نفّذ الخطوة التالية: {primary.label}</SubmitButton>
       <FormMessage state={s} />
       {s.ok && href ? <ButtonLink href={href} variant="secondary" size="sm">افتح المسودة</ButtonLink> : null}
     </form>

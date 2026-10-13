@@ -359,7 +359,9 @@ test.describe.serial("service flows as one operating system", () => {
     await ex(admin.getByRole("button", { name: "افتح ملف الوقف من الطلب" })).toHaveCount(0);
     await go(admin, `/admin/waqfs/${w.waqf_id}`);
     await ex(admin.getByText("فتح الملف")).toBeVisible();
-    await ex(admin.getByRole("link", { name: r.number })).toBeVisible();
+    await ex(admin.getByRole("link", { name: r.number, exact: true })).toBeVisible();
+    // the operations center of the waqf lists the open request too (two-way)
+    await ex(admin.getByTestId(`center-req:${r.id}`)).toBeVisible();
   });
 
   test("mobile: dashboard queues, request workspace and output editor fit the screen", async ({ browser, viewport }, info) => {
