@@ -551,6 +551,8 @@ test.describe.serial("service request lifecycle", () => {
   test("delivery, four-eyes QA, completion blocked by an open required item, close", async ({ browser, viewport }) => {
     const emp = await as(browser, "emp1", viewport);
     await emp.goto(`/admin/requests/${reqId}?t=${Date.now()}`);
+    // the legacy path: a file prepared outside the platform (generated drafts are covered in operations.spec)
+    await openDetails(emp, "أو ارفع ملفًا أُعدّ خارج المنصة");
     await emp.getByLabel("عنوان المخرج").fill("تقرير التقييم المعمّق (اختبار)");
     await emp.getByRole("button", { name: "سجّل المخرج" }).click();
     await ex(emp.getByText("أُضيف المخرج.")).toBeVisible();
