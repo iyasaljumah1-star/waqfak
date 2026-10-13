@@ -111,7 +111,7 @@ async function applyStagePlan(tx: Tx, requestId: string, next: string[], actorId
   return restart;
 }
 
-async function currentPlan(tx: Tx, requestId: string, defs: RequestCtx["stagesDef"]): Promise<PlanStage[]> {
+export async function currentPlan(tx: Tx, requestId: string, defs: RequestCtx["stagesDef"]): Promise<PlanStage[]> {
   const rows = await tx.select().from(requestStages).where(eq(requestStages.requestId, requestId)).orderBy(asc(requestStages.position));
   return rows.map((r) => {
     const d = defs.find((x) => x.key === r.stageKey);

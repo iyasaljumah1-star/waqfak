@@ -331,3 +331,18 @@ export function intakeProgress(form: ServiceForm, a: Answers, docs: DocMap) {
     }
   return total ? Math.round((done / total) * 100) : 100;
 }
+
+/** Team review of a form document («uploaded» is not «verified»). */
+export type DocReviewEntry = { status: "verified" | "rejected"; slot: string; by: string; at: string; note: string | null; itemId?: string };
+
+/**
+ * Required document slots with no verified document. A slot also counts as verified when a rejected document in it was
+ * replaced through the deficiencies register and the replacement item was accepted.
+ */
+export function unverifiedSlots(form: ServiceForm, a: Answers, docs: DocMap, review: Record<string, DocReviewEntry>, acceptedItemIds: Set<string>): DocSlot[] {
+  return visibleDocs(form, a).filter((s) => docRequired(s, a)).filter((s) => {
+    const ok = (docs[s.key] ?? []).some((id) => review[id]?.status === "verified")
+      || Object.values(review).some((v) => v.slot === s.key && v.status === "rejected" && !!v.itemId && acceptedItemIds.has(v.itemId));
+    return !ok;
+  });
+}

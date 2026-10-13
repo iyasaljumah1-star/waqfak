@@ -190,6 +190,7 @@ export async function requestDetail(auth: Auth, id: string, side: "client" | "st
     for (const s2 of sigs) ids.add(s2.userId);
     for (const e of itemEvents) if (e.actorUserId) ids.add(e.actorUserId);
     for (const q of allQuotes) for (const u of [q.preparedBy, q.approvedBy, q.respondedBy]) if (u) ids.add(u);
+    if (staff) for (const v of Object.values(((rc.req.intake ?? {}) as { docReview?: Record<string, { by: string }> }).docReview ?? {})) ids.add(v.by);
     const people = ids.size ? await tx.select({ id: users.id, name: users.fullName, isStaff: users.isStaff, phone: users.phone }).from(users).where(inArray(users.id, [...ids])) : [];
     const names = new Map(people.map((p) => [p.id, { name: p.name ?? "مستخدم", isStaff: p.isStaff }]));
     const requester = people.find((p) => p.id === rc.req.requesterUserId);

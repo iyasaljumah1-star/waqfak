@@ -7,7 +7,7 @@ import { Field, Input, Select, Textarea } from "@/components/ui/form";
 import { DocumentList } from "@/components/documents/list";
 import { DocumentUploader } from "@/components/documents/uploader";
 import {
-  CONFLICT_LABEL, ConflictBadge, ContractPaper, CONTACT_LABEL, EventList, IntakeSummaryView, NextActionBanner, NotesThread, PartiesList, PRIORITY_LABEL,
+  CONFLICT_LABEL, ConflictBadge, ContractPaper, CONTACT_LABEL, EventList, IntakeSummaryView, NotesThread, PartiesList, PRIORITY_LABEL,
   QuoteDocument, RequestStates, SlaBadge, StageTimeline, StatusBadge,
 } from "@/components/requests/bits";
 import { ActionForm, SignContractForm, TransitionPanel } from "@/components/requests/forms";
@@ -17,7 +17,8 @@ import { addDays as addDaysISO } from "@/server/engines/dates";
 import { staffPhone } from "@/server/modules/admin/guard";
 import { requireStaff } from "@/server/authz/context";
 import { addDeliverable, advanceStageAction, assignRequest, overrideConflict, postStaffNote, staffTransition } from "@/server/modules/requests/actions";
-import { acceptRequest, raiseItem, reviewItem, verifyIntake } from "@/server/modules/requests/items-actions";
+import { acceptRequest, raiseItem, reviewIntakeDoc, reviewItem, verifyIntake, type DocReview } from "@/server/modules/requests/items-actions";
+import { IntakeDocReview, type DocReviewRow } from "@/components/requests/doc-review";
 import { assignableStaff, requestDetail } from "@/server/modules/requests/queries";
 import { HOLD_PARTY_LABEL } from "@/server/modules/requests/workflow";
 import { ITEM_EVENT_LABEL, ITEM_KIND_LABEL, ITEM_STATUS_TONE, itemStatusLabel } from "@/server/modules/requests/items-pure";
@@ -27,11 +28,14 @@ import { issueInvoice } from "@/server/modules/billing/actions";
 import { CONTRACT_STATUS_LABEL, INVOICE_KIND_LABEL, QUOTE_STATUS_LABEL, QUOTE_STATUS_TONE, quoteDisplayStatus, splitInstallments, TERM_DUE_LABEL } from "@/server/modules/commerce/pure";
 import { INVOICE_STATUS_LABEL, INVOICE_STATUS_TONE } from "@/server/modules/billing/access";
 import { DOC_TYPE_OPTIONS } from "@/server/modules/documents/labels";
-import { visibleSteps, visibleFields } from "@/server/modules/requests/intake/engine";
+import { docRequired, visibleDocs, visibleSteps, visibleFields } from "@/server/modules/requests/intake/engine";
 import type { RequestItemStatus } from "@/server/db/schema/commerce";
 import { LinksPanel, OutputsPanel, TasksPanel } from "@/components/operations/panels";
 import { read } from "@/server/modules/_shared";
 import { requestOperations } from "@/server/modules/operations/queries";
+import { requestPlan } from "@/server/modules/operations/next-step-server";
+import { runNextStep } from "@/server/modules/operations/next-step-actions";
+import { ExecutionPanel } from "@/components/operations/execution-panel";
 
 export const metadata: Metadata = { title: "طلب — مساحة العمل" };
 
@@ -57,6 +61,7 @@ export default async function StaffRequest({ params }: { params: Promise<{ id: s
   const canApproveQuote = auth.perms.has("requests.quotes.approve");
   const canApproveContract = auth.perms.has("admin.contracts.approve");
   const ops2 = await read(auth, (tx) => requestOperations(tx, auth, rc));
+  const plan = await read(auth, (tx) => requestPlan(tx, auth, rc));
 
   // Quotes
   const initial = d.quotes.filter((q) => q.kind === "initial");
@@ -108,6 +113,16 @@ export default async function StaffRequest({ params }: { params: Promise<{ id: s
   // Item form helpers
   const fieldOptions = visibleSteps(d.form, ans).flatMap((st) => visibleFields(st, ans).map((f) => ({ value: f.key, label: `${st.title}: ${f.label}` })));
   const itemEvents = (itemId: string) => d.itemEvents.filter((e) => e.itemId === itemId);
+  const docReview = ((r.intake ?? {}) as { docReview?: Record<string, DocReview> }).docReview ?? {};
+  const acceptedItems = new Set(d.items.filter((i) => i.status === "accepted").map((i) => i.id));
+  const docRows: DocReviewRow[] = r.intakeFormVersion ? visibleDocs(d.form, ans).filter((s) => d.intakeDocs[s.key]?.length || docRequired(s, ans)).map((s) => ({
+    slot: s.key, label: s.label, required: docRequired(s, ans),
+    docs: (d.intakeDocs[s.key] ?? []).map((id) => {
+      const v = docReview[id];
+      return { id, title: docTitle.get(id) ?? "مستند", review: v ? { status: v.status, byName: names.get(v.by)?.name ?? "الفريق", at: fmtDateTime(new Date(v.at)), note: v.note } : null };
+    }),
+    replacedOk: Object.values(docReview).some((v) => v.slot === s.key && v.status === "rejected" && !!v.itemId && acceptedItems.has(v.itemId)),
+  })) : [];
   const staffTransitions = d.transitions.filter((t) => t.to !== "quote" && !(r.status === "quote" && t.to === "awaiting_contract"));
 
   return (
@@ -150,7 +165,7 @@ export default async function StaffRequest({ params }: { params: Promise<{ id: s
         </Alert>
       ) : null}
 
-      <NextActionBanner next={d.next} viewer="staff" />
+      <ExecutionPanel action={runNextStep} requestId={r.id} token={plan.token} steps={plan.steps} current={plan.current} primary={plan.primary} held={plan.held} terminal={plan.terminal} />
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
         <div className="min-w-0 space-y-4">
@@ -180,6 +195,7 @@ export default async function StaffRequest({ params }: { params: Promise<{ id: s
               <IntakeSummaryView sections={d.intakeSummary} docTitles={docTitle}
                 docs={d.form.docs.filter((s) => d.intakeDocs[s.key]?.length || s.required).map((s) => ({ label: s.label, ids: d.intakeDocs[s.key] ?? [] }))} />
             ) : <p className="whitespace-pre-line text-[15px]">{r.details}</p>}
+            <IntakeDocReview action={reviewIntakeDoc} requestId={r.id} rows={docRows} canReview={worker && !terminal && r.status !== "draft"} />
             {worker && ["triage", "awaiting_client"].includes(r.status) ? (
               <div className="mt-4 flex flex-wrap gap-2 border-t border-line pt-4">
                 {!r.intakeVerifiedAt ? <ActionForm action={verifyIntake} hidden={{ id: r.id }} submit="تحققت من البيانات والمستندات" size="sm" inline /> : null}
