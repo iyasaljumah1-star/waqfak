@@ -59,7 +59,7 @@ export function TasksPanel({ ops, requestId, staff, today, status, canWork }: { 
                       <details className="w-full sm:w-auto">
                         <summary className="cursor-pointer text-[14px] text-ink">{t.assigneeUserId ? "أعد الإسناد" : "أسند"}</summary>
                         <div className="mt-2"><ActionForm action={taskAction} hidden={{ taskId: t.id, requestId, action: "assign" }} submit="أسند" size="sm" variant="secondary">
-                          <Field label="الموظف" name={`assign-${t.id}`} required><Select id={`assign-${t.id}`} name="userId" required defaultValue={t.assigneeUserId ?? ""} placeholder="اختر الموظف" options={staff.map((s) => ({ value: s.id, label: s.name }))} /></Field>
+                          <Field label="أسند المهمة إلى" name={`assign-${t.id}`} required><Select id={`assign-${t.id}`} name="userId" required defaultValue={t.assigneeUserId ?? ""} placeholder="اختر الموظف" options={staff.map((s) => ({ value: s.id, label: s.name }))} /></Field>
                         </ActionForm></div>
                       </details>
                     ) : null}
