@@ -12,6 +12,9 @@ import { hasActiveBreakGlass, recordBreakGlassView } from "@/server/modules/admi
 import { waqfSummary } from "@/server/modules/admin/waqfs/queries";
 import { STATUS_LABEL as REQ_STATUS } from "@/server/modules/requests/workflow";
 import { STATUS_AR as NAZARA_STATUS } from "@/server/modules/nazara/pure";
+import { read } from "@/server/modules/_shared";
+import { waqfCenterData } from "@/server/modules/operations/waqf-center-server";
+import { WaqfCenterPanel } from "@/components/operations/waqf-center";
 
 export const metadata: Metadata = { title: "ملف وقف" };
 
@@ -30,6 +33,7 @@ export default async function AdminWaqfPage({ params }: { params: Promise<{ id: 
   if (grant) await recordBreakGlassView(auth, id, grant.id, `/admin/waqfs/${id}`);
   const w = d.waqf;
   const overdue = d.obligations.filter((o) => o.status === "overdue").length;
+  const center = await read(auth, (tx) => waqfCenterData(tx, id));
 
   return (
     <div>
@@ -56,6 +60,7 @@ export default async function AdminWaqfPage({ params }: { params: Promise<{ id: 
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         <div className="space-y-6">
+          {center ? <WaqfCenterPanel items={center.items} nazara={center.nazara} counts={center.counts} requestHref={(rid) => `/admin/requests/${rid}`} nazaraHref={center.facts.nazara && auth.perms.has("nazara.view") ? `/admin/nazara/${center.facts.nazara.id}` : null} /> : null}
           <Panel title="الالتزامات النظامية القادمة والمتأخرة" tight>
             {d.obligations.length ? (
               <ul className="divide-y divide-line">

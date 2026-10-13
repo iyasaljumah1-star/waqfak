@@ -10,6 +10,9 @@ import { roleName } from "@/server/authz/catalog";
 import { waqfAccess, waqfOverview } from "@/server/modules/waqf-core/queries";
 import { currentEngagement } from "@/server/modules/nazara/queries";
 import { STATUS_AR as NAZARA_STATUS_AR } from "@/server/modules/nazara/pure";
+import { read } from "@/server/modules/_shared";
+import { waqfCenterData } from "@/server/modules/operations/waqf-center-server";
+import { WaqfCenterPanel } from "@/components/operations/waqf-center";
 
 export const metadata = { title: "نظرة عامة" };
 
@@ -46,6 +49,9 @@ export default async function WaqfOverview({ params, searchParams }: { params: P
   const members = data.members.filter((m) => m.roleKey !== "beneficiary" || can("beneficiaries.view"));
   const totalObl = OBL_ORDER.reduce((n, k) => n + (data.oblCounts[k] ?? 0), 0);
   const editing = sp.edit === "1" && can("waqf.edit");
+  const showCenter = can("compliance.view") || can("waqf.edit");
+  const center = showCenter ? await read(auth, (tx) => waqfCenterData(tx, id)) : null;
+  const centerItems = center ? center.items.filter((i) => can(i.perm as Parameters<typeof waqfCan>[1])) : [];
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Riyadh" }).format(new Date());
 
   return (
@@ -129,6 +135,11 @@ export default async function WaqfOverview({ params, searchParams }: { params: P
             </div>
           </Panel>
           )}
+
+          {center ? (
+            <WaqfCenterPanel items={centerItems} nazara={center.nazara} counts={{ required: centerItems.filter((i) => i.state === "required").length, soon: centerItems.filter((i) => i.state === "soon").length, done: centerItems.filter((i) => i.state === "done").length }}
+              nazaraHref={auth.perms.has("nazara.view") && center.facts.nazara ? `/admin/nazara/${center.facts.nazara.id}` : null} />
+          ) : null}
 
           {can("compliance.view") ? (
             <Panel title="الامتثال" description="حالة الالتزامات النظامية المترتبة على هذا الوقف." actions={<SectionLink href={`${base}/compliance`}>كل الالتزامات</SectionLink>}>
