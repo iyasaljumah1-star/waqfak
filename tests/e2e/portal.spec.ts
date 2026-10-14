@@ -18,7 +18,7 @@ async function sessionPage(browser: Browser, key: string, viewport: { width: num
     const ctx = await browser.newContext({ ...opts, storageState: file });
     const page = await ctx.newPage();
     await page.goto("/app/profile");
-    if (page.url().includes("/app/profile")) return page;
+    if (new URL(page.url()).pathname === "/app/profile") return page; // a redirect to /login?next=/app/profile is not a session
     await ctx.close();
   }
   const ctx = await browser.newContext(opts);
