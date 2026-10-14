@@ -36,6 +36,13 @@
       "when": 1791893357292,
       "tag": "0004_deliverable_output",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792003555739,
+      "tag": "0005_invoice_cycle_revisions",
+      "breakpoints": true
     }
   ]
 }

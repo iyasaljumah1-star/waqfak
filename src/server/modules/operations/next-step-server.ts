@@ -48,7 +48,8 @@ export async function requestSnapshot(tx: Tx, auth: Auth, rc: RequestCtx): Promi
   const ledger = await ledgerOf(tx, id);
   const prestart = acceptedQ ? (acceptedQ.paymentTerms as PaymentTerm[]).filter((t) => t.beforeStart).map((t) => {
     const invs = ledger.invoices.filter((i) => i.quoteId === acceptedQ.id && i.installmentKey === t.key && i.status !== "void" && i.kind !== "credit_note");
-    return { quoteId: acceptedQ.id, key: t.key, label: t.label, invoiced: invs.length > 0, paid: invs.some((i) => i.status === "paid") };
+    const cur = invs.find((i) => i.status === "draft" || i.status === "approved") ?? invs[0] ?? null;
+    return { quoteId: acceptedQ.id, key: t.key, label: t.label, invoiced: invs.length > 0, paid: invs.some((i) => i.status === "paid"), invoiceId: cur?.id ?? null, invoiceStatus: cur?.status ?? null, sendError: cur?.sendResult && !cur.sendResult.ok ? cur.sendResult.error ?? "خطأ غير معروف" : null };
   }) : [];
 
   // Stages
@@ -93,7 +94,7 @@ export async function requestSnapshot(tx: Tx, auth: Auth, rc: RequestCtx): Promi
     paid: rc.service.pricingModel !== "free", conflictBlocked: rc.req.conflictCheck === "blocked", assigneeName: assignee,
     viewer: {
       id: me, isOps: rc.isOps, isAssignee: rc.isAssignee, canDeliver: has("staff.deliver"), canQA: has("staff.quality_review"),
-      canApproveQuote: has("requests.quotes.approve"), canApproveContract: has("admin.contracts.approve"), isDeliverer,
+      canApproveQuote: has("requests.quotes.approve"), canApproveContract: has("admin.contracts.approve"), isDeliverer, canApproveInvoice: has("admin.finance"),
     },
     intake: {
       legacy,

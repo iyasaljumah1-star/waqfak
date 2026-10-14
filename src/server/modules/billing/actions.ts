@@ -1,9 +1,10 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
-import { contracts, invoices, payments, quotes, serviceRequests, users, waqfs } from "@/server/db/schema";
+import { contracts, invoices, notificationTemplates, payments, quotes, serviceRequests, users, waqfs } from "@/server/db/schema";
 import type { PaymentTerm } from "@/server/db/schema/commerce";
 import { ForbiddenError } from "@/server/authz/context";
 import { audit, nextNumber } from "@/server/lib/audit";
@@ -93,8 +94,8 @@ export async function issueInvoice(_: ActionState, fd: FormData): Promise<Action
       // Legacy: requests priced before versioned quotes.
       const hasQuotes = (await c.tx.select({ id: quotes.id }).from(quotes).where(eq(quotes.requestId, d.id)).limit(1)).length > 0;
       if (hasQuotes) throw new UserError("اختر العرض والدفعة المراد فوترتها.");
-      const existing = await c.tx.select({ id: invoices.id, number: invoices.number }).from(invoices).where(and(eq(invoices.requestId, d.id), inArray(invoices.status, ["issued", "partially_paid", "paid"]), inArray(invoices.kind, PAYABLE_KINDS)));
-      if (existing.length) throw new UserError(`صدرت فاتورة لهذا الطلب مسبقًا (${existing[0].number}).`);
+      const existing = await c.tx.select({ id: invoices.id, number: invoices.number }).from(invoices).where(and(eq(invoices.requestId, d.id), inArray(invoices.status, ["draft", "approved", "issued", "partially_paid", "paid"]), inArray(invoices.kind, PAYABLE_KINDS)));
+      if (existing.length) throw new UserError(`للطلب فاتورة قائمة (${existing[0].number}).`);
       const cs = await contractState(c.tx, d.id);
       if (cs.contract && !cs.clientSigned) throw new UserError("لم يوقّع العميل العقد بعد.");
       amountNet = Number(cs.contract?.amount ?? rc.req.agreedPrice ?? rc.req.quoteAmount ?? 0);
@@ -105,28 +106,153 @@ export async function issueInvoice(_: ActionState, fd: FormData): Promise<Action
     }
 
     const t = computeInvoice(amountNet, vatRate);
-    const number = await nextNumber(c.tx, policy.kind === "proforma" ? "PRF" : "INV");
+    // A draft: numbered as a draft, invisible to the client (RLS), not sent, not reported. The legal number, the issue
+    // date and the e-invoicing status are set when it is approved and sent (see approveInvoice / sendInvoice).
+    const number = await nextNumber(c.tx, "DRF");
     const [row] = await c.tx.insert(invoices).values({
       number, userId: rc.req.requesterUserId, waqfId: rc.req.waqfId, billedToName: buyer.name, requestId: d.id, contractId, quoteId,
       installmentKey: termKey, installmentLabel: termLabel, kind: policy.kind,
-      subtotal: t.subtotal.toFixed(2), discount: "0", vatRate: String(vatRate), vat: t.vat.toFixed(2), total: t.total.toFixed(2), status: "issued",
+      subtotal: t.subtotal.toFixed(2), discount: "0", vatRate: String(vatRate), vat: t.vat.toFixed(2), total: t.total.toFixed(2), status: "draft",
       issuedOn: today, dueOn: policy.kind === "proforma" ? null : addDays(today, dueDays),
-      einvoiceStatus: policy.kind === "tax_invoice" ? (zatca ? "queued" : "pending") : "not_applicable",
+      einvoiceStatus: "not_applicable",
       sellerSnapshot: sellerSnapshot(company), buyerSnapshot: buyer,
       lines: [{ description: line, qty: 1, unit: t.subtotal, total: t.subtotal }], createdBy: c.auth.user.id,
     }).returning({ id: invoices.id });
     const kindLabel = INVOICE_KIND_LABEL[policy.kind];
-    await logEvent(c.tx, rc.req, c.auth.user.id, `صدرت ${kindLabel} ${number}${termLabel ? ` لدفعة «${termLabel}»` : ""} بإجمالي ${fmtSAR(t.total)}`);
-    await audit(c.tx, { actorUserId: c.auth.user.id, action: "billing.invoice_issue", entityType: "invoice", entityId: row.id, waqfId: rc.req.waqfId, ip: c.ip, userAgent: c.userAgent, after: { number, kind: policy.kind, ...t, vatRate, quoteId, termKey, gaps: policy.gaps } });
-    if (policy.kind !== "proforma")
-      await notify(rc.req.requesterUserId, "request.awaiting_client", { number: rc.req.number, note: `صدرت ${kindLabel} ${number} بمبلغ ${fmtSAR(t.total)}` }, { waqfId: rc.req.waqfId, link: `/app/billing/${row.id}`, tx: c.tx });
+    await audit(c.tx, { actorUserId: c.auth.user.id, action: "billing.invoice_draft", entityType: "invoice", entityId: row.id, waqfId: rc.req.waqfId, ip: c.ip, userAgent: c.userAgent, after: { draft: number, kind: policy.kind, ...t, vatRate, quoteId, termKey, gaps: policy.gaps } });
     return {
       ok: true,
-      message: policy.kind === "proforma"
-        ? `صدرت فاتورة أولية ${number} (ليست فاتورة ضريبية ولا تُسدد). ينقص في بيانات الشركة: ${policy.gaps.join("، ")}.`
-        : `صدرت ${kindLabel} ${number}.`,
+      message: `أُعدّت مسودة ${kindLabel} (${number}) بإجمالي ${fmtSAR(t.total)}. عاينها ثم تُعتمد وتُرسل؛ لا يراها العميل قبل الإرسال.${policy.kind === "proforma" ? ` الفاتورة الأولية لا تُسدد. ينقص في بيانات الشركة: ${policy.gaps.join("، ")}.` : ""}`,
+      data: { invoiceId: row.id },
     };
   }, { revalidate: [`/admin/requests/${d.id}`, `/app/requests/${d.id}`, "/app/billing", "/admin/finance"] });
+}
+
+// ───────────────────────── Request invoices: draft → approve → send ─────────────────────────
+
+const invIdSchema = z.object({ invoiceId: uuid, note: z.string().trim().max(500).optional().default("") });
+const invRevalidate = (inv: { id: string; requestId: string | null }) => [`/admin/finance/${inv.id}`, "/admin/finance", `/app/billing/${inv.id}`, "/app/billing", ...(inv.requestId ? [`/admin/requests/${inv.requestId}`, `/app/requests/${inv.requestId}`] : [])];
+
+async function requestWorker(c: Ctx, inv: typeof invoices.$inferSelect) {
+  if (!inv.requestId) return false;
+  const rc = await loadRequestCtx(c.tx, c.auth, inv.requestId, "staff").catch(() => null);
+  return !!rc && (rc.isAssignee || rc.isOps);
+}
+
+/** Finance approval of a draft: assigns the legal number. The preparer may approve only as an authorized finance user (recorded). */
+export async function approveInvoice(_: ActionState, fd: FormData): Promise<ActionState> {
+  const r = parseForm(invIdSchema, fd);
+  if ("state" in r) return r.state;
+  let reval: string[] = [];
+  const res = await userAction(async (c) => {
+    if (!c.auth.isStaff || !c.auth.perms.has("admin.finance")) throw new ForbiddenError("اعتماد الفواتير لمن يملك صلاحية المالية.");
+    const inv = await loadInvoice(c.tx, r.data.invoiceId);
+    if (!inv) throw new UserError("الفاتورة غير موجودة.");
+    reval = invRevalidate(inv);
+    if (inv.status !== "draft") throw new UserError(inv.status === "approved" ? "الفاتورة معتمدة مسبقًا وبانتظار الإرسال." : "تُعتمد المسودة فقط.");
+    const number = await nextNumber(c.tx, inv.kind === "proforma" ? "PRF" : "INV");
+    const self = inv.createdBy === c.auth.user.id;
+    await c.tx.update(invoices).set({ number, status: "approved", approvedAt: new Date(), approvedBy: c.auth.user.id, selfApproved: self, updatedBy: c.auth.user.id }).where(and(eq(invoices.id, inv.id), eq(invoices.status, "draft")));
+    await audit(c.tx, { actorUserId: c.auth.user.id, action: "billing.invoice_approve", entityType: "invoice", entityId: inv.id, waqfId: inv.waqfId, ip: c.ip, userAgent: c.userAgent, before: { number: inv.number, status: "draft" }, after: { number, status: "approved", selfApproved: self, note: r.data.note || undefined } });
+    return { ok: true, message: `اعتُمدت الفاتورة برقم ${number}${self ? " (اعتماد ذاتي مسجل)" : ""}. لم تُرسل بعد.` };
+  });
+  for (const p of reval) revalidatePath(p);
+  return res;
+}
+
+/**
+ * Sends an approved invoice: it becomes visible to the client (issued), its issue and due dates are set to the sending
+ * date, e-invoicing is queued for a tax invoice, and the client is notified. A failure to notify is recorded on the
+ * invoice (sendResult) and the invoice stays approved and unsent, so sending can be retried — nothing is reported as sent
+ * unless it was.
+ */
+export async function sendInvoice(_: ActionState, fd: FormData): Promise<ActionState> {
+  const r = parseForm(invIdSchema, fd);
+  if ("state" in r) return r.state;
+  let reval: string[] = [];
+  const res = await userAction(async (c) => {
+    const inv = await loadInvoice(c.tx, r.data.invoiceId);
+    if (!inv) throw new UserError("الفاتورة غير موجودة.");
+    reval = invRevalidate(inv);
+    if (!c.auth.isStaff || !(c.auth.perms.has("admin.finance") || (await requestWorker(c, inv)))) throw new ForbiddenError();
+    if (inv.status !== "approved") throw new UserError(inv.status === "draft" ? "اعتمد الفاتورة قبل إرسالها." : "الفاتورة ليست بانتظار الإرسال.");
+    const [tpl] = await c.tx.select({ key: notificationTemplates.key }).from(notificationTemplates).where(eq(notificationTemplates.key, "request.awaiting_client")).limit(1);
+    const at = new Date().toISOString();
+    if (!tpl) {
+      await c.tx.update(invoices).set({ sendResult: { ok: false, at, error: "قالب الإشعار غير موجود في الإعدادات" }, updatedBy: c.auth.user.id }).where(eq(invoices.id, inv.id));
+      await audit(c.tx, { actorUserId: c.auth.user.id, action: "billing.invoice_send_failed", entityType: "invoice", entityId: inv.id, waqfId: inv.waqfId, ip: c.ip, userAgent: c.userAgent, after: { error: "template missing" } });
+      return { error: "تعذر الإرسال: قالب إشعار الفواتير غير موجود في الإعدادات. بقيت الفاتورة معتمدة غير مرسلة؛ أعد المحاولة بعد ضبط القالب." };
+    }
+    const today = todayISO();
+    const dueDays = await settingNumber(c.tx, "invoices.due_days", 14);
+    const zatca = await isFlagOn(c.tx, "einvoice.zatca");
+    const [client] = await c.tx.select({ phone: users.phone, email: users.email }).from(users).where(eq(users.id, inv.userId));
+    const kindLabel = INVOICE_KIND_LABEL[inv.kind as keyof typeof INVOICE_KIND_LABEL] ?? "فاتورة";
+    await c.tx.update(invoices).set({
+      status: "issued", issuedOn: today, dueOn: inv.kind === "proforma" ? null : addDays(today, dueDays), sentAt: new Date(), sentBy: c.auth.user.id,
+      einvoiceStatus: inv.kind === "tax_invoice" ? (zatca ? "queued" : "pending") : "not_applicable",
+      sendResult: { ok: true, at, channels: { in_app: "delivered", email: client?.email ? "according to preferences" : "no email", sms: client?.phone ? "according to preferences" : "no phone" } },
+      updatedBy: c.auth.user.id,
+    }).where(and(eq(invoices.id, inv.id), eq(invoices.status, "approved")));
+    if (inv.requestId) {
+      const [req] = await c.tx.select().from(serviceRequests).where(eq(serviceRequests.id, inv.requestId));
+      if (req) await logEvent(c.tx, req, c.auth.user.id, `صدرت ${kindLabel} ${inv.number}${inv.installmentLabel ? ` لدفعة «${inv.installmentLabel}»` : ""} بإجمالي ${fmtSAR(inv.total)}`);
+    }
+    await notify(inv.userId, "request.awaiting_client", { number: inv.number, note: `صدرت ${kindLabel} ${inv.number} بمبلغ ${fmtSAR(inv.total)}` }, { waqfId: inv.waqfId, link: `/app/billing/${inv.id}`, tx: c.tx });
+    await audit(c.tx, { actorUserId: c.auth.user.id, action: "billing.invoice_issue", entityType: "invoice", entityId: inv.id, waqfId: inv.waqfId, ip: c.ip, userAgent: c.userAgent, before: { status: "approved" }, after: { number: inv.number, status: "issued", sent: true } });
+    return { ok: true, message: `أُرسلت ${kindLabel} ${inv.number} إلى العميل.` };
+  });
+  for (const p of reval) revalidatePath(p);
+  return res;
+}
+
+const draftEditSchema = z.object({
+  invoiceId: uuid,
+  billedToName: z.string().trim().min(2, "اكتب اسم المفوتر له.").max(200),
+  description: z.string().trim().min(5, "اكتب وصف البند.").max(500),
+  dueDays: z.coerce.number().int().min(0).max(120),
+});
+
+/** Corrects what may be corrected on a draft (buyer name, line wording, due period). Amounts come from the accepted quote. */
+export async function updateInvoiceDraft(_: ActionState, fd: FormData): Promise<ActionState> {
+  const r = parseForm(draftEditSchema, fd);
+  if ("state" in r) return r.state;
+  const d = r.data;
+  let reval: string[] = [];
+  const res = await userAction(async (c) => {
+    const inv = await loadInvoice(c.tx, d.invoiceId);
+    if (!inv) throw new UserError("الفاتورة غير موجودة.");
+    reval = invRevalidate(inv);
+    if (!c.auth.isStaff || !(c.auth.perms.has("admin.finance") || (await requestWorker(c, inv)))) throw new ForbiddenError();
+    if (inv.status !== "draft") throw new UserError("تُعدّل المسودة فقط؛ الفاتورة المعتمدة أو المرسلة تُصحح بإلغائها أو بإشعار دائن.");
+    const lines = inv.lines.map((l, i) => (i === 0 ? { ...l, description: d.description } : l));
+    const buyer = { ...((inv.buyerSnapshot as Record<string, string> | null) ?? {}), name: d.billedToName };
+    await c.tx.update(invoices).set({ billedToName: d.billedToName, buyerSnapshot: buyer, lines, dueOn: inv.kind === "proforma" ? null : addDays(todayISO(), d.dueDays), updatedBy: c.auth.user.id }).where(eq(invoices.id, inv.id));
+    await audit(c.tx, { actorUserId: c.auth.user.id, action: "billing.invoice_draft_edit", entityType: "invoice", entityId: inv.id, waqfId: inv.waqfId, ip: c.ip, userAgent: c.userAgent, before: { billedToName: inv.billedToName, description: inv.lines[0]?.description, dueOn: inv.dueOn }, after: { billedToName: d.billedToName, description: d.description, dueDays: d.dueDays } });
+    return { ok: true, message: "حُفظ تصحيح المسودة." };
+  });
+  for (const p of reval) revalidatePath(p);
+  return res;
+}
+
+/** Withdraws a draft or an approved, unsent invoice: kept as void with the reason (never deleted). */
+export async function discardInvoiceDraft(_: ActionState, fd: FormData): Promise<ActionState> {
+  const r = parseForm(invIdSchema, fd);
+  if ("state" in r) return r.state;
+  if (r.data.note.length < 5) return { error: "اكتب سبب سحب المسودة.", fieldErrors: { note: "اكتب السبب (5 أحرف على الأقل)." } };
+  let reval: string[] = [];
+  const res = await userAction(async (c) => {
+    const inv = await loadInvoice(c.tx, r.data.invoiceId);
+    if (!inv) throw new UserError("الفاتورة غير موجودة.");
+    reval = invRevalidate(inv);
+    if (!c.auth.isStaff || !(c.auth.perms.has("admin.finance") || (await requestWorker(c, inv)))) throw new ForbiddenError();
+    if (!["draft", "approved"].includes(inv.status)) throw new UserError("الفاتورة المرسلة تُلغى من صفحة المالية (إلغاء أو إشعار دائن).");
+    await c.tx.update(invoices).set({ status: "void", updatedBy: c.auth.user.id }).where(eq(invoices.id, inv.id));
+    await audit(c.tx, { actorUserId: c.auth.user.id, action: "billing.invoice_withdraw", entityType: "invoice", entityId: inv.id, waqfId: inv.waqfId, ip: c.ip, userAgent: c.userAgent, before: { status: inv.status, number: inv.number }, after: { status: "void", reason: r.data.note } });
+    return { ok: true, message: "سُحبت المسودة ولم تُرسل للعميل. بقيت في السجل ملغاة." };
+  });
+  for (const p of reval) revalidatePath(p);
+  return res;
 }
 
 /** Client: starts a checkout for the remaining balance with the configured gateway and redirects to it. */

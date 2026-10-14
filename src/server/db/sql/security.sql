@@ -66,6 +66,7 @@ REVOKE UPDATE, DELETE, TRUNCATE ON contract_signatures FROM waqfak_app;
 -- Execution history and output versions are append-only too.
 REVOKE UPDATE, DELETE, TRUNCATE ON task_events FROM waqfak_app;
 REVOKE UPDATE, DELETE, TRUNCATE ON output_versions FROM waqfak_app;
+REVOKE UPDATE, DELETE, TRUNCATE ON request_revisions FROM waqfak_app;
 
 -- Restricted schema: only reachable after SET LOCAL ROLE waqfak_mlro (done by the app for the MLRO role).
 REVOKE ALL ON SCHEMA restricted FROM PUBLIC;
@@ -194,6 +195,7 @@ BEGIN
     ('request_links', 'EXISTS (SELECT 1 FROM service_requests r WHERE r.id = request_links.request_id AND (r.requester_user_id = app_current_user() OR r.assigned_to_user_id = app_current_user()))'),
     ('outputs', 'EXISTS (SELECT 1 FROM service_requests r WHERE r.id = outputs.request_id AND r.assigned_to_user_id = app_current_user())'),
     ('output_versions', 'EXISTS (SELECT 1 FROM service_requests r WHERE r.id = output_versions.request_id AND r.assigned_to_user_id = app_current_user())'),
+    ('request_revisions', 'EXISTS (SELECT 1 FROM service_requests r WHERE r.id = request_revisions.request_id AND r.assigned_to_user_id = app_current_user())'),
     ('task_events', 'EXISTS (SELECT 1 FROM tasks t WHERE t.id = task_events.task_id AND (t.assignee_user_id = app_current_user() OR t.created_by = app_current_user()))')
   ) AS v(tbl, expr)
   LOOP
@@ -221,3 +223,12 @@ CREATE POLICY staff_only ON output_versions AS RESTRICTIVE FOR ALL TO waqfak_app
 DROP POLICY IF EXISTS staff_only ON task_events;
 -- Platform rules running in a client's action (e.g. submission creates the intake task) may write events; only staff read them.
 CREATE POLICY staff_only ON task_events AS RESTRICTIVE FOR SELECT TO waqfak_app USING (request_id IS NULL OR app_current_user() IS NULL OR app_is_staff());
+
+-- Corrections and rollbacks of a request are team records.
+DROP POLICY IF EXISTS staff_only ON request_revisions;
+CREATE POLICY staff_only ON request_revisions AS RESTRICTIVE FOR ALL TO waqfak_app USING (app_current_user() IS NULL OR app_is_staff()) WITH CHECK (app_current_user() IS NULL OR app_is_staff());
+
+-- An invoice exists for the client only once it is sent: drafts and approved-but-unsent invoices are team records.
+DROP POLICY IF EXISTS unsent_staff_only ON invoices;
+CREATE POLICY unsent_staff_only ON invoices AS RESTRICTIVE FOR SELECT TO waqfak_app USING (status NOT IN ('draft', 'approved') OR app_current_user() IS NULL OR app_is_staff());
+

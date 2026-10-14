@@ -11,6 +11,7 @@ import { cancelInvoice, recordPayment } from "@/server/modules/billing/actions";
 import { INVOICE_KIND_LABEL } from "@/server/modules/commerce/pure";
 import { EINVOICE_STATUS_LABEL, INVOICE_STATUS_LABEL, INVOICE_STATUS_TONE, PAYMENT_STATUS_LABEL, PROVIDER_LABEL } from "@/server/modules/billing/access";
 import { invoiceView } from "@/server/modules/billing/queries";
+import { InvoiceCycle } from "@/components/billing/invoice-cycle";
 
 export const metadata: Metadata = { title: "فاتورة — المالية" };
 
@@ -73,6 +74,11 @@ export default async function AdminInvoice({ params }: { params: Promise<{ invoi
           </Panel>
         </div>
         <aside className="min-w-0 space-y-4">
+          {inv.status === "draft" || inv.status === "approved" ? (
+            <Panel title="دورة الفاتورة" description="لا يراها العميل قبل الإرسال.">
+              <InvoiceCycle inv={inv} canApprove={auth.perms.has("admin.finance")} canWork me={auth.user.id} />
+            </Panel>
+          ) : null}
           {unpaid ? (
             <Panel title="تسجيل سداد" description="بعد التحقق من وصول المبلغ. يُقبل السداد الجزئي، ويصدر إيصال لكل دفعة.">
               <ActionForm action={recordPayment} hidden={{ invoiceId: inv.id }} submit="سجّل السداد" size="md">

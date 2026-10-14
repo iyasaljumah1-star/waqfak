@@ -161,14 +161,15 @@ export async function invoicePdf(invoiceId: string) {
     const taxDoc = (inv.kind === "tax_invoice" || (inv.kind === "credit_note" && Number(inv.vat) !== 0)) && !!vatNumber;
     const title = inv.kind === "proforma" ? "فاتورة أولية — ليست فاتورة ضريبية" : inv.kind === "credit_note" ? "إشعار دائن" : taxDoc ? "فاتورة ضريبية" : "فاتورة";
     let qr = "";
-    if (taxDoc) {
+    const unsent = inv.status === "draft" || inv.status === "approved";
+    if (taxDoc && !unsent) {
       const tlv = zatcaTlvBase64({ sellerName: seller.nameAr ?? "", vatNumber, timestamp: inv.createdAt.toISOString().replace(/\.\d{3}Z$/, "Z"), total: Number(inv.total).toFixed(2), vat: Number(inv.vat).toFixed(2) });
       qr = await QRCode.toDataURL(tlv, { errorCorrectionLevel: "M", margin: 1, width: 160 });
     }
     await audit(tx, { actorUserId: auth.user.id, action: "billing.invoice_download", entityType: "invoice", entityId: inv.id, waqfId: inv.waqfId, ip, userAgent, after: { number: inv.number } });
     const buyer = (inv.buyerSnapshot ?? {}) as Record<string, string>;
     const lines = inv.lines.map((l) => `<tr><td>${esc(l.description)}</td><td class="tabular">${l.qty}</td><td class="tabular">${sar(l.total)}</td></tr>`).join("");
-    const html = `<div class="brandbar"></div>
+    const html = `<div class="brandbar"></div>${unsent ? `<div class="box critical">معاينة ${inv.status === "draft" ? "مسودة غير معتمدة" : "فاتورة معتمدة لم تُرسل"} — ليست فاتورة صادرة، ولا تُرسل ولا تُسدد.</div>` : ""}
 <div class="grid2"><div><h1 style="font-size:16pt">${esc(seller.nameAr ?? "")}</h1><dl class="kv small">
 ${seller.legalForm ? `<dt>الشكل النظامي</dt><dd>${esc(seller.legalForm)}</dd>` : ""}${vatNumber ? `<dt>الرقم الضريبي</dt><dd dir="ltr">${esc(vatNumber)}</dd>` : ""}${seller.crNumber ? `<dt>السجل التجاري</dt><dd>${esc(seller.crNumber)}</dd>` : ""}${seller.unifiedNumber ? `<dt>الرقم الوطني الموحد</dt><dd>${esc(seller.unifiedNumber)}</dd>` : ""}${seller.nationalAddress ? `<dt>العنوان</dt><dd>${esc(seller.nationalAddress)}</dd>` : ""}
 </dl></div><div style="text-align:end"><h2 style="border:0;margin-top:0">${esc(title)}</h2><dl class="kv small"><dt>الرقم</dt><dd dir="ltr">${esc(inv.number)}</dd><dt>التاريخ</dt><dd>${dt(inv.issuedOn)}</dd>${inv.dueOn ? `<dt>الاستحقاق</dt><dd>${dt(inv.dueOn)}</dd>` : ""}</dl>${qr ? `<img src="${qr}" width="120" height="120" alt="">` : ""}</div></div>

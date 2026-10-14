@@ -140,3 +140,27 @@ export const outputVersions = pgTable("output_versions", {
   createdBy: uuid(),
   createdAt: createdAt(),
 }, (t) => [uniqueIndex("output_versions_uq").on(t.outputId, t.version)]);
+
+// ───────────────────────── Request revisions (staff corrections and rollbacks) ─────────────────────────
+
+/**
+ * intake_edit = a staff member corrected or completed the client's answers; rollback = the request or a work stage was
+ * reopened for correction; reopen_output = an approved output was reopened. Append-only, staff-only: the history of who
+ * changed what, why, and what it affected (outputs to regenerate, quotes/contracts/invoices needing a correction path).
+ */
+export type RevisionKind = "intake_edit" | "rollback" | "reopen_output";
+export type RevisionImpact = { kind: "output" | "quote" | "contract" | "invoice" | "verification" | "acceptance" | "stage"; id?: string; label: string; action: string }[];
+
+export const requestRevisions = pgTable("request_revisions", {
+  id: id(),
+  requestId: uuid().notNull().references(() => serviceRequests.id, { onDelete: "cascade" }),
+  waqfId: uuid(),
+  kind: text().$type<RevisionKind>().notNull(),
+  target: text(),
+  reason: text().notNull(),
+  before: jsonb(),
+  after: jsonb(),
+  impact: jsonb().$type<RevisionImpact>().default([]).notNull(),
+  actorUserId: uuid().notNull(),
+  at: createdAt(),
+}, (t) => [index("request_revisions_req_idx").on(t.requestId)]);

@@ -339,7 +339,7 @@ export const invoices = pgTable("invoices", {
   vat: numeric({ precision: 18, scale: 2 }).notNull(),
   total: numeric({ precision: 18, scale: 2 }).notNull(),
   currency: text().default("SAR").notNull(),
-  status: text().default("issued").notNull(), // issued | partially_paid | paid | void | credit_note (overdue is derived)
+  status: text().default("issued").notNull(), // draft | approved | issued | partially_paid | paid | void | credit_note (overdue is derived)
   /** tax_invoice = فاتورة ضريبية (seller VAT number on file); non_tax_invoice = فاتورة بلا ضريبة (seller declared not
    *  VAT-registered); proforma = فاتورة أولية غير ضريبية (not payable); credit_note = إشعار دائن. */
   kind: text().default("tax_invoice").notNull(),
@@ -357,6 +357,15 @@ export const invoices = pgTable("invoices", {
   einvoiceUuid: text(),
   einvoiceStatus: text().default("pending_integration").notNull(),
   lines: jsonb().$type<{ description: string; qty: number; unit: number; total: number }[]>().notNull(),
+  /** Request invoices: draft (prepared, not visible to the client) → approved (by an authorized finance user) → issued
+   *  (= sent to the client). Earlier invoices were issued and sent in one step and have no approval/sending record. */
+  approvedAt: timestamp({ withTimezone: true }),
+  approvedBy: uuid(),
+  selfApproved: boolean().default(false).notNull(),
+  sentAt: timestamp({ withTimezone: true }),
+  sentBy: uuid(),
+  /** Result of the last sending attempt: channels reached, or the failure reason (the invoice stays approved, unsent). */
+  sendResult: jsonb().$type<{ ok: boolean; at: string; channels?: Record<string, string>; error?: string }>(),
   ...tracking(),
 }, (t) => [uniqueIndex("inv_number_uq").on(t.number), index("inv_user_idx").on(t.userId)]);
 

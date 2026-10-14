@@ -68,7 +68,15 @@ describe("execution plan", () => {
     expect(run(snap({ ...base, contract: { id: "k", status: "approved", byViewer: true, pendingClient: [], companyPending: false, executed: false, clientSigned: false } })).key).toBe("send_contract");
     const signed = { id: "k", status: "signed", byViewer: false, pendingClient: [], companyPending: false, executed: true, clientSigned: true };
     expect(run(snap({ ...base, contract: signed, prestart: [{ quoteId: "q", key: "t1", label: "دفعة مقدمة", invoiced: false, paid: false }] })).key).toBe("issue_invoice");
-    const waiting = run(snap({ ...base, contract: signed, prestart: [{ quoteId: "q", key: "t1", label: "دفعة مقدمة", invoiced: true, paid: false }] }));
+    // draft → approval by finance → sending → client payment
+    const draft = { quoteId: "q", key: "t1", label: "دفعة مقدمة", invoiced: true, paid: false, invoiceId: "i1", invoiceStatus: "draft" };
+    expect(run(snap({ ...base, contract: signed, prestart: [draft] })).primary).toBeNull();
+    expect(run(snap({ ...base, contract: signed, prestart: [draft] })).current?.owner).toBe("finance");
+    expect(run(snap({ ...base, contract: signed, prestart: [draft], viewer: { ...snap().viewer, canApproveInvoice: true } })).key).toBe("approve_invoice");
+    const appr = run(snap({ ...base, contract: signed, prestart: [{ ...draft, invoiceStatus: "approved", sendError: "قالب الإشعار غير موجود" }] }));
+    expect(appr.key).toBe("send_invoice");
+    expect(appr.current?.blockers[0].text).toContain("فشلت محاولة إرسال");
+    const waiting = run(snap({ ...base, contract: signed, prestart: [{ quoteId: "q", key: "t1", label: "دفعة مقدمة", invoiced: true, paid: false, invoiceStatus: "issued" }] }));
     expect(waiting.primary).toBeNull();
     expect(waiting.current?.owner).toBe("client");
     expect(run(snap({ ...base, contract: signed, prestart: [{ quoteId: "q", key: "t1", label: "دفعة مقدمة", invoiced: true, paid: true }] })).key).toBe("start_work");

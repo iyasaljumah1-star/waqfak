@@ -16,7 +16,7 @@ export const WHO_AR: Record<Who, string> = {
 
 export type RunKey =
   | "start_triage" | "verify_intake" | "accept" | "approve_quote" | "send_quote" | "approve_contract" | "send_contract"
-  | "issue_invoice" | "start_work" | "generate_output" | "submit_output" | "approve_output" | "complete_stage"
+  | "issue_invoice" | "approve_invoice" | "send_invoice" | "start_work" | "generate_output" | "submit_output" | "approve_output" | "complete_stage"
   | "to_quality" | "pass_quality" | "close" | "resume";
 
 export type StepAction =
@@ -47,13 +47,13 @@ export type Snapshot = {
   paid: boolean;
   conflictBlocked: boolean;
   assigneeName: string | null;
-  viewer: { id: string; isOps: boolean; isAssignee: boolean; canDeliver: boolean; canQA: boolean; canApproveQuote: boolean; canApproveContract: boolean; isDeliverer: boolean };
+  viewer: { id: string; isOps: boolean; isAssignee: boolean; canDeliver: boolean; canQA: boolean; canApproveQuote: boolean; canApproveContract: boolean; isDeliverer: boolean; canApproveInvoice?: boolean };
   intake: { legacy: boolean; invalidFields: string[]; missingDocs: string[]; unverifiedDocs: string[]; verified: boolean; accepted: boolean };
   items: { clientOpen: number; awaitingReview: number; internalOpen: number };
   quote: { id: string; status: string; preparedByViewer: boolean; expired: boolean } | null;
   contract: { id: string; status: string; byViewer: boolean; pendingClient: string[]; companyPending: boolean; executed: boolean; clientSigned: boolean } | null;
   /** Before-start installments of the accepted quote. */
-  prestart: { quoteId: string; key: string; label: string; invoiced: boolean; paid: boolean }[];
+  prestart: { quoteId: string; key: string; label: string; invoiced: boolean; paid: boolean; invoiceId?: string | null; invoiceStatus?: string | null; sendError?: string | null }[];
   stages: { key: string; name: string; status: string }[];
   canAdvanceStage: boolean;
   outputs: OutputSnap[];
@@ -173,8 +173,19 @@ export function planRequest(s: Snapshot): { steps: Step[]; current: Step | null;
       const ps: Step = { key: "prestart", title: "الدفعة المشروطة قبل البدء", owner: "finance", blockers: [], output: "سداد الدفعة المقدمة", state: !unpaid.length ? "done" : kDone ? "current" : "pending" };
       if (unpaid.length && kDone) {
         const toIssue = unpaid.find((t) => !t.invoiced);
-        if (toIssue) { if (worker) ps.action = { kind: "run", key: "issue_invoice", label: `أصدر فاتورة «${toIssue.label}»`, args: { quoteId: toIssue.quoteId, termKey: toIssue.key } }; ps.owner = "team"; }
-        else { ps.state = "waiting"; ps.owner = "client"; ps.blockers.push({ text: `بانتظار سداد: ${unpaid.map((t) => t.label).join("، ")}`, who: "client", href: anchor(s.id, "billing") }); }
+        const draft = unpaid.find((t) => t.invoiceStatus === "draft");
+        const approved = unpaid.find((t) => t.invoiceStatus === "approved");
+        if (toIssue) { if (worker) ps.action = { kind: "run", key: "issue_invoice", label: `أعدّ مسودة فاتورة «${toIssue.label}»`, args: { quoteId: toIssue.quoteId, termKey: toIssue.key } }; ps.owner = "team"; }
+        else if (draft) {
+          ps.owner = "finance";
+          ps.detail = "المسودة لا يراها العميل. عاينها ثم تُعتمد.";
+          if (s.viewer.canApproveInvoice) ps.action = { kind: "run", key: "approve_invoice", label: `اعتمد فاتورة «${draft.label}»`, args: { invoiceId: draft.invoiceId! } };
+          else { ps.state = "waiting"; ps.blockers.push({ text: `مسودة فاتورة «${draft.label}» بانتظار اعتماد المالية`, who: "finance", href: anchor(s.id, "billing") }); }
+        } else if (approved) {
+          ps.owner = "team";
+          if (approved.sendError) ps.blockers.push({ text: `فشلت محاولة إرسال سابقة: ${approved.sendError}`, who: "team", href: anchor(s.id, "billing") });
+          if (worker || s.viewer.canApproveInvoice) ps.action = { kind: "run", key: "send_invoice", label: `أرسل فاتورة «${approved.label}» للعميل`, args: { invoiceId: approved.invoiceId! } };
+        } else { ps.state = "waiting"; ps.owner = "client"; ps.blockers.push({ text: `بانتظار سداد: ${unpaid.map((t) => t.label).join("، ")}`, who: "client", href: anchor(s.id, "billing") }); }
       }
       add(ps);
     }

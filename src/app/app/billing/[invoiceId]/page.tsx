@@ -47,6 +47,12 @@ export default async function InvoicePage({ params, searchParams }: { params: Pr
             </>
           }
         />
+        {inv.status === "draft" || inv.status === "approved" ? (
+          <Alert tone="critical" title={inv.status === "draft" ? "معاينة مسودة — لم تُعتمد ولم تُرسل" : "معاينة فاتورة معتمدة — لم تُرسل بعد"} className="mb-4" >
+            هذه المعاينة للفريق فقط، ولا يراها العميل. {inv.status === "draft" ? "رقمها رقم مسودة، ويُمنح الرقم النظامي عند الاعتماد، ويُحدَّث تاريخ الإصدار عند الإرسال." : "يُحدَّث تاريخ الإصدار والاستحقاق عند الإرسال."}
+            {v.request ? <> <Link className="text-ink underline" href={`/admin/requests/${v.request.id}#billing`}>العودة إلى الطلب</Link></> : null}
+          </Alert>
+        ) : null}
         {paid ? <Alert tone="ok" title="تم السداد" className="mb-4">{inv.status === "paid" ? "سُجلت الدفعة وأصبحت الفاتورة مدفوعة. شكرًا لك." : "سُجلت الدفعة. ما زال على الفاتورة رصيد مستحق."}</Alert> : null}
         {v.kind === "proforma" ? <Alert tone="fine" title="فاتورة أولية" className="mb-4">هذا المستند بيان بالمبلغ المستحق وفق العقد، وليس فاتورة ضريبية ولا يُسدد. تصدر الفاتورة المعتمدة بعد استكمال بيانات الشركة.</Alert> : null}
         {payable ? (

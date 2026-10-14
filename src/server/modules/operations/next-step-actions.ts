@@ -9,7 +9,7 @@ import { advanceStageAction, staffTransition } from "@/server/modules/requests/a
 import { acceptRequest, verifyIntake } from "@/server/modules/requests/items-actions";
 import { approveQuote, sendQuote } from "@/server/modules/commerce/quote-actions";
 import { approveContract, sendContract } from "@/server/modules/contracts/actions";
-import { issueInvoice } from "@/server/modules/billing/actions";
+import { approveInvoice, issueInvoice, sendInvoice } from "@/server/modules/billing/actions";
 import { approveOutput, generateOutput, submitOutput } from "@/server/modules/outputs/actions";
 import type { ActionState } from "@/lib/utils";
 import { requestPlan } from "./next-step-server";
@@ -58,6 +58,8 @@ export async function runNextStep(_: ActionState, fd: FormData): Promise<ActionS
     approve_contract: () => [approveContract, form({ contractId: t.args.contractId })],
     send_contract: () => [sendContract, form({ contractId: t.args.contractId })],
     issue_invoice: () => [issueInvoice, form({ id, quoteId: t.args.quoteId, termKey: t.args.termKey })],
+    approve_invoice: () => [approveInvoice, form({ invoiceId: t.args.invoiceId })],
+    send_invoice: () => [sendInvoice, form({ invoiceId: t.args.invoiceId })],
     start_work: () => [staffTransition, form({ id, to: "in_progress" })],
     generate_output: () => [generateOutput, form({ id, outputKey: t.args.outputKey })],
     submit_output: () => [submitOutput, form({ outputId: t.args.outputId, requestId: id })],

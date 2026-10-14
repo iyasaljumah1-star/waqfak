@@ -36,6 +36,7 @@ import { requestOperations } from "@/server/modules/operations/queries";
 import { requestPlan } from "@/server/modules/operations/next-step-server";
 import { runNextStep } from "@/server/modules/operations/next-step-actions";
 import { ExecutionPanel } from "@/components/operations/execution-panel";
+import { InvoiceCycle } from "@/components/billing/invoice-cycle";
 
 export const metadata: Metadata = { title: "طلب — مساحة العمل" };
 
@@ -383,7 +384,7 @@ export default async function StaffRequest({ params }: { params: Promise<{ id: s
                                   <span dir="ltr" className="tabular">{i.number}</span> · {INVOICE_STATUS_LABEL[i.status] ?? i.status}{i.kind === "proforma" ? " (أولية)" : i.balance > 0 && i.status !== "void" ? ` · المتبقي ${fmtSAR(i.balance)}` : ""}
                                 </Link>
                               ))}
-                              {k && !real && worker ? <ActionForm action={issueInvoice} hidden={{ id: r.id, quoteId: q.id, termKey: t.key }} submit={d.invoicePolicy?.kind === "proforma" ? "أصدر فاتورة أولية" : "أصدر الفاتورة"} variant="secondary" size="sm" inline /> : null}
+                              {k && !real && worker ? <ActionForm action={issueInvoice} hidden={{ id: r.id, quoteId: q.id, termKey: t.key }} submit={d.invoicePolicy?.kind === "proforma" ? "أعدّ مسودة فاتورة أولية" : "أعدّ مسودة الفاتورة"} variant="secondary" size="sm" inline /> : null}
                             </span>
                           </li>
                         );
@@ -392,7 +393,10 @@ export default async function StaffRequest({ params }: { params: Promise<{ id: s
                   </div>
                 );
               })}
-              {legacyInvoice && worker ? <ActionForm action={issueInvoice} hidden={{ id: r.id }} submit="أصدر الفاتورة" variant="secondary" size="sm" inline /> : null}
+              {legacyInvoice && worker ? <ActionForm action={issueInvoice} hidden={{ id: r.id }} submit="أعدّ مسودة الفاتورة" variant="secondary" size="sm" inline /> : null}
+              {d.invoices.filter((i) => i.status === "draft" || i.status === "approved").map((i) => (
+                <div key={i.id} className="mb-3"><InvoiceCycle inv={i} canApprove={auth.perms.has("admin.finance")} canWork={worker || auth.perms.has("admin.finance")} me={auth.user.id} /></div>
+              ))}
               {d.invoices.length ? (
                 <ul className="divide-y divide-line border-t border-line">
                   {d.invoices.map((i) => (
