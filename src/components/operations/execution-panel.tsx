@@ -17,6 +17,17 @@ const STATE_CLASS: Record<StepState, string> = {
   done: "bg-ok-soft text-ok", current: "bg-ink text-white", waiting: "bg-warn-soft text-warn", blocked: "bg-critical-soft text-critical", pending: "bg-surface-2 text-muted", skipped: "bg-surface-2 text-muted",
 };
 
+/** Where each step is reviewed or corrected on the page (done steps stay open for review). */
+function stepHref(key: string) {
+  if (["receive", "verify", "accept"].includes(key)) return "#data";
+  if (key === "quote") return "#quote";
+  if (key === "contract") return "#contract";
+  if (key === "prestart") return "#billing";
+  if (key.startsWith("prep:") || key.startsWith("approve:") || key === "deliverable") return "#outputs";
+  if (key === "client_approval") return "#comms";
+  return "#work";
+}
+
 /**
  * Execution panel of a request: where the request stands, what blocks it and who must act, the expected output of the
  * current step, and one button that performs the next step for real (or points to where a human must decide).
@@ -58,7 +69,9 @@ export function ExecutionPanel({ action, requestId, token, steps, current, prima
                   <Icon aria-hidden className="size-3.5" />
                 </span>
                 <span className="min-w-0">
-                  <span className={s === current ? "font-semibold" : undefined}>{s.title}</span>
+                  {s.state === "pending" || s.state === "skipped"
+                    ? <span>{s.title}</span>
+                    : <a href={stepHref(s.key)} className={cn("hover:underline", s === current ? "font-semibold" : undefined)} title="افتح القسم لمراجعته أو تصحيحه">{s.title}</a>}
                   <span className="sr-only"> — {STATE_AR[s.state]}</span>
                   {s.state === "waiting" ? <span className="block text-[12px] text-muted">بانتظار {WHO_AR[s.owner]}</span> : null}
                 </span>

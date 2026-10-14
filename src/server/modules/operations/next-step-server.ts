@@ -2,7 +2,7 @@ import "server-only";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import type { Tx } from "@/server/db";
 import type { Auth } from "@/server/authz/context";
-import { deliverables, outputs, outputVersions, requestItems, requestLinks, requestStages, users } from "@/server/db/schema";
+import { deliverables, outputs, outputVersions, requestItems, requestLinks, requestRevisions, requestStages, users } from "@/server/db/schema";
 import type { RequestCtx } from "@/server/modules/requests/access";
 import { contractState } from "@/server/modules/requests/access";
 import { currentPlan, selfApprovalCoversQA } from "@/server/modules/requests/engine";
@@ -63,6 +63,8 @@ export async function requestSnapshot(tx: Tx, auth: Auth, rc: RequestCtx): Promi
   const vers = outRows.length ? await tx.select().from(outputVersions).where(inArray(outputVersions.outputId, outRows.map((o) => o.id))) : [];
   const dels = await tx.select({ id: deliverables.id, status: deliverables.status, outputId: deliverables.outputId, signedBy: deliverables.signedBy }).from(deliverables).where(eq(deliverables.requestId, id));
   const opinion = rc.workflowCode === "opinion";
+  const edits = await tx.select({ at: requestRevisions.at }).from(requestRevisions).where(and(eq(requestRevisions.requestId, id), eq(requestRevisions.kind, "intake_edit")));
+  const lastEdit = edits.reduce<Date | null>((m, e) => (!m || e.at > m ? e.at : m), null);
   const outs = [];
   for (const def of defs) {
     const o = outRows.find((x) => x.outputKey === def.key) ?? null;
@@ -82,6 +84,7 @@ export async function requestSnapshot(tx: Tx, auth: Auth, rc: RequestCtx): Promi
       returnedNote: o?.status === "returned" ? o.reviewNote : null,
       viewerCanApprove, approveBlockedReason: reason, needsSignature: opinion || def.specialty === "sharia",
       needsRevision: o?.status === "approved" && (!o.deliverableId || del?.status === "revision_requested"),
+      stale: !!(v && lastEdit && v.createdAt < lastEdit),
     });
   }
   const isDeliverer = rc.deliverers.includes(me);

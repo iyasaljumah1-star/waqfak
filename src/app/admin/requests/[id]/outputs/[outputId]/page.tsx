@@ -100,7 +100,7 @@ export default async function OutputPage({ params, searchParams }: { params: Pro
       <PageHeader
         crumbs={[{ href: "/admin/requests", label: "الطلبات" }, { href: `/admin/requests/${id}#outputs`, label: rc.req.number }, { label: o.number }]}
         title={o.title}
-        description={<span className="flex flex-wrap items-center gap-2"><span dir="ltr" className="tabular">{o.number}</span><Badge tone={OUTPUT_STATUS_TONE[o.status]} icon={false}>{OUTPUT_STATUS_LABEL[o.status]}</Badge><span>{d.specialtyLabel}</span><span className="text-muted">· {d.reviewLabel}</span></span>}
+        description={<span className="flex flex-wrap items-center gap-2"><span dir="ltr" className="tabular">{o.number}</span><Badge tone={OUTPUT_STATUS_TONE[o.status]} icon={false}>{OUTPUT_STATUS_LABEL[o.status]}</Badge><span>{d.formatLabel}</span><span>· {d.specialtyLabel}</span><span className="text-muted">· {d.reviewLabel}</span>{d.delivered ? <Badge tone="ok" icon={false}>مُسلَّم للعميل</Badge> : null}</span>}
         actions={current ? <a href={`/admin/requests/${id}/outputs/${o.id}/pdf?v=${current.version}`} className="inline-flex h-9 items-center gap-1 rounded-md border border-line px-3 text-sm text-ink hover:bg-ink-soft"><FileDown aria-hidden className="size-4" />PDF للنسخة {current.version}</a> : null}
       />
 

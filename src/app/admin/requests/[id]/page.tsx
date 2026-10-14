@@ -37,6 +37,15 @@ import { requestPlan } from "@/server/modules/operations/next-step-server";
 import { runNextStep } from "@/server/modules/operations/next-step-actions";
 import { ExecutionPanel } from "@/components/operations/execution-panel";
 import { InvoiceCycle } from "@/components/billing/invoice-cycle";
+import { CommsOverview, ImpactList, RequestSummary, RevisionList, RollbackPanel, Section, SectionNav } from "@/components/requests/workspace";
+import { ReviewDecisions, type Decision } from "@/components/requests/review-decisions";
+import { StaffIntakeEditor } from "@/components/requests/staff-intake-editor";
+import { workspaceExtras } from "@/server/modules/operations/workspace-server";
+import { rollbackRequest, staffEditIntake } from "@/server/modules/operations/revisions-actions";
+import { commsChannels, commsHeadline, COMMS_STATE_TONE } from "@/server/modules/operations/comms";
+import { WHO_AR } from "@/server/modules/operations/next-step";
+import { OUTPUT_STATUS_LABEL } from "@/server/modules/outputs/pure";
+import { STATUS_LABEL as REQ_STATUS_LABEL } from "@/server/modules/requests/workflow";
 
 export const metadata: Metadata = { title: "طلب — مساحة العمل" };
 
@@ -124,6 +133,55 @@ export default async function StaffRequest({ params }: { params: Promise<{ id: s
     }),
     replacedOk: Object.values(docReview).some((v) => v.slot === s.key && v.status === "rejected" && !!v.itemId && acceptedItems.has(v.itemId)),
   })) : [];
+  // ── Workspace: summary, sections, communications
+  const wx = await read(auth, (tx) => workspaceExtras(tx, auth, rc));
+  const activeStage = stages.find((s) => s.status === "active");
+  const outSummary = ops2.outputs.length
+    ? ops2.outputs.map((o) => `${o.def.title}: ${o.o ? (o.o.status === "approved" && ["awaiting_client_approval", "completed", "closed"].includes(r.status) ? "مُسلَّم" : OUTPUT_STATUS_LABEL[o.o.status]) : "لم تُعدّ"}`).join("، ")
+    : deliverables.length ? `${deliverables.length} تسليم` : "لا مخرجات بعد";
+  const lastQuote = d.quotes.find((q) => q.kind === "initial");
+  const openInv = d.invoices.filter((i) => i.status !== "void" && i.kind !== "credit_note");
+  const INV_SHORT: Record<string, string> = { draft: "مسودة", approved: "معتمدة لم تُرسل", paid: "مدفوعة", partially_paid: "مدفوعة جزئيًا", issued: "مرسلة" };
+  const invSummary = openInv.length ? openInv.map((i, n) => <span key={i.id}>{n ? "، " : ""}<bdi dir="ltr" className="tabular">{i.number}</bdi> {INV_SHORT[i.status] ?? i.status}</span>) : "لا فواتير";
+  const blockersCount = (plan.current?.blockers.length ?? 0) + (plan.held ? 1 : 0);
+  const waiting = plan.terminal ? "—" : plan.held ? WHO_AR[plan.held.who] : plan.current ? WHO_AR[plan.current.owner] : "—";
+  const summaryItems = [
+    { label: "العميل", value: requesterName },
+    { label: "الحالة", value: REQ_STATUS_LABEL[r.status as keyof typeof REQ_STATUS_LABEL] ?? r.status },
+    { label: "المرحلة الحالية", value: activeStage?.name ?? "—" },
+    { label: "الإجراء المطلوب الآن", value: plan.terminal ? "لا شيء — الطلب منتهٍ" : plan.current?.title ?? "اكتملت الخطوات", testId: "summary-action" },
+    { label: "بانتظار", value: waiting, testId: "summary-waiting" },
+    { label: "النواقص والموانع", value: blockersCount || d.counts.clientOpen ? `${blockersCount} مانع · ${d.counts.clientOpen} بانتظار العميل` : "لا موانع", tone: (blockersCount ? "warn" : "ok") as "warn" | "ok" },
+    { label: "المخرجات", value: outSummary },
+    ...(paid ? [
+      { label: "العرض المالي", value: lastQuote ? <><bdi dir="ltr" className="tabular">{lastQuote.number}</bdi> {QUOTE_STATUS_LABEL[lastQuote.status as keyof typeof QUOTE_STATUS_LABEL] ?? lastQuote.status}</> : "لا عرض بعد" },
+      { label: "الفواتير", value: <>{invSummary}</>, testId: "summary-invoices" },
+    ] : [{ label: "الرسوم", value: "خدمة مجانية — بلا عرض ولا فاتورة" }, { label: "الوقف", value: rc.waqf?.name ?? "بلا وقف" }]),
+    { label: "المختص", value: assigneeName ?? "غير مسند — ينفّذ المدير المخوّل مباشرة" },
+  ];
+  const channelsRaw = commsChannels({
+    items: d.items, notes: notes.map((n) => ({ id: n.id, visibility: n.visibility, authorIsStaff: !!names.get(n.authorId)?.isStaff, createdAt: n.createdAt })),
+    outputs: wx.outputsLite, quotes: d.quotes, deliverables,
+  });
+  const CH_HREF: Record<string, string> = { requests: "#items", replies: "#items", client: "#client-messages", internal: "#internal-notes", review: "#review-notes", decisions: "#review-notes" };
+  const channels = channelsRaw.map((c) => ({ ...c, href: CH_HREF[c.key] }));
+  const headline = commsHeadline(channelsRaw);
+  const decisions: Decision[] = [
+    ...d.quotes.filter((q) => q.respondedAt).map((q) => ({ at: q.respondedAt!, label: `العرض ${q.number} — ${QUOTE_STATUS_LABEL[q.status as keyof typeof QUOTE_STATUS_LABEL] ?? q.status}`, note: q.responseNote, tone: (q.status === "accepted" ? "ok" : "fine") as Decision["tone"] })),
+    ...wx.outputsLite.filter((o) => o.status === "returned" && o.reviewNote).map((o) => ({ at: null, label: `أعاد المراجع «${o.title}» للتعديل`, note: o.reviewNote, tone: "fine" as const, open: true })),
+    ...ops2.outputs.filter((o) => o.o?.status === "approved" && o.o.approvedAt).map((o) => ({ at: o.o!.approvedAt!, label: `اعتُمد «${o.def.title}»${o.o!.selfApproved ? " (اعتماد ذاتي)" : ""}`, note: null, tone: "ok" as const })),
+    ...deliverables.filter((x) => x.status === "revision_requested").map((x) => ({ at: null, label: `طلب العميل تعديل «${x.title}»`, note: x.revisionNote, tone: "fine" as const, open: true })),
+    ...deliverables.filter((x) => x.status === "approved" && x.approvedAt).map((x) => ({ at: x.approvedAt!, label: `اعتمد العميل «${x.title}»`, note: null, tone: "ok" as const })),
+    ...d.invoices.filter((i) => i.approvedAt).map((i) => ({ at: i.approvedAt!, label: `اعتُمدت الفاتورة ${i.number}${i.selfApproved ? " (اعتماد ذاتي)" : ""}`, note: null, tone: "ok" as const })),
+  ];
+  const navSections = [
+    { id: "work", label: "العمل والمهام", note: plan.current && !plan.terminal ? WHO_AR[plan.current.owner] : undefined, tone: "info" as const },
+    { id: "data", label: "البيانات والمستندات", note: r.intakeVerifiedAt ? "متحقق منها" : "لم يُتحقق", tone: (r.intakeVerifiedAt ? "ok" : "warn") as "ok" | "warn" },
+    { id: "comms", label: "المراسلات والنواقص", note: headline.state === "clear" ? undefined : channelsRaw.find((c) => c.state === headline.state)?.title, tone: COMMS_STATE_TONE[headline.state] },
+    ...(paid ? [{ id: "commerce", label: "العرض والعقد والفوترة" }] : []),
+    { id: "outputs", label: "المخرجات" },
+    { id: "history", label: "السجل", note: wx.revisions.length ? `${wx.revisions.length} تصحيح` : undefined },
+  ];
   const staffTransitions = d.transitions.filter((t) => t.to !== "quote" && !(r.status === "quote" && t.to === "awaiting_contract"));
 
   return (
@@ -166,10 +224,14 @@ export default async function StaffRequest({ params }: { params: Promise<{ id: s
         </Alert>
       ) : null}
 
-      <ExecutionPanel action={runNextStep} requestId={r.id} token={plan.token} steps={plan.steps} current={plan.current} primary={plan.primary} held={plan.held} terminal={plan.terminal} />
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
-        <div className="min-w-0 space-y-4">
+      <RequestSummary items={summaryItems} />
+      <ExecutionPanel action={runNextStep} requestId={r.id} token={plan.token} steps={plan.steps} current={plan.current} primary={plan.primary} held={plan.held} terminal={plan.terminal} />
+      <SectionNav sections={navSections} />
+
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="min-w-0 space-y-8">
+          <Section id="work" title="العمل والمهام">
           <Panel title="سير العمل" description="الإجراءات المتاحة لك حسب الحالة ودورك. يُرسل عرض السعر ويُقبل من لوحته.">
             <TransitionPanel action={staffTransition} id={r.id} transitions={staffTransitions} holdParties={HOLD_PARTY_LABEL} />
             {r.status === "in_progress" && worker ? (
@@ -191,11 +253,24 @@ export default async function StaffRequest({ params }: { params: Promise<{ id: s
             </Panel>
           ) : null}
 
+            <RollbackPanel action={rollbackRequest} requestId={r.id} options={terminal ? [] : wx.rollback} impact={wx.rollbackImpact} isOps={ops} />
+          </Section>
+
+          <Section id="data" title="البيانات والمستندات">
           <Panel id="intake" title="بيانات الطلب كما قدّمها العميل" description={r.intakeFormVersion ? `نموذج الخدمة — الإصدار ${r.intakeFormVersion}` : "طلب سابق لنماذج الخدمات: التفاصيل نص حر."}>
             {d.intakeSummary ? (
               <IntakeSummaryView sections={d.intakeSummary} docTitles={docTitle}
                 docs={d.form.docs.filter((s) => d.intakeDocs[s.key]?.length || s.required).map((s) => ({ label: s.label, ids: d.intakeDocs[s.key] ?? [] }))} />
             ) : <p className="whitespace-pre-line text-[15px]">{r.details}</p>}
+            {worker && !terminal && wx.editable.length ? (
+              <details className="mt-4 border-t border-line pt-4">
+                <summary className="cursor-pointer font-medium text-ink">صحّح بيانات العميل أو أكملها</summary>
+                <div className="mt-3 space-y-3">
+                  <StaffIntakeEditor action={staffEditIntake} requestId={r.id} fields={wx.editable} />
+                  {wx.editImpact.length ? <div><p className="mb-1 text-[13px] font-medium">ما قد يتأثر بالتصحيح</p><ImpactList impact={wx.editImpact} /></div> : null}
+                </div>
+              </details>
+            ) : null}
             <IntakeDocReview action={reviewIntakeDoc} requestId={r.id} rows={docRows} canReview={worker && !terminal && r.status !== "draft"} />
             {worker && ["triage", "awaiting_client"].includes(r.status) ? (
               <div className="mt-4 flex flex-wrap gap-2 border-t border-line pt-4">
@@ -205,6 +280,13 @@ export default async function StaffRequest({ params }: { params: Promise<{ id: s
             ) : null}
           </Panel>
 
+          <Panel title="مستندات الطلب">
+            <DocumentList requestId={r.id} emptyText="لا مستندات لهذا الطلب." />
+          </Panel>
+          </Section>
+
+          <Section id="comms" title="المراسلات والنواقص">
+            <CommsOverview channels={channels} />
           <Panel id="items" title="النواقص والاستفسارات" description={`${d.counts.clientOpen} بانتظار العميل · ${d.counts.awaitingReview} بانتظار مراجعتك · ${d.counts.blocking} مطلوب غير مغلق`}>
             {d.items.length ? (
               <ol className="space-y-3">
@@ -246,6 +328,21 @@ export default async function StaffRequest({ params }: { params: Promise<{ id: s
             ) : null}
           </Panel>
 
+          <Panel id="client-messages" title="مراسلات العميل" description="يراها العميل ويُبلَّغ بها.">
+            <NotesThread notes={notes.filter((n) => n.visibility === "client")} names={names} me={auth.user.id} docTitles={docTitle} />
+            {!terminal ? <div className="mt-4 border-t border-line pt-4"><NoteFormWithAttachment action={postStaffNote} id={r.id} staff fixedVisibility="client" requestId={r.id} waqfId={r.waqfId} docs={docOpts} /></div> : null}
+          </Panel>
+          <Panel id="internal-notes" title="الملاحظات الداخلية" description="للفريق فقط؛ لا يراها العميل. السجل لا يُحذف ولا يُعدّل.">
+            <NotesThread notes={notes.filter((n) => n.visibility === "internal")} names={names} me={auth.user.id} docTitles={docTitle} />
+            {!terminal ? <div className="mt-4 border-t border-line pt-4"><NoteFormWithAttachment action={postStaffNote} id={r.id} staff fixedVisibility="internal" requestId={r.id} waqfId={r.waqfId} docs={docOpts} /></div> : null}
+          </Panel>
+          <Panel id="review-notes" title="ملاحظات المراجعة والاعتمادات" description="ما أعاده المراجعون أو طلب العميل تعديله، وقرارات الاعتماد والرفض.">
+            <ReviewDecisions rows={decisions} />
+          </Panel>
+          </Section>
+
+          {paid ? (
+            <Section id="commerce" title="العرض والعقد والفوترة">
           {paid ? (
             <Panel id="quote" title="نطاق العمل وعرض السعر" description={d.vatRate === null ? "نسبة الضريبة غير مضبوطة في الإعدادات." : `الضريبة المطبقة على العروض الجديدة ${d.vatRate}٪ (من الإعدادات).`}>
               {d.quotes.length ? (
@@ -412,6 +509,10 @@ export default async function StaffRequest({ params }: { params: Promise<{ id: s
             </Panel>
           ) : null}
 
+            </Section>
+          ) : null}
+
+          <Section id="outputs-section" title="المخرجات">
           <Panel id="outputs" title="المخرجات" description={`تُعدّ المسودة من بيانات الطلب والوقف والمراجع، ويكمل المختص ما يحتاج رأيه، ثم تُعتمد وفق سياسة كل مخرج وتُسلَّم للعميل بعد مراجعة الجودة.${isOpinion ? " الرأي المتخصص يُوقَّع باسم المستشار وصفته." : ""}`}>
             <OutputsPanel ops={ops2} requestId={r.id} status={r.status} canDeliver={auth.perms.has("staff.deliver") && worker} canReview={auth.perms.has("staff.quality_review")} isManager={ops} me={auth.user.id} opinion={isOpinion} />
             <h3 className="mb-2 mt-4 text-[15px] font-medium">التسليمات إلى العميل</h3>
@@ -452,14 +553,12 @@ export default async function StaffRequest({ params }: { params: Promise<{ id: s
             ) : null}
           </Panel>
 
-          <Panel title="الملاحظات والمراسلات" description="الملاحظات الداخلية لا يراها العميل. السجل لا يُحذف ولا يُعدّل.">
-            <NotesThread notes={notes} names={names} me={auth.user.id} showVisibility docTitles={docTitle} />
-            {!terminal ? <div className="mt-4 border-t border-line pt-4"><NoteFormWithAttachment action={postStaffNote} id={r.id} staff requestId={r.id} waqfId={r.waqfId} docs={docOpts} /></div> : null}
-          </Panel>
+          </Section>
 
-          <Panel title="مستندات الطلب">
-            <DocumentList requestId={r.id} emptyText="لا مستندات لهذا الطلب." />
-          </Panel>
+          <Section id="history" title="السجل">
+            <Panel title="سجل الطلب" description="ما يراه العميل من أحداث الطلب."><EventList events={events} names={names} /></Panel>
+            <Panel title="سجل التصحيحات والرجوع" description="للفريق فقط: من صحّح أو رجع، ولماذا، وما الأثر."><RevisionList rows={wx.revisions} names={wx.revisionNames} /></Panel>
+          </Section>
         </div>
 
         <aside className="min-w-0 space-y-4">
@@ -484,7 +583,6 @@ export default async function StaffRequest({ params }: { params: Promise<{ id: s
           {d.consistency.length === 0 && (d.quotes.length || d.invoices.length) ? (
             <p className="flex items-center gap-2 text-[13px] text-muted"><CheckCircle2 aria-hidden className="size-4 text-ok" />فحص الاتساق: لا فروق بين العرض المقبول والعقود والفواتير والمدفوعات.</p>
           ) : null}
-          <Panel title="سجل الطلب"><EventList events={events} names={names} /></Panel>
         </aside>
       </div>
     </div>

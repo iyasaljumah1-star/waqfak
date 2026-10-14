@@ -61,7 +61,7 @@ export async function runNextStep(_: ActionState, fd: FormData): Promise<ActionS
     approve_invoice: () => [approveInvoice, form({ invoiceId: t.args.invoiceId })],
     send_invoice: () => [sendInvoice, form({ invoiceId: t.args.invoiceId })],
     start_work: () => [staffTransition, form({ id, to: "in_progress" })],
-    generate_output: () => [generateOutput, form({ id, outputKey: t.args.outputKey })],
+    generate_output: () => [generateOutput, form({ id, outputKey: t.args.outputKey, ...(t.args.confirm ? { confirm: t.args.confirm } : {}) })],
     submit_output: () => [submitOutput, form({ outputId: t.args.outputId, requestId: id })],
     approve_output: () => [approveOutput, form({ outputId: t.args.outputId, requestId: id })],
     complete_stage: () => [advanceStageAction, form({ id })],

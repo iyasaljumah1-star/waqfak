@@ -302,8 +302,8 @@ test.describe.serial("service flows as one operating system", () => {
     // the nazara study output is drafted from the file and the waqf data (while the request is under study)
     await go(admin, `/admin/requests/${first}`);
     await act(admin, "بدء الفرز");
-    await ex(admin.getByTestId("output-N01.main").getByRole("button", { name: "أعدّ المسودة من بيانات الطلب" })).toBeVisible();
-    await admin.getByTestId("output-N01.main").getByRole("button", { name: "أعدّ المسودة من بيانات الطلب" }).click();
+    await ex(admin.getByTestId("output-N01.main").getByRole("button", { name: "أعدّ مسودة للمعاينة الآن" })).toBeVisible();
+    await admin.getByTestId("output-N01.main").getByRole("button", { name: "أعدّ مسودة للمعاينة الآن" }).click();
     await ex.poll(async () => JSON.stringify((await sql<{ sections: unknown }>("select v.sections from output_versions v join outputs o on o.id = v.output_id where o.request_id = $1", [first]))[0]?.sections ?? "")).toContain(`ملف النظارة ${engs[0].number}`);
     // uploaded is not verified: the deed is verified document by document before the intake check
     await admin.getByTestId("docslot-svc_waqf_deed").getByRole("button", { name: "تحققت منه" }).click();

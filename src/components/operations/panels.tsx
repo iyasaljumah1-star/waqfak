@@ -110,13 +110,14 @@ export function OutputsPanel({ ops, requestId, status, canDeliver, canReview, is
   if (!ops.outputs.length) return null;
   return (
     <div className="space-y-3" data-testid="outputs">
-      {ops.outputs.map(({ def, o, version, blocking, unwritten, warnings, specialtyLabel, reviewLabel }) => (
+      {ops.outputs.map(({ def, o, version, blocking, unwritten, warnings, specialtyLabel, reviewLabel, formatLabel, delivered }) => (
         <div key={def.key} className="rounded-lg border border-line p-3" data-testid={`output-${def.key}`}>
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="flex items-center gap-2 font-medium"><FileText aria-hidden className="size-4 text-muted" />{def.title}</p>
             <span className="flex flex-wrap gap-1">
+              <Badge tone="neutral" icon={false}>{formatLabel}</Badge>
               <Badge tone="neutral" icon={false}>{specialtyLabel}</Badge>
-              <Badge tone={o ? OUTPUT_STATUS_TONE[o.status] : "neutral"} icon={false}>{o ? OUTPUT_STATUS_LABEL[o.status] : "لم تُعدّ"}</Badge>
+              <Badge tone={delivered ? "ok" : o ? OUTPUT_STATUS_TONE[o.status] : "neutral"} icon={false}>{delivered ? "مُسلَّم للعميل" : o ? OUTPUT_STATUS_LABEL[o.status] : "لم تُعدّ"}</Badge>
             </span>
           </div>
           <p className="mt-1 text-[13px] text-muted">
@@ -134,7 +135,7 @@ export function OutputsPanel({ ops, requestId, status, canDeliver, canReview, is
           {o?.reviewNote && o.status === "returned" ? <p className="mt-1 text-[13px] text-fine">ملاحظة المراجع: {o.reviewNote}</p> : null}
           <div className="mt-2 flex flex-wrap items-start gap-2">
             {o ? <Link href={`/admin/requests/${requestId}/outputs/${o.id}`} className="inline-flex h-8 items-center gap-1 rounded-md border border-line px-3 text-sm text-ink hover:bg-ink-soft">افتح المسودة<ExternalLink aria-hidden className="size-3.5" /></Link> : null}
-            {!o && canDeliver && working ? <ActionForm action={generateOutput} hidden={{ id: requestId, outputKey: def.key }} submit="أعدّ المسودة من بيانات الطلب" size="sm" inline /> : null}
+            {!o && canDeliver && working ? <ActionForm action={generateOutput} hidden={{ id: requestId, outputKey: def.key }} submit={status === "in_progress" ? "أعدّ المسودة من بيانات الطلب" : "أعدّ مسودة للمعاينة الآن"} size="sm" inline /> : null}
             {o && (o.status === "draft" || o.status === "returned") && canDeliver ? <ActionForm action={submitOutput} hidden={{ outputId: o.id, requestId }} submit="أرسلها للمراجعة" size="sm" variant="secondary" inline /> : null}
             {o && o.status === "in_review" && (canReview || isManager) ? (
               <details className="w-full">

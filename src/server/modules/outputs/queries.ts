@@ -4,7 +4,7 @@ import { ForbiddenError, type Auth } from "@/server/authz/context";
 import { outputs, outputVersions, users } from "@/server/db/schema";
 import { read } from "@/server/modules/_shared";
 import { loadRequestCtx } from "@/server/modules/requests/access";
-import { outputsFor, REVIEW_LABEL, SPECIALTY_LABEL } from "./catalog";
+import { outputsFor, PROFILE_FORMAT, REVIEW_LABEL, SPECIALTY_LABEL } from "./catalog";
 import { diffVersions, readiness } from "./pure";
 import { preparersOf } from "./server";
 
@@ -34,7 +34,8 @@ export async function outputPageData(auth: Auth, requestId: string, outputId: st
       diff: a && b ? { a: a.version, b: b.version, rows: diffVersions(a.sections, b.sections) } : null,
       preparers: await preparersOf(tx, o),
       names: new Map(people.map((p) => [p.id, p.name ?? "—"])),
-      specialtyLabel: SPECIALTY_LABEL[o.specialty], reviewLabel: REVIEW_LABEL[o.reviewPolicy],
+      specialtyLabel: SPECIALTY_LABEL[o.specialty], reviewLabel: REVIEW_LABEL[o.reviewPolicy], formatLabel: def ? PROFILE_FORMAT[def.profile] : "مخرج",
+      delivered: o.status === "approved" && !!o.documentId && ["awaiting_client_approval", "completed", "closed"].includes(rc.req.status),
     };
   });
 }

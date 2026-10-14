@@ -20,7 +20,7 @@ const clean = (e: Record<string, string | undefined>) => Object.fromEntries(Obje
 const inputCls =
   "block w-full rounded-md border border-line-strong bg-surface px-3 text-[15px] text-text placeholder:text-muted/70 focus:border-ink focus:outline-none focus:ring-2 focus:ring-ink/20 aria-[invalid=true]:border-critical";
 
-function FieldInput({ f, value, onChange, error, required }: { f: Field; value: AnswerValue | undefined; onChange: (v: AnswerValue | undefined) => void; error?: string; required: boolean }) {
+export function FieldInput({ f, value, onChange, error, required }: { f: Field; value: AnswerValue | undefined; onChange: (v: AnswerValue | undefined) => void; error?: string; required: boolean }) {
   const id = `q-${f.key}`;
   const describedBy = error ? `${id}-error` : f.hint ? `${id}-hint` : undefined;
   const common = { id, "aria-invalid": !!error, "aria-describedby": describedBy, "aria-required": required };

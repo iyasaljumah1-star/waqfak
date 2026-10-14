@@ -45,7 +45,7 @@ export function AttachmentPicker({ requestId, waqfId, docs, name = "documentId",
   );
 }
 
-export function NoteFormWithAttachment({ action, id, staff, requestId, waqfId, docs }: { action: Act; id: string; staff?: boolean; requestId: string; waqfId: string | null; docs: { id: string; title: string }[] }) {
+export function NoteFormWithAttachment({ action, id, staff, requestId, waqfId, docs, fixedVisibility }: { action: Act; id: string; staff?: boolean; requestId: string; waqfId: string | null; docs: { id: string; title: string }[]; fixedVisibility?: "client" | "internal" }) {
   const [k, setK] = useState(0);
   // A successful send remounts the form (clears the text and the attachment).
   const [s, a] = useActionState(async (prev: ActionState, fd: FormData) => {
@@ -56,10 +56,10 @@ export function NoteFormWithAttachment({ action, id, staff, requestId, waqfId, d
   return (
     <form action={a} className="space-y-3" key={k}>
       <input type="hidden" name="id" value={id} />
-      <Field label={staff ? "رسالة أو ملاحظة" : "رسالتك إلى فريق وقفك"} name="note-body">
-        <Textarea name="body" id="note-body" required minLength={2} className="min-h-24" />
+      <Field label={fixedVisibility === "client" ? "رسالة إلى العميل" : fixedVisibility === "internal" ? "ملاحظة داخلية" : staff ? "رسالة أو ملاحظة" : "رسالتك إلى فريق وقفك"} name={`note-body-${fixedVisibility ?? "any"}`}>
+        <Textarea name="body" id={`note-body-${fixedVisibility ?? "any"}`} required minLength={2} className="min-h-24" />
       </Field>
-      {staff ? (
+      {fixedVisibility ? <input type="hidden" name="visibility" value={fixedVisibility} /> : staff ? (
         <fieldset className="flex flex-wrap gap-4 text-[15px]">
           <legend className="sr-only">من يرى الرسالة</legend>
           <label className="flex items-center gap-2"><input type="radio" name="visibility" value="internal" defaultChecked className="accent-[var(--ink)]" /> ملاحظة داخلية (للفريق فقط)</label>

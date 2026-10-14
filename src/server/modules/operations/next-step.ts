@@ -36,6 +36,8 @@ export type OutputSnap = {
   viewerCanApprove: boolean; approveBlockedReason?: string; needsSignature: boolean;
   /** Approved, but the client (or quality review) sent the work back: a new review round must be opened. */
   needsRevision: boolean;
+  /** The request's answers were corrected after this version was drafted. */
+  stale?: boolean;
 };
 
 export type Snapshot = {
@@ -206,11 +208,15 @@ export function planRequest(s: Snapshot): { steps: Step[]; current: Step | null;
   const executing = eff === "in_progress";
   if (s.outputs.length) {
     for (const o of s.outputs) {
-      const prepDone = (o.status === "in_review" || o.status === "approved") && !(executing && o.needsRevision);
+      const prepDone = (o.status === "in_review" || o.status === "approved") && !(executing && (o.needsRevision || o.stale));
       const prep: Step = { key: `prep:${o.key}`, title: `إعداد مسودة: ${o.title}`, owner: "specialist", detail: `تخصص المخرج: ${o.specialty}`, blockers: [], output: `مسودة «${o.title}» من بيانات الطلب والوقف`, state: prepDone || rank >= 6 ? "done" : executing ? "current" : "pending" };
       if (!prepDone && executing) {
-        if (o.status === "approved" && o.needsRevision) {
-          prep.blockers.push({ text: "أُعيد العمل للتعديل بعد اعتماد المخرج: افتح مراجعة جديدة ثم عدّل المسودة", who: "specialist", href: `/admin/requests/${s.id}/outputs/${o.id}` });
+        if (o.stale && (o.status === "draft" || o.status === "returned")) {
+          prep.blockers.push({ text: "صُححت بيانات الطلب بعد إعداد المسودة", who: "team" });
+          if (s.viewer.canDeliver && worker) prep.action = { kind: "run", key: "generate_output", label: "أعد توليد المسودة من البيانات المصححة (تبقى تعديلات المختص)", args: { outputKey: o.key, confirm: "on" } };
+          prep.state = "blocked";
+        } else if ((o.status === "approved" || o.status === "in_review") && (o.needsRevision || o.stale)) {
+          prep.blockers.push({ text: o.stale ? "صُححت بيانات الطلب بعد إعداد المخرج: افتح مراجعة جديدة وأعد التوليد" : "أُعيد العمل للتعديل بعد اعتماد المخرج: افتح مراجعة جديدة ثم عدّل المسودة", who: "specialist", href: `/admin/requests/${s.id}/outputs/${o.id}` });
           prep.state = "blocked";
           prep.action = { kind: "link", href: `/admin/requests/${s.id}/outputs/${o.id}`, label: "افتح مراجعة جديدة للمخرج" };
         } else if (!o.id || !o.status) {
@@ -226,7 +232,7 @@ export function planRequest(s: Snapshot): { steps: Step[]; current: Step | null;
         }
       }
       add(prep);
-      const appr: Step = { key: `approve:${o.key}`, title: `مراجعة واعتماد: ${o.title}`, owner: "reviewer", blockers: [], output: `«${o.title}» معتمد بنسخته`, state: (o.status === "approved" && !(executing && o.needsRevision)) || rank >= 6 ? "done" : o.status === "in_review" ? "current" : "pending" };
+      const appr: Step = { key: `approve:${o.key}`, title: `مراجعة واعتماد: ${o.title}`, owner: "reviewer", blockers: [], output: `«${o.title}» معتمد بنسخته`, state: (o.status === "approved" && !(executing && (o.needsRevision || o.stale))) || rank >= 6 ? "done" : o.status === "in_review" ? "current" : "pending" };
       if (o.status === "in_review") {
         if (o.viewerCanApprove) {
           appr.action = o.needsSignature
@@ -248,7 +254,7 @@ export function planRequest(s: Snapshot): { steps: Step[]; current: Step | null;
   // 9) Work stages
   {
     const active = s.stages.find((x) => x.status === "active");
-    const outputsDone = s.outputs.every((o) => o.status === "approved" && !o.needsRevision) && (s.outputs.length > 0 || s.deliverables.submitted > 0);
+    const outputsDone = s.outputs.every((o) => o.status === "approved" && !o.needsRevision && !o.stale) && (s.outputs.length > 0 || s.deliverables.submitted > 0);
     let state: StepState;
     if (rank >= 6) state = "done";
     else if (!executing) state = "pending";
@@ -263,7 +269,7 @@ export function planRequest(s: Snapshot): { steps: Step[]; current: Step | null;
   {
     const qr: Step = { key: "quality", title: "مراجعة الجودة والإفراج للعميل", owner: "reviewer", blockers: [], output: "مخرجات مفرج عنها للعميل بصيغة PDF", state: rank >= 7 ? "done" : "pending" };
     if (executing) {
-      const unfinished = s.outputs.filter((o) => o.status !== "approved" || o.needsRevision);
+      const unfinished = s.outputs.filter((o) => o.status !== "approved" || o.needsRevision || o.stale);
       if (!unfinished.length && (s.outputs.length || s.deliverables.submitted) && !s.canAdvanceStage) {
         qr.state = "current"; qr.owner = "team";
         if (worker) qr.action = { kind: "run", key: "to_quality", label: "أرسل لمراجعة الجودة" };

@@ -84,7 +84,7 @@ export async function createStages(tx: Tx, requestId: string, waqfId: string | n
   await recomputeSla(tx, requestId, { restartActive: true });
 }
 
-async function applyStagePlan(tx: Tx, requestId: string, next: string[], actorId: string) {
+export async function applyStagePlan(tx: Tx, requestId: string, next: string[], actorId: string) {
   const rows = await tx.select().from(requestStages).where(eq(requestStages.requestId, requestId)).orderBy(asc(requestStages.position));
   let restart = false;
   for (let i = 0; i < rows.length; i++) {

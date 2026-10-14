@@ -29,6 +29,14 @@ export type OutputDef = {
 export const SPECIALTY_LABEL: Record<OutputSpecialty, string> = {
   sharia: "شرعي ووقفي", legal: "قانوني وتعاقدي", finance: "مالي ومحاسبي", investment: "استثماري", governance: "حوكمة والتزام", operations: "إداري وتشغيلي",
 };
+/** What kind of output each profile produces (shown in the panel, the editor and the matrix). Every output is
+ *  previewed in the editor as structured sections (facts, tables, drafted clauses, specialist text) and exported as PDF. */
+export const PROFILE_FORMAT: Record<Profile, string> = {
+  sharia_memo: "مذكرة", sharia_opinion: "رأي موقّع", will_text: "مستند مصوغ ببنود (وصية)", deed_draft: "مستند مصوغ ببنود (وثيقة وقف)",
+  legal_review: "تقرير مراجعة", legal_package: "حزمة إجراءات وقوائم تحقق", finance_report: "تقرير مالي بجداول من القيود", finance_opinion: "رأي مالي",
+  investment_policy: "سياسة", investment_assets: "دراسة ومصفوفة أصول", investment_opinion: "رأي استثماري", governance_package: "حزمة سياسات ولوائح",
+  ops_package: "خطة عمل وقوائم تحقق", nazara_study: "دراسة ملف وقائمة استلام", aml_program: "برنامج وإجراءات",
+};
 export const REVIEW_LABEL: Record<ReviewPolicy, string> = {
   independent: "اعتماد مستقل (غير من أعدّه)",
   self_allowed: "يجوز للمدير المخوّل اعتماد ما أعدّه، ويُسجَّل اعتمادًا ذاتيًا",
