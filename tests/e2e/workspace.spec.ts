@@ -261,7 +261,8 @@ test.describe.serial("unified request workspace", () => {
     expect(await status(r.id)).toBe("in_progress");
     expect((await sql<{ assigned_to_user_id: string }>("select assigned_to_user_id from service_requests where id = $1", [r.id]))[0].assigned_to_user_id).toBe(U().emp2.id);
     await sql("update users set status = 'active' where id = $1", [U().emp2.id]);
-    await sql("update service_requests set status = 'cancelled' where id = $1", [r.id]);
+    // leave no assignment behind (an assignment grants the employee access to the waqf's documents)
+    await sql("update service_requests set status = 'cancelled', assigned_to_user_id = null where id = $1", [r.id]);
 
     // the client reads no revisions and no drafts; an unassigned employee cannot open the request
     const rid = reqId || (await sql<{ request_id: string }>("select request_id from request_revisions order by at desc limit 1"))[0].request_id;
