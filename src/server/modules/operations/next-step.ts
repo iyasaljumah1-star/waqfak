@@ -63,6 +63,8 @@ export type Snapshot = {
   opinion: boolean;
   selfQA: boolean;
   waqf: { linked: boolean; name: string | null };
+  /** Names of the service's own stages for quality review, the client's step, and any follow-up after it. */
+  flow?: { quality: string | null; client: string | null; after: string[] };
   /** Acceptance decided elsewhere (corporate nazara: the nazara file's acceptance decision accepts the request). */
   acceptVia?: { href: string; label: string; who: Who } | null;
 };
@@ -267,7 +269,7 @@ export function planRequest(s: Snapshot): { steps: Step[]; current: Step | null;
 
   // 10) Quality review
   {
-    const qr: Step = { key: "quality", title: "مراجعة الجودة والإفراج للعميل", owner: "reviewer", blockers: [], output: "مخرجات مفرج عنها للعميل بصيغة PDF", state: rank >= 7 ? "done" : "pending" };
+    const qr: Step = { key: "quality", title: s.flow?.quality ? `${s.flow.quality} والإفراج للعميل` : "مراجعة الجودة والإفراج للعميل", owner: "reviewer", blockers: [], output: "مخرجات مفرج عنها للعميل بصيغة PDF", state: rank >= 7 ? "done" : "pending" };
     if (executing) {
       const unfinished = s.outputs.filter((o) => o.status !== "approved" || o.needsRevision || o.stale);
       if (!unfinished.length && (s.outputs.length || s.deliverables.submitted) && !s.canAdvanceStage) {
@@ -287,7 +289,7 @@ export function planRequest(s: Snapshot): { steps: Step[]; current: Step | null;
 
   // 11) Client approval
   add({
-    key: "client_approval", title: "اعتماد العميل للمخرجات", owner: "client", blockers: eff === "awaiting_client_approval" ? [{ text: "بانتظار اعتماد العميل أو طلبه تعديلات", who: "client" }] : [], output: "مخرجات معتمدة من العميل",
+    key: "client_approval", title: s.flow?.client ?? "اعتماد العميل للمخرجات", owner: "client", blockers: eff === "awaiting_client_approval" ? [{ text: "بانتظار اعتماد العميل أو طلبه تعديلات", who: "client" }] : [], output: "مخرجات معتمدة من العميل",
     state: rank >= 8 ? "done" : eff === "awaiting_client_approval" ? "waiting" : "pending",
   });
 

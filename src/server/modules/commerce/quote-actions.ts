@@ -93,7 +93,7 @@ export async function saveQuote(_: ActionState, fd: FormData): Promise<ActionSta
     }).returning({ id: quotes.id });
     await audit(c.tx, { actorUserId: c.auth.user.id, action: "quotes.create", entityType: "quote", entityId: row.id, waqfId: rc.req.waqfId, ip: c.ip, userAgent: c.userAgent, after: { number, version, kind: d.kind, net: content.net, total: content.total } });
     return { ok: true, message: `أُنشئت مسودة العرض ${number} (نسخة ${version}). تُعتمد داخليًا قبل إرسالها.` };
-  }, { perm: "staff.requests.assigned", revalidate: reval(d.id) });
+  }, { revalidate: reval(d.id) });
 }
 
 const qSchema = z.object({ quoteId: uuid, note: z.string().trim().max(2000).optional().default("") });
@@ -160,7 +160,7 @@ export async function sendQuote(_: ActionState, fd: FormData): Promise<ActionSta
     if (q.kind === "amendment" || rc.req.status !== "triage")
       await notify(rc.req.requesterUserId, "request.awaiting_client", { number: rc.req.number, note: `${q.kind === "amendment" ? "ملحق تعديل" : "عرض سعر"} ${q.number} بانتظار ردك — صالح حتى ${q.validUntil}` }, { waqfId: rc.req.waqfId, link: `/app/requests/${rc.req.id}#quote`, tx: c.tx });
     return { ok: true, message: "أُرسل العرض للعميل." };
-  }, { perm: "staff.requests.assigned" });
+  });
   return revalidated(res, reqId);
 }
 
@@ -181,7 +181,7 @@ export async function withdrawQuote(_: ActionState, fd: FormData): Promise<Actio
     await audit(c.tx, { actorUserId: c.auth.user.id, action: "quotes.withdraw", entityType: "quote", entityId: q.id, waqfId: rc.req.waqfId, ip: c.ip, userAgent: c.userAgent, before: { status: q.status }, after: { reason: d.note } });
     if (q.status === "sent") await notify(rc.req.requesterUserId, "request.status", { number: rc.req.number, status: `سُحب العرض ${q.number}: ${d.note}` }, { waqfId: rc.req.waqfId, link: `/app/requests/${rc.req.id}#quote`, tx: c.tx });
     return { ok: true, message: "سُحب العرض." };
-  }, { perm: "staff.requests.assigned" });
+  });
   return revalidated(res, reqId);
 }
 

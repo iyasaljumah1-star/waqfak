@@ -60,7 +60,7 @@ export async function advanceStageAction(_: ActionState, fd: FormData): Promise<
     const rc = await loadRequestCtx(c.tx, c.auth, id, "staff");
     await advance(c, rc);
     return { ok: true, message: "انتقل الطلب إلى المرحلة التالية." };
-  }, { perm: "staff.requests.assigned", revalidate: revalidateReq(id) });
+  }, { revalidate: revalidateReq(id) });
 }
 
 // ───────────────────────── Notes ─────────────────────────
@@ -192,6 +192,7 @@ export async function addDeliverable(_: ActionState, fd: FormData): Promise<Acti
   return userAction(async (c) => {
     if (!c.auth.perms.has("staff.deliver")) throw new ForbiddenError("رفع المخرجات يتطلب صلاحية التسليم.");
     const rc = await loadRequestCtx(c.tx, c.auth, d.id, "staff");
+    if (!rc.isAssignee && !rc.isOps) throw new ForbiddenError("يرفع المخرجات المسند إليه الطلب أو المدير المخوّل.");
     if (!["in_progress", "quality_review"].includes(rc.req.status)) throw new UserError("تُرفع المخرجات أثناء التنفيذ.");
     let documentId: string | null = null;
     if (d.documentId) {
@@ -208,5 +209,5 @@ export async function addDeliverable(_: ActionState, fd: FormData): Promise<Acti
     await logEvent(c.tx, rc.req, c.auth.user.id, `رُفع مخرج: ${d.title} (إصدار ${version})`);
     await audit(c.tx, { actorUserId: c.auth.user.id, action: "requests.deliverable", entityType: "deliverable", entityId: row.id, waqfId: rc.req.waqfId, ip: c.ip, userAgent: c.userAgent, after: { title: d.title, version, signedBy: d.signedBy || null } });
     return { ok: true, message: "أُضيف المخرج." };
-  }, { perm: "staff.requests.assigned", revalidate: revalidateReq(d.id) });
+  }, { revalidate: revalidateReq(d.id) });
 }

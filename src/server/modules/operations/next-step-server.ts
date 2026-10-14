@@ -126,6 +126,11 @@ export async function requestSnapshot(tx: Tx, auth: Auth, rc: RequestCtx): Promi
     opinion,
     selfQA,
     waqf: { linked: !!rc.req.waqfId, name: rc.waqf?.name ?? null },
+    flow: (() => {
+      const st = rc.stagesDef;
+      const ci = st.findIndex((x) => !!x.clientApproval || x.role === "client");
+      return { quality: st.find((x) => x.role === "quality")?.name ?? null, client: ci >= 0 ? st[ci].name : null, after: ci >= 0 ? st.slice(ci + 1).map((x) => x.name) : [] };
+    })(),
     acceptVia: rc.service.code === "N01" ? { href: nz ? `/admin/nazara/${nz.id}` : "/admin/nazara", label: "قرار القبول في ملف النظارة", who: "ops" } : null,
   };
 }

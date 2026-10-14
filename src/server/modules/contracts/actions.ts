@@ -127,7 +127,7 @@ export async function prepareContract(_: ActionState, fd: FormData): Promise<Act
     }
     await audit(c.tx, { actorUserId: c.auth.user.id, action: draft ? "contracts.redraft" : "contracts.draft", entityType: "contract", entityId: rowId, waqfId: rc.req.waqfId, ip: c.ip, userAgent: c.userAgent, after: { number, version, quote: `${q.number} v${q.version}`, contentHash, parties: parties.map((p) => ({ key: p.key, name: p.name, authority: p.authorityType })) } });
     return { ok: true, message: `${draft ? "حُدّثت" : "أُعدّت"} مسودة ${amendment ? "ملحق التعديل" : "العقد"} ${number}. تُعتمد داخليًا قبل إرسالها.` };
-  }, { perm: "staff.requests.assigned", revalidate: reval(id) });
+  }, { revalidate: reval(id) });
 }
 
 const cSchema = z.object({ contractId: uuid, note: z.string().trim().max(1000).optional().default("") });
@@ -178,7 +178,7 @@ export async function sendContract(_: ActionState, fd: FormData): Promise<Action
     for (const p of k.parties.filter((x) => x.side === "client" && x.signerUserId))
       await notify(p.signerUserId!, "contract.sign", { number: k.number, note: `${k.parentContractId ? "ملحق التعديل" : "العقد"} للطلب ${rc.req.number} جاهز لتوقيعك بصفتك ${AUTHORITY_LABEL[p.authorityType]} عن «${p.name}».` }, { waqfId: k.waqfId, link: `/app/requests/${rc.req.id}#contract`, tx: c.tx });
     return { ok: true, message: "أُرسل العقد للتوقيع." };
-  }, { perm: "staff.requests.assigned" });
+  });
   return revalidated(res, reqId);
 }
 
@@ -202,7 +202,7 @@ export async function voidContract(_: ActionState, fd: FormData): Promise<Action
       for (const p of k.parties.filter((x) => x.signerUserId))
         await notify(p.signerUserId!, "request.status", { number: rc.req.number, status: `أُلغي العقد ${k.number} قبل نفاذه: ${r.data.reason}` }, { waqfId: k.waqfId, link: `/app/requests/${rc.req.id}#contract`, tx: c.tx });
     return { ok: true, message: "أُلغي العقد." };
-  }, { perm: "staff.requests.assigned" });
+  });
   return revalidated(res, reqId);
 }
 
