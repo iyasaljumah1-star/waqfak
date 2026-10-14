@@ -26,7 +26,7 @@ const num = (v: unknown) => (v == null || v === "" ? null : Number(v));
  * Reads everything an output draft may rest on, inside the caller's transaction (RLS applies: the staff member reads
  * only what their access allows). Nothing is inferred: absent data stays absent and becomes a gap in the draft.
  */
-export async function collectContext(tx: Tx, rc: RequestCtx): Promise<OutputContext> {
+export async function collectContext(tx: Tx, rc: RequestCtx, opts: { cycle?: { label: string; from: string | null; to: string | null; due: string } } = {}): Promise<OutputContext> {
   const today = todayISO();
   const req = rc.req;
   const form = serviceForm(rc.service);
@@ -85,6 +85,7 @@ export async function collectContext(tx: Tx, rc: RequestCtx): Promise<OutputCont
     contract: contract ? { number: contract.number, status: contract.status, executedAt: contract.executedAt?.toISOString().slice(0, 10) ?? null } : null,
     stages: stageRows.map((s) => ({ name: s.name, status: STAGE_STATUS[s.status] ?? s.status })),
     nazara: null,
+    cycle: opts.cycle ?? null,
     refs: refs.map((r) => ({ code: r.code, name: r.name, binding: r.binding, verification: r.verification })),
   };
   ctx.parties.push({ role: "مقدّم الطلب", name: ctx.requester.name, detail: capacity, prov: "client" });
@@ -100,7 +101,8 @@ export async function collectContext(tx: Tx, rc: RequestCtx): Promise<OutputCont
   };
   // The year the client asked about when the form has one; otherwise the last ended fiscal year.
   const askedYear = Number(keys.fiscalYear ?? keys.year);
-  const period = Number.isInteger(askedYear) && askedYear > 1990 ? fiscalPeriodOfYear(w.fiscalYearEnd, askedYear) : lastFiscalPeriod(w.fiscalYearEnd, today);
+  // A delivery cycle of a continuous service reads its own period.
+  const period = opts.cycle?.from && opts.cycle.to ? { from: opts.cycle.from, to: opts.cycle.to } : Number.isInteger(askedYear) && askedYear > 1990 ? fiscalPeriodOfYear(w.fiscalYearEnd, askedYear) : lastFiscalPeriod(w.fiscalYearEnd, today);
   const yearAgo = new Date(Date.now() - 365 * 86_400_000);
   const [cond, trs, fnd, bens, cls, ast, ls, led, buds, dists, bds, pols, mts, res, obl, bo, ip, pf, eng] = await Promise.all([
     tx.select().from(conditions).where(eq(conditions.waqfId, wid)).orderBy(asc(conditions.position)),

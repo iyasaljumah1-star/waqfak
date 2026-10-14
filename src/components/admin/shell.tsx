@@ -12,7 +12,7 @@ export type AdminNavItem = { href: string; label: string; icon: string };
 
 /** Sections of the admin menu. Items not listed here (added later by other teams) fall under «أخرى». */
 const GROUPS: { label: string; hrefs: string[] }[] = [
-  { label: "التشغيل", hrefs: ["/admin", "/admin/requests", "/admin/waqfs", "/admin/clients", "/admin/assessments", "/admin/finance"] },
+  { label: "التشغيل", hrefs: ["/admin", "/admin/requests", "/admin/continuous", "/admin/waqfs", "/admin/clients", "/admin/assessments", "/admin/finance"] },
   { label: "الكتالوج والقواعد", hrefs: ["/admin/services", "/admin/question-bank", "/admin/rules", "/admin/compliance", "/admin/traceability", "/admin/content"] },
   { label: "الحوكمة والأمن", hrefs: ["/admin/users", "/admin/notifications", "/admin/mlro", "/admin/audit", "/admin/settings"] },
 ];

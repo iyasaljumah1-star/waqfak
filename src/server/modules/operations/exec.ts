@@ -4,7 +4,7 @@ import type { Tx } from "@/server/db";
 import { requestStages, taskEvents, tasks } from "@/server/db/schema";
 import type { TaskEventAction } from "@/server/db/schema/operations";
 import type { RequestCtx } from "@/server/modules/requests/access";
-import { outputsFor } from "@/server/modules/outputs/catalog";
+import { requestOutputs } from "./continuous-pure";
 import { intakeTask, planExecTasks, type ExecKind, type PlannedTask } from "./exec-pure";
 
 /**
@@ -52,7 +52,7 @@ export async function ensureIntakeTask(tx: Tx, req: Req, actorId: string) {
 export async function ensureExecTasks(tx: Tx, rc: RequestCtx, actorId: string) {
   const stages = await tx.select({ key: requestStages.stageKey, due: requestStages.slaDueAt }).from(requestStages).where(eq(requestStages.requestId, rc.req.id));
   const due = new Map(stages.map((s) => [s.key, s.due ? s.due.toISOString().slice(0, 10) : null]));
-  const planned = planExecTasks(rc.stagesDef, outputsFor(rc.service));
+  const planned = planExecTasks(rc.stagesDef, requestOutputs(rc.service));
   return insertPlanned(tx, rc.req, planned, actorId, due);
 }
 

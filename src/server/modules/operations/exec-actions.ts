@@ -48,6 +48,7 @@ async function completionCheck(c: ActCtx, t: typeof tasks.$inferSelect, rc: Awai
     if (!o || (o.status !== "in_review" && o.status !== "approved")) throw new UserError("تكتمل مهمة الإعداد بإرسال مسودة المخرج للمراجعة.");
   }
   if (kind === "review_output") throw new UserError("تكتمل مهمة المراجعة باعتماد المخرج نفسه.");
+  if (kind === "cycle") throw new UserError("تكتمل مهمة الدورة بإقفال الدورة من لوحة الخدمة المستمرة.");
   if (kind === "stage") {
     const stages = await c.tx.select().from(requestStages).where(eq(requestStages.requestId, rc.req.id));
     const s = stages.find((x) => x.stageKey === t.stageKey);

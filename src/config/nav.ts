@@ -51,6 +51,7 @@ export const WAQF_NAV: (NavItem & { segment: string })[] = [
 export const ADMIN_NAV: NavItem[] = [
   { href: "/admin", label: "لوحة الشركة", icon: "LayoutDashboard", perm: "admin.access" },
   { href: "/admin/requests", label: "الطلبات", icon: "ClipboardList", perm: "staff.requests.assigned" },
+  { href: "/admin/continuous", label: "الخدمات المستمرة", icon: "Repeat", perm: "staff.requests.assigned" },
   { href: "/admin/waqfs", label: "الأوقاف", icon: "Landmark", perm: "admin.waqfs.all" },
   { href: "/admin/nazara", label: "النظارة الاعتبارية", icon: "KeyRound", perm: "nazara.view" },
   { href: "/admin/clients", label: "العملاء", icon: "Contact", perm: "admin.users" },

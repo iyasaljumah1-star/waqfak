@@ -12,6 +12,8 @@ import type { Auth } from "@/server/authz/context";
 import { contractState, loadRequestCtx, type RequestCtx } from "./access";
 import { cancelOpenTasks, ensureExecTasks, syncStageTasks } from "@/server/modules/operations/exec";
 import { syncNazaraFromRequest } from "@/server/modules/operations/links";
+import { continuousFacts, syncTermWithRequest } from "@/server/modules/operations/continuous";
+import { continuousSpec } from "@/server/modules/operations/continuous-pure";
 import { outputGate, releaseApprovedOutputs, type OutputRow } from "@/server/modules/outputs/server";
 import {
   advanceStage, availableTransitions, findTransition, guardTransition, planStages, STATUS_LABEL, WAITING_ON_CLIENT,
@@ -152,7 +154,7 @@ export async function transition(c: ActCtx, rc: RequestCtx, input: TransitionInp
   const t = findTransition(from, to);
   if (!t) throw new UserError(`لا يمكن نقل الطلب من «${STATUS_LABEL[from]}» إلى «${STATUS_LABEL[to]}».`);
   const allowed = input.system || availableTransitions(from, rc.actors, { resumeTo: rc.resumeTo }).some((x) => x.to === to);
-  const outs = await outputGate(tx, rc.req.id);
+  const outs = await outputGate(tx, rc.req.id, { excludeCycles: true });
   // Quality review by the preparer is allowed only when every delivery is an output approved under a self-approval
   // policy and the actor is an authorized manager (the output approval is the recorded quality check).
   const selfQA = from === "quality_review" && to === "awaiting_client_approval" && rc.isOps && rc.deliverers.includes(auth.user.id)
@@ -168,6 +170,7 @@ export async function transition(c: ActCtx, rc: RequestCtx, input: TransitionInp
     throw new UserError("الخدمة مدفوعة: يبدأ تنفيذها بعد عرض السعر والعقد، أو بقرار من مدير التشغيل (كخدمة مشمولة بباقة).");
   if (to === "on_hold" && !input.holdParty) throw new UserError("حدّد الجهة التي ينتظرها الطلب.");
 
+  const cont = await continuousFacts(tx, rc);
   const subs = await tx.select({ status: deliverables.status, signedBy: deliverables.signedBy }).from(deliverables).where(eq(deliverables.requestId, rc.req.id));
   const submitted = subs.filter((d) => d.status === "submitted" || d.status === "approved");
   const cs = await contractState(tx, rc.req.id);
@@ -183,6 +186,7 @@ export async function transition(c: ActCtx, rc: RequestCtx, input: TransitionInp
     contractExecuted: cs.contract && cs.parties.length ? cs.executed : undefined,
     prestartUnpaid: from === "awaiting_contract" && to === "in_progress" ? await prestartUnpaid(tx, rc.req.id) : 0,
     outputsUnfinished: outs.unfinished, outputsInReview: outs.inReview, selfApprovalCoversQA: selfQA,
+    continuous: cont ? { endBlockers: cont.endBlockers } : null,
   });
   if (err) throw new UserError(err);
 
@@ -215,6 +219,7 @@ export async function transition(c: ActCtx, rc: RequestCtx, input: TransitionInp
   const returned = to === "in_progress" && (from === "quality_review" || from === "awaiting_client_approval");
   if (to === "in_progress" && !returned) await ensureExecTasks(tx, rc, auth.user.id);
   await syncStageTasks(tx, rc.req.id, auth.user.id, `${STATUS_LABEL[from]} ← ${STATUS_LABEL[to]}`, { reopen: returned });
+  await syncTermWithRequest(tx, rc.req.id, from, to, auth.user.id, note);
   if (to === "cancelled" || to === "rejected") {
     await cancelOpenTasks(tx, rc.req.id, auth.user.id, `${to === "cancelled" ? "أُلغي" : "رُفض"} الطلب${note ? `: ${note}` : ""}`);
     await syncNazaraFromRequest(c, rc.req, to, note);
@@ -261,7 +266,7 @@ export async function advance(c: ActCtx, rc: RequestCtx) {
   if (!rc.actors.includes("assignee") && !rc.actors.includes("ops")) throw new UserError("ليست لديك صلاحية لهذا الإجراء.");
   const plan = await currentPlan(c.tx, rc.req.id, rc.stagesDef);
   const next = advanceStage(plan);
-  if (!next) throw new UserError("هذه آخر مرحلة عمل. أرسل الطلب لمراجعة الجودة.");
+  if (!next) throw new UserError(continuousSpec(rc.service.code) ? "مرحلة التشغيل مستمرة حتى نهاية مدة الخدمة: تُدار تسليماتها من دورات الخدمة المستمرة." : "هذه آخر مرحلة عمل. أرسل الطلب لمراجعة الجودة.");
   const a = plan.findIndex((p) => p.status === "active");
   await applyStagePlan(c.tx, rc.req.id, next, c.auth.user.id);
   await recomputeSla(c.tx, rc.req.id, { restartActive: true });

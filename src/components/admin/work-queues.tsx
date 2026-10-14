@@ -12,9 +12,9 @@ export function WorkQueues({ queues }: { queues: Queue[] }) {
   return (
     <section aria-label="قوائم العمل" className="space-y-3">
       <h2 className="text-[19px] font-semibold">ما ينتظر الإجراء</h2>
-      <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-3 md:grid-cols-2 2xl:grid-cols-3">
         {active.map((q) => (
-          <article key={q.key} className="rounded-lg border border-line bg-surface" data-testid={`queue-${q.key}`}>
+          <article key={q.key} className="min-w-0 rounded-lg border border-line bg-surface" data-testid={`queue-${q.key}`}>
             <header className="flex items-start justify-between gap-2 border-b border-line px-4 py-3">
               <div className="min-w-0">
                 <h3 className="text-[16px] font-semibold">{q.title}</h3>

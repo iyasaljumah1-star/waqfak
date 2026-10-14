@@ -3,7 +3,7 @@
  * Tasks mirror the request's real work units — workflow stages and service outputs — so completing a task moves the
  * linked record (stage, output) and vice versa; see ./exec.ts for the synchronization rules.
  */
-export type ExecKind = "intake" | "stage" | "prepare_output" | "review_output";
+export type ExecKind = "intake" | "stage" | "prepare_output" | "review_output" | "cycle";
 export type TaskAction = "start" | "complete" | "return" | "cancel" | "reopen" | "assign";
 
 export const EXEC_KIND_LABEL: Record<ExecKind, string> = {
@@ -11,6 +11,7 @@ export const EXEC_KIND_LABEL: Record<ExecKind, string> = {
   stage: "مرحلة عمل",
   prepare_output: "إعداد مخرج",
   review_output: "مراجعة واعتماد مخرج",
+  cycle: "دورة تسليم (خدمة مستمرة)",
 };
 export const TASK_ACTION_LABEL: Record<TaskAction, string> = {
   start: "ابدأ التنفيذ", complete: "أكمل المهمة", return: "أعدها للاستكمال", cancel: "ألغِ المهمة", reopen: "أعد فتحها", assign: "أسند المهمة",
@@ -64,7 +65,7 @@ export function executeRight(p: { isStaff: boolean; perms: ReadonlySet<string> |
 export function taskActions(t: { status: string; kind: string | null }, right: { can: boolean; manager: boolean }): TaskAction[] {
   if (!right.can) return [];
   const a: TaskAction[] = [];
-  const auto = t.kind === "review_output"; // completed by approving the output
+  const auto = t.kind === "review_output" || t.kind === "cycle"; // completed by approving the output / closing the cycle
   if (t.status === "todo") a.push("start");
   if ((t.status === "todo" || t.status === "in_progress") && !auto) a.push("complete");
   if (t.status === "in_progress") a.push("return");

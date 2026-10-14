@@ -8,7 +8,8 @@ import { ForbiddenError, loadWaqfAccess, type Auth } from "@/server/authz/contex
 import { read } from "@/server/modules/_shared";
 import type { Tx } from "@/server/db";
 import { assignableRoleKeys, clientRequestFilter, contractState, loadRequestCtx, memberWaqfIdsWith, staffRequestFilter, userHasWaqfPerm } from "./access";
-import { availableTransitions, findTransition, HOLD_PARTY_LABEL, STATUS_LABEL, type RequestStatus } from "./workflow";
+import { appliesTo, availableTransitions, findTransition, HOLD_PARTY_LABEL, STATUS_LABEL, type RequestStatus } from "./workflow";
+import { continuousSpec } from "@/server/modules/operations/continuous-pure";
 import { itemCounts } from "./items-pure";
 import { nextAction } from "./journey";
 import { todayISO } from "@/server/engines/dates";
@@ -164,7 +165,7 @@ export async function requestDetail(auth: Auth, id: string, side: "client" | "st
     const allDels = await tx.select().from(deliverables).where(eq(deliverables.requestId, id)).orderBy(desc(deliverables.createdAt));
     // The client sees the work once it is released after quality review (or approved), never while in preparation.
     const released = ["awaiting_client_approval", "completed", "closed"].includes(rc.req.status);
-    const dels = staff ? allDels : allDels.filter((x) => x.status === "approved" || x.status === "revision_requested" || (released && x.status !== "draft"));
+    const dels = staff ? allDels : allDels.filter((x) => x.status === "approved" || x.status === "revision_requested" || (released && x.status !== "draft" && !x.cycleId) || !!x.releasedAt);
     const docs = await tx.select({ id: documents.id, title: documents.title, confidentiality: documents.confidentiality, docType: documents.docType }).from(documents).where(and(eq(documents.requestId, id), isNull(documents.archivedAt)));
     const cs = await contractState(tx, id);
 
@@ -194,7 +195,7 @@ export async function requestDetail(auth: Auth, id: string, side: "client" | "st
     const people = ids.size ? await tx.select({ id: users.id, name: users.fullName, isStaff: users.isStaff, phone: users.phone }).from(users).where(inArray(users.id, [...ids])) : [];
     const names = new Map(people.map((p) => [p.id, { name: p.name ?? "مستخدم", isStaff: p.isStaff }]));
     const requester = people.find((p) => p.id === rc.req.requesterUserId);
-    const transitions = availableTransitions(rc.req.status as RequestStatus, rc.actors, { resumeTo: rc.resumeTo });
+    const transitions = availableTransitions(rc.req.status as RequestStatus, rc.actors, { resumeTo: rc.resumeTo }).filter((t) => appliesTo(t, !!continuousSpec(rc.service.code)));
     // an authorized manager who prepared outputs approved under a self-approval policy may pass quality review (recorded)
     if (staff && rc.req.status === "quality_review" && rc.isOps && rc.deliverers.includes(auth.user.id) && !transitions.some((t) => t.to === "awaiting_client_approval")) {
       const { selfApprovalCoversQA } = await import("./engine");

@@ -16,7 +16,7 @@ export type Profile =
   | "legal_review" | "legal_package"
   | "finance_report" | "finance_opinion"
   | "investment_policy" | "investment_assets" | "investment_opinion"
-  | "governance_package" | "ops_package" | "nazara_study" | "aml_program";
+  | "governance_package" | "ops_package" | "nazara_study" | "aml_program" | "periodic_report";
 
 export type OutputDef = {
   key: string;
@@ -36,6 +36,7 @@ export const PROFILE_FORMAT: Record<Profile, string> = {
   legal_review: "تقرير مراجعة", legal_package: "حزمة إجراءات وقوائم تحقق", finance_report: "تقرير مالي بجداول من القيود", finance_opinion: "رأي مالي",
   investment_policy: "سياسة", investment_assets: "دراسة ومصفوفة أصول", investment_opinion: "رأي استثماري", governance_package: "حزمة سياسات ولوائح",
   ops_package: "خطة عمل وقوائم تحقق", nazara_study: "دراسة ملف وقائمة استلام", aml_program: "برنامج وإجراءات",
+  periodic_report: "تقرير دوري للفترة",
 };
 export const REVIEW_LABEL: Record<ReviewPolicy, string> = {
   independent: "اعتماد مستقل (غير من أعدّه)",
@@ -49,6 +50,7 @@ const PROFILE_REVIEW: Record<Profile, ReviewPolicy> = {
   finance_report: "self_allowed", finance_opinion: "independent",
   investment_policy: "self_allowed", investment_assets: "self_allowed", investment_opinion: "independent",
   governance_package: "self_allowed", ops_package: "self_allowed", nazara_study: "independent", aml_program: "self_allowed",
+  periodic_report: "self_allowed",
 };
 
 const PROFILE_SPECIALTY: Record<Profile, OutputSpecialty> = {
@@ -57,6 +59,7 @@ const PROFILE_SPECIALTY: Record<Profile, OutputSpecialty> = {
   finance_report: "finance", finance_opinion: "finance",
   investment_policy: "investment", investment_assets: "investment", investment_opinion: "investment",
   governance_package: "governance", ops_package: "operations", nazara_study: "operations", aml_program: "legal",
+  periodic_report: "operations",
 };
 
 /** service code → profile (one output per service, titled with the service's catalog output). */
@@ -87,6 +90,11 @@ export function outputsFor(svc: { code: string; outputs?: string | null; nameAr?
   if (!profile) return [];
   const title = TITLE_OVERRIDE[svc.code] ?? (svc.outputs?.split(/،|,/)[0]?.trim() || svc.nameAr || svc.code);
   return [{ key: `${svc.code}.main`, title, specialty: PROFILE_SPECIALTY[profile], profile, review: PROFILE_REVIEW[profile] }];
+}
+
+/** The output of a delivery cycle of a continuous service (one per cycle; titled with the cycle's period). */
+export function cycleOutputDef(key: string, d: { title: string; profile: Profile; review: ReviewPolicy }, periodLabel: string): OutputDef {
+  return { key, title: `${d.title} — ${periodLabel}`, specialty: PROFILE_SPECIALTY[d.profile], profile: d.profile, review: d.review };
 }
 
 export const OUTPUT_SERVICE_CODES = Object.keys(SERVICE_PROFILE);
@@ -215,6 +223,14 @@ export const TEMPLATES: Record<Profile, ProfileTemplate> = {
       { key: "recommendation", title: "التوصية", prompt: "التوصية بالقبول أو الرفض أو الاستكمال. قرار القبول يتخذه مدير النظارة في ملف النظارة، ومباشرة النظارة مشروطة بقرار التعيين والترخيص." },
     ],
   },
+  periodic_report: {
+    sections: ["meta", "waqf", "finance", "distributions", "beneficiaries", "assets", "compliance", "governance", "documents", "references"],
+    analysis: [
+      { key: "done", title: "ما أُنجز في الفترة", prompt: "اذكر ما نُفذ خلال الفترة بمراجعه (قيود، عقود، قرارات، مراسلات)." },
+      { key: "issues", title: "الملاحظات والمخاطر", prompt: "اذكر ما تأخر أو ما يحتاج قرارًا من الناظر أو المجلس، ومن يتولاه." },
+      { key: "next", title: "خطة الفترة التالية", prompt: "اذكر الأعمال المقررة للفترة التالية ومواعيدها." },
+    ],
+  },
   aml_program: {
     sections: ["meta", "request", "waqf", "beneficial_owners", "compliance", "documents", "references"],
     analysis: [
@@ -240,6 +256,7 @@ export const PROFILE_REFS: Record<Profile, string[]> = {
   ops_package: ["NAZARA-REG", "REG-USER-GUIDE", "NAZIR-GUIDE"],
   nazara_study: ["NAZARA-REG", "NAZIR-GUIDE", "BO-STD", "PENALTIES"],
   aml_program: ["BO-STD", "AML-LAW"],
+  periodic_report: ["NAZARA-REG", "NAZIR-GUIDE", "GOV-PRINCIPLES"],
 };
 
 /** The ten clauses of a waqf deed (الدليل الإرشادي لصياغة وثيقة الوقف) with the intake answers that feed each one. */

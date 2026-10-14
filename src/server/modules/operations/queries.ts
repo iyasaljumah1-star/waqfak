@@ -4,10 +4,11 @@ import type { Tx } from "@/server/db";
 import type { Auth } from "@/server/authz/context";
 import { outputs, outputVersions, taskEvents, tasks, users, waqfMemberships, waqfs } from "@/server/db/schema";
 import type { RequestCtx } from "@/server/modules/requests/access";
-import { outputsFor, PROFILE_FORMAT, REVIEW_LABEL, SPECIALTY_LABEL } from "@/server/modules/outputs/catalog";
+import { PROFILE_FORMAT, REVIEW_LABEL, SPECIALTY_LABEL } from "@/server/modules/outputs/catalog";
 import { readiness } from "@/server/modules/outputs/pure";
 import { executeRight, taskActions } from "./exec-pure";
 import { linksOfRequest } from "./links";
+import { requestOutputs } from "./continuous-pure";
 
 /** Everything the staff request page needs about execution: tasks (with rights), outputs, links, linkable waqfs. */
 export async function requestOperations(tx: Tx, auth: Auth, rc: RequestCtx) {
@@ -28,7 +29,7 @@ export async function requestOperations(tx: Tx, auth: Auth, rc: RequestCtx) {
     const terminal = ["closed", "cancelled", "rejected"].includes(rc.req.status);
     return { ...t, right, actions: terminal ? [] : taskActions(t, right), events: events.filter((e) => e.taskId === t.id) };
   });
-  const defs = outputsFor(rc.service);
+  const defs = requestOutputs(rc.service, outRows.map((o) => o.outputKey));
   const outputList = defs.map((def) => {
     const o = outRows.find((x) => x.outputKey === def.key) ?? null;
     const v = o ? curVersions.find((x) => x.outputId === o.id && x.version === o.currentVersion) : null;

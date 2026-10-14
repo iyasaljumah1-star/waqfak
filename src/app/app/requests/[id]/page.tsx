@@ -23,6 +23,8 @@ import { respondQuote } from "@/server/modules/commerce/quote-actions";
 import { AUTHORITY_LABEL, CONTRACT_STATUS_LABEL, INVOICE_KIND_LABEL, QUOTE_STATUS_LABEL, QUOTE_STATUS_TONE, quoteDisplayStatus } from "@/server/modules/commerce/pure";
 import { INVOICE_STATUS_LABEL, INVOICE_STATUS_TONE } from "@/server/modules/billing/access";
 import type { RequestItemStatus } from "@/server/db/schema/commerce";
+import { read } from "@/server/modules/_shared";
+import { clientContinuous } from "@/server/modules/operations/continuous";
 
 export const metadata: Metadata = { title: "تفاصيل الطلب" };
 
@@ -45,6 +47,7 @@ export default async function RequestPage({ params, searchParams }: { params: Pr
   const others = d.transitions.filter((t) => !(r.status === "awaiting_client_approval" && (t.to === "completed" || t.to === "in_progress")) && !(r.status === "quote" && t.to === "awaiting_contract") && !(r.status === "awaiting_client" && t.to === "triage" && d.items.length > 0));
   const openItems = d.items.filter((i) => ["open", "correction_requested"].includes(i.status));
   const contracts = d.contracts.filter((k) => k.status !== "void" || k.signatures.length);
+  const cont = await read(auth, (tx) => clientContinuous(tx, rc));
 
   return (
     <div className="space-y-6">
@@ -207,6 +210,21 @@ export default async function RequestPage({ params, searchParams }: { params: Pr
             </Panel>
           ) : null}
 
+          {cont && cont.term ? (
+            <Panel title="خدمتك المستمرة" description={`${cont.spec.delivery.title} — دورية ${cont.term.cadence}. يبقى طلبك قائمًا طوال مدة الخدمة.`}>
+              <div data-testid="client-continuous">
+                <DefinitionList items={[
+                  { label: "مدة الخدمة", value: `${cont.term.startOn} إلى ${cont.term.endOn}` },
+                  { label: "الحالة", value: cont.stateLabel ?? "—" },
+                  { label: "تسليمات وصلتك", value: String(cont.sent.length) },
+                  { label: "الاستحقاق القادم", value: cont.nextDue ? `${cont.nextDue.label} — ${cont.nextDue.due}` : cont.spec.delivery.kind === "output" ? "—" : "عند الاجتماع أو الحدث" },
+                  ...(cont.term.terminated ? [{ label: "الإنهاء", value: `${cont.term.terminated.reason ?? ""} — نافذ ${cont.term.terminated.on}` }] : []),
+                ]} />
+                {cont.sent.length ? <ul className="mt-3 list-disc ps-5 text-sm">{cont.sent.map((c) => <li key={c.id}>{c.label} — سُلّم {c.deliveredOn}</li>)}</ul> : null}
+              </div>
+            </Panel>
+          ) : null}
+
           {/* Deliverables */}
           {deliverables.length ? (
             <Panel title="المخرجات" description={r.status === "awaiting_client_approval" ? "راجع المخرجات ثم اعتمدها أو اطلب تعديلات." : undefined}>
@@ -219,7 +237,7 @@ export default async function RequestPage({ params, searchParams }: { params: Pr
                       {x.revisionNote ? <p className="text-[13px] text-fine">ملاحظة التعديل: {x.revisionNote}</p> : null}
                     </div>
                     <div className="flex items-center gap-2">
-                      <Badge tone={x.status === "approved" ? "ok" : x.status === "revision_requested" ? "fine" : "info"} icon={false}>{x.status === "approved" ? "معتمد" : x.status === "revision_requested" ? "طُلب تعديله" : "بانتظار اعتمادك"}</Badge>
+                      <Badge tone={x.status === "approved" || x.releasedAt ? "ok" : x.status === "revision_requested" ? "fine" : "info"} icon={false}>{x.releasedAt ? `تسليم دوري — ${x.releasedAt.toISOString().slice(0, 10)}` : x.status === "approved" ? "معتمد" : x.status === "revision_requested" ? "طُلب تعديله" : "بانتظار اعتمادك"}</Badge>
                       {x.documentId ? <a href={`/api/files/${x.documentId}?disposition=inline`} target="_blank" rel="noopener" className="text-sm text-ink underline">فتح</a> : null}
                     </div>
                   </li>

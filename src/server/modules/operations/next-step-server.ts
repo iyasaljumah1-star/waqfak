@@ -13,7 +13,9 @@ import { intakeOf, serviceForm } from "@/server/modules/requests/intake/server";
 import { ledgerOf, quotesOf, signingState, signaturesOf } from "@/server/modules/commerce/state";
 import { quoteExpired } from "@/server/modules/commerce/pure";
 import type { PaymentTerm } from "@/server/db/schema/commerce";
-import { outputsFor, SPECIALTY_LABEL } from "@/server/modules/outputs/catalog";
+import { SPECIALTY_LABEL } from "@/server/modules/outputs/catalog";
+import { parseCycleKey, requestOutputs } from "./continuous-pure";
+import { continuousSnapshot } from "./continuous";
 import { approvalCheck, readiness } from "@/server/modules/outputs/pure";
 import { preparersOf } from "@/server/modules/outputs/server";
 import { todayISO } from "@/server/engines/dates";
@@ -58,10 +60,11 @@ export async function requestSnapshot(tx: Tx, auth: Auth, rc: RequestCtx): Promi
   const canAdvance = rc.req.status === "in_progress" && !!advanceStage(plan);
 
   // Outputs
-  const defs = outputsFor(rc.service);
-  const outRows = defs.length ? await tx.select().from(outputs).where(eq(outputs.requestId, id)) : [];
+  const allOut = await tx.select().from(outputs).where(eq(outputs.requestId, id));
+  const outRows = allOut.filter((o) => !parseCycleKey(o.outputKey));
+  const defs = requestOutputs(rc.service, outRows.map((o) => o.outputKey));
   const vers = outRows.length ? await tx.select().from(outputVersions).where(inArray(outputVersions.outputId, outRows.map((o) => o.id))) : [];
-  const dels = await tx.select({ id: deliverables.id, status: deliverables.status, outputId: deliverables.outputId, signedBy: deliverables.signedBy }).from(deliverables).where(eq(deliverables.requestId, id));
+  const dels = (await tx.select({ id: deliverables.id, status: deliverables.status, outputId: deliverables.outputId, signedBy: deliverables.signedBy, cycleId: deliverables.cycleId }).from(deliverables).where(eq(deliverables.requestId, id))).filter((d) => !d.cycleId);
   const opinion = rc.workflowCode === "opinion";
   const edits = await tx.select({ at: requestRevisions.at }).from(requestRevisions).where(and(eq(requestRevisions.requestId, id), eq(requestRevisions.kind, "intake_edit")));
   const lastEdit = edits.reduce<Date | null>((m, e) => (!m || e.at > m ? e.at : m), null);
@@ -131,6 +134,7 @@ export async function requestSnapshot(tx: Tx, auth: Auth, rc: RequestCtx): Promi
       const ci = st.findIndex((x) => !!x.clientApproval || x.role === "client");
       return { quality: st.find((x) => x.role === "quality")?.name ?? null, client: ci >= 0 ? st[ci].name : null, after: ci >= 0 ? st.slice(ci + 1).map((x) => x.name) : [] };
     })(),
+    continuous: await continuousSnapshot(tx, auth, rc),
     acceptVia: rc.service.code === "N01" ? { href: nz ? `/admin/nazara/${nz.id}` : "/admin/nazara", label: "قرار القبول في ملف النظارة", who: "ops" } : null,
   };
 }
@@ -146,5 +150,6 @@ export function planToken(s: Snapshot, a: ReturnType<typeof planRequest>["primar
   const active = s.stages.find((x) => x.status === "active")?.key ?? "";
   const outs = s.outputs.map((o) => `${o.key}=${o.status ?? "-"}`).join(",");
   const body = a ? (a.kind === "run" ? `${a.key}:${JSON.stringify(a.args ?? {})}` : `link:${a.href}`) : "none";
-  return `${s.status}|${active}|${s.quote?.status ?? "-"}|${s.contract?.status ?? "-"}|${s.intake.verified ? 1 : 0}${s.intake.accepted ? 1 : 0}|${outs}|${body}`;
+  const cyc = s.continuous ? `|${s.continuous.hasTerm ? 1 : 0}:${s.continuous.cycles.map((c) => `${c.seq}=${c.phase}`).join(",")}` : "";
+  return `${s.status}|${active}|${s.quote?.status ?? "-"}|${s.contract?.status ?? "-"}|${s.intake.verified ? 1 : 0}${s.intake.accepted ? 1 : 0}|${outs}${cyc}|${body}`;
 }

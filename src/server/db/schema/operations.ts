@@ -1,4 +1,4 @@
-import { boolean, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { boolean, date, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { createdAt, id, tracking } from "./_common";
 import { serviceRequests, tasks } from "./work";
 
@@ -164,3 +164,79 @@ export const requestRevisions = pgTable("request_revisions", {
   actorUserId: uuid().notNull(),
   at: createdAt(),
 }, (t) => [index("request_revisions_req_idx").on(t.requestId)]);
+
+// ───────────────────────── Continuous services: term and delivery cycles ─────────────────────────
+
+/**
+ * A continuous service (workflow «subscription») runs for the term agreed in its contract. The request stays open for
+ * the term; each period (or event) is a delivery cycle with its own due date, executor, tasks, output and review.
+ * Closing a cycle never closes the request. Billing is NOT driven by cycles: invoices follow the contract's
+ * installments (see docs/CONTINUOUS-SERVICES.md).
+ */
+export type Cadence = "monthly" | "quarterly" | "semiannual" | "annual" | "event";
+/** active → suspended (request on hold) → active; terminated (early end by decision, with reason and reference).
+ *  «ended» is derived: end_on has passed. */
+export type TermStatus = "active" | "suspended" | "terminated";
+export type TermEvent = { at: string; by: string; kind: "setup" | "extend" | "suspend" | "resume" | "terminate" | "edit"; note?: string | null; before?: Record<string, unknown>; after?: Record<string, unknown> };
+
+export const serviceTerms = pgTable("service_terms", {
+  id: id(),
+  requestId: uuid().notNull().references(() => serviceRequests.id, { onDelete: "cascade" }),
+  waqfId: uuid(),
+  serviceCode: text().notNull(),
+  /** The contract and accepted quote the term rests on (null when work started on an operational agreement). */
+  contractId: uuid(),
+  quoteId: uuid(),
+  cadence: text().$type<Cadence>().notNull(),
+  startOn: date().notNull(),
+  endOn: date().notNull(),
+  /** Days after the end of a period by which its delivery is due. */
+  dueOffsetDays: integer().default(10).notNull(),
+  status: text().$type<TermStatus>().default("active").notNull(),
+  suspendedAt: timestamp({ withTimezone: true }),
+  suspendReason: text(),
+  terminatedOn: date(),
+  terminationReason: text(),
+  /** Written basis of the termination (notice, amendment, decision number). */
+  terminationRef: text(),
+  terminatedBy: uuid(),
+  history: jsonb().$type<TermEvent[]>().default([]).notNull(),
+  ...tracking(),
+}, (t) => [uniqueIndex("service_terms_req_uq").on(t.requestId)]);
+
+/** periodic = a period of the cadence; event = an occurrence (a board meeting, a disbursement batch); closing = the
+ *  end-of-service delivery (e.g. the nazara handover record). */
+export type CycleKind = "periodic" | "event" | "closing";
+/** open → sent (delivered to the client) → closed; skipped (with reason). Output review states live on the output. */
+export type CycleStatus = "open" | "sent" | "closed" | "skipped";
+export type CycleCheck = { key: string; label: string; done: boolean; by?: string | null; at?: string | null };
+
+export const serviceCycles = pgTable("service_cycles", {
+  id: id(),
+  requestId: uuid().notNull().references(() => serviceRequests.id, { onDelete: "cascade" }),
+  waqfId: uuid(),
+  termId: uuid().notNull().references(() => serviceTerms.id, { onDelete: "cascade" }),
+  seq: integer().notNull(),
+  kind: text().$type<CycleKind>().default("periodic").notNull(),
+  label: text().notNull(),
+  periodStart: date(),
+  periodEnd: date(),
+  dueOn: date().notNull(),
+  status: text().$type<CycleStatus>().default("open").notNull(),
+  assigneeUserId: uuid(),
+  /** Key of the cycle's output (outputs.output_key); null for a follow-up cycle with no delivered document. */
+  outputKey: text(),
+  /** Board meeting the cycle concerns (N02 / N05). */
+  meetingId: uuid(),
+  checklist: jsonb().$type<CycleCheck[]>().default([]).notNull(),
+  sentAt: timestamp({ withTimezone: true }),
+  sentBy: uuid(),
+  /** Actual delivery date. */
+  deliveredOn: date(),
+  closedAt: timestamp({ withTimezone: true }),
+  closedBy: uuid(),
+  closeNote: text(),
+  skippedReason: text(),
+  dueChanges: jsonb().$type<{ at: string; by: string; from: string; to: string; reason: string }[]>().default([]).notNull(),
+  ...tracking(),
+}, (t) => [uniqueIndex("service_cycles_req_seq_uq").on(t.requestId, t.seq), index("service_cycles_due_idx").on(t.dueOn)]);

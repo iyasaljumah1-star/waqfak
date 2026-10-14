@@ -79,7 +79,17 @@ export const TRANSITIONS: Transition[] = [
   T("awaiting_client_approval", "in_progress", ["client"], "طلب تعديلات", true),
 
   T("completed", "closed", ["assignee", "ops"], "إغلاق الطلب"),
+
+  // Continuous services only (guarded): the request ends with the service term, not with a delivery.
+  T("in_progress", "completed", ["assignee", "ops"], "إنهاء الخدمة المستمرة بانتهاء مدتها", true),
 ];
+
+/** Transitions that exist for one kind of service only. */
+export function appliesTo(t: Pick<Transition, "from" | "to">, continuous: boolean) {
+  if (t.from === "in_progress" && t.to === "completed") return continuous;
+  if (t.from === "in_progress" && t.to === "quality_review") return !continuous;
+  return true;
+}
 
 // Client cancellation while early; ops may cancel anything not finished.
 for (const s of CLIENT_CANCELLABLE) if (s !== "draft") TRANSITIONS.push(T(s, "cancelled", ["client", "ops"], "إلغاء الطلب", true));
@@ -140,6 +150,8 @@ export type GuardInput = {
   /** Every delivery comes from an output approved under a self-approval policy and the actor is an authorized manager:
    *  the four-eyes rule of quality review is satisfied by the output policy (recorded). */
   selfApprovalCoversQA?: boolean;
+  /** Continuous service (workflow «subscription»): reasons the service may not end yet (empty = it may). */
+  continuous?: { endBlockers: string[] } | null;
 };
 
 /** Returns an Arabic error when a guard blocks the transition, otherwise null. */
@@ -157,6 +169,12 @@ export function guardTransition(g: GuardInput): string | null {
   if (g.from === "awaiting_contract" && g.to === "in_progress" && g.contractExecuted === false) return "يبدأ التنفيذ بعد اكتمال توقيع جميع أطراف العقد.";
   if (g.from === "awaiting_contract" && g.to === "in_progress" && (g.prestartUnpaid ?? 0) > 0) return "لم تُسدد الدفعة التي يشترط العرض سدادها قبل البدء.";
   if ((g.to === "completed" || g.to === "closed") && (g.blockingItems ?? 0) > 0) return `لا يكتمل الطلب وفيه ${g.blockingItems} من النواقص أو الاستفسارات المطلوبة غير المغلقة.`;
+  if (g.from === "in_progress" && g.to === "completed") {
+    if (!g.continuous) return "يكتمل الطلب بعد مراجعة الجودة واعتماد العميل.";
+    if (g.continuous.endBlockers.length) return `لا تُنهى الخدمة المستمرة بعد: ${g.continuous.endBlockers.join(" ")}`;
+  }
+  if (g.from === "in_progress" && g.to === "quality_review" && g.continuous)
+    return "خدمة مستمرة: تُسلَّم مخرجاتها عبر دورات التسليم، ويبقى الطلب مفتوحًا حتى نهاية مدة الخدمة.";
   if (g.to === "quality_review" && (g.outputsUnfinished ?? 0) > 0) return `في الطلب ${g.outputsUnfinished} من المخرجات قيد الإعداد: أرسلها للمراجعة أولًا.`;
   if (g.to === "quality_review" && g.submittedDeliverables === 0) return "ارفع مخرجًا واحدًا على الأقل قبل الإرسال لمراجعة الجودة.";
   if (g.from === "quality_review" && g.to === "awaiting_client_approval") {

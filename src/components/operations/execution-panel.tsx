@@ -25,6 +25,8 @@ function stepHref(key: string) {
   if (key === "prestart") return "#billing";
   if (key.startsWith("prep:") || key.startsWith("approve:") || key === "deliverable") return "#outputs";
   if (key === "client_approval") return "#comms";
+  if (key.startsWith("cycle:")) return `#cycle-${key.slice(6)}`;
+  if (["term", "cycles", "next_cycle", "closing", "end_service"].includes(key)) return "#service";
   return "#work";
 }
 

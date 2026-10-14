@@ -202,6 +202,10 @@ export const deliverables = pgTable("deliverables", {
   revisionNote: text(),
   /** Set when the deliverable is an output drafted and approved on the platform (see outputs). */
   outputId: uuid(),
+  /** Continuous services: the delivery cycle this deliverable belongs to, and when it was sent to the client (the
+   *  client sees a cycle deliverable from that moment, while the request itself stays in progress). */
+  cycleId: uuid(),
+  releasedAt: timestamp({ withTimezone: true }),
   ...tracking(),
 });
 

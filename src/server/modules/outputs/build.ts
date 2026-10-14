@@ -50,6 +50,8 @@ export type OutputContext = {
   stages: { name: string; status: string }[];
   nazara: null | { number: string; status: string; statusLabel: string; checklist: { label: string; status: string; required: boolean; source: string }[] };
   refs: { code: string; name: string; binding: string; verification: string }[];
+  /** Delivery cycle of a continuous service (period the output covers). */
+  cycle?: { label: string; from: string | null; to: string | null; due: string } | null;
 };
 
 const fmt = (n: number | null | undefined) => (n == null ? "—" : `${n.toLocaleString("en-US", { maximumFractionDigits: 2 })} ر.س`);
@@ -73,6 +75,7 @@ function build(kind: SectionKind, c: OutputContext, def: OutputDef): Built {
           { label: "مقدّم الطلب", value: c.requester.name + (c.requester.capacity ? ` (${c.requester.capacity})` : ""), prov: "client" },
           { label: "الوقف", value: c.waqf ? c.waqf.name : "لا يوجد ملف وقف مرتبط", prov: "system" },
           { label: "تاريخ الإعداد", value: c.today, prov: "system" },
+          ...(c.cycle ? [{ label: "الدورة", value: `${c.cycle.label}${c.cycle.from && c.cycle.to ? ` (${c.cycle.from} إلى ${c.cycle.to})` : ""} — تستحق ${c.cycle.due}`, prov: "system" as Provenance }] : []),
           ...(c.quote ? [{ label: "نطاق الخدمة", value: `العرض ${c.quote.number} (نسخة ${c.quote.version})`, prov: "system" as Provenance }] : []),
           ...(c.contract ? [{ label: "العقد", value: `${c.contract.number}${c.contract.executedAt ? " — نافذ" : ""}`, prov: "system" as Provenance }] : []),
         ],

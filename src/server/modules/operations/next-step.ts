@@ -7,6 +7,7 @@
  * permission and guard checks. A «link» action points to the place where a human must enter or decide something.
  */
 import type { RequestStatus } from "@/server/modules/requests/workflow";
+import type { ContinuousSnap } from "./continuous-pure";
 
 export type Who = "client" | "team" | "ops" | "reviewer" | "specialist" | "finance" | "external" | "none";
 export const WHO_AR: Record<Who, string> = {
@@ -17,7 +18,7 @@ export const WHO_AR: Record<Who, string> = {
 export type RunKey =
   | "start_triage" | "verify_intake" | "accept" | "approve_quote" | "send_quote" | "approve_contract" | "send_contract"
   | "issue_invoice" | "approve_invoice" | "send_invoice" | "start_work" | "generate_output" | "submit_output" | "approve_output" | "complete_stage"
-  | "to_quality" | "pass_quality" | "close" | "resume";
+  | "to_quality" | "pass_quality" | "close" | "resume" | "open_cycle" | "send_cycle" | "close_cycle" | "end_service";
 
 export type StepAction =
   | { kind: "run"; key: RunKey; label: string; args?: Record<string, string> }
@@ -65,6 +66,8 @@ export type Snapshot = {
   waqf: { linked: boolean; name: string | null };
   /** Names of the service's own stages for quality review, the client's step, and any follow-up after it. */
   flow?: { quality: string | null; client: string | null; after: string[] };
+  /** Continuous service (term and delivery cycles); null for services that end with their delivery. */
+  continuous?: ContinuousSnap | null;
   /** Acceptance decided elsewhere (corporate nazara: the nazara file's acceptance decision accepts the request). */
   acceptVia?: { href: string; label: string; who: Who } | null;
 };
@@ -75,6 +78,147 @@ const RANK: Record<string, number> = {
 };
 
 const anchor = (id: string, a: string) => `/admin/requests/${id}#${a}`;
+
+type Add = (st: Step) => void;
+
+/** Platform outputs of the request (prepare → review/approve), one pair per output. */
+function outputSteps(s: Snapshot, add: Add, executing: boolean, rank: number, worker: boolean) {
+    for (const o of s.outputs) {
+      const prepDone = (o.status === "in_review" || o.status === "approved") && !(executing && (o.needsRevision || o.stale));
+      const prep: Step = { key: `prep:${o.key}`, title: `إعداد مسودة: ${o.title}`, owner: "specialist", detail: `تخصص المخرج: ${o.specialty}`, blockers: [], output: `مسودة «${o.title}» من بيانات الطلب والوقف`, state: prepDone || rank >= 6 ? "done" : executing ? "current" : "pending" };
+      if (!prepDone && executing) {
+        if (o.stale && (o.status === "draft" || o.status === "returned")) {
+          prep.blockers.push({ text: "صُححت بيانات الطلب بعد إعداد المسودة", who: "team" });
+          if (s.viewer.canDeliver && worker) prep.action = { kind: "run", key: "generate_output", label: "أعد توليد المسودة من البيانات المصححة (تبقى تعديلات المختص)", args: { outputKey: o.key, confirm: "on" } };
+          prep.state = "blocked";
+        } else if ((o.status === "approved" || o.status === "in_review") && (o.needsRevision || o.stale)) {
+          prep.blockers.push({ text: o.stale ? "صُححت بيانات الطلب بعد إعداد المخرج: افتح مراجعة جديدة وأعد التوليد" : "أُعيد العمل للتعديل بعد اعتماد المخرج: افتح مراجعة جديدة ثم عدّل المسودة", who: "specialist", href: `/admin/requests/${s.id}/outputs/${o.id}` });
+          prep.state = "blocked";
+          prep.action = { kind: "link", href: `/admin/requests/${s.id}/outputs/${o.id}`, label: "افتح مراجعة جديدة للمخرج" };
+        } else if (!o.id || !o.status) {
+          if (s.viewer.canDeliver && worker) prep.action = { kind: "run", key: "generate_output", label: `أنشئ مسودة «${o.title}»`, args: { outputKey: o.key } };
+        } else {
+          for (const g of o.blocking) prep.blockers.push({ text: g.fix ? `${g.label} — ${g.fix}` : g.label, who: "client", href: anchor(s.id, "items") });
+          for (const u of o.unwritten) prep.blockers.push({ text: `يكتبه المختص: ${u}`, who: "specialist", href: `/admin/requests/${s.id}/outputs/${o.id}` });
+          if (o.status === "returned" && o.returnedNote) prep.blockers.unshift({ text: `أعاده المراجع: ${o.returnedNote}`, who: "specialist", href: `/admin/requests/${s.id}/outputs/${o.id}` });
+          if (prep.blockers.length) {
+            prep.state = "blocked";
+            prep.action = { kind: "link", href: `/admin/requests/${s.id}/outputs/${o.id}`, label: "افتح المسودة وأكملها" };
+          } else if (s.viewer.canDeliver && worker) prep.action = { kind: "run", key: "submit_output", label: "أرسل المسودة للمراجعة", args: { outputId: o.id } };
+        }
+      }
+      add(prep);
+      const appr: Step = { key: `approve:${o.key}`, title: `مراجعة واعتماد: ${o.title}`, owner: "reviewer", blockers: [], output: `«${o.title}» معتمد بنسخته`, state: (o.status === "approved" && !(executing && (o.needsRevision || o.stale))) || rank >= 6 ? "done" : o.status === "in_review" ? "current" : "pending" };
+      if (o.status === "in_review") {
+        if (o.viewerCanApprove) {
+          appr.action = o.needsSignature
+            ? { kind: "link", href: `/admin/requests/${s.id}/outputs/${o.id}`, label: "راجع واعتمد (يلزم توقيع المستشار)" }
+            : { kind: "run", key: "approve_output", label: `اعتمد «${o.title}»`, args: { outputId: o.id! } };
+        } else { appr.state = "waiting"; appr.blockers.push({ text: o.approveBlockedReason ?? "يعتمده مراجع مستقل", who: "reviewer" }); }
+      }
+      add(appr);
+    }
+}
+
+/** The service's own work stages inside execution. */
+function stageStep(s: Snapshot, add: Add, executing: boolean, rank: number, worker: boolean) {
+  {
+    const active = s.stages.find((x) => x.status === "active");
+    // A continuous service delivers in cycles: its onboarding stage needs only its onboarding outputs (if any).
+    const outputsDone = s.outputs.every((o) => o.status === "approved" && !o.needsRevision && !o.stale) && (!!s.continuous || s.outputs.length > 0 || s.deliverables.submitted > 0);
+    let state: StepState;
+    if (rank >= 6) state = "done";
+    else if (!executing) state = "pending";
+    else if (!s.canAdvanceStage) state = "done"; // the active stage is the last work stage
+    else state = outputsDone ? "current" : "pending";
+    const st: Step = { key: "stages", title: "مراحل العمل", owner: "team", blockers: [], output: s.stages.map((x) => x.name).join(" ← ") || undefined, detail: active ? `المرحلة الحالية: ${active.name}` : undefined, state };
+    if (state === "current" && active && worker) st.action = { kind: "run", key: "complete_stage", label: `أنجزت مرحلة «${active.name}»` };
+    if (s.stages.length) add(st);
+  }
+
+}
+
+
+/**
+ * Continuous service: the term, then one step per open delivery cycle (prepare → review → approve → send → close),
+ * the next cycle, the end-of-service delivery, and ending the service when its term is over. Approving or sending a
+ * cycle never moves the request; only the end of the term does.
+ */
+function continuousSteps(s: Snapshot, k: ContinuousSnap, add: Add, executing: boolean, rank: number, worker: boolean) {
+  const svc = anchor(s.id, "service");
+  const finished = k.termState === "ended" || k.termState === "terminated";
+  const onboarding = s.canAdvanceStage;
+  add({
+    key: "term", title: "مدة الخدمة ودورية التسليم وفق العقد", owner: "team", blockers: [], output: `مدة سارية ودورية ${k.cadence}`,
+    state: k.hasTerm || rank >= 8 ? "done" : executing && !onboarding ? "current" : "pending",
+    detail: k.hasTerm ? `المدة: ${k.termLabel}` : undefined,
+    ...(!k.hasTerm && executing && !onboarding && worker ? { action: { kind: "link" as const, href: svc, label: "حدّد مدة الخدمة ودوريتها" } } : {}),
+  });
+  if (!k.hasTerm) {
+    add({ key: "cycles", title: "دورات التسليم", owner: "team", blockers: [], output: "تسليمات دورية معتمدة ومرسلة", state: rank >= 8 ? "done" : "pending" });
+  }
+  for (const c of k.cycles.filter((x) => x.phase !== "closed" && x.phase !== "skipped")) {
+    const href = c.outputId ? `/admin/requests/${s.id}/outputs/${c.outputId}` : svc;
+    const st: Step = {
+      key: `cycle:${c.seq}`, title: `${c.kind === "closing" ? "تسليم نهاية الخدمة" : "دورة التسليم"}: ${c.label}`, owner: "specialist", blockers: [],
+      detail: `تستحق ${c.due}${c.late ? " — متأخرة" : ""}`, output: c.kind === "closing" ? "تسليم نهاية الخدمة مرسل" : "تسليم الدورة معتمد ومرسل، والدورة مقفلة", state: executing ? "current" : "pending",
+    };
+    for (const m of c.inputsMissing) st.blockers.push({ text: `نقص في مدخلات الدورة: ${m}`, who: "team", href: svc });
+    if (executing) {
+      if (c.phase === "followup") {
+        if (k.deliveryKind === "minutes" && c.kind !== "closing") {
+          if (c.inputsMissing.length) { st.state = "blocked"; if (worker) st.action = { kind: "link", href: svc, label: "اربط الاجتماع وتابع اعتماد محضره" }; }
+          else if (worker) st.action = { kind: "run", key: "send_cycle", label: "سجّل تسليم المحضر المعتمد", args: { cycleId: c.id } };
+        } else if (c.checklistOpen || c.inputsMissing.length) { st.state = c.inputsMissing.length ? "blocked" : "current"; if (worker) st.action = { kind: "link", href: svc, label: "أكمل مهام المتابعة" }; }
+        else if (worker) st.action = { kind: "link", href: svc, label: "أقفل الدورة بملاحظة المتابعة" };
+      } else if (c.phase === "preparing" && !c.outputId) {
+        if (s.viewer.canDeliver && worker) st.action = { kind: "run", key: "generate_output", label: `أعدّ مسودة «${c.label}»`, args: { outputKey: c.outputKey! } };
+      } else if (c.phase === "preparing" || c.phase === "returned") {
+        if (c.phase === "returned" && c.returnedNote) st.blockers.unshift({ text: `أعاده المراجع: ${c.returnedNote}`, who: "specialist", href });
+        for (const g of c.blocking) st.blockers.push({ text: g, who: "team", href });
+        for (const u of c.unwritten) st.blockers.push({ text: `يكتبه المختص: ${u}`, who: "specialist", href });
+        if (st.blockers.length) { st.state = "blocked"; st.action = { kind: "link", href, label: "افتح المسودة وأكملها" }; }
+        else if (s.viewer.canDeliver && worker) st.action = { kind: "run", key: "submit_output", label: "أرسل المسودة للمراجعة", args: { outputId: c.outputId! } };
+      } else if (c.phase === "in_review") {
+        st.owner = "reviewer";
+        if (c.viewerCanApprove) st.action = { kind: "run", key: "approve_output", label: `اعتمد تسليم «${c.label}»`, args: { outputId: c.outputId! } };
+        else { st.state = "waiting"; st.blockers.push({ text: c.approveBlockedReason ?? "يعتمده مراجع مستقل", who: "reviewer" }); }
+      } else if (c.phase === "approved") {
+        st.owner = "team";
+        if (worker) st.action = { kind: "run", key: "send_cycle", label: `أرسل تسليم «${c.label}» للعميل`, args: { cycleId: c.id } };
+      } else if (c.phase === "sent") {
+        st.owner = "team";
+        if (c.checklistOpen) { if (worker) st.action = { kind: "link", href: svc, label: "أكمل مهام الدورة ثم أقفلها" }; }
+        else if (worker) st.action = { kind: "run", key: "close_cycle", label: `أقفل دورة «${c.label}» (يبقى الطلب مفتوحًا)`, args: { cycleId: c.id } };
+      }
+    }
+    add(st);
+  }
+  if (k.hasTerm && (!finished || k.next)) {
+    const st: Step = { key: "next_cycle", title: "الدورة التالية", owner: "team", blockers: [], output: "دورة تسليم مفتوحة", state: "pending" };
+    if (k.next) {
+      st.detail = `${k.next.label} — تستحق ${k.next.due}`;
+      if (executing && k.canOpenNext) { st.state = "current"; if (worker) st.action = { kind: "run", key: "open_cycle", label: `افتح دورة «${k.next.label}»`, args: { kind: "periodic" } }; }
+      else if (executing) st.state = "waiting";
+    } else if (k.deliveryKind !== "output" || k.cycles.every((c) => c.kind !== "periodic")) {
+      st.detail = "تُفتح الدورة عند انعقاد اجتماع أو استحقاق دفعة";
+      if (executing) { st.state = "waiting"; if (worker) st.action = { kind: "link", href: svc, label: "افتح دورة لحدث جديد" }; }
+    } else st.detail = "لا فترات متبقية في المدة";
+    add(st);
+  }
+  if (k.closingDue) {
+    add({ key: "closing", title: "تسليم نهاية الخدمة", owner: "team", blockers: [], output: "تسليم نهاية الخدمة", state: executing ? "current" : "pending",
+      ...(executing && worker ? { action: { kind: "run" as const, key: "open_cycle" as const, label: "افتح تسليم نهاية الخدمة", args: { kind: "closing" } } } : {}) });
+  }
+  const can = k.endBlockers.length === 0;
+  const end: Step = {
+    key: "end_service", title: "انتهاء مدة الخدمة وإنهاء الطلب", owner: "team", blockers: finished && !can ? k.endBlockers.map((t) => ({ text: t, who: "team" as const, href: svc })) : [],
+    output: "خدمة منتهية بكامل تسليماتها", state: rank >= 8 ? "done" : executing && can ? "current" : executing && finished ? "blocked" : "pending",
+    detail: !finished && k.hasTerm ? "يبقى الطلب مفتوحًا حتى نهاية مدة الخدمة أو إنهائها بقرار" : undefined,
+  };
+  if (executing && can && worker) end.action = { kind: "run", key: "end_service", label: "أنهِ الخدمة بانتهاء مدتها" };
+  add(end);
+}
 
 /** Builds the plan. `current` = the first step not done; `primary` = its action when the viewer may perform it. */
 export function planRequest(s: Snapshot): { steps: Step[]; current: Step | null; primary: StepAction | null; terminal: boolean; held: Blocker | null } {
@@ -206,66 +350,24 @@ export function planRequest(s: Snapshot): { steps: Step[]; current: Step | null;
     });
   }
 
-  // 8) Outputs (platform-generated) or an uploaded deliverable
+  // 8–11) Delivery: services that end with their delivery go through outputs → stages → quality → client approval;
+  // continuous services run their term in delivery cycles and end with the term.
   const executing = eff === "in_progress";
-  if (s.outputs.length) {
-    for (const o of s.outputs) {
-      const prepDone = (o.status === "in_review" || o.status === "approved") && !(executing && (o.needsRevision || o.stale));
-      const prep: Step = { key: `prep:${o.key}`, title: `إعداد مسودة: ${o.title}`, owner: "specialist", detail: `تخصص المخرج: ${o.specialty}`, blockers: [], output: `مسودة «${o.title}» من بيانات الطلب والوقف`, state: prepDone || rank >= 6 ? "done" : executing ? "current" : "pending" };
-      if (!prepDone && executing) {
-        if (o.stale && (o.status === "draft" || o.status === "returned")) {
-          prep.blockers.push({ text: "صُححت بيانات الطلب بعد إعداد المسودة", who: "team" });
-          if (s.viewer.canDeliver && worker) prep.action = { kind: "run", key: "generate_output", label: "أعد توليد المسودة من البيانات المصححة (تبقى تعديلات المختص)", args: { outputKey: o.key, confirm: "on" } };
-          prep.state = "blocked";
-        } else if ((o.status === "approved" || o.status === "in_review") && (o.needsRevision || o.stale)) {
-          prep.blockers.push({ text: o.stale ? "صُححت بيانات الطلب بعد إعداد المخرج: افتح مراجعة جديدة وأعد التوليد" : "أُعيد العمل للتعديل بعد اعتماد المخرج: افتح مراجعة جديدة ثم عدّل المسودة", who: "specialist", href: `/admin/requests/${s.id}/outputs/${o.id}` });
-          prep.state = "blocked";
-          prep.action = { kind: "link", href: `/admin/requests/${s.id}/outputs/${o.id}`, label: "افتح مراجعة جديدة للمخرج" };
-        } else if (!o.id || !o.status) {
-          if (s.viewer.canDeliver && worker) prep.action = { kind: "run", key: "generate_output", label: `أنشئ مسودة «${o.title}»`, args: { outputKey: o.key } };
-        } else {
-          for (const g of o.blocking) prep.blockers.push({ text: g.fix ? `${g.label} — ${g.fix}` : g.label, who: "client", href: anchor(s.id, "items") });
-          for (const u of o.unwritten) prep.blockers.push({ text: `يكتبه المختص: ${u}`, who: "specialist", href: `/admin/requests/${s.id}/outputs/${o.id}` });
-          if (o.status === "returned" && o.returnedNote) prep.blockers.unshift({ text: `أعاده المراجع: ${o.returnedNote}`, who: "specialist", href: `/admin/requests/${s.id}/outputs/${o.id}` });
-          if (prep.blockers.length) {
-            prep.state = "blocked";
-            prep.action = { kind: "link", href: `/admin/requests/${s.id}/outputs/${o.id}`, label: "افتح المسودة وأكملها" };
-          } else if (s.viewer.canDeliver && worker) prep.action = { kind: "run", key: "submit_output", label: "أرسل المسودة للمراجعة", args: { outputId: o.id } };
-        }
-      }
-      add(prep);
-      const appr: Step = { key: `approve:${o.key}`, title: `مراجعة واعتماد: ${o.title}`, owner: "reviewer", blockers: [], output: `«${o.title}» معتمد بنسخته`, state: (o.status === "approved" && !(executing && (o.needsRevision || o.stale))) || rank >= 6 ? "done" : o.status === "in_review" ? "current" : "pending" };
-      if (o.status === "in_review") {
-        if (o.viewerCanApprove) {
-          appr.action = o.needsSignature
-            ? { kind: "link", href: `/admin/requests/${s.id}/outputs/${o.id}`, label: "راجع واعتمد (يلزم توقيع المستشار)" }
-            : { kind: "run", key: "approve_output", label: `اعتمد «${o.title}»`, args: { outputId: o.id! } };
-        } else { appr.state = "waiting"; appr.blockers.push({ text: o.approveBlockedReason ?? "يعتمده مراجع مستقل", who: "reviewer" }); }
-      }
-      add(appr);
-    }
+  if (s.continuous) {
+    outputSteps(s, add, executing, rank, worker);
+    stageStep(s, add, executing, rank, worker);
+    continuousSteps(s, s.continuous, add, executing, rank, worker);
   } else {
+    if (s.outputs.length) outputSteps(s, add, executing, rank, worker);
+    else {
     const has = s.deliverables.submitted > 0;
     add({
       key: "deliverable", title: "إعداد المخرج وتسجيله", owner: "specialist", output: "مخرج مسجّل للتسليم", blockers: has || !executing ? [] : [{ text: "لا قالب توليد لهذه الخدمة: يُرفع المخرج المعدّ ويُسجَّل", who: "specialist", href: anchor(s.id, "outputs") }],
       state: has || rank >= 6 ? "done" : executing ? "blocked" : "pending",
       ...(!has && executing && s.viewer.canDeliver ? { action: { kind: "link" as const, href: anchor(s.id, "outputs"), label: "ارفع المخرج وسجّله" } } : {}),
     });
-  }
-
-  // 9) Work stages
-  {
-    const active = s.stages.find((x) => x.status === "active");
-    const outputsDone = s.outputs.every((o) => o.status === "approved" && !o.needsRevision && !o.stale) && (s.outputs.length > 0 || s.deliverables.submitted > 0);
-    let state: StepState;
-    if (rank >= 6) state = "done";
-    else if (!executing) state = "pending";
-    else if (!s.canAdvanceStage) state = "done"; // the active stage is the last work stage
-    else state = outputsDone ? "current" : "pending";
-    const st: Step = { key: "stages", title: "مراحل العمل", owner: "team", blockers: [], output: s.stages.map((x) => x.name).join(" ← ") || undefined, detail: active ? `المرحلة الحالية: ${active.name}` : undefined, state };
-    if (state === "current" && active && worker) st.action = { kind: "run", key: "complete_stage", label: `أنجزت مرحلة «${active.name}»` };
-    if (s.stages.length) add(st);
-  }
+    }
+    stageStep(s, add, executing, rank, worker);
 
   // 10) Quality review
   {
@@ -292,6 +394,7 @@ export function planRequest(s: Snapshot): { steps: Step[]; current: Step | null;
     key: "client_approval", title: s.flow?.client ?? "اعتماد العميل للمخرجات", owner: "client", blockers: eff === "awaiting_client_approval" ? [{ text: "بانتظار اعتماد العميل أو طلبه تعديلات", who: "client" }] : [], output: "مخرجات معتمدة من العميل",
     state: rank >= 8 ? "done" : eff === "awaiting_client_approval" ? "waiting" : "pending",
   });
+  }
 
   // 12) Closing
   add({

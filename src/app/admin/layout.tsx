@@ -14,7 +14,7 @@ import { activeBreakGlassCount } from "@/server/modules/admin/dashboard";
 export const metadata: Metadata = { title: { default: "لوحة الإدارة", template: "%s | إدارة وقفك" }, robots: { index: false, follow: false } };
 
 /** Nav items whose page accepts an alternative permission. */
-const ALT_PERMS: Record<string, string[]> = { "/admin/requests": ["admin.requests.all"] };
+const ALT_PERMS: Record<string, string[]> = { "/admin/requests": ["admin.requests.all"], "/admin/continuous": ["admin.requests.all"] };
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const auth = await requireStaff("admin.access");

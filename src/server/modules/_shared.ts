@@ -44,13 +44,14 @@ export async function waqfAction(waqfId: string, perm: Permission, fn: (c: WaqfC
 }
 
 /** Same as waqfAction for actions that are not waqf-scoped (personal or staff actions). */
-export async function userAction(fn: (c: { auth: Auth; tx: Tx; ip: string; userAgent: string }) => Promise<ActionState | void>, opts: { perm?: Permission; revalidate?: string | string[] } = {}): Promise<ActionState> {
+export async function userAction(fn: (c: { auth: Auth; tx: Tx; ip: string; userAgent: string }) => Promise<ActionState | void>, opts: { perm?: Permission; revalidate?: string | string[] | (() => string[]) } = {}): Promise<ActionState> {
   try {
     const auth = await requireAuth();
     if (opts.perm && !auth.perms.has(opts.perm)) throw new ForbiddenError();
     const { ip, userAgent } = await requestInfo();
     const res = await withContext(auth.db, (tx) => fn({ auth, tx, ip, userAgent }));
-    for (const p of [opts.revalidate ?? []].flat()) revalidatePath(p);
+    // A function is read after the action ran (paths known only once the record is loaded).
+    for (const p of [typeof opts.revalidate === "function" ? opts.revalidate() : opts.revalidate ?? []].flat()) if (p) revalidatePath(p);
     return res ?? { ok: true, message: "تم الحفظ." };
   } catch (e) {
     return toState(e);

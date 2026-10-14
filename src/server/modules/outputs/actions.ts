@@ -10,11 +10,13 @@ import { loadRequestCtx, type RequestCtx } from "@/server/modules/requests/acces
 import type { ActCtx } from "@/server/modules/requests/engine";
 import { syncTask, taskEvent } from "@/server/modules/operations/exec";
 import type { ActionState } from "@/lib/utils";
-import { outputsFor, SPECIALTY_LABEL } from "./catalog";
+import { SPECIALTY_LABEL } from "./catalog";
 import { buildDraft } from "./build";
 import { collectContext } from "./collect";
 import { applyEdits, approvalCheck, mergeRegenerated, readiness } from "./pure";
-import { addVersion, ensureOutput, preparersOf, versionOf, type OutputRow } from "./server";
+import { addVersion, ensureOutput, outputsOf, preparersOf, versionOf, type OutputRow } from "./server";
+import { cycleOutputFor } from "@/server/modules/operations/continuous";
+import { parseCycleKey, requestOutputs } from "@/server/modules/operations/continuous-pure";
 
 /**
  * Service outputs: generate a draft from the request's data, edit it, submit it for review, return or approve it.
@@ -55,11 +57,14 @@ export async function generateOutput(_: ActionState, fd: FormData): Promise<Acti
     if (!c.auth.perms.has("staff.deliver")) throw new ForbiddenError("إعداد المخرجات يتطلب صلاحية التسليم.");
     const rc = await ctxFor(c, d.id);
     if (!WORKING.includes(rc.req.status)) throw new UserError("تُعد المخرجات أثناء دراسة الطلب أو تنفيذه.");
-    const def = outputsFor(rc.service).find((x) => x.key === d.outputKey);
+    const cyc = parseCycleKey(d.outputKey) ? await cycleOutputFor(c.tx, rc, d.outputKey) : null;
+    if (cyc && cyc.cycle.status !== "open") throw new UserError("الدورة ليست مفتوحة: أُرسل تسليمها أو أُقفلت أو تُجووزت.");
+    if (cyc && rc.req.status !== "in_progress") throw new UserError("تُعد مخرجات الدورات أثناء سريان الخدمة (لا أثناء التعليق).");
+    const def = cyc?.def ?? requestOutputs(rc.service, (await outputsOf(c.tx, rc.req.id)).map((o) => o.outputKey)).find((x) => x.key === d.outputKey);
     if (!def) throw new UserError("هذا المخرج غير معرّف لهذه الخدمة.");
     const prepTask = await linkedTask(c, rc.req.id, "prepare_output", def.key);
     const o = await ensureOutput(c.tx, rc, def, c.auth.user.id, prepTask?.id ?? null);
-    const ctx = await collectContext(c.tx, rc);
+    const ctx = await collectContext(c.tx, rc, cyc ? { cycle: { label: cyc.cycle.label, from: cyc.cycle.periodStart, to: cyc.cycle.periodEnd, due: cyc.cycle.dueOn } } : {});
     const fresh = buildDraft(ctx, def);
     let version: number;
     let kept = 0;
@@ -165,14 +170,16 @@ export async function approveOutput(_: ActionState, fd: FormData): Promise<Actio
     await c.tx.update(outputs).set({ status: "approved", approvedVersion: o.currentVersion, approvedBy: c.auth.user.id, approvedAt: now, selfApproved: check.self, documentId: null, deliverableId: null, updatedBy: c.auth.user.id }).where(eq(outputs.id, o.id));
     // Delivery record in the request's existing flow (QA → client approval). The PDF is produced when it is released.
     const prev = await c.tx.select({ v: deliverables.version }).from(deliverables).where(and(eq(deliverables.requestId, rc.req.id), eq(deliverables.outputId, o.id)));
+    const cyc = parseCycleKey(o.outputKey) ? await cycleOutputFor(c.tx, rc, o.outputKey) : null;
     const [del] = await c.tx.insert(deliverables).values({
       requestId: rc.req.id, waqfId: rc.req.waqfId, title: o.title, version: Math.max(0, ...prev.map((p) => p.v)) + 1, status: "submitted", signedBy: r.data.signedBy || null,
-      submittedAt: now, outputId: o.id, createdBy: o.submittedBy ?? c.auth.user.id,
+      submittedAt: now, outputId: o.id, createdBy: o.submittedBy ?? c.auth.user.id, cycleId: cyc?.cycle.id ?? null,
     }).returning({ id: deliverables.id });
     await c.tx.update(outputs).set({ deliverableId: del.id }).where(eq(outputs.id, o.id));
     await syncTask(c.tx, rc.req.id, "review_output", { outputKey: o.outputKey }, "done", c.auth.user.id, check.self ? "اعتماد ذاتي وفق سياسة المخرج" : "اعتُمد المخرج");
     await audit(c.tx, { actorUserId: c.auth.user.id, action: "outputs.approve", entityType: "output", entityId: o.id, waqfId: o.waqfId, ip: c.ip, userAgent: c.userAgent, after: { number: o.number, version: o.currentVersion, selfApproved: check.self, policy: o.reviewPolicy, specialty: SPECIALTY_LABEL[o.specialty], note: r.data.note || undefined } });
-    return { ok: true, message: check.self ? "اعتُمد المخرج (اعتماد ذاتي مسجّل)." : "اعتُمد المخرج." };
+    const tail = cyc ? " لم يُرسل للعميل بعد: يُرسل من لوحة الخدمة المستمرة." : "";
+    return { ok: true, message: (check.self ? "اعتُمد المخرج (اعتماد ذاتي مسجّل)." : "اعتُمد المخرج.") + tail };
   }, { revalidate: reval(r.data.requestId) });
 }
 
@@ -184,6 +191,10 @@ export async function reviseOutput(_: ActionState, fd: FormData): Promise<Action
     if (!c.auth.perms.has("staff.deliver")) throw new ForbiddenError();
     const { o, rc } = await loadOutput(c, r.data.outputId, r.data.requestId);
     if (o.status !== "approved") throw new UserError("تُفتح المراجعة على مخرج معتمد فقط.");
+    if (parseCycleKey(o.outputKey)) {
+      const cyc = await cycleOutputFor(c.tx, rc, o.outputKey);
+      if (cyc && cyc.cycle.status !== "open") throw new UserError("أُرسل تسليم هذه الدورة للعميل: يبقى كما أُرسل، ويُعالج التصحيح في الدورة التالية أو بملاحظة موثقة.");
+    }
     if (rc.req.status !== "in_progress") throw new UserError("يُعدّل المخرج المعتمد بعد إعادة الطلب للتنفيذ (طلب تعديلات من العميل أو من مراجعة الجودة).");
     await c.tx.update(outputs).set({ status: "draft", documentId: null, deliverableId: null, updatedBy: c.auth.user.id }).where(eq(outputs.id, o.id));
     await syncTask(c.tx, rc.req.id, "prepare_output", { outputKey: o.outputKey }, "todo", c.auth.user.id, `فُتحت مراجعة جديدة للمخرج${r.data.note ? `: ${r.data.note}` : ""}`);

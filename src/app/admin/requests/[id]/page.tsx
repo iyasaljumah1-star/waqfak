@@ -46,6 +46,11 @@ import { commsChannels, commsHeadline, COMMS_STATE_TONE } from "@/server/modules
 import { WHO_AR } from "@/server/modules/operations/next-step";
 import { OUTPUT_STATUS_LABEL } from "@/server/modules/outputs/pure";
 import { STATUS_LABEL as REQ_STATUS_LABEL } from "@/server/modules/requests/workflow";
+import { ContinuousPanel } from "@/components/operations/continuous-panel";
+import { continuousView } from "@/server/modules/operations/continuous";
+import { continuousSpec, suggestedCadence } from "@/server/modules/operations/continuous-pure";
+import { closeCycle, extendTerm, linkCycleMeeting, openCycle, rescheduleCycle, sendCycle, setupTerm, skipCycle, terminateService, toggleCycleCheck } from "@/server/modules/operations/continuous-actions";
+import { addMonths as addMonthsISO, toISO } from "@/server/engines/dates";
 
 export const metadata: Metadata = { title: "طلب — مساحة العمل" };
 
@@ -72,6 +77,13 @@ export default async function StaffRequest({ params }: { params: Promise<{ id: s
   const canApproveContract = auth.perms.has("admin.contracts.approve");
   const ops2 = await read(auth, (tx) => requestOperations(tx, auth, rc));
   const plan = await read(auth, (tx) => requestPlan(tx, auth, rc));
+  const cont = continuousSpec(rc.service.code) ? await read(auth, (tx) => continuousView(tx, auth, rc)) : null;
+  const contStart = cont?.contract?.executedAt ? toISO(cont.contract.executedAt) : r.startApprovedAt ? toISO(r.startApprovedAt) : today;
+  const termMonths = Number(d.answers.termMonths) > 0 ? Number(d.answers.termMonths) : 12;
+  const contDefaults = {
+    startOn: contStart, endOn: addDaysISO(cont?.quote?.durationDays ? addDaysISO(contStart, cont.quote.durationDays) : addMonthsISO(contStart, termMonths), -1),
+    cadence: cont ? suggestedCadence(cont.spec, d.answers) : ("monthly" as const),
+  };
 
   // Quotes
   const initial = d.quotes.filter((q) => q.kind === "initial");
@@ -152,7 +164,10 @@ export default async function StaffRequest({ params }: { params: Promise<{ id: s
     { label: "الإجراء المطلوب الآن", value: plan.terminal ? "لا شيء — الطلب منتهٍ" : plan.current?.title ?? "اكتملت الخطوات", testId: "summary-action" },
     { label: "بانتظار", value: waiting, testId: "summary-waiting" },
     { label: "النواقص والموانع", value: blockersCount || d.counts.clientOpen ? `${blockersCount} مانع · ${d.counts.clientOpen} بانتظار العميل` : "لا موانع", tone: (blockersCount ? "warn" : "ok") as "warn" | "ok" },
-    { label: "المخرجات", value: outSummary },
+    ...(cont ? [
+      { label: "مدة الخدمة", value: cont.term ? `${cont.termLabel} — ${cont.term.startOn} إلى ${cont.effectiveEnd}` : "لم تُحدد", testId: "summary-term" },
+      { label: "الدورات", value: `${cont.counts.done} مكتملة · ${cont.counts.late} متأخرة · ${cont.counts.pending} مفتوحة${cont.next ? ` · التالية تستحق ${cont.next.due}` : ""}`, tone: (cont.counts.late ? "warn" : "ok") as "warn" | "ok", testId: "summary-cycles" },
+    ] : [{ label: "المخرجات", value: outSummary }]),
     ...(paid ? [
       { label: "العرض المالي", value: lastQuote ? <><bdi dir="ltr" className="tabular">{lastQuote.number}</bdi> {QUOTE_STATUS_LABEL[lastQuote.status as keyof typeof QUOTE_STATUS_LABEL] ?? lastQuote.status}</> : "لا عرض بعد" },
       { label: "الفواتير", value: <>{invSummary}</>, testId: "summary-invoices" },
@@ -175,6 +190,7 @@ export default async function StaffRequest({ params }: { params: Promise<{ id: s
     ...d.invoices.filter((i) => i.approvedAt).map((i) => ({ at: i.approvedAt!, label: `اعتُمدت الفاتورة ${i.number}${i.selfApproved ? " (اعتماد ذاتي)" : ""}`, note: null, tone: "ok" as const })),
   ];
   const navSections = [
+    ...(cont ? [{ id: "service", label: "الخدمة المستمرة", note: cont.counts.late ? `${cont.counts.late} متأخرة` : cont.termLabel ?? "لم تُحدد المدة", tone: (cont.counts.late ? "warn" : "info") as "warn" | "info" }] : []),
     { id: "work", label: "العمل والمهام", note: plan.current && !plan.terminal ? WHO_AR[plan.current.owner] : undefined, tone: "info" as const },
     { id: "data", label: "البيانات والمستندات", note: r.intakeVerifiedAt ? "متحقق منها" : "لم يُتحقق", tone: (r.intakeVerifiedAt ? "ok" : "warn") as "ok" | "warn" },
     { id: "comms", label: "المراسلات والنواقص", note: headline.state === "clear" ? undefined : channelsRaw.find((c) => c.state === headline.state)?.title, tone: COMMS_STATE_TONE[headline.state] },
@@ -231,10 +247,16 @@ export default async function StaffRequest({ params }: { params: Promise<{ id: s
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="min-w-0 space-y-8">
+          {cont ? (
+            <Section id="service" title="الخدمة المستمرة ودورات التسليم">
+              <ContinuousPanel v={cont} requestId={r.id} status={r.status} worker={worker} ops={ops} canDeliver={auth.perms.has("staff.deliver")} nextAction={plan.terminal ? null : plan.current?.title ?? null} defaults={contDefaults}
+                a={{ setupTerm, extendTerm, terminateService, openCycle, toggleCycleCheck, linkCycleMeeting, rescheduleCycle, sendCycle, closeCycle, skipCycle, raiseItem }} />
+            </Section>
+          ) : null}
           <Section id="work" title="العمل والمهام">
           <Panel title="سير العمل" description="الإجراءات المتاحة لك حسب الحالة ودورك. يُرسل عرض السعر ويُقبل من لوحته.">
             <TransitionPanel action={staffTransition} id={r.id} transitions={staffTransitions} holdParties={HOLD_PARTY_LABEL} />
-            {r.status === "in_progress" && worker ? (
+            {r.status === "in_progress" && worker && (!cont || plan.snap.canAdvanceStage) ? (
               <div className="mt-3 border-t border-line pt-3">
                 <ActionForm action={advanceStageAction} hidden={{ id: r.id }} submit="أنجزت المرحلة الحالية" variant="secondary" size="sm" />
               </div>

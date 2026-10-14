@@ -12,6 +12,7 @@ import { approveContract, sendContract } from "@/server/modules/contracts/action
 import { approveInvoice, issueInvoice, sendInvoice } from "@/server/modules/billing/actions";
 import { approveOutput, generateOutput, submitOutput } from "@/server/modules/outputs/actions";
 import type { ActionState } from "@/lib/utils";
+import { closeCycle, endService, openCycle, sendCycle } from "./continuous-actions";
 import { requestPlan } from "./next-step-server";
 import type { RunKey } from "./next-step";
 
@@ -69,6 +70,10 @@ export async function runNextStep(_: ActionState, fd: FormData): Promise<ActionS
     pass_quality: () => [staffTransition, form({ id, to: "awaiting_client_approval" })],
     close: () => [staffTransition, form({ id, to: "closed" })],
     resume: () => [staffTransition, form({ id, to: t.resumeTo ?? "" })],
+    open_cycle: () => [openCycle, form({ id, kind: t.args.kind ?? "periodic" })],
+    send_cycle: () => [sendCycle, form({ cycleId: t.args.cycleId })],
+    close_cycle: () => [closeCycle, form({ cycleId: t.args.cycleId })],
+    end_service: () => [endService, form({ id })],
   };
   const [fn, body] = run[t.key]();
   const res = await fn({}, body);

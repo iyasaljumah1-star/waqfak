@@ -63,8 +63,8 @@ export async function preparersOf(tx: Tx, o: OutputRow) {
 }
 
 /** Summary used by request guards: open drafts, pending reviews, approvals, and whether self-approval covers QA. */
-export async function outputGate(tx: Tx, requestId: string) {
-  const rows = await outputsOf(tx, requestId);
+export async function outputGate(tx: Tx, requestId: string, opts: { excludeCycles?: boolean } = {}) {
+  const rows = (await outputsOf(tx, requestId)).filter((o) => !opts.excludeCycles || !o.outputKey.includes("@c"));
   return {
     total: rows.length,
     unfinished: rows.filter((o) => o.status === "draft" || o.status === "returned").length,
@@ -119,22 +119,29 @@ async function storeGeneratedPdf(tx: Tx, p: { waqfId: string | null; requestId: 
  * PDF once, stores it in the vault and attaches it to the output's delivery record. Idempotent.
  */
 export async function releaseApprovedOutputs(tx: Tx, rc: RequestCtx, actorId: string, meta: { ip: string; userAgent: string }) {
-  const rows = (await outputsOf(tx, rc.req.id)).filter((o) => o.status === "approved" && !o.documentId && o.approvedVersion);
-  for (const o of rows) {
-    const v = await versionOf(tx, o.id, o.approvedVersion!);
-    if (!v) continue;
-    const [d] = o.deliverableId ? await tx.select({ signedBy: deliverables.signedBy }).from(deliverables).where(eq(deliverables.id, o.deliverableId)).limit(1) : [];
-    let pdf: Buffer;
-    try {
-      pdf = await renderPdf(await outputDocHtml(tx, rc, o, v, d?.signedBy ?? null), { headerTitle: o.title });
-    } catch (err) {
-      console.error("[outputs.release] render failed", err);
-      throw new UserError("تعذر إنشاء ملف PDF للمخرج المعتمد الآن. أعد المحاولة بعد قليل.");
-    }
-    const docId = await storeGeneratedPdf(tx, { waqfId: rc.req.waqfId, requestId: rc.req.id, title: `${o.title} (${o.number})`, data: pdf, ownerUserId: o.approvedBy ?? actorId, fileName: `${o.number}-v${o.approvedVersion}.pdf` });
-    await tx.update(outputs).set({ documentId: docId, updatedBy: actorId }).where(eq(outputs.id, o.id));
-    if (o.deliverableId) await tx.update(deliverables).set({ documentId: docId, updatedBy: actorId }).where(eq(deliverables.id, o.deliverableId));
-    await audit(tx, { actorUserId: actorId, action: "outputs.released", entityType: "output", entityId: o.id, waqfId: o.waqfId, ip: meta.ip, userAgent: meta.userAgent, after: { number: o.number, version: o.approvedVersion, documentId: docId } });
-  }
+  // Cycle outputs of continuous services are released one by one when their cycle is sent (see operations/continuous).
+  const rows = (await outputsOf(tx, rc.req.id)).filter((o) => o.status === "approved" && !o.documentId && o.approvedVersion && !o.outputKey.includes("@c"));
+  for (const o of rows) await releaseOutput(tx, rc, o, actorId, meta);
   return rows.length;
+}
+
+/** Renders one approved output to PDF, stores it in the vault and attaches it to its delivery record. Idempotent. */
+export async function releaseOutput(tx: Tx, rc: RequestCtx, o: OutputRow, actorId: string, meta: { ip: string; userAgent: string }) {
+  if (o.status !== "approved" || !o.approvedVersion) throw new UserError("يُرسل المخرج بعد اعتماده.");
+  if (o.documentId) return o.documentId;
+  const v = await versionOf(tx, o.id, o.approvedVersion);
+  if (!v) throw new UserError("لا نسخة معتمدة لإرسالها.");
+  const [d] = o.deliverableId ? await tx.select({ signedBy: deliverables.signedBy }).from(deliverables).where(eq(deliverables.id, o.deliverableId)).limit(1) : [];
+  let pdf: Buffer;
+  try {
+    pdf = await renderPdf(await outputDocHtml(tx, rc, o, v, d?.signedBy ?? null), { headerTitle: o.title });
+  } catch (err) {
+    console.error("[outputs.release] render failed", err);
+    throw new UserError("تعذر إنشاء ملف PDF للمخرج المعتمد الآن. أعد المحاولة بعد قليل.");
+  }
+  const docId = await storeGeneratedPdf(tx, { waqfId: rc.req.waqfId, requestId: rc.req.id, title: `${o.title} (${o.number})`, data: pdf, ownerUserId: o.approvedBy ?? actorId, fileName: `${o.number}-v${o.approvedVersion}.pdf` });
+  await tx.update(outputs).set({ documentId: docId, updatedBy: actorId }).where(eq(outputs.id, o.id));
+  if (o.deliverableId) await tx.update(deliverables).set({ documentId: docId, updatedBy: actorId }).where(eq(deliverables.id, o.deliverableId));
+  await audit(tx, { actorUserId: actorId, action: "outputs.released", entityType: "output", entityId: o.id, waqfId: o.waqfId, ip: meta.ip, userAgent: meta.userAgent, after: { number: o.number, version: o.approvedVersion, documentId: docId } });
+  return docId;
 }
