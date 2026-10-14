@@ -16,7 +16,7 @@ import type { RequestCtx } from "@/server/modules/requests/access";
 import { docRequired, findField, sanitizeAnswers, summarize, tableRows, visibleDocs, visibleFields, visibleSteps } from "@/server/modules/requests/intake/engine";
 import { intakeOf, serviceForm } from "@/server/modules/requests/intake/server";
 import type { OutputContext } from "./build";
-import { lastFiscalPeriod } from "./fiscal";
+import { fiscalPeriodOfYear, lastFiscalPeriod } from "./fiscal";
 
 const ACCOUNT_LABEL = new Map(ACCOUNTS.map((a) => [a.code, a.label]));
 const STAGE_STATUS: Record<string, string> = { pending: "لم تبدأ", active: "جارية", done: "منجزة", skipped: "متجاوزة" };
@@ -98,7 +98,9 @@ export async function collectContext(tx: Tx, rc: RequestCtx): Promise<OutputCont
     deedDate: w.deedDate ?? w.deedDateHijri, nationalUnifiedNumber: w.nationalUnifiedNumber, sizeClass: w.sizeClass, legalType: w.legalType, status: w.status, fiscalYearEnd: w.fiscalYearEnd,
     nazirMode: w.nazirMode, waqfakRole: w.waqfakRole, isDemo: w.isDemo, assetsEstimatedValue: num(w.assetsEstimatedValue),
   };
-  const period = lastFiscalPeriod(w.fiscalYearEnd, today);
+  // The year the client asked about when the form has one; otherwise the last ended fiscal year.
+  const askedYear = Number(keys.fiscalYear ?? keys.year);
+  const period = Number.isInteger(askedYear) && askedYear > 1990 ? fiscalPeriodOfYear(w.fiscalYearEnd, askedYear) : lastFiscalPeriod(w.fiscalYearEnd, today);
   const yearAgo = new Date(Date.now() - 365 * 86_400_000);
   const [cond, trs, fnd, bens, cls, ast, ls, led, buds, dists, bds, pols, mts, res, obl, bo, ip, pf, eng] = await Promise.all([
     tx.select().from(conditions).where(eq(conditions.waqfId, wid)).orderBy(asc(conditions.position)),

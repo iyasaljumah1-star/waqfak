@@ -9,3 +9,10 @@ export function lastFiscalPeriod(fiscalYearEnd: string, today: string): { from: 
   const start = addDays(`${Number(end.slice(0, 4)) - 1}-${mm}-${dd}`, 1);
   return { from: start, to: end };
 }
+
+/** The fiscal year the request asks about (the year in which it ends), from the waqf's fiscal-year end. */
+export function fiscalPeriodOfYear(fiscalYearEnd: string, year: number): { from: string; to: string } {
+  const [mm, dd] = (/^\d{2}-\d{2}$/.test(fiscalYearEnd) ? fiscalYearEnd : "12-31").split("-");
+  const end = `${year}-${mm}-${dd}`;
+  return { from: addDays(`${year - 1}-${mm}-${dd}`, 1), to: end };
+}

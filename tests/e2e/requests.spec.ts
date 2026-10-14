@@ -463,14 +463,37 @@ test.describe.serial("service request lifecycle", () => {
     const emp = await as(browser, "emp1", viewport);
     await emp.goto(`/admin/requests/${reqId}?t=${Date.now()}#billing`);
     await ex(emp.getByText("تصدر فاتورة أولية فقط")).toBeVisible();
-    await emp.getByTestId("term-t1").getByRole("button", { name: "أصدر فاتورة أولية" }).click();
-    await ex(emp.getByText(/صدرت فاتورة أولية PRF-\d+/)).toBeVisible();
-    const [prf] = await sql<{ kind: string; due_on: string | null }>("select kind, due_on from invoices where request_id = $1", [reqId]);
-    expect(prf.kind).toBe("proforma");
+    // invoice cycle: draft (team only) → approved by finance (legal number) → sent to the client
+    await emp.getByTestId("term-t1").getByRole("button", { name: "أعدّ مسودة فاتورة أولية" }).click();
+    await ex.poll(async () => (await sql("select 1 from invoices where request_id = $1 and status = 'draft'", [reqId])).length).toBe(1);
+    const [prf] = await sql<{ id: string; kind: string; status: string }>("select id, kind, status from invoices where request_id = $1", [reqId]);
+    expect(prf).toMatchObject({ kind: "proforma", status: "draft" });
+    const admin = await as(browser, "admin", viewport);
+    const approveAndSend = async (id: string) => {
+      await admin.goto(`/admin/finance/${id}?t=${Date.now()}`);
+      await admin.getByRole("button", { name: /^اعتمد الفاتورة/ }).click();
+      await ex.poll(async () => (await sql<{ status: string }>("select status from invoices where id = $1", [id]))[0].status).toBe("approved");
+      await emp.goto(`/admin/requests/${reqId}?t=${Date.now()}#billing`);
+      await emp.getByTestId(`invoice-cycle-${id}`).getByRole("button", { name: "أرسل الفاتورة للعميل" }).click();
+      await ex.poll(async () => (await sql<{ status: string }>("select status from invoices where id = $1", [id]))[0].status).toBe("issued");
+    };
+    await approveAndSend(prf.id);
+    const [prfSent] = await sql<{ number: string; status: string; sent_at: Date | null }>("select number, status, sent_at from invoices where id = $1", [prf.id]);
+    expect(prfSent.number).toMatch(/^PRF-\d+/);
+    expect(prfSent.sent_at).toBeTruthy();
 
     await setCompany({ vatRegistration: "registered", vatNumber: "300000000000003" });
-    await emp.reload();
-    await emp.getByTestId("term-t1").getByRole("button", { name: "أصدر الفاتورة" }).click();
+    await emp.goto(`/admin/requests/${reqId}?t=${Date.now()}#billing`);
+    await emp.getByTestId("term-t1").getByRole("button", { name: "أعدّ مسودة الفاتورة" }).click();
+    await ex.poll(async () => (await sql("select 1 from invoices where request_id = $1 and kind = 'tax_invoice' and status = 'draft'", [reqId])).length).toBe(1);
+    const [draftInv] = await sql<{ id: string }>("select id from invoices where request_id = $1 and kind = 'tax_invoice' and status = 'draft'", [reqId]);
+    // the client cannot see an unsent invoice (database row-level rule + page)
+    const nazPeek = await as(browser, "nazir", viewport);
+    expect((await nazPeek.request.get(`/app/billing/${draftInv.id}/pdf`)).status()).toBe(404);
+    // the team previews it in full before approving
+    await emp.goto(`/app/billing/${draftInv.id}?t=${Date.now()}`);
+    await ex(emp.getByText("معاينة مسودة — لم تُعتمد ولم تُرسل")).toBeVisible();
+    await approveAndSend(draftInv.id);
     await ex(emp.getByTestId("term-t1").getByText(/INV-\d+/)).toBeVisible();
     const [inv] = await sql<{ id: string; total: string; seller_snapshot: { vatNumber: string } }>("select id, total, seller_snapshot from invoices where request_id = $1 and kind = 'tax_invoice'", [reqId]);
     invoiceId = inv.id;
@@ -481,7 +504,6 @@ test.describe.serial("service request lifecycle", () => {
     await emp.getByRole("button", { name: "بدء التنفيذ بعد توقيع العقد" }).click();
     await ex(emp.getByText("لم تُسدد الدفعة التي يشترط العرض سدادها قبل البدء.")).toBeVisible();
 
-    const admin = await as(browser, "admin", viewport);
     await admin.goto(`/admin/finance/${invoiceId}`);
     await admin.getByLabel("المبلغ (ر.س)").fill("200");
     await admin.getByLabel("المرجع").fill("TRX-TEST-001");
