@@ -6,6 +6,7 @@ import { cn, fmtDate, fmtDateTime, fmtSAR } from "@/lib/utils";
 import { requireStaff } from "@/server/authz/context";
 import { EINVOICE_STATUS_LABEL, INVOICE_STATUS_LABEL, INVOICE_STATUS_TONE, PAYMENT_STATUS_LABEL, PROVIDER_LABEL } from "@/server/modules/billing/access";
 import { AGING_LABEL, financeList, financePayments, receivables, type AgingBucket } from "@/server/modules/billing/queries";
+import { einvoiceState } from "@/server/modules/billing/einvoice";
 import { read } from "@/server/modules/_shared";
 import { isFlagOn } from "@/server/modules/requests/catalog";
 
@@ -34,7 +35,10 @@ export default async function AdminFinance({ searchParams }: { searchParams: Pro
   const auth = await requireStaff("admin.finance");
   const sp = await searchParams;
   const tab: Tab = (TABS.find((t) => t.key === sp.tab)?.key ?? "invoices") as Tab;
-  const flags = await read(auth, async (tx) => ({ live: await isFlagOn(tx, "payments.live"), zatca: await isFlagOn(tx, "einvoice.zatca") }));
+  const flags = await read(auth, async (tx) => {
+    const e = await einvoiceState(tx);
+    return { live: await isFlagOn(tx, "payments.live"), zatca: e.active, einvoice: e.items };
+  });
   const href = (t: Tab) => `/admin/finance?tab=${t}`;
 
   return (
@@ -44,6 +48,13 @@ export default async function AdminFinance({ searchParams }: { searchParams: Pro
         <Alert tone="info" title="وضع التشغيل الحالي">
           {!flags.live ? "الدفع الإلكتروني في بيئة تجريبية: المبالغ المسجلة عبر «بيئة تجريبية» لا تمثل تحصيلًا فعليًا. " : ""}
           {!flags.zatca ? "الربط مع منصة فاتورة (هيئة الزكاة والضريبة والجمارك) غير مفعّل؛ الفواتير بحالة «بانتظار الربط»." : ""}
+        </Alert>
+      ) : null}
+      {!flags.zatca ? (
+        <Alert tone="fine" title="الفوترة الإلكترونية تُفعَّل تلقائيًا عند اكتمال الشروط" className="mt-0">
+          <ul className="mt-1 space-y-1" data-testid="einvoice-readiness">
+            {flags.einvoice.map((i) => <li key={i.label}>{i.ok ? "✓" : "✗"} {i.label}{!i.ok && i.detail ? <span className="text-muted"> — {i.detail}</span> : null}</li>)}
+          </ul>
         </Alert>
       ) : null}
 

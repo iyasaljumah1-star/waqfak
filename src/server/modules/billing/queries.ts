@@ -8,6 +8,7 @@ import { todayISO } from "@/server/engines/dates";
 import { memberWaqfIdsWith } from "@/server/modules/requests/access";
 import { isFlagOn, readSetting } from "@/server/modules/requests/catalog";
 import { canPayInvoice, canSeeInvoice, effectiveStatus, loadInvoice } from "./access";
+import { einvoiceState } from "./einvoice";
 import { AGING_LABEL, agingBucket, zatcaTlvBase64, type AgingBucket } from "./calc";
 import { invoiceBalance } from "@/server/modules/commerce/pure";
 export { AGING_LABEL, type AgingBucket };
@@ -46,7 +47,7 @@ export async function invoiceView(auth: Auth, id: string) {
     if (!inv || !(await canSeeInvoice(tx, auth, inv))) return null;
     const current = await readSetting<CompanyProfile>(tx, "company.profile", {});
     const company: CompanyProfile = (inv.sellerSnapshot as CompanyProfile | null) ?? current;
-    const einvoiceOn = await isFlagOn(tx, "einvoice.zatca");
+    const einvoiceOn = (await einvoiceState(tx)).active;
     const liveOn = await isFlagOn(tx, "payments.live");
     const pays = await tx.select().from(payments).where(eq(payments.invoiceId, inv.id)).orderBy(desc(payments.createdAt));
     const [req] = inv.requestId ? await tx.select({ id: serviceRequests.id, number: serviceRequests.number }).from(serviceRequests).where(eq(serviceRequests.id, inv.requestId)) : [];

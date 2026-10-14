@@ -19,6 +19,7 @@ import { logEvent } from "@/server/modules/requests/engine";
 import { invoiceBalance, invoicePolicy, INVOICE_KIND_LABEL, splitInstallments, statusAfterPayment, type CompanyProfile } from "@/server/modules/commerce/pure";
 import { companyProfile, consistencyFor, ledgerOf, settingNumber, signaturesOf, signingState, vatRateSetting } from "@/server/modules/commerce/state";
 import { canPayInvoice, loadInvoice } from "./access";
+import { einvoiceState } from "./einvoice";
 import { computeInvoice, round2 } from "./calc";
 
 type Ctx = Parameters<Parameters<typeof userAction>[0]>[0];
@@ -49,7 +50,7 @@ export async function issueInvoice(_: ActionState, fd: FormData): Promise<Action
     const dueDays = await settingNumber(c.tx, "invoices.due_days", 14);
     const [client] = await c.tx.select({ name: users.fullName }).from(users).where(eq(users.id, rc.req.requesterUserId));
     const [w] = rc.req.waqfId ? await c.tx.select({ name: waqfs.name }).from(waqfs).where(eq(waqfs.id, rc.req.waqfId)) : [];
-    const zatca = await isFlagOn(c.tx, "einvoice.zatca");
+    const zatca = (await einvoiceState(c.tx)).active;
 
     let amountNet: number;
     let vatRate: number;
@@ -185,7 +186,7 @@ export async function sendInvoice(_: ActionState, fd: FormData): Promise<ActionS
     }
     const today = todayISO();
     const dueDays = await settingNumber(c.tx, "invoices.due_days", 14);
-    const zatca = await isFlagOn(c.tx, "einvoice.zatca");
+    const zatca = (await einvoiceState(c.tx)).active;
     const [client] = await c.tx.select({ phone: users.phone, email: users.email }).from(users).where(eq(users.id, inv.userId));
     const kindLabel = INVOICE_KIND_LABEL[inv.kind as keyof typeof INVOICE_KIND_LABEL] ?? "فاتورة";
     await c.tx.update(invoices).set({
