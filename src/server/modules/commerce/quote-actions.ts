@@ -15,6 +15,7 @@ import { loadRequestCtx } from "@/server/modules/requests/access";
 import { logEvent, transition } from "@/server/modules/requests/engine";
 import { buildQuote, quoteCanonical, quoteExpired } from "./pure";
 import { vatRateSetting } from "./state";
+import { continuousSpec, parseCustomDates } from "@/server/modules/operations/continuous-pure";
 
 const uuid = z.string().uuid("قيمة غير صالحة.");
 const reval = (id: string) => [`/app/requests/${id}`, `/admin/requests/${id}`, "/admin/requests", "/app/requests"];
@@ -49,12 +50,27 @@ export async function saveQuote(_: ActionState, fd: FormData): Promise<ActionSta
   if ("state" in r) return r.state;
   const d = r.data;
   const lines = jsonArr<{ description: string; qty: number | string; unit: number | string }>(fd.get("lines")).map((l) => ({ description: String(l.description ?? ""), qty: Number(l.qty), unit: Number(l.unit) }));
-  const terms = jsonArr<{ label: string; percent: number | string; due: PaymentTerm["due"]; beforeStart?: boolean }>(fd.get("terms")).map((t) => ({
-    label: String(t.label ?? ""), percent: Number(t.percent), due: (["on_contract", "before_start", "on_delivery", "on_completion"].includes(t.due) ? t.due : "on_contract") as PaymentTerm["due"], beforeStart: !!t.beforeStart,
+  const terms = jsonArr<{ label: string; percent: number | string; due: PaymentTerm["due"]; beforeStart?: boolean; dueOn?: string; milestone?: string; series?: string }>(fd.get("terms")).map((t) => ({
+    label: String(t.label ?? ""), percent: Number(t.percent),
+    due: (["on_contract", "before_start", "on_delivery", "on_completion", "on_date", "on_milestone"].includes(t.due) ? t.due : "on_contract") as PaymentTerm["due"], beforeStart: !!t.beforeStart,
+    dueOn: t.dueOn ? String(t.dueOn) : null, milestone: t.milestone ? String(t.milestone) : null, series: t.series ? String(t.series) : null,
   }));
+  const cadence = String(fd.get("deliveryCadence") ?? "");
+  const datesText = String(fd.get("deliveryDates") ?? "");
   return userAction(async (c) => {
     const rc = await loadRequestCtx(c.tx, c.auth, d.id, "staff");
     if (!rc.isAssignee && !rc.isOps) throw new ForbiddenError("يعدّ العرض المختص المسند إليه الطلب أو مدير التشغيل.");
+    // Continuous services: the delivery cadence agreed with the client (optional in the quote; set at term setup otherwise).
+    const cspec = continuousSpec(rc.service.code);
+    let deliverySchedule: { cadence: string; customDates?: { label: string; due: string }[] } | null = null;
+    if (cspec && cadence) {
+      if (!cspec.allowed.includes(cadence as never)) throw new UserError("دورية التسليمات غير متاحة لهذه الخدمة.");
+      if (cadence === "custom") {
+        const p = parseCustomDates(datesText);
+        if (p.errors.length || !p.dates.length) throw new UserError(p.errors[0] ?? "أدخل تواريخ التسليم أو مراحله، سطرًا لكل تسليم.");
+        deliverySchedule = { cadence, customDates: p.dates };
+      } else deliverySchedule = { cadence };
+    }
     if (rc.service.pricingModel === "free") throw new UserError("الخدمة مجانية ولا تحتاج عرض سعر.");
     const all = await c.tx.select().from(quotes).where(eq(quotes.requestId, d.id)).orderBy(desc(quotes.createdAt));
     const acceptedInitial = all.find((q) => q.kind === "initial" && q.status === "accepted");
@@ -74,13 +90,14 @@ export async function saveQuote(_: ActionState, fd: FormData): Promise<ActionSta
       scope: d.scope, deliverables: d.deliverables, exclusions: d.exclusions || null, assumptions: d.assumptions || null, clientObligations: d.clientObligations || null,
       durationDays: d.durationDays, lines: built.lines, subtotal: built.subtotal.toFixed(2), discount: built.discount.toFixed(2), net: built.net.toFixed(2),
       vatRate: String(vatRate), vat: built.vat.toFixed(2), total: built.total.toFixed(2), paymentTerms: built.terms, validUntil: d.validUntil,
+      deliverySchedule,
     };
     const editing = d.quoteId ? all.find((q) => q.id === d.quoteId) : all.find((q) => q.kind === d.kind && q.status === "draft");
     if (editing) {
       if (editing.status !== "draft") throw new UserError("هذه النسخة لم تعد مسودة؛ أنشئ نسخة جديدة.");
       if (editing.kind !== d.kind) throw new UserError("نوع العرض لا يتغير.");
       await c.tx.update(quotes).set({ ...content, preparedBy: c.auth.user.id, updatedBy: c.auth.user.id }).where(and(eq(quotes.id, editing.id), eq(quotes.status, "draft")));
-      await audit(c.tx, { actorUserId: c.auth.user.id, action: "quotes.edit", entityType: "quote", entityId: editing.id, waqfId: rc.req.waqfId, ip: c.ip, userAgent: c.userAgent, after: { net: content.net, total: content.total } });
+      await audit(c.tx, { actorUserId: c.auth.user.id, action: "quotes.edit", entityType: "quote", entityId: editing.id, waqfId: rc.req.waqfId, ip: c.ip, userAgent: c.userAgent, before: { paymentTerms: editing.paymentTerms }, after: { net: content.net, total: content.total, paymentTerms: content.paymentTerms } });
       return { ok: true, message: `حُفظت مسودة العرض ${editing.number} (نسخة ${editing.version}).` };
     }
     // New version of the same chain when the last one was not accepted; otherwise a new number.
@@ -91,7 +108,7 @@ export async function saveQuote(_: ActionState, fd: FormData): Promise<ActionSta
       number, version, requestId: d.id, waqfId: rc.req.waqfId, kind: d.kind, parentQuoteId: d.kind === "amendment" ? acceptedInitial!.id : chain?.id ?? null,
       status: "draft", ...content, preparedBy: c.auth.user.id, createdBy: c.auth.user.id,
     }).returning({ id: quotes.id });
-    await audit(c.tx, { actorUserId: c.auth.user.id, action: "quotes.create", entityType: "quote", entityId: row.id, waqfId: rc.req.waqfId, ip: c.ip, userAgent: c.userAgent, after: { number, version, kind: d.kind, net: content.net, total: content.total } });
+    await audit(c.tx, { actorUserId: c.auth.user.id, action: "quotes.create", entityType: "quote", entityId: row.id, waqfId: rc.req.waqfId, ip: c.ip, userAgent: c.userAgent, after: { number, version, kind: d.kind, net: content.net, total: content.total, paymentTerms: content.paymentTerms } });
     return { ok: true, message: `أُنشئت مسودة العرض ${number} (نسخة ${version}). تُعتمد داخليًا قبل إرسالها.` };
   }, { revalidate: reval(d.id) });
 }

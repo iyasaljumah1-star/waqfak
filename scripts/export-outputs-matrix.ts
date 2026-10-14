@@ -13,6 +13,8 @@ const SECTION_AR: Record<SectionKind, string> = {
   governance: "الهيئات والمتطلبات التنظيمية", compliance: "الالتزامات النظامية", beneficial_owners: "سجل المستفيد الحقيقي", investment: "سياسة الاستثمار والمحافظ",
   scope: "النطاق", deed_clauses: "نص وثيقة الوقف مصوغًا بنودًا", will_clauses: "نص الوصية مصوغًا بنودًا", checklist: "قائمة المتطلبات", nazara: "ملف النظارة وقائمة الاستلام",
   stages: "مراحل التنفيذ", references: "المراجع",
+  period: "فترة التقرير", nazir: "الناظر وصفة التمثيل وقرار التعيين", receivables: "العقود والتحصيلات والمستحقات", resolutions: "قرارات الفترة",
+  delivery_record: "بيانات التسليم والاعتمادات والإصدارات",
 };
 const KIND_AR: Record<string, string> = {
   sharia_memo: "مذكرة شرعية", sharia_opinion: "رأي شرعي موقّع", will_text: "وثيقة وصية (نص مصوغ)", deed_draft: "وثيقة وقف (نص مصوغ)", legal_review: "تقرير مراجعة قانونية",
@@ -41,7 +43,7 @@ for (const s of SERVICES) {
   for (const d of defs) {
     n++;
     const t = TEMPLATES[d.profile];
-    const data = t.sections.filter((k) => k !== "meta" && k !== "references").map((k) => SECTION_AR[k]).join("، ");
+    const data = t.sections.filter((k): k is SectionKind => !k.startsWith("analysis:") && k !== "meta" && k !== "references").map((k) => SECTION_AR[k]).join("، ");
     const spec = t.analysis.map((a) => a.title).join("، ");
     const form = formFor({ code: s.code, audiences: s.audiences, requiredDocuments: s.docs ?? [] });
     const refs = `${PROFILE_REFS[d.profile].join("، ")}${form.sources.length ? ` + ${form.sources.length} من مصادر النموذج` : ""}`;

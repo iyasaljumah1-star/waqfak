@@ -32,6 +32,8 @@ function block(b: OutputBlock, final: boolean): string {
 export type OutputDocMeta = {
   number: string; title: string; specialty: string; serviceLine: string; requestNumber: string; waqfName: string | null; version: number; status: string;
   preparedBy: string | null; approvedBy: string | null; approvedAt: string | null; selfApproved: boolean; signedBy: string | null; isDemo: boolean;
+  /** Earlier review rounds (who returned the draft for revision, and when). */
+  reviewRounds?: string[];
   /** Date of this version, and where it stands: draft, under review, or approved. */
   versionDate?: string; workflowStatus?: "draft" | "in_review" | "approved";
 };
@@ -52,6 +54,7 @@ ${meta.versionDate ? `<dt>تاريخ النسخة</dt><dd class="tabular">${esc(
 ${meta.waqfName ? `<dt>الوقف</dt><dd>${esc(meta.waqfName)}</dd>` : ""}
 <dt>التخصص</dt><dd>${esc(meta.specialty)}</dd>
 <dt>أعدّه</dt><dd>${esc(meta.preparedBy ?? "—")}</dd>
+${meta.reviewRounds?.length ? `<dt>المراجعة</dt><dd>${meta.reviewRounds.map(esc).join("؛ ")}</dd>` : ""}
 ${final ? `<dt>راجعه واعتمده</dt><dd>${esc(meta.approvedBy ?? "—")}${meta.selfApproved ? " (اعتماد ذاتي وفق سياسة المخرج)" : ""} — ${esc(meta.approvedAt ?? "")}</dd>` : ""}
 ${meta.signedBy ? `<dt>التوقيع</dt><dd>${esc(meta.signedBy)}</dd>` : ""}
 </dl>

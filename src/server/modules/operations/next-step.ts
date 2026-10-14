@@ -151,7 +151,7 @@ function continuousSteps(s: Snapshot, k: ContinuousSnap, add: Add, executing: bo
   add({
     key: "term", title: "مدة الخدمة ودورية التسليم وفق العقد", owner: "team", blockers: [], output: `مدة سارية ودورية ${k.cadence}`,
     state: k.hasTerm || rank >= 8 ? "done" : executing && !onboarding ? "current" : "pending",
-    detail: k.hasTerm ? `المدة: ${k.termLabel}` : undefined,
+    detail: k.hasTerm ? `المدة: ${k.termLabel}` : k.cadenceUnset ? "الدورية غير محددة: تُحدد ضمن نطاق العقد قبل تفعيل جدول التسليمات، ولا تُنشأ دورات قبلها" : `الدورية: ${k.cadence}`,
     ...(!k.hasTerm && executing && !onboarding && worker ? { action: { kind: "link" as const, href: svc, label: "حدّد مدة الخدمة ودوريتها" } } : {}),
   });
   if (!k.hasTerm) {
@@ -185,10 +185,32 @@ function continuousSteps(s: Snapshot, k: ContinuousSnap, add: Add, executing: bo
         else { st.state = "waiting"; st.blockers.push({ text: c.approveBlockedReason ?? "يعتمده مراجع مستقل", who: "reviewer" }); }
       } else if (c.phase === "approved") {
         st.owner = "team";
-        if (worker) st.action = { kind: "run", key: "send_cycle", label: `أرسل تسليم «${c.label}» للعميل`, args: { cycleId: c.id } };
-      } else if (c.phase === "sent") {
+        if (worker) st.action = { kind: "run", key: "send_cycle", label: `أتح تسليم «${c.label}» للعميل في المنصة`, args: { cycleId: c.id } };
+      } else if (c.phase === "client_revision") {
+        st.state = "blocked";
+        st.blockers.push({ text: `طلب العميل تعديل التسليم: ${c.clientNote ?? ""}`, who: "specialist", href });
+        st.action = { kind: "link", href, label: "افتح مراجعة جديدة للمخرج وعدّله" };
+      } else if (c.phase === "client_review" || c.phase === "client_approved") {
         st.owner = "team";
-        if (c.checklistOpen) { if (worker) st.action = { kind: "link", href: svc, label: "أكمل مهام الدورة ثم أقفلها" }; }
+        const rec = c.record;
+        const waitingClient = (c.closeBlockers ?? []).some((b) => b.includes("لم يعتمد العميل"));
+        if (c.phase === "client_review" && waitingClient) {
+          st.state = "waiting"; st.owner = "client";
+          st.blockers.push({ text: "بانتظار اعتماد العميل أو طلبه تعديلًا (لا يُعد سكوته اعتمادًا)", who: "client" });
+        } else if (rec && rec.status !== "approved") {
+          const rhref = rec.outputId ? `/admin/requests/${s.id}/outputs/${rec.outputId}` : svc;
+          st.detail = `${st.detail ?? ""} — محضر التسليم`;
+          if (!rec.outputId) { if (s.viewer.canDeliver && worker) st.action = { kind: "run", key: "generate_output", label: `أعدّ محضر تسليم «${c.label}»`, args: { outputKey: rec.key } }; }
+          else if (rec.status === "in_review") {
+            if (rec.viewerCanApprove) st.action = { kind: "run", key: "approve_output", label: "اعتمد محضر التسليم", args: { outputId: rec.outputId } };
+            else { st.state = "waiting"; st.blockers.push({ text: "يعتمد المحضرَ مراجع آخر", who: "reviewer" }); }
+          } else {
+            for (const g of rec.blocking) st.blockers.push({ text: `محضر التسليم: ${g}`, who: "team", href: rhref });
+            for (const u of rec.unwritten) st.blockers.push({ text: `محضر التسليم — يكتبه المختص: ${u}`, who: "specialist", href: rhref });
+            if (st.blockers.length) { st.state = "blocked"; st.action = { kind: "link", href: rhref, label: "افتح محضر التسليم وأكمله" }; }
+            else if (worker) st.action = { kind: "run", key: "submit_output", label: "أرسل محضر التسليم للمراجعة", args: { outputId: rec.outputId } };
+          }
+        } else if (c.checklistOpen) { if (worker) st.action = { kind: "link", href: svc, label: "أكمل مهام الدورة ثم أقفلها" }; }
         else if (worker) st.action = { kind: "run", key: "close_cycle", label: `أقفل دورة «${c.label}» (يبقى الطلب مفتوحًا)`, args: { cycleId: c.id } };
       }
     }

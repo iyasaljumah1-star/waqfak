@@ -146,13 +146,18 @@ test.describe.serial("continuous services", () => {
     await ex(admin.getByTestId("exec-steps")).not.toContainText("مراجعة الجودة والإفراج");
     await ex(admin.getByTestId("next-step-link")).toHaveText("حدّد مدة الخدمة ودوريتها");
 
-    // 3) the term, from the contract scope: the cadence the client chose is proposed
-    await ex(admin.locator('select[name="cadence"]')).toHaveValue("quarterly");
+    // 3) no default cadence for F08 (no source sets one): nothing is scheduled until the contract's cadence is chosen
+    await go(admin, `/admin/requests/${reqId}#service`);
+    await ex(admin.getByTestId("continuous-panel")).toContainText("الدورية غير محددة");
+    await ex(admin.locator('select[name="cadence"]')).toHaveValue("");
+    await ex(admin.getByText("طلب العميل في النموذج: ربع سنوية.")).toBeVisible(); // a hint, not applied
+    expect(await cycles(reqId)).toHaveLength(0);
     await admin.locator('input[name="startOn"]').fill("2026-01-01");
     await admin.locator('input[name="endOn"]').fill("2026-12-31");
     await admin.locator('input[name="dueOffsetDays"]').fill("15");
-    await admin.getByRole("button", { name: "احفظ مدة الخدمة" }).click();
-    await ex.poll(async () => (await sql("select 1 from service_terms where request_id = $1 and cadence = 'quarterly'", [reqId])).length).toBe(1);
+    await admin.locator('select[name="cadence"]').selectOption("quarterly");
+    await admin.getByRole("button", { name: "فعّل مدة الخدمة وجدول التسليمات" }).click();
+    await ex.poll(async () => (await sql("select 1 from service_terms where request_id = $1 and cadence = 'quarterly' and cadence_source = 'set' and client_acceptance = 'required'", [reqId])).length).toBe(1);
 
     // 4) cycle 1 (January–March) is opened; it is already late (due 15 April)
     await nextStep(admin, reqId, /افتح دورة «الفترة 1/);
@@ -189,26 +194,75 @@ test.describe.serial("continuous services", () => {
     expect(await asUser(U().nazir.id, "select id from deliverables where request_id = $1 and released_at is not null", [reqId])).toHaveLength(0);
     expect(await asUser(U().nazir.id, "select id from service_cycles where request_id = $1", [reqId])).toHaveLength(0);
 
-    // 6) sent to the client (in-platform); the request stays open
-    await nextStep(admin, reqId, /أرسل تسليم/);
+    // 6) made available to the client in the platform (in-app notice only); the request stays open
+    await nextStep(admin, reqId, /أتح تسليم/);
     expect((await cycles(reqId))[0].status).toBe("sent");
     expect(await status(reqId)).toBe("in_progress");
-    await go(client, `/app/requests/${reqId}`);
+    const [note1] = await sql<{ type: string }>("select type from notifications where user_id = $1 and type = 'delivery.available' order by created_at desc limit 1", [U().nazir.id]);
+    expect(note1?.type).toBe("delivery.available");
+    await go(client, `/app/requests/${reqId}#deliveries`);
+    const d1 = client.getByTestId("delivery-1");
     await ex(client.getByTestId("client-continuous")).toContainText("2026-01-01 إلى 2026-12-31");
-    await ex(client.getByText(/تسليم دوري —/)).toBeVisible();
-    expect(await asUser(U().nazir.id, "select seq from service_cycles where request_id = $1", [reqId])).toHaveLength(1);
+    await ex(d1).toContainText("لم تفتحه بعد");
+    await ex(d1).toContainText("بانتظار قرارك");
+    // «viewed» is recorded only when the client opens the file
+    expect((await sql<{ viewed_at: Date | null }>("select viewed_at from service_cycles where request_id = $1 and seq = 1", [reqId]))[0].viewed_at).toBeNull();
+    const view = await client.request.get(await d1.getByRole("link", { name: "معاينة الملف" }).first().getAttribute("href") as string);
+    expect(view.status()).toBe(200);
+    expect(view.headers()["content-type"]).toContain("application/pdf");
+    expect((await sql<{ viewed_at: Date | null }>("select viewed_at from service_cycles where request_id = $1 and seq = 1", [reqId]))[0].viewed_at).not.toBeNull();
 
-    // 7) the cycle closes only once its tasks are done; the request stays open for the next one
+    // 7) silence is not approval: the cycle cannot close while the client has not decided
     await go(admin, `/admin/requests/${reqId}`);
-    await ex(admin.getByTestId("next-step-link")).toHaveText("أكمل مهام الدورة ثم أقفلها");
+    await ex(admin.getByTestId("blockers")).toContainText("لا يُعد سكوته اعتمادًا");
     await tickAll(admin, reqId, 1);
+    await go(admin, `/admin/requests/${reqId}#service`);
+    await admin.getByTestId("cycle-1").getByRole("button", { name: /أقفل الدورة/ }).click();
+    await ex(admin.getByTestId("cycle-1").getByRole("alert")).toContainText("لم يعتمد العميل التسليم بعد");
+
+    // 8) the client asks for changes (notes required); the work goes back with every version kept
+    await go(client, `/app/requests/${reqId}#deliveries`);
+    await client.getByTestId("delivery-1").getByRole("button", { name: "طلب تعديل" }).click();
+    await ex(client.getByTestId("delivery-1").locator("textarea:invalid")).toHaveCount(1); // the note is required
+    await client.getByTestId("delivery-1").getByLabel("ما يلزم تعديله").fill("أضيفوا إيضاحًا عن مصروفات الصيانة (اختبار آلي).");
+    await client.getByTestId("delivery-1").getByRole("button", { name: "طلب تعديل" }).click();
+    await ex.poll(async () => (await sql<{ client_decision: string; status: string }>("select client_decision, status from service_cycles where request_id = $1 and seq = 1", [reqId]))[0]).toEqual({ client_decision: "revision_requested", status: "open" });
+    expect(await status(reqId)).toBe("in_progress");
+    await go(admin, `/admin/requests/${reqId}`);
+    await ex(admin.getByTestId("blockers")).toContainText("مصروفات الصيانة");
+    await ex(admin.getByTestId("next-step-link")).toHaveText("افتح مراجعة جديدة للمخرج وعدّله");
+    await go(admin, `/admin/requests/${reqId}/outputs/${outputId}`);
+    await admin.getByRole("button", { name: "افتح مراجعة جديدة" }).click();
+    await ex.poll(async () => (await sql<{ status: string }>("select status from outputs where id = $1", [outputId]))[0].status).toBe("draft");
+    await go(admin, `/admin/requests/${reqId}/outputs/${outputId}`);
+    for (const t of await admin.locator('textarea[name^="spec:"]').all()) await t.fill("إيضاح المحاسب مع المقارنة ومصروفات الصيانة (اختبار آلي).");
+    await admin.getByRole("button", { name: "احفظ نسخة جديدة" }).click();
+    await ex(admin.getByTestId("output-versions").locator("li")).toHaveCount(4);
+    await nextStep(admin, reqId, /أرسل المسودة للمراجعة/);
+    await nextStep(admin, reqId, /اعتمد تسليم/);
+    await nextStep(admin, reqId, /أتح تسليم/);
+    const files = await sql<{ version: number; status: string; released: boolean }>("select version, status, released_at is not null as released from deliverables where request_id = $1 and cycle_id is not null order by version", [reqId]);
+    expect(files).toEqual([{ version: 1, status: "revision_requested", released: true }, { version: 2, status: "submitted", released: true }]);
+
+    // 9) the client approves the corrected version: who, when, which version
+    await go(client, `/app/requests/${reqId}#deliveries`);
+    await ex(client.getByTestId("delivery-1")).toContainText("الإصدار 2");
+    await client.getByTestId("delivery-1").getByLabel("ملاحظة مع الاعتماد (اختيارية)").fill("مستلم (اختبار آلي).");
+    await client.getByTestId("delivery-1").getByRole("button", { name: "اعتماد التسليم" }).click();
+    await ex.poll(async () => (await sql<{ client_decision: string }>("select client_decision from service_cycles where request_id = $1 and seq = 1", [reqId]))[0].client_decision).toBe("approved");
+    const [dec] = await sql<{ by: string; v: number; note: string }>("select client_decision_by as by, client_approved_version as v, client_decision_note as note from service_cycles where request_id = $1 and seq = 1", [reqId]);
+    expect(dec).toEqual({ by: U().nazir.id, v: 4, note: "مستلم (اختبار آلي)." });
+    expect(await status(reqId)).toBe("in_progress"); // approval does not close the request
+    expect((await sql("select 1 from audit_logs where action = 'continuous.client_approve' and entity_id = (select id::text from service_cycles where request_id = $1 and seq = 1)", [reqId])).length).toBe(1);
+
+    // 10) the cycle closes; the request stays open for the next one
     await nextStep(admin, reqId, /أقفل دورة/);
     expect((await cycles(reqId))[0].status).toBe("closed");
     expect(await status(reqId)).toBe("in_progress");
     await go(admin, `/admin/requests/${reqId}#service`);
-    await ex(admin.getByTestId("cycle-history")).toContainText("النسخة 3");
+    await ex(admin.getByTestId("cycle-history")).toContainText("النسخة 4");
 
-    // 8) the next cycle on the same request
+    // 11) the next cycle on the same request
     await nextStep(admin, reqId, /افتح دورة «الفترة 2/);
     expect((await cycles(reqId)).map((c) => [c.seq, c.status])).toEqual([[1, "closed"], [2, "open"]]);
 
@@ -232,12 +286,20 @@ test.describe.serial("continuous services", () => {
     await ex(emp.getByTestId("continuous-panel")).toBeVisible();
     await ex(emp.getByRole("button", { name: "سجّل إنهاء العقد" })).toHaveCount(0);
     await ex(emp.getByRole("button", { name: "تجاوز الدورة" })).toHaveCount(0);
+    await ex(emp.getByRole("button", { name: "اضبط اعتماد العميل" })).toHaveCount(0);
     await sql("update service_requests set assigned_to_user_id = null where id = $1", [reqId]);
     const emp2 = await as(browser, "emp2");
     await go(emp2, `/admin/requests/${reqId}`);
     await ex(emp2.getByRole("heading", { name: "لم نجد ما طلبته" })).toBeVisible();
-    // the client reads only what was sent to them
+    // the client reads only what was made available to them; another waqf's client reads nothing
     expect((await asUser<{ seq: number }>(U().nazir.id, "select seq from service_cycles where request_id = $1", [reqId])).map((r) => r.seq)).toEqual([1]);
+    expect(await asUser(U().waqif.id, "select id from service_cycles where request_id = $1", [reqId])).toHaveLength(0);
+    const [del1] = await sql<{ id: string; document_id: string }>("select id, document_id from deliverables where request_id = $1 and cycle_id is not null order by version limit 1", [reqId]);
+    const outsider = await as(browser, "waqif");
+    expect((await outsider.request.get(`/api/deliveries/${del1.id}`, { maxRedirects: 0 })).status()).toBe(404);
+    expect((await outsider.request.get(`/api/files/${del1.document_id}`)).status()).toBeGreaterThanOrEqual(403);
+    // a client of another waqf cannot decide on this delivery even with its id (server-side check)
+    expect(await asUser(U().waqif.id, "select id from deliverables where request_id = $1", [reqId])).toHaveLength(0);
 
     // 11) suspension: the hold suspends the term; no lateness while suspended; cycle actions refused
     await go(admin, `/admin/requests/${reqId}`);
@@ -324,7 +386,7 @@ test.describe.serial("continuous services", () => {
     await ex(admin.locator('select[name="cadence"]')).toHaveValue("event");
     await admin.locator('input[name="startOn"]').fill("2026-06-01");
     await admin.locator('input[name="endOn"]').fill("2027-05-31");
-    await admin.getByRole("button", { name: "احفظ مدة الخدمة" }).click();
+    await admin.getByRole("button", { name: "فعّل مدة الخدمة وجدول التسليمات" }).click();
     await ex.poll(async () => (await sql("select 1 from service_terms where request_id = $1", [id])).length).toBe(1);
 
     // a cycle for a meeting: no output to draft, nothing to "send"

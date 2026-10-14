@@ -3,23 +3,23 @@ import type { ReactNode } from "react";
 import { Alert, Badge, DefinitionList, Panel, Stat } from "@/components/ui";
 import { Field, Input, Select, Textarea } from "@/components/ui/form";
 import { ActionForm } from "@/components/requests/forms";
-import { fmtDate, fmtSAR } from "@/lib/utils";
+import { fmtDate } from "@/lib/utils";
 import type { ActionState } from "@/lib/utils";
-import { CADENCE_AR, PHASE_AR, type Cadence } from "@/server/modules/operations/continuous-pure";
+import { ACCEPTANCE_AR, CADENCE_AR, PHASE_AR, type Cadence } from "@/server/modules/operations/continuous-pure";
+import { PaymentScheduleTable, type ScheduleRow } from "@/components/billing/payment-schedule";
 import type { continuousView } from "@/server/modules/operations/continuous";
-import { INVOICE_STATUS_LABEL, INVOICE_STATUS_TONE } from "@/server/modules/billing/access";
-import { TERM_DUE_LABEL } from "@/server/modules/commerce/pure";
 import { CONTRACT_STATUS_LABEL } from "@/server/modules/commerce/pure";
 
 type Act = (s: ActionState, fd: FormData) => Promise<ActionState>;
 type View = NonNullable<Awaited<ReturnType<typeof continuousView>>>;
 type Actions = {
   setupTerm: Act; extendTerm: Act; terminateService: Act; openCycle: Act; toggleCycleCheck: Act; linkCycleMeeting: Act;
-  rescheduleCycle: Act; sendCycle: Act; closeCycle: Act; skipCycle: Act; raiseItem: Act;
+  rescheduleCycle: Act; sendCycle: Act; closeCycle: Act; skipCycle: Act; raiseItem: Act; changeAcceptance: Act;
 };
 
 const PHASE_TONE: Record<string, "ok" | "info" | "warn" | "fine" | "neutral" | "critical" | "ink"> = {
-  preparing: "info", returned: "fine", in_review: "warn", approved: "ink", sent: "ok", followup: "info", closed: "neutral", skipped: "neutral",
+  preparing: "info", returned: "fine", in_review: "warn", approved: "ink", client_review: "warn", client_revision: "fine", client_approved: "ok",
+  followup: "info", closed: "neutral", skipped: "neutral",
 };
 const TERM_TONE: Record<string, "ok" | "fine" | "neutral" | "warn"> = { active: "ok", suspended: "fine", terminated: "warn", ended: "neutral" };
 
@@ -32,31 +32,39 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
  * pending), what awaits review/approval/sending, deficiencies and tasks, cycle history, and — kept apart — the
  * financial due cycle of the contract's installments.
  */
-export function ContinuousPanel({ v, requestId, status, worker, ops, canDeliver, nextAction, a, defaults }: {
+export function ContinuousPanel({ v, requestId, status, worker, ops, canDeliver, nextAction, a, defaults, schedule }: {
   v: View; requestId: string; status: string; worker: boolean; ops: boolean; canDeliver: boolean; nextAction: string | null; a: Actions;
-  defaults: { startOn: string; endOn: string; cadence: Cadence };
+  defaults: { startOn: string; endOn: string; cadence: Cadence | null; customDates: string; clientPreference: Cadence | null };
+  schedule: ScheduleRow[];
 }) {
   const t = v.term;
   const running = status === "in_progress";
   const active = v.cycles.filter((c) => c.status === "open" || c.status === "sent");
   const history = v.cycles.filter((c) => c.status === "closed" || c.status === "skipped").reverse();
-  const awaiting = v.cycles.filter((c) => c.phase === "in_review" || c.phase === "approved");
+  const awaiting = v.cycles.filter((c) => c.phase === "in_review" || c.phase === "approved" || c.phase === "client_review" || c.phase === "client_revision");
   const spec = v.spec;
-  const eventCadence = (t?.cadence ?? spec.cadence) === "event";
+  const cadence = (t?.cadence ?? defaults.cadence) as Cadence | null;
+  const eventCadence = cadence === "event";
   return (
     <div className="space-y-4" data-testid="continuous-panel">
-      <Panel title="الخدمة المستمرة" description={`${spec.delivery.title} — دورية ${CADENCE_AR[(t?.cadence ?? spec.cadence) as Cadence]}. يبقى الطلب مفتوحًا طوال مدة الخدمة، ولا يُغلقه اعتماد تسليم أو إرساله.`}>
+      <Panel title="الخدمة المستمرة" description={`${spec.delivery.title} — ${cadence ? `دورية ${CADENCE_AR[cadence]}` : "الدورية غير محددة بعد"}. يبقى الطلب مفتوحًا طوال مدة الخدمة، ولا يُغلقه اعتماد تسليم أو إتاحته.`}>
+        {!t && v.cadenceUnset ? (
+          <Alert tone="fine" title="الدورية غير محددة" className="mb-4">
+            لا تحدد ملفات المشروع ولا العرض المقبول دورية تسليمات هذه الخدمة. تُحدد ضمن نطاق العقد عند تفعيل المدة أدناه، ولا تُنشأ أي دورة أو موعد قبل ذلك.
+          </Alert>
+        ) : null}
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Stat label="مدة الخدمة" value={v.termLabel ?? "لم تُحدد"} sub={t ? `${t.startOn} إلى ${v.effectiveEnd}` : "تُحدد من العقد"} tone={v.termState === "suspended" ? "fine" : undefined} />
           <Stat label="تسليمات مكتملة" value={v.counts.done} sub={v.counts.skipped ? `${v.counts.skipped} متجاوزة بسبب` : undefined} tone="ok" />
           <Stat label="متأخرة" value={v.counts.late} tone={v.counts.late ? "critical" : undefined} sub={v.termState === "suspended" ? "لا يُحسب التأخر أثناء التعليق" : undefined} />
-          <Stat label="معلّقة (مفتوحة)" value={v.counts.pending} sub={`${v.counts.awaitingReview} بانتظار الاعتماد · ${v.counts.awaitingSend} بانتظار الإرسال`} />
+          <Stat label="قيد العمل" value={v.counts.pending} sub={`${v.counts.awaitingReview} بانتظار الاعتماد الداخلي · ${v.counts.awaitingSend} بانتظار الإتاحة · ${v.counts.awaitingClient} بانتظار العميل`} />
         </div>
         <div className="mt-4 grid gap-4 md:grid-cols-2">
           <div className="divide-y divide-line rounded-md border border-line px-3" data-testid="continuous-status">
             <Row label="حالة الطلب">{status === "in_progress" ? "قيد التنفيذ (مستمر)" : status === "on_hold" ? "معلّق" : status === "completed" ? "مكتمل" : status}</Row>
             <Row label="حالة المدة"><Badge tone={TERM_TONE[v.termState ?? "neutral"] ?? "neutral"} icon={false}>{v.termLabel ?? "لم تُحدد"}</Badge></Row>
             <Row label="العقد">{v.contract ? <><bdi dir="ltr" className="tabular">{v.contract.number}</bdi> — {CONTRACT_STATUS_LABEL[v.contract.status as keyof typeof CONTRACT_STATUS_LABEL] ?? v.contract.status}{v.contract.executedAt ? ` (نافذ ${fmtDate(v.contract.executedAt)})` : ""}</> : "لا عقد مسجل (اتفاق تشغيلي)"}</Row>
+            <Row label="اعتماد العميل للتسليمات">{ACCEPTANCE_AR[v.acceptance]}</Row>
             {v.quote ? <Row label="النطاق المتفق عليه">العرض <bdi dir="ltr" className="tabular">{v.quote.number}</bdi>{v.quote.durationDays ? ` · ${v.quote.durationDays} يومًا` : ""}</Row> : null}
             {t?.status === "terminated" ? <Row label="الإنهاء">{t.terminationReason} — نافذ {t.terminatedOn} (المرجع: {t.terminationRef})</Row> : null}
             {t?.status === "suspended" ? <Row label="التعليق">{t.suspendReason ?? "—"}</Row> : null}
@@ -81,15 +89,24 @@ export function ContinuousPanel({ v, requestId, status, worker, ops, canDeliver,
 
       {!t ? (
         worker && ["in_progress", "on_hold"].includes(status) ? (
-          <Panel title="حدّد مدة الخدمة ودوريتها" description={`من العقد ونطاقه. ${spec.basis}`}>
-            <ActionForm action={a.setupTerm} hidden={{ id: requestId }} submit="احفظ مدة الخدمة">
+          <Panel title="حدّد مدة الخدمة ودوريتها" description={spec.basis}>
+            <ActionForm action={a.setupTerm} hidden={{ id: requestId }} submit="فعّل مدة الخدمة وجدول التسليمات">
               <div className="grid gap-3 sm:grid-cols-2">
                 <Field label="بداية الخدمة" name="startOn" required><Input type="date" name="startOn" required defaultValue={defaults.startOn} /></Field>
                 <Field label="نهاية الخدمة" name="endOn" required hint="من مدة العقد أو العرض"><Input type="date" name="endOn" required defaultValue={defaults.endOn} /></Field>
-                <Field label="دورية التسليم" name="cadence" required hint={defaults.cadence !== spec.cadence ? "مقترحة من نموذج الطلب" : undefined}><Select name="cadence" required defaultValue={defaults.cadence} options={spec.allowed.map((c) => ({ value: c, label: CADENCE_AR[c] }))} /></Field>
+                <Field label="دورية التسليم كما في العقد" name="cadence" required
+                  hint={v.quoteCadence?.cadence ? "من العرض المقبول" : spec.cadence ? `محددة: ${spec.cadenceSource}` : `غير محددة: اخترها من العقد.${defaults.clientPreference ? ` طلب العميل في النموذج: ${CADENCE_AR[defaults.clientPreference]}.` : ""}`}>
+                  <Select name="cadence" required defaultValue={defaults.cadence ?? ""} placeholder="اختر الدورية المتفق عليها" options={spec.allowed.map((c) => ({ value: c, label: CADENCE_AR[c] }))} />
+                </Field>
                 <Field label="أيام الاستحقاق بعد نهاية الفترة" name="dueOffsetDays" required><Input type="number" name="dueOffsetDays" min={0} max={90} required defaultValue={String(spec.dueOffsetDays)} /></Field>
               </div>
-              <Field label="ملاحظة" name="note"><Input name="note" maxLength={1000} /></Field>
+              <Field label="تواريخ التسليم أو مراحله (للدورية «تواريخ أو مراحل تعاقدية»)" name="customDates" hint="سطر لكل تسليم: التاريخ | الوصف. مثل: 2026-12-31 | تقرير اعتماد الخطة">
+                <Textarea name="customDates" rows={3} defaultValue={defaults.customDates} dir="auto" />
+              </Field>
+              <Field label="اعتماد العميل للتسليمات" name="clientAcceptance" hint={spec.acceptance.fixed ? "ثابت لهذه الخدمة" : "يُضبط بخلاف الأصل بقرار مدير التشغيل وسبب مكتوب"}>
+                <Select name="clientAcceptance" defaultValue={spec.acceptance.mode} disabled={spec.acceptance.fixed || !ops} options={(["required", "info"] as const).map((m) => ({ value: m, label: ACCEPTANCE_AR[m] }))} />
+              </Field>
+              <Field label="ملاحظة ومرجع العقد" name="note"><Input name="note" maxLength={1000} /></Field>
             </ActionForm>
           </Panel>
         ) : <Alert tone="info">تُحدد مدة الخدمة بعد بدء التنفيذ.</Alert>
@@ -142,21 +159,40 @@ export function ContinuousPanel({ v, requestId, status, worker, ops, canDeliver,
             </div>
             {spec.inputs.some((i) => i.check === "meeting_linked") && c.status === "open" && worker && running ? (
               <ActionForm action={a.linkCycleMeeting} hidden={{ cycleId: c.id }} submit={c.meeting ? "غيّر الاجتماع" : "اربط الاجتماع"} size="sm" variant="secondary">
-                <Field label="اجتماع المجلس" name="meetingId" required hint={c.meeting ? `المرتبط: ${c.meeting.title}` : "من اجتماعات الوقف في وحدة الحوكمة"}>
-                  <Select name="meetingId" required defaultValue={c.meetingId ?? ""} placeholder="اختر الاجتماع" options={v.waqfMeetings.map((m) => ({ value: m.id, label: `${m.title} — ${fmtDate(m.at)}` }))} />
+                <Field label="اجتماع المجلس" name={`mtg-${c.id}`} required hint={c.meeting ? `المرتبط: ${c.meeting.title}` : "من اجتماعات الوقف في وحدة الحوكمة"}>
+                  <Select id={`mtg-${c.id}`} name="meetingId" required defaultValue={c.meetingId ?? ""} placeholder="اختر الاجتماع" options={v.waqfMeetings.map((m) => ({ value: m.id, label: `${m.title} — ${fmtDate(m.at)}` }))} />
                 </Field>
               </ActionForm>
             ) : null}
+            <div className="rounded-md border border-line px-3" data-testid={`cycle-${c.seq}-approvals`}>
+              <Row label="الاعتماد المهني الداخلي">{c.output?.approvedVersion ? `النسخة ${c.output.approvedVersion} — ${c.output.approvedBy ?? "—"}${c.output.approvedAt ? ` (${fmtDate(c.output.approvedAt)})` : ""}` : spec.delivery.kind === "output" || c.kind === "closing" ? "لم يُعتمد" : "لا ينطبق"}</Row>
+              <Row label="الإتاحة للعميل في المنصة">{c.sentAt ? `أُتيح ${fmtDate(c.sentAt)}${c.sentByName ? ` — ${c.sentByName}` : ""}` : "لم يُتح"}</Row>
+              <Row label="اطلاع العميل">{c.viewedAt ? `اطّلع عليه ${fmtDate(c.viewedAt)}` : c.sentAt ? "لم يُسجَّل اطلاع" : "—"}</Row>
+              <Row label="اعتماد العميل للاستلام">{c.clientDecision === "approved" ? `اعتمده ${c.clientDecisionByName ?? "—"} في ${fmtDate(c.clientDecisionAt!)} (النسخة ${c.clientApprovedVersion ?? "—"})` : c.clientDecision === "revision_requested" ? `طلب تعديلًا: ${c.clientDecisionNote}` : c.sentAt ? (v.acceptance === "required" ? "بانتظار رده — لا يُعد سكوته اعتمادًا" : "للإحاطة: لم يرد") : "—"}</Row>
+              {c.record ? <Row label="محضر التسليم">{c.record.status === "approved" ? `معتمد — ${c.record.approvedBy ?? "—"}` : c.record.outputId ? PHASE_AR[(c.record.status === "in_review" ? "in_review" : "preparing")] : "لم يُعدّ"}{c.record.outputId ? <> · <Link className="underline" href={`/admin/requests/${requestId}/outputs/${c.record.outputId}`}>افتحه</Link></> : null}</Row> : null}
+              <Row label="الاعتماد المالي والرسمي">مستقلان: الفواتير في دورة الاستحقاق المالي، ولا إجراء رسمي خارجي مسجل لهذا التسليم</Row>
+            </div>
+            {c.files?.length ? (
+              <ul className="space-y-1 text-sm" data-testid={`cycle-${c.seq}-files`}>
+                {c.files.map((f) => (
+                  <li key={f.id}>{f.title} — الإصدار {f.version} — أُتيح {f.releasedAt ? fmtDate(f.releasedAt) : "—"}{f.status === "revision_requested" ? ` — طلب العميل تعديله: ${f.revisionNote ?? ""}` : f.status === "approved" ? " — اعتمده العميل" : ""}
+                    {f.documentId ? <> · <a href={`/api/files/${f.documentId}?disposition=inline`} target="_blank" rel="noopener" className="text-ink underline">معاينة</a> · <a href={`/api/files/${f.documentId}`} className="text-ink underline">تنزيل</a></> : null}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            {c.closeBlockers?.length && c.status !== "closed" ? (
+              <p className="text-[13px] text-muted">قبل الإقفال: {c.closeBlockers.join(" ")}</p>
+            ) : null}
             <div className="flex flex-wrap items-start gap-3 border-t border-line pt-3">
               {c.output ? <Link href={`/admin/requests/${requestId}/outputs/${c.output.id}`} className="text-sm text-ink underline">افتح مخرج الدورة (نسخة {c.output.version})</Link> : null}
-              {c.deliverable?.documentId ? <a href={`/api/files/${c.deliverable.documentId}?disposition=inline`} target="_blank" rel="noopener" className="text-sm text-ink underline">الملف المرسل</a> : null}
               {worker && running && c.status === "open" && (c.phase === "approved" || (spec.delivery.kind === "minutes" && c.kind !== "closing")) ? (
-                <ActionForm action={a.sendCycle} hidden={{ cycleId: c.id }} submit={spec.delivery.kind === "minutes" && c.kind !== "closing" ? "سجّل تسليم المحضر المعتمد" : "أرسل التسليم للعميل"} size="sm" />
+                <ActionForm action={a.sendCycle} hidden={{ cycleId: c.id }} submit={spec.delivery.kind === "minutes" && c.kind !== "closing" ? "سجّل إتاحة المحضر المعتمد" : "أتح التسليم للعميل في المنصة"} size="sm" />
               ) : null}
               {worker && running && (c.status === "sent" || (c.phase === "followup" && spec.delivery.kind === "followup")) ? (
                 <ActionForm action={a.closeCycle} hidden={{ cycleId: c.id }} submit="أقفل الدورة (يبقى الطلب مفتوحًا)" size="sm" variant="secondary">
-                  <Field label={c.phase === "followup" ? "ملاحظة المتابعة" : "ملاحظة الإقفال"} name="note" required={c.phase === "followup"}>
-                    <Textarea name="note" rows={2} maxLength={2000} minLength={c.phase === "followup" ? 10 : undefined} required={c.phase === "followup"} />
+                  <Field label={c.phase === "followup" ? "ملاحظة المتابعة" : "ملاحظة الإقفال"} name={`close-${c.id}`} required={c.phase === "followup"}>
+                    <Textarea id={`close-${c.id}`} name="note" rows={2} maxLength={2000} minLength={c.phase === "followup" ? 10 : undefined} required={c.phase === "followup"} />
                   </Field>
                 </ActionForm>
               ) : null}
@@ -166,11 +202,11 @@ export function ContinuousPanel({ v, requestId, status, worker, ops, canDeliver,
                 <summary className="cursor-pointer text-muted">تغيير الموعد أو تجاوز الدورة</summary>
                 <div className="mt-3 grid gap-4 md:grid-cols-2">
                   <ActionForm action={a.rescheduleCycle} hidden={{ cycleId: c.id }} submit="غيّر الموعد" size="sm" variant="secondary">
-                    <Field label="الاستحقاق الجديد" name="dueOn" required><Input type="date" name="dueOn" required defaultValue={c.dueOn} /></Field>
-                    <Field label="السبب" name="reason" required><Input name="reason" required minLength={5} /></Field>
+                    <Field label="الاستحقاق الجديد" name={`due-${c.id}`} required><Input id={`due-${c.id}`} type="date" name="dueOn" required defaultValue={c.dueOn} /></Field>
+                    <Field label="السبب" name={`resched-${c.id}`} required><Input id={`resched-${c.id}`} name="reason" required minLength={5} /></Field>
                   </ActionForm>
                   <ActionForm action={a.skipCycle} hidden={{ cycleId: c.id }} submit="تجاوز الدورة" size="sm" variant="danger">
-                    <Field label="سبب عدم التسليم" name="reason" required hint="يُسجل ويظهر للعميل في سجل الطلب"><Textarea name="reason" rows={2} required minLength={10} /></Field>
+                    <Field label="سبب عدم التسليم" name={`skip-${c.id}`} required hint="يُسجل ويظهر للعميل في سجل الطلب"><Textarea id={`skip-${c.id}`} name="reason" rows={2} required minLength={10} /></Field>
                   </ActionForm>
                 </div>
                 {c.dueChanges?.length ? <ul className="mt-2 list-disc ps-5 text-muted">{c.dueChanges.map((x) => <li key={x.at}>{x.from} ← {x.to}: {x.reason}</li>)}</ul> : null}
@@ -220,21 +256,8 @@ export function ContinuousPanel({ v, requestId, status, worker, ops, canDeliver,
       </Panel>
 
       <Panel title="دورة الاستحقاق المالي" description="منفصلة عن دورات التسليم: تُنشأ الفواتير وفق دفعات العقد من قسم الفوترة، ولا تُنشئ دورات التسليم فواتير." id="financial-cycle">
-        {v.installments.length ? (
-          <ul className="divide-y divide-line" data-testid="financial-cycle">
-            {v.installments.map((i) => (
-              <li key={i.key} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
-                <span>{i.label} — {i.percent}٪ · {TERM_DUE_LABEL[i.due as keyof typeof TERM_DUE_LABEL] ?? i.due}</span>
-                <span className="flex flex-wrap gap-2">
-                  {i.invoices.length ? i.invoices.map((x) => (
-                    <Badge key={x.id} tone={INVOICE_STATUS_TONE[x.status as keyof typeof INVOICE_STATUS_TONE] ?? "neutral"} icon={false}>
-                      <bdi dir="ltr" className="tabular">{x.number}</bdi> {INVOICE_STATUS_LABEL[x.status as keyof typeof INVOICE_STATUS_LABEL] ?? x.status} · {fmtSAR(x.total)}
-                    </Badge>
-                  )) : <Badge tone="neutral" icon={false}>لم تُفوتر</Badge>}
-                </span>
-              </li>
-            ))}
-          </ul>
+        {schedule.length ? <PaymentScheduleTable rows={schedule} staff /> : v.installments.length ? (
+          <p className="text-sm text-muted">يُنشأ جدول الدفعات بتواريخها عند نفاذ العقد. الدفعات في العرض المقبول: {v.installments.map((i) => `${i.label} (${i.percent}٪)`).join("، ")}.</p>
         ) : <p className="text-sm text-muted">لا دفعات تعاقدية مسجلة (لا عرض مقبول).</p>}
         <p className="mt-3 text-[13px] text-muted">الفوترة الإلكترونية لدى هيئة الزكاة والضريبة والجمارك لم تُربط بعد: الفواتير الضريبية «بانتظار الربط»، ولا يُدّعى إرسالها إلى الهيئة.</p>
       </Panel>
@@ -243,6 +266,12 @@ export function ContinuousPanel({ v, requestId, status, worker, ops, canDeliver,
         <Panel title="المدة والإنهاء" description="التعليق من «سير العمل» (تعليق الطلب) ويعلّق الخدمة. التمديد والإنهاء لمدير التشغيل بمرجع مكتوب.">
           {ops ? (
             <div className="grid gap-4 md:grid-cols-2">
+              {!spec.acceptance.fixed && t.status !== "terminated" ? (
+                <ActionForm action={a.changeAcceptance} hidden={{ id: requestId }} submit="اضبط اعتماد العميل" size="sm" variant="secondary">
+                  <Field label="اعتماد العميل للتسليمات" name="clientAcceptance" required><Select name="clientAcceptance" required defaultValue={t.clientAcceptance} options={(["required", "info"] as const).map((m) => ({ value: m, label: ACCEPTANCE_AR[m] }))} /></Field>
+                  <Field label="السبب ومرجعه في العقد" name="reason" required><Input name="reason" required minLength={10} /></Field>
+                </ActionForm>
+              ) : null}
               {t.status !== "terminated" ? (
                 <ActionForm action={a.extendTerm} hidden={{ id: requestId }} submit="مدّد المدة" size="sm" variant="secondary">
                   <Field label="النهاية الجديدة" name="endOn" required><Input type="date" name="endOn" required /></Field>

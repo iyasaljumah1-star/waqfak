@@ -1,7 +1,7 @@
 import "server-only";
 import { and, asc, desc, eq, inArray, isNotNull } from "drizzle-orm";
 import type { Tx } from "@/server/db";
-import { deliverables, documents, documentVersions, outputs, outputVersions, users, waqfs } from "@/server/db/schema";
+import { deliverables, documents, documentVersions, outputs, outputVersions, taskEvents, tasks, users, waqfs } from "@/server/db/schema";
 import type { OutputGap, OutputSection, OutputSource } from "@/server/db/schema/operations";
 import { getStorage, newStorageKey } from "@/server/adapters/storage";
 import { encryptBuffer, sha256 } from "@/server/lib/crypto";
@@ -84,14 +84,17 @@ async function names(tx: Tx, ids: (string | null)[]) {
 /** Builds the PDF HTML of a version (draft banner unless it is the approved version). */
 export async function outputDocHtml(tx: Tx, rc: RequestCtx, o: OutputRow, v: VersionRow, signedBy: string | null) {
   const [w] = rc.req.waqfId ? await tx.select({ name: waqfs.name, isDemo: waqfs.isDemo }).from(waqfs).where(eq(waqfs.id, rc.req.waqfId)).limit(1) : [];
-  const n = await names(tx, [v.createdBy, o.approvedBy, o.submittedBy]);
+  const returns = await tx.select({ by: taskEvents.actorUserId, at: taskEvents.at, note: taskEvents.note }).from(taskEvents).innerJoin(tasks, eq(tasks.id, taskEvents.taskId))
+    .where(and(eq(tasks.requestId, o.requestId), eq(tasks.kind, "prepare_output"), eq(tasks.outputKey, o.outputKey), eq(taskEvents.action, "reopen")));
+  const n = await names(tx, [v.createdBy, o.approvedBy, o.submittedBy, ...returns.map((r) => r.by)]);
   const isApprovedVersion = o.status === "approved" && o.approvedVersion === v.version;
   const html = outputHtml({
     number: o.number, title: o.title, specialty: SPECIALTY_LABEL[o.specialty], serviceLine: `${rc.service.code} — ${rc.service.nameAr}`, requestNumber: rc.req.number,
     waqfName: w?.name ?? null, version: v.version, status: isApprovedVersion ? "approved" : "draft",
     preparedBy: n.get(o.submittedBy ?? v.createdBy ?? "") ?? null, approvedBy: n.get(o.approvedBy ?? "") ?? null,
     approvedAt: o.approvedAt ? o.approvedAt.toISOString().slice(0, 10) : null, selfApproved: o.selfApproved, signedBy, isDemo: !!w?.isDemo,
-    versionDate: v.createdAt.toISOString().slice(0, 10), workflowStatus: isApprovedVersion ? "approved" : o.status === "in_review" && o.currentVersion === v.version ? "in_review" : "draft",
+    versionDate: v.createdAt.toISOString().slice(0, 10),
+    reviewRounds: returns.filter((r) => r.note?.startsWith("أُعيد المخرج")).map((r) => `أعاده للتعديل ${n.get(r.by ?? "") ?? "—"} في ${r.at.toISOString().slice(0, 10)}`), workflowStatus: isApprovedVersion ? "approved" : o.status === "in_review" && o.currentVersion === v.version ? "in_review" : "draft",
   }, v.sections);
   return pdfShell(o.title, html, OUTPUT_PDF_CSS);
 }

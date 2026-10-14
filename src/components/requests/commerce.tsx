@@ -6,7 +6,8 @@ import { Button } from "@/components/ui";
 import { Field, FormMessage, Input, Select, SubmitButton, Textarea } from "@/components/ui/form";
 import { DocumentUploader } from "@/components/documents/uploader";
 import { cn, fmtSAR, initialState, type ActionState } from "@/lib/utils";
-import { buildQuote, splitInstallments, TERM_DUE_LABEL } from "@/server/modules/commerce/pure";
+import { buildQuote, EVERY_AR, recurringTerms, splitInstallments, TERM_DUE_LABEL, termWhen, type RecurringPlan } from "@/server/modules/commerce/pure";
+import type { PaymentDue } from "@/server/db/schema/commerce";
 
 type Act = (prev: ActionState, fd: FormData) => Promise<ActionState>;
 /** Submits without React's automatic form reset (the editors keep their state between saves). */
@@ -185,14 +186,16 @@ export function ReviewItemForms({ action, itemId, status, internal }: { action: 
 // ───────────────────────── Quote editor ─────────────────────────
 
 type LineRow = { description: string; qty: string; unit: string };
-type TermRow = { label: string; percent: string; due: "on_contract" | "before_start" | "on_delivery" | "on_completion"; beforeStart: boolean };
+type TermRow = { label: string; percent: string; due: PaymentDue; beforeStart: boolean; dueOn?: string; milestone?: string; series?: string };
 
 export type QuoteSeed = {
   quoteId?: string; kind: "initial" | "amendment"; scope: string; deliverables: string; exclusions: string; assumptions: string; clientObligations: string;
   durationDays: string; discount: string; validUntil: string; lines: LineRow[]; terms: TermRow[];
+  /** Continuous services: the delivery cadence agreed in the quote. */
+  deliveryCadence?: string; deliveryDates?: string;
 };
 
-export function QuoteEditor({ action, requestId, seed, vatRate, today, title }: { action: Act; requestId: string; seed: QuoteSeed; vatRate: number; today: string; title: string }) {
+export function QuoteEditor({ action, requestId, seed, vatRate, today, title, cadences }: { action: Act; requestId: string; seed: QuoteSeed; vatRate: number; today: string; title: string; cadences?: { value: string; label: string }[] }) {
   const [s, a, pending] = useActionState(action, initialState);
   const [lines, setLines] = useState<LineRow[]>(seed.lines.length ? seed.lines : [{ description: "", qty: "1", unit: "" }]);
   const [terms, setTerms] = useState<TermRow[]>(seed.terms.length ? seed.terms : [{ label: "دفعة واحدة عند توقيع العقد", percent: "100", due: "on_contract", beforeStart: true }]);
@@ -200,8 +203,14 @@ export function QuoteEditor({ action, requestId, seed, vatRate, today, title }: 
   const [validUntil, setValidUntil] = useState(seed.validUntil);
   const preview = buildQuote({
     lines: lines.map((l) => ({ description: l.description, qty: Number(l.qty), unit: Number(l.unit) })), discount: Number(discount) || 0, vatRate,
-    terms: terms.map((t) => ({ label: t.label, percent: Number(t.percent), due: t.due, beforeStart: t.beforeStart })), validUntil, today,
+    terms: terms.map((t) => ({ label: t.label, percent: Number(t.percent), due: t.due, beforeStart: t.beforeStart, dueOn: t.dueOn ?? null, milestone: t.milestone ?? null, series: t.series ?? null })), validUntil, today,
   });
+  const [plan, setPlan] = useState<{ count: string; every: RecurringPlan["every"]; firstOn: string; percent: string; label: string }>({ count: "3", every: "monthly", firstOn: today, percent: "", label: "دفعة" });
+  const addPlan = () => {
+    const gen = recurringTerms({ count: Number(plan.count), every: plan.every, firstOn: plan.firstOn, percent: Number(plan.percent), label: plan.label });
+    if (!gen.length) return;
+    setTerms([...terms.filter((t) => t.label.trim() || t.percent), ...gen.map((g) => ({ ...g, percent: String(g.percent) }))]);
+  };
   const upd = <T,>(arr: T[], i: number, patch: Partial<T>) => arr.map((x, j) => (j === i ? { ...x, ...patch } : x));
   return (
     <form onSubmit={keep(a)} className="space-y-4" data-testid="quote-editor">
@@ -239,10 +248,26 @@ export function QuoteEditor({ action, requestId, seed, vatRate, today, title }: 
         <Button type="button" variant="ghost" size="sm" onClick={() => setLines([...lines, { description: "", qty: "1", unit: "" }])}><Plus aria-hidden className="size-4" />أضف بندًا</Button>
       </fieldset>
 
+      {cadences ? (
+        <fieldset className="space-y-2 rounded-md border border-line p-3">
+          <legend className="px-1 font-medium">التسليمات الدورية (خدمة مستمرة)</legend>
+          <label className="flex flex-col gap-1 text-[14px]">الدورية المتفق عليها
+            <select name="deliveryCadence" defaultValue={seed.deliveryCadence ?? ""} className={cn(inputCls, "h-10")} aria-label="دورية التسليمات">
+              <option value="">تُحدد لاحقًا عند تفعيل المدة</option>
+              {cadences.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1 text-[14px]">تواريخ التسليم أو مراحله (للدورية «تواريخ أو مراحل تعاقدية»)
+            <textarea name="deliveryDates" defaultValue={seed.deliveryDates ?? ""} rows={3} placeholder="2026-12-31 | تقرير اعتماد الخطة" className={cn(inputCls, "py-2")} aria-label="تواريخ التسليم" />
+          </label>
+          <p className="text-[12px] text-muted">تظهر للعميل في العرض وتنتقل إلى العقد، وتُبنى عليها دورات التسليم ومواعيدها.</p>
+        </fieldset>
+      ) : null}
+
       <fieldset className="space-y-2">
         <legend className="font-medium">شروط الدفع</legend>
         {terms.map((t, i) => (
-          <div key={i} className="grid gap-2 rounded-md border border-line p-2 sm:grid-cols-[minmax(0,1fr)_5rem_11rem_auto_auto] sm:items-center">
+          <div key={i} className="grid gap-2 rounded-md border border-line p-2 sm:grid-cols-[minmax(0,1fr)_5rem_13rem_auto_auto] sm:items-center" data-testid={`term-${i + 1}`}>
             <input aria-label={`وصف الدفعة ${i + 1}`} value={t.label} onChange={(e) => setTerms(upd(terms, i, { label: e.target.value }))} placeholder="وصف الدفعة" className={cn(inputCls, "h-10")} />
             <input aria-label={`نسبة الدفعة ${i + 1}`} value={t.percent} onChange={(e) => setTerms(upd(terms, i, { percent: e.target.value }))} inputMode="decimal" dir="ltr" className={cn(inputCls, "tabular h-10 text-start")} />
             <select aria-label={`استحقاق الدفعة ${i + 1}`} value={t.due} onChange={(e) => setTerms(upd(terms, i, { due: e.target.value as TermRow["due"] }))} className={cn(inputCls, "h-10")}>
@@ -250,8 +275,30 @@ export function QuoteEditor({ action, requestId, seed, vatRate, today, title }: 
             </select>
             <label className="flex items-center gap-2 text-[14px]"><input type="checkbox" checked={t.beforeStart || t.due === "before_start"} disabled={t.due === "before_start"} onChange={(e) => setTerms(upd(terms, i, { beforeStart: e.target.checked }))} className="size-4 accent-[var(--ink)]" />شرط للبدء</label>
             <button type="button" onClick={() => setTerms(terms.filter((_, j) => j !== i))} disabled={terms.length === 1} aria-label={`احذف الدفعة ${i + 1}`} className="rounded p-2 text-muted hover:bg-critical-soft hover:text-critical disabled:opacity-40"><Trash2 aria-hidden className="size-4" /></button>
+            {t.due === "on_date" ? (
+              <label className="flex items-center gap-2 text-[14px] sm:col-span-5">تاريخ الاستحقاق
+                <input type="date" aria-label={`تاريخ استحقاق الدفعة ${i + 1}`} value={t.dueOn ?? ""} min={today} onChange={(e) => setTerms(upd(terms, i, { dueOn: e.target.value }))} dir="ltr" className={cn(inputCls, "h-10 w-44")} />
+                {t.series ? <span className="text-muted">ضمن دفعات {t.series}</span> : null}
+              </label>
+            ) : null}
+            {t.due === "on_milestone" || t.due === "on_delivery" || t.due === "on_completion" ? (
+              <label className="flex items-center gap-2 text-[14px] sm:col-span-5">{t.due === "on_milestone" ? "المرحلة أو الفترة" : "المرحلة (اختياري)"}
+                <input aria-label={`مرحلة الدفعة ${i + 1}`} value={t.milestone ?? ""} onChange={(e) => setTerms(upd(terms, i, { milestone: e.target.value }))} placeholder="مثل: اعتماد خطة العمل، أو الربع الأول" className={cn(inputCls, "h-10 min-w-0 flex-1")} />
+              </label>
+            ) : null}
           </div>
         ))}
+        <details className="rounded-md border border-dashed border-line p-2 text-[14px]">
+          <summary className="cursor-pointer">دفعات دورية بتواريخ (شهرية أو ربع سنوية أو سنوية)</summary>
+          <div className="mt-2 grid gap-2 sm:grid-cols-5 sm:items-end">
+            <label className="flex flex-col gap-1">الوصف<input aria-label="وصف الدفعات الدورية" value={plan.label} onChange={(e) => setPlan({ ...plan, label: e.target.value })} className={cn(inputCls, "h-10")} /></label>
+            <label className="flex flex-col gap-1">العدد<input aria-label="عدد الدفعات الدورية" value={plan.count} onChange={(e) => setPlan({ ...plan, count: e.target.value })} inputMode="numeric" dir="ltr" className={cn(inputCls, "tabular h-10")} /></label>
+            <label className="flex flex-col gap-1">الدورية<select aria-label="دورية الدفعات" value={plan.every} onChange={(e) => setPlan({ ...plan, every: e.target.value as RecurringPlan["every"] })} className={cn(inputCls, "h-10")}>{Object.entries(EVERY_AR).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
+            <label className="flex flex-col gap-1">أول استحقاق<input type="date" aria-label="أول استحقاق" value={plan.firstOn} min={today} onChange={(e) => setPlan({ ...plan, firstOn: e.target.value })} dir="ltr" className={cn(inputCls, "h-10")} /></label>
+            <label className="flex flex-col gap-1">مجموع نسبها ٪<input aria-label="مجموع نسب الدفعات الدورية" value={plan.percent} onChange={(e) => setPlan({ ...plan, percent: e.target.value })} inputMode="decimal" dir="ltr" className={cn(inputCls, "tabular h-10")} /></label>
+          </div>
+          <Button type="button" variant="secondary" size="sm" className="mt-2" onClick={addPlan}>أضف الدفعات الدورية</Button>
+        </details>
         <Button type="button" variant="ghost" size="sm" onClick={() => setTerms([...terms, { label: "", percent: "", due: "on_delivery", beforeStart: false }])}><Plus aria-hidden className="size-4" />أضف دفعة</Button>
       </fieldset>
 
@@ -260,7 +307,7 @@ export function QuoteEditor({ action, requestId, seed, vatRate, today, title }: 
           <>
             <p>الصافي <span className="tabular font-semibold">{fmtSAR(preview.net)}</span> + الضريبة ({vatRate}٪) <span className="tabular">{fmtSAR(preview.vat)}</span> = <span className="tabular font-semibold text-ink">{fmtSAR(preview.total)}</span></p>
             <ul className="mt-1 text-[13px] text-muted">
-              {splitInstallments(preview.net, vatRate, preview.terms).map((t) => <li key={t.key}>{t.label} ({t.percent}٪): {fmtSAR(t.total)} — {TERM_DUE_LABEL[t.due]}{t.beforeStart ? " — شرط للبدء" : ""}</li>)}
+              {splitInstallments(preview.net, vatRate, preview.terms).map((t) => <li key={t.key}>{t.label} ({t.percent}٪): {fmtSAR(t.total)} — {termWhen(t)}{t.beforeStart ? " — شرط للبدء" : ""}</li>)}
             </ul>
           </>
         ) : (

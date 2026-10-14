@@ -225,3 +225,46 @@ describe("fiscal period", () => {
     expect(lastFiscalPeriod("06-30", "2026-10-13")).toEqual({ from: "2025-07-01", to: "2026-06-30" });
   });
 });
+
+describe("N01 templates: periodic nazir report and delivery record", () => {
+  const report = { key: "N01.cycle@c1", title: "تقرير الناظر الدوري — الربع 1", specialty: "operations" as const, profile: "nazara_report" as const, review: "independent" as const };
+  const cycle = { label: "الفترة 1: 2026-01-01 إلى 2026-03-31", from: "2026-01-01", to: "2026-03-31", due: "2026-04-15" };
+  it("orders the report as required and leaves judgment to the specialist", () => {
+    const d = buildDraft(baseCtx({ cycle }), report);
+    const keys = d.sections.map((s) => s.key);
+    for (const k of ["period", "nazir", "analysis:summary", "assets", "finance", "receivables", "analysis:operations", "distributions", "budget", "resolutions", "analysis:plan", "analysis:decisions", "documents", "references"])
+      expect(keys, k).toContain(k);
+    expect(keys.indexOf("analysis:summary")).toBeLessThan(keys.indexOf("assets"));
+    expect(keys.indexOf("analysis:decisions")).toBeLessThan(keys.indexOf("references"));
+    expect(emptySpecialist(d.sections)).toHaveLength(4);
+  });
+  it("shows missing data as gaps, never as numbers: no ledger, no appointment, no nazara file", () => {
+    const d = buildDraft(baseCtx({ cycle, finance: { ...baseCtx().finance!, from: "2026-01-01", to: "2026-03-31", entries: 0 } }), report);
+    const gap = (k: string) => d.gaps.find((g) => g.key === k);
+    expect(gap("ledger")?.severity).toBe("blocking");
+    expect(gap("nazara")?.severity).toBe("blocking");
+    const withFile = buildDraft(baseCtx({ cycle, nazara: { number: "NZR-1", status: "active", statusLabel: "سارية", checklist: [] } }), report);
+    expect(withFile.gaps.find((g) => g.key === "appointment")?.severity).toBe("blocking");
+    const fin = d.sections.find((s) => s.key === "finance")!;
+    expect(JSON.stringify(fin)).toContain("لا قيود مسجلة بين 2026-01-01 و2026-03-31");
+    expect(JSON.stringify(d.sections)).not.toMatch(/\d{3,},\d{3}/); // no invented totals
+  });
+  it("the delivery record states every fact from the platform and blocks while the client has not approved", () => {
+    const def = { key: "N01.record@c1", title: "محضر تسليم — الربع 1", specialty: "operations" as const, profile: "delivery_record" as const, review: "self_allowed" as const };
+    const record = {
+      requestNumber: "REQ-9", cycleSeq: 1, cycleLabel: "الربع 1", periodFrom: "2026-01-01", periodTo: "2026-03-31", dueOn: "2026-04-15",
+      output: { title: "تقرير الناظر", number: "OUT-1", version: 3, preparedOn: "2026-04-10", approvedBy: "مراجع", approvedOn: "2026-04-11" },
+      availableOn: "2026-04-12", viewedOn: null, deliverer: { name: "موظف", capacity: "عن «وقفك»" }, recipient: { name: "الناظر", capacity: "ناظر الوقف" },
+      acceptance: "required" as const, client: { decision: null, by: null, on: null, version: null, note: null },
+      files: [{ title: "تقرير الناظر (OUT-1)", version: 1, on: "2026-04-12" }], reservations: ["تحفظ: الوقف تجريبي"],
+      notes: [{ on: "2026-04-13", who: "الناظر", text: "طلب تعديل: أضف المقارنة" }], versions: [{ version: 1, origin: "مسودة أولى", on: "2026-04-01", note: null }],
+    };
+    const pending = buildDraft(baseCtx({ cycle, record }), def);
+    expect(pending.gaps.find((g) => g.key === "record_client")?.severity).toBe("blocking");
+    const text = JSON.stringify(pending.sections);
+    for (const s of ["REQ-9", "النسخة 3", "الناظر — ناظر الوقف", "لم يُسجَّل اطلاع", "طلب تعديل: أضف المقارنة", "تحفظ: الوقف تجريبي", "مسودة أولى"]) expect(text, s).toContain(s);
+    const done = buildDraft(baseCtx({ cycle, record: { ...record, client: { decision: "approved" as const, by: "الناظر", on: "2026-04-14", version: 3, note: null } } }), def);
+    expect(done.gaps.filter((g) => g.severity === "blocking")).toHaveLength(0);
+    expect(buildDraft(baseCtx({ cycle, record: null }), def).gaps.find((g) => g.key === "record")?.severity).toBe("blocking");
+  });
+});

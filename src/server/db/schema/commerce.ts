@@ -59,7 +59,18 @@ export const requestItemEvents = pgTable("request_item_events", {
 
 export type QuoteLine = { description: string; qty: number; unit: number; total: number };
 /** One installment of the price. `beforeStart` makes its payment a condition for starting the work. */
-export type PaymentTerm = { key: string; label: string; percent: number; due: "on_contract" | "before_start" | "on_delivery" | "on_completion"; beforeStart: boolean };
+/** When an installment falls due: on signing, before work starts, on delivery, on completion, on a set date, or on a
+ *  named contractual milestone or period. A recurring plan (monthly, quarterly, annual) is stored as dated installments. */
+export type PaymentDue = "on_contract" | "before_start" | "on_delivery" | "on_completion" | "on_date" | "on_milestone";
+export type PaymentTerm = {
+  key: string; label: string; percent: number; due: PaymentDue; beforeStart: boolean;
+  /** on_date: the due date (YYYY-MM-DD). */
+  dueOn?: string | null;
+  /** on_milestone (and optionally others): the stage or contractual period the installment is tied to. */
+  milestone?: string | null;
+  /** Generated as part of a recurring plan («شهرية»، «ربع سنوية»، «سنوية»). */
+  series?: string | null;
+};
 export type QuoteStatus = "draft" | "approved" | "sent" | "accepted" | "rejected" | "change_requested" | "expired" | "superseded" | "withdrawn";
 
 export const quotes = pgTable("quotes", {
@@ -87,6 +98,8 @@ export const quotes = pgTable("quotes", {
   total: numeric({ precision: 18, scale: 2 }).notNull(),
   currency: text().default("SAR").notNull(),
   paymentTerms: jsonb().$type<PaymentTerm[]>().default([]).notNull(),
+  /** Continuous services: the delivery cadence agreed in the quote (null = not set in the quote). */
+  deliverySchedule: jsonb().$type<{ cadence: string; customDates?: { label: string; due: string }[] } | null>(),
   validUntil: date().notNull(),
   /** sha256 of the frozen content, set when the quote is sent. */
   contentHash: text(),

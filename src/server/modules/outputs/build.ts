@@ -9,6 +9,19 @@ import { PROFILE_REFS, TEMPLATES, type OutputDef, type SectionKind } from "./cat
 import { draftDeed, draftWill } from "./drafting";
 
 export type CtxDoc = { id: string; title: string; docType: string; typeLabel: string; number: string | null; issuedOn: string | null; expiresOn: string | null; scope: "request" | "waqf"; slot: string | null };
+export type DeliveryRecordFacts = {
+  requestNumber: string; cycleSeq: number; cycleLabel: string; periodFrom: string | null; periodTo: string | null; dueOn: string;
+  output: { title: string; number: string; version: number | null; preparedOn: string | null; approvedBy: string | null; approvedOn: string | null } | null;
+  availableOn: string | null; viewedOn: string | null;
+  deliverer: { name: string | null; capacity: string };
+  recipient: { name: string | null; capacity: string | null };
+  acceptance: "required" | "info";
+  client: { decision: "approved" | "revision_requested" | null; by: string | null; on: string | null; version: number | null; note: string | null };
+  files: { title: string; version: number; on: string }[];
+  reservations: string[];
+  notes: { on: string; who: string; text: string }[];
+  versions: { version: number; origin: string; on: string; note: string | null }[];
+};
 export type CtxField = { key: string; label: string; value: string };
 
 export type OutputContext = {
@@ -48,7 +61,14 @@ export type OutputContext = {
   quote: null | { number: string; version: number; scope: string; deliverables: string | null; exclusions: string | null; assumptions: string | null };
   contract: null | { number: string; status: string; executedAt: string | null };
   stages: { name: string; status: string }[];
-  nazara: null | { number: string; status: string; statusLabel: string; checklist: { label: string; status: string; required: boolean; source: string }[] };
+  nazara: null | {
+    number: string; status: string; statusLabel: string; checklist: { label: string; status: string; required: boolean; source: string }[];
+    appointmentNo?: string | null; appointmentDate?: string | null; appointmentAuthority?: string | null; startedOn?: string | null;
+  };
+  /** Resolutions of the waqf in the report period (or the last 12 months). */
+  resolutions?: { number: string; text: string; category: string; status: string; on: string }[];
+  /** Facts of one delivery of a continuous service (delivery record). */
+  record?: DeliveryRecordFacts | null;
   refs: { code: string; name: string; binding: string; verification: string }[];
   /** Delivery cycle of a continuous service (period the output covers). */
   cycle?: { label: string; from: string | null; to: string | null; due: string } | null;
@@ -176,7 +196,7 @@ function build(kind: SectionKind, c: OutputContext, def: OutputDef): Built {
       if (!c.waqf) return out(null);
       const f = c.finance;
       if (!f || !f.entries) {
-        gaps.push({ key: "ledger", label: "لا قيود مالية مسجلة للفترة", severity: def.specialty === "finance" ? "blocking" : "warning", hint: "تُسجل القيود في «المالية والصرف» أو تُرفق كشوف الحساب." });
+        gaps.push({ key: "ledger", label: "لا قيود مالية مسجلة للفترة", severity: def.specialty === "finance" || def.profile === "nazara_report" ? "blocking" : "warning", hint: "تُسجل القيود في «المالية والصرف» أو تُرفق كشوف الحساب." });
         return out(section("finance", "الملخص المالي", [{ type: "para", text: f ? `لا قيود مسجلة بين ${f.from} و${f.to}.` : "لا قيود مالية مسجلة.", prov: "system" }]));
       }
       if (Math.abs(f.debit - f.credit) > 0.009) gaps.push({ key: "unbalanced", label: `القيود غير متوازنة: مدين ${fmt(f.debit)} ودائن ${fmt(f.credit)}`, severity: "blocking", hint: "راجع القيود قبل الاعتماد." });
@@ -197,13 +217,19 @@ function build(kind: SectionKind, c: OutputContext, def: OutputDef): Built {
       if (!c.waqf) return out(null);
       if (!c.budget) {
         gaps.push({ key: "budget", label: "لا موازنة مسجلة", severity: "warning" });
-        return out(null);
+        return def.profile === "nazara_report"
+          ? out(section("budget", "الميزانية وتنفيذها", [{ type: "para", text: "لا موازنة مسجلة في ملف الوقف، فلا تُقارن المصروفات بمقدّر. يُسجَّل ذلك في الفقرة الخاصة بتنفيذ الخطة.", prov: "unverified" }], false))
+          : out(null);
       }
       return out(section("budget", `الموازنة ${c.budget.fiscalYear} (${c.budget.status === "approved" ? "معتمدة" : "غير معتمدة"})`, [
         { type: "table", head: ["البند", "المقدّر", "الفعلي"], rows: c.budget.lines.map((l) => [l.label, fmt(l.planned), l.actual == null ? "—" : fmt(l.actual)]), total: ["الإجمالي", fmt((c.budget.totalRevenue ?? 0) - (c.budget.totalExpense ?? 0)), ""], prov: "system" },
       ], false));
     case "distributions":
-      if (!c.waqf || !c.distributions.length) return out(null);
+      if (!c.waqf) return out(null);
+      // In the nazir report the absence of distributions is itself stated (no silent omission).
+      if (!c.distributions.length) return def.profile === "nazara_report"
+        ? out(section("distributions", "صرف الغلة على المستحقين", [{ type: "para", text: "لا دفعات صرف مسجلة في ملف الوقف. إن كان الصرف قد تم، يُسجَّل في «المالية والصرف» قبل اعتماد التقرير.", prov: "unverified" }], false))
+        : out(null);
       return out(section("distributions", "دفعات الصرف على المستحقين", [
         { type: "table", head: ["الفترة", "الحالة", "موعد الاستحقاق", "تاريخ الصرف", "المبلغ"], rows: c.distributions.map((d) => [d.period, d.status, d.dueBy ?? "—", d.paidOn ?? "—", fmt(d.total)]), prov: "system" },
       ], false));
@@ -292,6 +318,86 @@ function build(kind: SectionKind, c: OutputContext, def: OutputDef): Built {
         { type: "table", head: ["بند الاستلام", "الحالة", "المرجع"], rows: c.nazara.checklist.map((i) => [i.label + (i.required ? "" : " (عند الانطباق)"), i.status, i.source]), prov: "system" },
       ]));
     }
+    case "period": {
+      const cy = c.cycle;
+      if (!cy) {
+        gaps.push({ key: "period", label: "فترة التقرير غير محددة (المخرج غير مرتبط بدورة)", severity: "warning" });
+        return out(null);
+      }
+      return out(section("period", "فترة التقرير", [{ type: "facts", rows: [
+        { label: "الدورة", value: cy.label, prov: "system" },
+        { label: "الفترة", value: cy.from && cy.to ? `${cy.from} إلى ${cy.to}` : "—", prov: "system" },
+        { label: "موعد التسليم", value: cy.due, prov: "system" },
+      ] }]));
+    }
+    case "nazir": {
+      const n = c.nazara;
+      const trustees = c.parties.filter((p) => p.role.startsWith("ناظر"));
+      if (!n) gaps.push({ key: "nazara", label: "ملف النظارة غير مرتبط بالطلب", severity: "blocking", hint: "يُربط الطلب بملف النظارة الاعتبارية من صفحة الطلب." });
+      else if (!n.appointmentNo) gaps.push({ key: "appointment", label: "قرار تعيين «وقفك» ناظرًا غير مسجل في ملف النظارة", severity: "blocking", hint: "المباشرة مشروطة بقرار التعيين؛ يُسجَّل رقمه وتاريخه وجهته في ملف النظارة." });
+      return out(section("nazir", "الناظر وصفة التمثيل", [
+        { type: "facts", rows: [
+          { label: "الناظر", value: "«وقفك» بصفتها ناظرًا اعتباريًا", prov: "system" },
+          { label: "ملف النظارة", value: n ? `${n.number} — ${n.statusLabel}` : "غير مرتبط", prov: n ? "system" : "unverified" },
+          { label: "قرار التعيين", value: n?.appointmentNo ? `${n.appointmentNo}${n.appointmentDate ? ` بتاريخ ${n.appointmentDate}` : ""}${n.appointmentAuthority ? ` — ${n.appointmentAuthority}` : ""}` : "غير مسجل", prov: n?.appointmentNo ? "document" : "unverified" },
+          { label: "بدء المباشرة", value: n?.startedOn ?? "غير مسجل", prov: n?.startedOn ? "system" : "unverified" },
+        ] },
+        ...(trustees.length ? [{ type: "table" as const, head: ["الصفة", "الاسم", "بيان"], rows: trustees.map((p) => [p.role, p.name, p.detail ?? "—"]), prov: "system" as Provenance }] : []),
+      ]));
+    }
+    case "receivables": {
+      if (!c.waqf) return out(null);
+      const lateDist = c.distributions.filter((d) => d.status !== "paid" && d.dueBy && d.dueBy < c.today);
+      return out(section("receivables", "العقود والتحصيلات والمبالغ المستحقة", [
+        { type: "facts", rows: [
+          { label: "عقود الإيجار النشطة", value: String(c.leases.active), prov: "computed" },
+          { label: "متأخرات الإيجار المسجلة", value: fmt(c.leases.arrears), prov: "computed" },
+          { label: "عقود تنتهي خلال 90 يومًا", value: String(c.leases.endingIn90), prov: "computed" },
+          { label: "دفعات صرف حلّ موعدها ولم تُصرف", value: String(lateDist.length), prov: "computed" },
+        ] },
+        { type: "para", text: "الأرقام من سجلات العقود والصرف في ملف الوقف كما هي. ما لم يُسجَّل فيها لا يظهر هنا.", prov: "system" },
+      ]));
+    }
+    case "resolutions": {
+      if (!c.waqf) return out(null);
+      const list = c.resolutions ?? [];
+      return out(section("resolutions", "القرارات المسجلة في الفترة", list.length
+        ? [{ type: "table", head: ["الرقم", "القرار", "الفئة", "الحالة", "التاريخ"], rows: list.map((r) => [r.number, r.text, r.category, r.status, r.on]), prov: "system" }]
+        : [{ type: "para", text: "لا قرارات مسجلة في ملف الوقف خلال الفترة.", prov: "system" }]));
+    }
+    case "delivery_record": {
+      const r = c.record;
+      if (!r) {
+        gaps.push({ key: "record", label: "لا بيانات تسليم: المحضر يُعدّ لدورة أُتيح تسليمها", severity: "blocking" });
+        return out(null);
+      }
+      if (!r.output?.version) gaps.push({ key: "record_output", label: "مخرج الدورة لم يُعتمد داخليًا بعد", severity: "blocking" });
+      if (!r.availableOn) gaps.push({ key: "record_available", label: "لم يُتح التسليم للعميل بعد", severity: "blocking" });
+      if (r.acceptance === "required" && r.client.decision !== "approved")
+        gaps.push({ key: "record_client", label: r.client.decision === "revision_requested" ? "طلب العميل تعديل التسليم: يُعدّ المحضر بعد اعتماده" : "لم يعتمد العميل التسليم بعد (لا يُعد سكوته اعتمادًا)", severity: "blocking" });
+      if (!r.recipient.name) gaps.push({ key: "record_recipient", label: "المستلم غير محدد", severity: "blocking" });
+      const decision = r.client.decision === "approved" ? `اعتمده ${r.client.by ?? "—"} في ${r.client.on} (النسخة ${r.client.version ?? "—"})` : r.client.decision === "revision_requested" ? `طلب ${r.client.by ?? "—"} تعديله في ${r.client.on}` : r.acceptance === "info" ? "للإحاطة: لم يرد العميل" : "لم يرد العميل بعد";
+      return out(section("delivery_record", "محضر التسليم", [
+        { type: "facts", rows: [
+          { label: "رقم الطلب", value: r.requestNumber, prov: "system" },
+          { label: "الدورة", value: `${r.cycleSeq} — ${r.cycleLabel}`, prov: "system" },
+          { label: "الفترة التي يغطيها التسليم", value: r.periodFrom && r.periodTo ? `${r.periodFrom} إلى ${r.periodTo}` : "—", prov: "system" },
+          { label: "المخرج المسلَّم", value: r.output ? `${r.output.title} (${r.output.number})` : "—", prov: "system" },
+          { label: "الإصدار وتاريخ إعداده", value: r.output?.version ? `النسخة ${r.output.version}${r.output.preparedOn ? ` — ${r.output.preparedOn}` : ""}` : "—", prov: "system" },
+          { label: "المسلِّم وصفته", value: `${r.deliverer.name ?? "—"} — ${r.deliverer.capacity}`, prov: "system" },
+          { label: "المستلم وصفته", value: r.recipient.name ? `${r.recipient.name}${r.recipient.capacity ? ` — ${r.recipient.capacity}` : ""}` : "غير محدد", prov: r.recipient.name ? "system" : "unverified" },
+          { label: "المراجعة الداخلية", value: r.output?.approvedBy ? `اعتمده ${r.output.approvedBy} في ${r.output.approvedOn}` : "لم يُعتمد", prov: "system" },
+          { label: "اعتماد العميل للاستلام", value: decision, prov: "system" },
+          { label: "تاريخ الإتاحة في المنصة", value: r.availableOn ?? "—", prov: "system" },
+          { label: "اطلاع العميل على الملف", value: r.viewedOn ?? "لم يُسجَّل اطلاع", prov: "system" },
+          ...(r.client.note ? [{ label: "ملاحظة العميل مع قراره", value: r.client.note, prov: "client" as Provenance }] : []),
+        ] },
+        { type: "table", head: ["المستند", "الإصدار", "التاريخ"], rows: r.files.length ? r.files.map((f) => [f.title, String(f.version), f.on]) : [["لا مستندات مسلَّمة", "—", "—"]], prov: "system" },
+        { type: "list", items: r.reservations.length ? r.reservations.map((x) => ({ text: x, prov: "system" as Provenance })) : [{ text: "لا نواقص أو تحفظات مسجلة على النسخة المعتمدة.", prov: "system" as Provenance }] },
+        { type: "table", head: ["التاريخ", "من", "الملاحظة أو طلب التعديل"], rows: r.notes.length ? r.notes.map((n) => [n.on, n.who, n.text]) : [["—", "—", "لا ملاحظات ولا طلبات تعديل"]], prov: "system" },
+        { type: "table", head: ["النسخة", "الأصل", "التاريخ", "ملاحظة"], rows: r.versions.map((v) => [String(v.version), v.origin, v.on, v.note ?? "—"]), prov: "system" },
+      ]));
+    }
     case "scope":
     case "references":
       return out(null);
@@ -315,12 +421,18 @@ export function buildDraft(c: OutputContext, def: OutputDef) {
   const t = TEMPLATES[def.profile];
   const sections: OutputSection[] = [];
   const gaps: OutputGap[] = [];
+  const placed = new Set<string>();
   for (const k of t.sections) {
-    const b = build(k, c, def);
+    if (k.startsWith("analysis:")) {
+      const a = t.analysis.find((x) => `analysis:${x.key}` === k);
+      if (a) { sections.push(section(k, a.title, [{ type: "specialist", prompt: a.prompt, text: "" }])); placed.add(a.key); }
+      continue;
+    }
+    const b = build(k as SectionKind, c, def);
     sections.push(...b.sections);
     for (const g of b.gaps) if (!gaps.some((x) => x.key === g.key)) gaps.push(g);
   }
-  for (const a of t.analysis) sections.push(section(`analysis:${a.key}`, a.title, [{ type: "specialist", prompt: a.prompt, text: "" }]));
+  for (const a of t.analysis.filter((x) => !placed.has(x.key))) sections.push(section(`analysis:${a.key}`, a.title, [{ type: "specialist", prompt: a.prompt, text: "" }]));
   const sources = sourcesOf(c, def);
   sections.push(section("references", "المراجع", [
     { type: "list", items: sources.map((s) => ({ text: `${s.label} — ${SOURCE_STATUS[s.status]}${s.detail ? ` (${s.detail})` : ""}`, prov: s.status === "verified" ? "document" : "unverified" })) },

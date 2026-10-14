@@ -25,6 +25,10 @@ import { INVOICE_STATUS_LABEL, INVOICE_STATUS_TONE } from "@/server/modules/bill
 import type { RequestItemStatus } from "@/server/db/schema/commerce";
 import { read } from "@/server/modules/_shared";
 import { clientContinuous } from "@/server/modules/operations/continuous";
+import { ClientDeliveries } from "@/components/operations/client-deliveries";
+import { approveDelivery, requestDeliveryRevision } from "@/server/modules/operations/continuous-client-actions";
+import { scheduleOf } from "@/server/modules/billing/schedule";
+import { PaymentScheduleTable } from "@/components/billing/payment-schedule";
 
 export const metadata: Metadata = { title: "تفاصيل الطلب" };
 
@@ -48,6 +52,7 @@ export default async function RequestPage({ params, searchParams }: { params: Pr
   const openItems = d.items.filter((i) => ["open", "correction_requested"].includes(i.status));
   const contracts = d.contracts.filter((k) => k.status !== "void" || k.signatures.length);
   const cont = await read(auth, (tx) => clientContinuous(tx, rc));
+  const sched = await read(auth, (tx) => scheduleOf(tx, r.id));
 
   return (
     <div className="space-y-6">
@@ -193,6 +198,12 @@ export default async function RequestPage({ params, searchParams }: { params: Pr
             <Panel title="العقد"><p className="text-[15px] text-muted">قبلت عرض السعر. يُعدّ الفريق العقد ويعتمده، ثم يصلك إشعار عند جاهزيته للتوقيع.</p></Panel>
           ) : null}
 
+          {sched.rows.length ? (
+            <Panel title="جدول الدفعات" description="كما ورد في العرض المقبول والعقد. تصلك الفاتورة عند إصدارها، ولا تُعد الدفعة مسددة إلا بعد سدادها.">
+              <PaymentScheduleTable rows={sched.rows} staff={false} />
+            </Panel>
+          ) : null}
+
           {/* Invoices */}
           {d.invoices.length ? (
             <Panel title="الفواتير والمدفوعات">
@@ -210,20 +221,7 @@ export default async function RequestPage({ params, searchParams }: { params: Pr
             </Panel>
           ) : null}
 
-          {cont && cont.term ? (
-            <Panel title="خدمتك المستمرة" description={`${cont.spec.delivery.title} — دورية ${cont.term.cadence}. يبقى طلبك قائمًا طوال مدة الخدمة.`}>
-              <div data-testid="client-continuous">
-                <DefinitionList items={[
-                  { label: "مدة الخدمة", value: `${cont.term.startOn} إلى ${cont.term.endOn}` },
-                  { label: "الحالة", value: cont.stateLabel ?? "—" },
-                  { label: "تسليمات وصلتك", value: String(cont.sent.length) },
-                  { label: "الاستحقاق القادم", value: cont.nextDue ? `${cont.nextDue.label} — ${cont.nextDue.due}` : cont.spec.delivery.kind === "output" ? "—" : "عند الاجتماع أو الحدث" },
-                  ...(cont.term.terminated ? [{ label: "الإنهاء", value: `${cont.term.terminated.reason ?? ""} — نافذ ${cont.term.terminated.on}` }] : []),
-                ]} />
-                {cont.sent.length ? <ul className="mt-3 list-disc ps-5 text-sm">{cont.sent.map((c) => <li key={c.id}>{c.label} — سُلّم {c.deliveredOn}</li>)}</ul> : null}
-              </div>
-            </Panel>
-          ) : null}
+          {cont && cont.term ? <ClientDeliveries v={cont} canAct={canAct} approve={approveDelivery} revise={requestDeliveryRevision} /> : null}
 
           {/* Deliverables */}
           {deliverables.length ? (

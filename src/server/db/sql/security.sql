@@ -198,6 +198,7 @@ BEGIN
     ('request_revisions', 'EXISTS (SELECT 1 FROM service_requests r WHERE r.id = request_revisions.request_id AND r.assigned_to_user_id = app_current_user())'),
     ('service_terms', 'EXISTS (SELECT 1 FROM service_requests r WHERE r.id = service_terms.request_id AND (r.requester_user_id = app_current_user() OR r.assigned_to_user_id = app_current_user()))'),
     ('service_cycles', 'EXISTS (SELECT 1 FROM service_requests r WHERE r.id = service_cycles.request_id AND (r.requester_user_id = app_current_user() OR r.assigned_to_user_id = app_current_user()))'),
+    ('payment_schedule', 'EXISTS (SELECT 1 FROM service_requests r WHERE r.id = payment_schedule.request_id AND (r.requester_user_id = app_current_user() OR r.assigned_to_user_id = app_current_user()))'),
     ('task_events', 'EXISTS (SELECT 1 FROM tasks t WHERE t.id = task_events.task_id AND (t.assignee_user_id = app_current_user() OR t.created_by = app_current_user()))')
   ) AS v(tbl, expr)
   LOOP
@@ -235,11 +236,19 @@ DROP POLICY IF EXISTS unsent_staff_only ON invoices;
 CREATE POLICY unsent_staff_only ON invoices AS RESTRICTIVE FOR SELECT TO waqfak_app USING (status NOT IN ('draft', 'approved') OR app_current_user() IS NULL OR app_is_staff());
 
 
--- Continuous services: the client reads a delivery cycle only once it was sent to them (its preparation, checklist and
--- review stay with the team); terms are written by staff only.
+-- Continuous services: the client reads a delivery cycle only once it was made available to them (its preparation,
+-- checklist and review stay with the team). The client's only writes are its decision and the «viewed» mark on a cycle
+-- already made available (enforced in the server actions); terms are written by staff only.
 DROP POLICY IF EXISTS sent_or_staff ON service_cycles;
 CREATE POLICY sent_or_staff ON service_cycles AS RESTRICTIVE FOR ALL TO waqfak_app
-  USING (sent_at IS NOT NULL OR app_current_user() IS NULL OR app_is_staff()) WITH CHECK (app_current_user() IS NULL OR app_is_staff());
+  USING (sent_at IS NOT NULL OR app_current_user() IS NULL OR app_is_staff()) WITH CHECK (sent_at IS NOT NULL OR app_current_user() IS NULL OR app_is_staff());
 DROP POLICY IF EXISTS staff_write ON service_terms;
 CREATE POLICY staff_write ON service_terms AS RESTRICTIVE FOR ALL TO waqfak_app
   USING (true) WITH CHECK (app_current_user() IS NULL OR app_is_staff());
+
+-- Payment schedule: created when a contract is executed (by whichever party signs last); changed by staff only.
+DROP POLICY IF EXISTS staff_update ON payment_schedule;
+CREATE POLICY staff_update ON payment_schedule AS RESTRICTIVE FOR UPDATE TO waqfak_app
+  USING (app_current_user() IS NULL OR app_is_staff()) WITH CHECK (app_current_user() IS NULL OR app_is_staff());
+DROP POLICY IF EXISTS staff_delete ON payment_schedule;
+CREATE POLICY staff_delete ON payment_schedule AS RESTRICTIVE FOR DELETE TO waqfak_app USING (app_current_user() IS NULL OR app_is_staff());

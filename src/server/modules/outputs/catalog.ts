@@ -16,7 +16,7 @@ export type Profile =
   | "legal_review" | "legal_package"
   | "finance_report" | "finance_opinion"
   | "investment_policy" | "investment_assets" | "investment_opinion"
-  | "governance_package" | "ops_package" | "nazara_study" | "aml_program" | "periodic_report";
+  | "governance_package" | "ops_package" | "nazara_study" | "aml_program" | "periodic_report" | "nazara_report" | "delivery_record";
 
 export type OutputDef = {
   key: string;
@@ -37,6 +37,8 @@ export const PROFILE_FORMAT: Record<Profile, string> = {
   investment_policy: "سياسة", investment_assets: "دراسة ومصفوفة أصول", investment_opinion: "رأي استثماري", governance_package: "حزمة سياسات ولوائح",
   ops_package: "خطة عمل وقوائم تحقق", nazara_study: "دراسة ملف وقائمة استلام", aml_program: "برنامج وإجراءات",
   periodic_report: "تقرير دوري للفترة",
+  nazara_report: "تقرير الناظر الدوري",
+  delivery_record: "محضر تسليم",
 };
 export const REVIEW_LABEL: Record<ReviewPolicy, string> = {
   independent: "اعتماد مستقل (غير من أعدّه)",
@@ -50,7 +52,7 @@ const PROFILE_REVIEW: Record<Profile, ReviewPolicy> = {
   finance_report: "self_allowed", finance_opinion: "independent",
   investment_policy: "self_allowed", investment_assets: "self_allowed", investment_opinion: "independent",
   governance_package: "self_allowed", ops_package: "self_allowed", nazara_study: "independent", aml_program: "self_allowed",
-  periodic_report: "self_allowed",
+  periodic_report: "self_allowed", nazara_report: "independent", delivery_record: "self_allowed",
 };
 
 const PROFILE_SPECIALTY: Record<Profile, OutputSpecialty> = {
@@ -59,7 +61,7 @@ const PROFILE_SPECIALTY: Record<Profile, OutputSpecialty> = {
   finance_report: "finance", finance_opinion: "finance",
   investment_policy: "investment", investment_assets: "investment", investment_opinion: "investment",
   governance_package: "governance", ops_package: "operations", nazara_study: "operations", aml_program: "legal",
-  periodic_report: "operations",
+  periodic_report: "operations", nazara_report: "operations", delivery_record: "operations",
 };
 
 /** service code → profile (one output per service, titled with the service's catalog output). */
@@ -104,12 +106,15 @@ export const OUTPUT_SERVICE_CODES = Object.keys(SERVICE_PROFILE);
 export type SectionKind =
   | "meta" | "request" | "documents" | "waqf" | "conditions" | "parties" | "beneficiaries" | "assets" | "finance" | "budget"
   | "distributions" | "governance" | "compliance" | "beneficial_owners" | "investment" | "scope" | "deed_clauses"
-  | "will_clauses" | "checklist" | "nazara" | "stages" | "references";
+  | "will_clauses" | "checklist" | "nazara" | "stages" | "references"
+  | "period" | "nazir" | "receivables" | "resolutions" | "delivery_record";
+/** A template entry: a data section, or `analysis:<key>` to place a specialist section at that point. */
+export type TemplateEntry = SectionKind | `analysis:${string}`;
 
 /** Specialist-written parts: the generator never writes judgment, it frames the question and leaves it to the specialist. */
 export type AnalysisDef = { key: string; title: string; prompt: string };
 
-export type ProfileTemplate = { sections: SectionKind[]; analysis: AnalysisDef[]; disclaimer?: string };
+export type ProfileTemplate = { sections: TemplateEntry[]; analysis: AnalysisDef[]; disclaimer?: string };
 
 const NO_FATWA = "هذه المسودة لا تتضمن حكمًا شرعيًا آليًا. الرأي يكتبه المستشار الشرعي ويُعتمد من مراجع مستقل، ولا يُنسب قول إلى مصدر دون سند.";
 const NO_LAW = "لا تتضمن المسودة نصًا نظاميًا أو سابقة غير واردة في المراجع المعتمدة في المنصة. ما لم يُتحقق منه موسوم بذلك.";
@@ -231,6 +236,26 @@ export const TEMPLATES: Record<Profile, ProfileTemplate> = {
       { key: "next", title: "خطة الفترة التالية", prompt: "اذكر الأعمال المقررة للفترة التالية ومواعيدها." },
     ],
   },
+  nazara_report: {
+    sections: [
+      "meta", "period", "nazir", "waqf", "analysis:summary", "assets", "investment", "finance", "receivables", "analysis:operations",
+      "distributions", "beneficiaries", "conditions", "budget", "resolutions", "compliance", "analysis:plan", "analysis:decisions", "documents", "references",
+    ],
+    analysis: [
+      { key: "summary", title: "الملخص التنفيذي لأعمال الوقف خلال الفترة", prompt: "لخّص أعمال الوقف في الفترة مستندًا إلى البيانات المعروضة في هذا التقرير فقط، وأشر إلى النواقص المبينة." },
+      { key: "operations", title: "الصيانة والتشغيل وإدارة الأصول والمخاطر والملاحظات الجوهرية", prompt: "اذكر ما نُفذ من صيانة وتشغيل، والمخاطر والملاحظات الجوهرية، مع مرجع كل واقعة (عقد، قيد، مستند)." },
+      { key: "plan", title: "مدى تنفيذ خطة العمل والميزانية والقرارات السابقة", prompt: "قارن المنفذ بالمخطط في الميزانية والقرارات المعروضة أعلاه، واذكر أسباب الانحراف إن وجد." },
+      { key: "decisions", title: "المسائل التي تحتاج قرارًا أو إجراءً والإجراءات المقترحة", prompt: "اذكر كل مسألة تحتاج قرارًا من الواقف أو المجلس أو الجهة المختصة، والإجراء المقترح ومن يتخذه." },
+    ],
+    disclaimer: "قالب تشغيلي أولي وليس نموذجًا نظاميًا: تُراجع عناصره وفق صك الوقف وشروط الواقف ونطاق التكليف والأنظمة المنطبقة. لا يُعد تقديمًا لتقرير رسمي إلى أي جهة حكومية. كل قيمة مالية أو واقعة فيه مأخوذة من بيانات مسجلة في المنصة أو مستند مرفق، وما لم يتوافر مبيّن نقصًا لا رقمًا افتراضيًا.",
+  },
+  delivery_record: {
+    sections: ["meta", "delivery_record"],
+    analysis: [
+      { key: "remarks", title: "تحفظات المسلِّم والمستلم وملاحظاتهما", prompt: "اكتب التحفظات أو الملاحظات على هذا التسليم كما أبداها الطرفان، أو اكتب «لا تحفظات»." },
+    ],
+    disclaimer: "محضر تشغيلي يثبت ما سُجل في المنصة عن هذا التسليم. اعتماد العميل للاستلام لا يُعد دليلًا على صحة المخرج من الناحية النظامية، ولا يغني عن المراجعة الداخلية ولا عن أي اعتماد مالي أو رسمي.",
+  },
   aml_program: {
     sections: ["meta", "request", "waqf", "beneficial_owners", "compliance", "documents", "references"],
     analysis: [
@@ -257,6 +282,8 @@ export const PROFILE_REFS: Record<Profile, string[]> = {
   nazara_study: ["NAZARA-REG", "NAZIR-GUIDE", "BO-STD", "PENALTIES"],
   aml_program: ["BO-STD", "AML-LAW"],
   periodic_report: ["NAZARA-REG", "NAZIR-GUIDE", "GOV-PRINCIPLES"],
+  nazara_report: ["NAZARA-REG", "NAZIR-GUIDE", "GOV-PRINCIPLES"],
+  delivery_record: [],
 };
 
 /** The ten clauses of a waqf deed (الدليل الإرشادي لصياغة وثيقة الوقف) with the intake answers that feed each one. */

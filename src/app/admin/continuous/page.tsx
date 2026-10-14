@@ -7,6 +7,12 @@ import { StatusBadge } from "@/components/requests/bits";
 import { requireStaff } from "@/server/authz/context";
 import { read } from "@/server/modules/_shared";
 import { continuousPortfolio } from "@/server/modules/operations/continuous";
+import { CONTINUOUS, CONTINUOUS_CODES } from "@/server/modules/operations/continuous-pure";
+import { saveResponseReminderDays } from "@/server/modules/operations/continuous-actions";
+import { ActionForm } from "@/components/requests/forms";
+import { Field, Input } from "@/components/ui/form";
+import { settings } from "@/server/db/schema";
+import { eq } from "drizzle-orm";
 
 export const metadata: Metadata = { title: "الخدمات المستمرة" };
 
@@ -17,8 +23,11 @@ export default async function ContinuousServices() {
   const auth = await requireStaff("admin.access");
   if (!auth.perms.has("staff.requests.assigned") && !auth.perms.has("admin.requests.all")) redirect("/admin?denied=1");
   const rows = await read(auth, (tx) => continuousPortfolio(tx, auth));
+  const remind = await read(auth, async (tx) => Number(((await tx.select({ v: settings.value }).from(settings).where(eq(settings.key, "delivery.response_reminder_days")).limit(1))[0]?.v as { days?: number } | undefined)?.days ?? 7));
   const late = rows.reduce((s, r) => s + r.late, 0);
   const noTerm = rows.filter((r) => !r.term).length;
+  const unset = rows.filter((r) => r.cadenceUnset);
+  const unsetServices = CONTINUOUS_CODES.filter((c) => !CONTINUOUS[c].cadence);
   const dueSoon = rows.filter((r) => r.open.length).length;
   return (
     <div className="space-y-6">
@@ -27,8 +36,21 @@ export default async function ContinuousServices() {
         <Stat label="خدمات قائمة" value={rows.length} />
         <Stat label="دورات متأخرة" value={late} tone={late ? "critical" : undefined} />
         <Stat label="خدمات فيها دورة مفتوحة" value={dueSoon} />
-        <Stat label="بلا مدة محددة" value={noTerm} tone={noTerm ? "fine" : undefined} sub="تُحدد من صفحة الطلب" />
+        <Stat label="بلا مدة مفعّلة" value={noTerm} tone={noTerm ? "fine" : undefined} sub={`منها ${unset.length} دوريتها غير محددة`} />
       </div>
+      <Panel title="الخدمات التي لا دورية افتراضية لها" description="لا تحدد ملفات المشروع ولا الكتالوج دورية تسليماتها: تُحدد لكل عقد (في العرض أو عند تفعيل المدة)، ولا تُنشأ لها مواعيد قبل ذلك.">
+        <ul className="flex flex-wrap gap-2" data-testid="unset-cadence-services">
+          {unsetServices.map((c) => <li key={c}><Badge tone="fine" icon={false}>{c}</Badge></li>)}
+        </ul>
+        {unset.length ? <p className="mt-3 text-sm">طلبات قائمة تنتظر تحديد الدورية: {unset.map((r, i) => <span key={r.req.id}>{i ? "، " : ""}<Link href={`/admin/requests/${r.req.id}#service`} className="tabular text-ink underline" dir="ltr">{r.req.number}</Link></span>)}</p> : null}
+      </Panel>
+      {auth.perms.has("admin.requests.all") ? (
+        <Panel title="تذكير العميل بالتسليمات بانتظار رده" description="لا يُعد سكوت العميل اعتمادًا، ولا يُقفل تسليم بمرور الوقت. يصل التذكير داخل المنصة للعميل والمختص.">
+          <ActionForm action={saveResponseReminderDays} submit="احفظ" size="sm" variant="secondary">
+            <Field label="التذكير بعد (أيام) ثم كل مثلها" name="days" required><Input type="number" name="days" min={1} max={60} required defaultValue={String(remind)} dir="ltr" /></Field>
+          </ActionForm>
+        </Panel>
+      ) : null}
       <Panel tight>
         {rows.length ? (
           <div className="overflow-x-auto">
@@ -51,7 +73,7 @@ export default async function ContinuousServices() {
                     <td className="px-3"><Badge tone={TONE[r.state ?? ""] ?? "neutral"} icon={false}>{r.stateLabel}</Badge>{r.term ? <div className="tabular text-muted">{r.term.startOn} إلى {r.term.terminatedOn ?? r.term.endOn}{r.cadence ? ` · ${r.cadence}` : ""}</div> : null}</td>
                     <td className="px-3">{r.open.length ? r.open.map((c) => <div key={c.id}>{c.label} <span className="tabular text-muted">({c.dueOn})</span></div>) : <span className="text-muted">لا دورة مفتوحة</span>}</td>
                     <td className="px-3">{r.next ? <>{r.next.label} <span className="tabular text-muted">({r.next.due})</span></> : <span className="text-muted">—</span>}</td>
-                    <td className="px-3">{r.done} مكتملة{r.late ? <> · <Badge tone="critical" icon={false}>{r.late} متأخرة</Badge></> : null}</td>
+                    <td className="px-3">{r.done} مقفلة{r.awaitingClient ? ` · ${r.awaitingClient} بانتظار العميل` : ""}{r.late ? <> · <Badge tone="critical" icon={false}>{r.late} متأخرة</Badge></> : null}</td>
                   </tr>
                 ))}
               </tbody>

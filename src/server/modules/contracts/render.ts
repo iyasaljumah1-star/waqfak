@@ -4,7 +4,7 @@
  */
 import type { ContractParty, PaymentTerm, QuoteLine } from "@/server/db/schema/commerce";
 import { fillTemplate } from "@/server/modules/billing/calc";
-import { AUTHORITY_LABEL, splitInstallments, TERM_DUE_LABEL, type CompanyProfile } from "@/server/modules/commerce/pure";
+import { AUTHORITY_LABEL, deliveryScheduleText, splitInstallments, termWhen, type CompanyProfile, type DeliverySchedule } from "@/server/modules/commerce/pure";
 
 const sar = (n: number | string) => `${Number(n).toLocaleString("ar-SA-u-nu-latn", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ر.س`;
 
@@ -43,6 +43,7 @@ export function partiesBlock(parties: ContractParty[], company: CompanyProfile) 
 export type QuoteForContract = {
   number: string; version: number; scope: string; deliverables: string | null; exclusions: string | null; assumptions: string | null; clientObligations: string | null;
   durationDays: number | null; lines: QuoteLine[]; subtotal: string; discount: string; net: string; vatRate: string; vat: string; total: string; paymentTerms: PaymentTerm[];
+  deliverySchedule?: DeliverySchedule;
 };
 
 export function annexText(q: QuoteForContract) {
@@ -52,6 +53,8 @@ export function annexText(q: QuoteForContract) {
   if (q.exclusions) out.push("## ما لا يشمله النطاق", q.exclusions);
   if (q.assumptions) out.push("## الافتراضات", q.assumptions);
   if (q.durationDays) out.push("## المدة", `${q.durationDays} يومًا`);
+  const ds = deliveryScheduleText(q.deliverySchedule ?? null);
+  if (ds) out.push("## التسليمات الدورية", ds);
   out.push("## البنود");
   for (const l of q.lines) out.push(`- ${l.description}: ${l.qty} × ${sar(l.unit)} = ${sar(l.total)}`);
   out.push(`المجموع ${sar(q.subtotal)}${Number(q.discount) ? `، الخصم ${sar(q.discount)}` : ""}، الصافي ${sar(q.net)}، ضريبة القيمة المضافة (${Number(q.vatRate)}٪) ${sar(q.vat)}، الإجمالي ${sar(q.total)}.`);
@@ -68,7 +71,7 @@ export function priceClause(q: QuoteForContract, company: CompanyProfile) {
 
 export function paymentTermsText(q: QuoteForContract) {
   return splitInstallments(Number(q.net), Number(q.vatRate), q.paymentTerms)
-    .map((t) => `- ${t.label} (${t.percent}٪): ${sar(t.total)} — ${TERM_DUE_LABEL[t.due]}${t.beforeStart ? "، ويُشترط سدادها قبل بدء التنفيذ" : ""}.`)
+    .map((t) => `- ${t.label} (${t.percent}٪): ${sar(t.total)} — ${termWhen(t)}${t.beforeStart ? "، ويُشترط سدادها قبل بدء التنفيذ" : ""}.`)
     .join("\n");
 }
 

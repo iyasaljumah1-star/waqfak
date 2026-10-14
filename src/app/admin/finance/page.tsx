@@ -9,10 +9,16 @@ import { AGING_LABEL, financeList, financePayments, receivables, type AgingBucke
 import { einvoiceState } from "@/server/modules/billing/einvoice";
 import { read } from "@/server/modules/_shared";
 import { isFlagOn } from "@/server/modules/requests/catalog";
+import { allInstallments, materializeAll } from "@/server/modules/billing/schedule";
+import { saveDueAlertSettings } from "@/server/modules/billing/schedule-actions";
+import { STAGE_TONE } from "@/server/modules/billing/schedule-pure";
+import { ActionForm } from "@/components/requests/forms";
+import { Field, Input } from "@/components/ui/form";
 
 export const metadata: Metadata = { title: "الفواتير والمدفوعات" };
 
 const TABS = [
+  { key: "due", label: "الاستحقاقات" },
   { key: "invoices", label: "الفواتير" },
   { key: "payments", label: "المدفوعات" },
   { key: "receivables", label: "الذمم المدينة" },
@@ -35,6 +41,8 @@ export default async function AdminFinance({ searchParams }: { searchParams: Pro
   const auth = await requireStaff("admin.finance");
   const sp = await searchParams;
   const tab: Tab = (TABS.find((t) => t.key === sp.tab)?.key ?? "invoices") as Tab;
+  // Schedules of executed contracts that predate the schedule table are filled in (idempotent).
+  if (tab === "due") await read(auth, (tx) => materializeAll(tx, null));
   const flags = await read(auth, async (tx) => {
     const e = await einvoiceState(tx);
     return { live: await isFlagOn(tx, "payments.live"), zatca: e.active, einvoice: e.items };
@@ -67,7 +75,7 @@ export default async function AdminFinance({ searchParams }: { searchParams: Pro
         ))}
       </nav>
 
-      {tab === "invoices" ? <InvoicesTab auth={auth} sp={sp} /> : tab === "payments" ? <PaymentsTab auth={auth} sp={sp} /> : <ReceivablesTab auth={auth} />}
+      {tab === "due" ? <DueTab auth={auth} /> : tab === "invoices" ? <InvoicesTab auth={auth} sp={sp} /> : tab === "payments" ? <PaymentsTab auth={auth} sp={sp} /> : <ReceivablesTab auth={auth} />}
     </div>
   );
 }
@@ -208,5 +216,54 @@ async function ReceivablesTab({ auth }: { auth: A }) {
         </Panel>
       </div>
     </>
+  );
+}
+
+async function DueTab({ auth }: { auth: A }) {
+  const { rows, cfg } = await read(auth, (tx) => allInstallments(tx));
+  const open = rows.filter((r) => r.stage !== "paid");
+  const count = (k: string) => rows.filter((r) => r.stage === k).length;
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-3 sm:grid-cols-4">
+        <Stat label="حلّ موعدها دون فاتورة مرسلة" value={count("due")} tone={count("due") ? "fine" : undefined} />
+        <Stat label="متأخرة السداد" value={count("overdue")} tone={count("overdue") ? "critical" : undefined} />
+        <Stat label="تستحق قريبًا" value={count("due_soon")} sub={`خلال ${cfg.beforeDays} أيام`} />
+        <Stat label="بلا موعد (مرتبطة بمرحلة)" value={count("unscheduled")} />
+      </div>
+      <Alert tone="info" title="لا تصدر فاتورة تلقائيًا">
+        عند حلول موعد دفعة تُنبَّه المالية داخل المنصة فقط، ثم تُعدّ مسودة الفاتورة من صفحة الطلب وتمر بدورتها: مسودة ← اعتماد المالية ← إرسال. تاريخ الاستحقاق وتاريخ إنشاء الفاتورة واعتمادها وإرسالها وسدادها كلها منفصلة، ولا تُعد الدفعة مسددة بمجرد إصدار فاتورتها.
+      </Alert>
+      <Panel title="الدفعات غير المسددة" tight>
+        {open.length ? (
+          <div className="overflow-x-auto p-3" data-testid="due-installments">
+            <table className="w-full text-[14px]">
+              <thead><tr className="border-b border-line-strong text-[13px] text-muted"><th className="py-2 text-start font-medium">الطلب</th><th className="text-start font-medium">الدفعة</th><th className="text-end font-medium">المبلغ</th><th className="ps-3 text-start font-medium">الاستحقاق</th><th className="ps-3 text-start font-medium">الحالة</th><th className="ps-3 text-start font-medium">الفاتورة</th></tr></thead>
+              <tbody className="divide-y divide-line">
+                {open.map((r) => (
+                  <tr key={r.id} data-testid={`due-${r.requestNumber}-${r.termKey}`}>
+                    <td className="py-2"><Link href={`/admin/requests/${r.requestId}#billing`} className="tabular text-ink hover:underline" dir="ltr">{r.requestNumber}</Link></td>
+                    <td>{r.label}</td>
+                    <td className="tabular text-end">{fmtSAR(Number(r.total))}</td>
+                    <td className="tabular ps-3">{r.dueOn ?? (r.milestone ? `عند ${r.milestone}` : "—")}</td>
+                    <td className="ps-3"><Badge tone={STAGE_TONE[r.stage]} icon={false}>{r.stageLabel}</Badge></td>
+                    <td className="ps-3 text-[13px]">{r.invoices.filter((i) => i.status !== "void").map((i) => <div key={i.id}><Link href={`/admin/finance/${i.id}`} className="tabular text-ink hover:underline" dir="ltr">{i.number}</Link> {INVOICE_STATUS_LABEL[i.status as keyof typeof INVOICE_STATUS_LABEL] ?? i.status}</div>)}{r.invoices.length ? null : <span className="text-muted">لم تُنشأ</span>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : <EmptyState icon={Receipt} title="لا دفعات مستحقة غير مسددة">تظهر هنا دفعات العقود النافذة بتواريخ استحقاقها.</EmptyState>}
+      </Panel>
+      <Panel title="توقيت تنبيهات الاستحقاق" description="تصل التنبيهات داخل المنصة لكل من يملك صلاحية المالية، مرة واحدة لكل موعد.">
+        <ActionForm action={saveDueAlertSettings} submit="احفظ التوقيت" size="sm" variant="secondary">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="قبل الاستحقاق بـ (أيام)" name="beforeDays" required><Input type="number" name="beforeDays" min={0} max={90} required defaultValue={String(cfg.beforeDays)} dir="ltr" /></Field>
+            <Field label="بعد التأخر بـ (أيام، مفصولة بفاصلة)" name="overdueDays" required><Input name="overdueDays" required defaultValue={cfg.overdueDays.join("، ")} /></Field>
+          </div>
+        </ActionForm>
+        <p className="mt-2 text-[13px] text-muted">البريد والرسائل النصية غير مفعّلين لهذه التنبيهات.</p>
+      </Panel>
+    </div>
   );
 }

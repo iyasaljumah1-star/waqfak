@@ -34,6 +34,8 @@ export const DAILY_STEPS: Step[] = [
   { name: "recomputeStatuses", run: (tx) => recomputeStatuses(tx) },
   { name: "sendReminders", run: (tx) => sendReminders(tx) },
   { name: "documentExpiryReminders", run: documentExpiry },
+  { name: "paymentDueAlerts", run: async (tx) => (await import("../billing/schedule")).paymentDueAlerts(tx) },
+  { name: "deliveryResponseReminders", run: async (tx) => (await import("../operations/continuous")).deliveryResponseReminders(tx) },
   { name: "cleanup", run: cleanup },
 ];
 

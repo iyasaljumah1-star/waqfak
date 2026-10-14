@@ -11,7 +11,7 @@ import { pdfShell, renderPdf } from "@/server/modules/pdf/render";
 import { loadRequestCtx } from "@/server/modules/requests/access";
 import { canSeeInvoice } from "@/server/modules/billing/access";
 import { zatcaTlvBase64 } from "@/server/modules/billing/calc";
-import { AUTHORITY_LABEL, CONTRACT_STATUS_LABEL, INVOICE_KIND_LABEL, invoiceBalance, splitInstallments, TERM_DUE_LABEL, type CompanyProfile } from "./pure";
+import { AUTHORITY_LABEL, CONTRACT_STATUS_LABEL, INVOICE_KIND_LABEL, invoiceBalance, splitInstallments, termWhen, type CompanyProfile } from "./pure";
 
 /**
  * PDF documents of the commercial chain: quote, contract (with signature evidence), invoice and payment receipt.
@@ -76,7 +76,7 @@ export async function quotePdf(requestId: string, quoteId: string) {
     if (!rc.staffSide && ["draft", "approved"].includes(q.status)) return null;
     await audit(tx, { actorUserId: auth.user.id, action: "quotes.download", entityType: "quote", entityId: q.id, waqfId: q.waqfId, ip, userAgent, after: { number: q.number, version: q.version } });
     const lines = (q.lines as QuoteLine[]).map((l) => `<tr><td>${esc(l.description)}</td><td class="tabular">${l.qty}</td><td class="tabular">${sar(l.unit)}</td><td class="tabular">${sar(l.total)}</td></tr>`).join("");
-    const terms = splitInstallments(Number(q.net), Number(q.vatRate), q.paymentTerms as PaymentTerm[]).map((t) => `<tr><td>${esc(t.label)}</td><td class="tabular">${t.percent}٪</td><td class="tabular">${sar(t.total)}</td><td>${TERM_DUE_LABEL[t.due]}${t.beforeStart ? " — شرط للبدء" : ""}</td></tr>`).join("");
+    const terms = splitInstallments(Number(q.net), Number(q.vatRate), q.paymentTerms as PaymentTerm[]).map((t) => `<tr><td>${esc(t.label)}</td><td class="tabular">${t.percent}٪</td><td class="tabular">${sar(t.total)}</td><td>${esc(termWhen(t))}${t.beforeStart ? " — شرط للبدء" : ""}</td></tr>`).join("");
     const sec = (title: string, v: string | null) => (v ? `<h3>${title}</h3><p class="doc" style="white-space:pre-line">${esc(v)}</p>` : "");
     const html = `<div class="brandbar"></div>
 <h1>${q.kind === "amendment" ? "ملحق تعديل" : "عرض سعر"} ${esc(q.number)}</h1>

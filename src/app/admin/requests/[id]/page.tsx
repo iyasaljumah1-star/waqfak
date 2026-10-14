@@ -25,7 +25,7 @@ import { ITEM_EVENT_LABEL, ITEM_KIND_LABEL, ITEM_STATUS_TONE, itemStatusLabel } 
 import { approveContract, countersignContract, prepareContract, requestSignOtp, sendContract, signContract, voidContract } from "@/server/modules/contracts/actions";
 import { approveQuote, saveQuote, sendQuote, withdrawQuote } from "@/server/modules/commerce/quote-actions";
 import { issueInvoice } from "@/server/modules/billing/actions";
-import { CONTRACT_STATUS_LABEL, INVOICE_KIND_LABEL, QUOTE_STATUS_LABEL, QUOTE_STATUS_TONE, quoteDisplayStatus, splitInstallments, TERM_DUE_LABEL } from "@/server/modules/commerce/pure";
+import { CONTRACT_STATUS_LABEL, INVOICE_KIND_LABEL, QUOTE_STATUS_LABEL, QUOTE_STATUS_TONE, quoteDisplayStatus, splitInstallments, termWhen } from "@/server/modules/commerce/pure";
 import { INVOICE_STATUS_LABEL, INVOICE_STATUS_TONE } from "@/server/modules/billing/access";
 import { DOC_TYPE_OPTIONS } from "@/server/modules/documents/labels";
 import { docRequired, visibleDocs, visibleSteps, visibleFields } from "@/server/modules/requests/intake/engine";
@@ -47,9 +47,12 @@ import { WHO_AR } from "@/server/modules/operations/next-step";
 import { OUTPUT_STATUS_LABEL } from "@/server/modules/outputs/pure";
 import { STATUS_LABEL as REQ_STATUS_LABEL } from "@/server/modules/requests/workflow";
 import { ContinuousPanel } from "@/components/operations/continuous-panel";
+import { PaymentScheduleTable } from "@/components/billing/payment-schedule";
+import { materializeSchedule, scheduleOf } from "@/server/modules/billing/schedule";
+import { setInstallmentDue } from "@/server/modules/billing/schedule-actions";
 import { continuousView } from "@/server/modules/operations/continuous";
-import { continuousSpec, suggestedCadence } from "@/server/modules/operations/continuous-pure";
-import { closeCycle, extendTerm, linkCycleMeeting, openCycle, rescheduleCycle, sendCycle, setupTerm, skipCycle, terminateService, toggleCycleCheck } from "@/server/modules/operations/continuous-actions";
+import { CADENCE_AR, clientPreference, continuousSpec, type Cadence } from "@/server/modules/operations/continuous-pure";
+import { changeAcceptance, closeCycle, extendTerm, linkCycleMeeting, openCycle, rescheduleCycle, sendCycle, setupTerm, skipCycle, terminateService, toggleCycleCheck } from "@/server/modules/operations/continuous-actions";
 import { addMonths as addMonthsISO, toISO } from "@/server/engines/dates";
 
 export const metadata: Metadata = { title: "طلب — مساحة العمل" };
@@ -77,12 +80,16 @@ export default async function StaffRequest({ params }: { params: Promise<{ id: s
   const canApproveContract = auth.perms.has("admin.contracts.approve");
   const ops2 = await read(auth, (tx) => requestOperations(tx, auth, rc));
   const plan = await read(auth, (tx) => requestPlan(tx, auth, rc));
+  const sched = paid ? await read(auth, async (tx) => { await materializeSchedule(tx, r.id, null); return scheduleOf(tx, r.id); }) : null;
   const cont = continuousSpec(rc.service.code) ? await read(auth, (tx) => continuousView(tx, auth, rc)) : null;
   const contStart = cont?.contract?.executedAt ? toISO(cont.contract.executedAt) : r.startApprovedAt ? toISO(r.startApprovedAt) : today;
   const termMonths = Number(d.answers.termMonths) > 0 ? Number(d.answers.termMonths) : 12;
   const contDefaults = {
     startOn: contStart, endOn: addDaysISO(cont?.quote?.durationDays ? addDaysISO(contStart, cont.quote.durationDays) : addMonthsISO(contStart, termMonths), -1),
-    cadence: cont ? suggestedCadence(cont.spec, d.answers) : ("monthly" as const),
+    // Preselected only from the accepted quote or a documented preset; otherwise left unset for the user to fix from the contract.
+    cadence: ((cont?.quoteCadence?.cadence as Cadence | undefined) ?? cont?.spec.cadence ?? null) as Cadence | null,
+    customDates: (cont?.quoteCadence?.customDates ?? []).map((x) => `${x.due} | ${x.label}`).join("\n"),
+    clientPreference: clientPreference(d.answers),
   };
 
   // Quotes
@@ -101,7 +108,8 @@ export default async function StaffRequest({ params }: { params: Promise<{ id: s
         quoteId: draft?.id, kind, scope: base.scope, deliverables: base.deliverables ?? "", exclusions: base.exclusions ?? "", assumptions: base.assumptions ?? "",
         clientObligations: base.clientObligations ?? "", durationDays: String(base.durationDays ?? ""), discount: String(Number(base.discount)), validUntil,
         lines: base.lines.map((l) => ({ description: l.description, qty: String(l.qty), unit: String(l.unit) })),
-        terms: base.paymentTerms.map((t) => ({ label: t.label, percent: String(t.percent), due: t.due, beforeStart: t.beforeStart })),
+        deliveryCadence: base.deliverySchedule?.cadence ?? "", deliveryDates: (base.deliverySchedule?.customDates ?? []).map((x) => `${x.due} | ${x.label}`).join("\n"),
+        terms: base.paymentTerms.map((t) => ({ label: t.label, percent: String(t.percent), due: t.due, beforeStart: t.beforeStart, dueOn: t.dueOn ?? undefined, milestone: t.milestone ?? undefined, series: t.series ?? undefined })),
       };
     }
     const days = rc.service.slaDays ?? rc.stagesDef.reduce((s, x) => s + x.slaDays, 0);
@@ -250,7 +258,8 @@ export default async function StaffRequest({ params }: { params: Promise<{ id: s
           {cont ? (
             <Section id="service" title="الخدمة المستمرة ودورات التسليم">
               <ContinuousPanel v={cont} requestId={r.id} status={r.status} worker={worker} ops={ops} canDeliver={auth.perms.has("staff.deliver")} nextAction={plan.terminal ? null : plan.current?.title ?? null} defaults={contDefaults}
-                a={{ setupTerm, extendTerm, terminateService, openCycle, toggleCycleCheck, linkCycleMeeting, rescheduleCycle, sendCycle, closeCycle, skipCycle, raiseItem }} />
+                a={{ setupTerm, extendTerm, terminateService, openCycle, toggleCycleCheck, linkCycleMeeting, rescheduleCycle, sendCycle, closeCycle, skipCycle, raiseItem, changeAcceptance }}
+                schedule={sched?.rows ?? []} />
             </Section>
           ) : null}
           <Section id="work" title="العمل والمهام">
@@ -402,7 +411,7 @@ export default async function StaffRequest({ params }: { params: Promise<{ id: s
               {canNewInitial && d.vatRate !== null ? (
                 <details className="mt-4 border-t border-line pt-4" open={!d.quotes.length || !!openDraft("initial")}>
                   <summary className="cursor-pointer font-medium text-ink">{openDraft("initial") ? "عدّل مسودة العرض" : d.quotes.length ? "أعدّ نسخة جديدة من العرض" : "أعدّ نطاق العمل وعرض السعر"}</summary>
-                  <div className="mt-3"><QuoteEditor action={saveQuote} requestId={r.id} seed={seedFrom("initial")} vatRate={d.vatRate} today={today} title={openDraft("initial") ? "مسودة العرض" : "عرض جديد"} /></div>
+                  <div className="mt-3"><QuoteEditor action={saveQuote} requestId={r.id} seed={seedFrom("initial")} vatRate={d.vatRate} today={today} title={openDraft("initial") ? "مسودة العرض" : "عرض جديد"} cadences={continuousSpec(rc.service.code)?.allowed.map((c) => ({ value: c, label: CADENCE_AR[c] }))} /></div>
                 </details>
               ) : null}
               {canNewAmendment && d.vatRate !== null ? (
@@ -485,6 +494,13 @@ export default async function StaffRequest({ params }: { params: Promise<{ id: s
                     : "تصدر فاتورة بلا ضريبة وفق إعداد الشركة."}
                 </Alert>
               ) : null}
+              {sched?.rows.length ? (
+                <div className="mb-4">
+                  <p className="mb-2 text-[15px] font-medium">جدول الدفعات التعاقدي</p>
+                  <PaymentScheduleTable rows={sched.rows} staff setDue={auth.perms.has("admin.finance") || ops ? setInstallmentDue : undefined} names={new Map([...names.entries()].map(([k, v]) => [k, v.name]))} />
+                  <p className="mt-1 text-[12px] text-muted">لا تصدر فاتورة تلقائيًا عند حلول الموعد: تُنبَّه المالية قبل الموعد وعنده وبعد التأخر، وتُعدّ المسودة من بنود الدفعات أدناه.</p>
+                </div>
+              ) : null}
               {acceptedQuotes.map((q) => {
                 const k = d.contracts.find((x) => x.quoteId === q.id && x.status === "signed");
                 return (
@@ -496,7 +512,7 @@ export default async function StaffRequest({ params }: { params: Promise<{ id: s
                         const real = invs.find((i) => i.kind !== "proforma");
                         return (
                           <li key={t.key} className="flex flex-col gap-2 px-3 py-2 sm:flex-row sm:items-center sm:justify-between" data-testid={`term-${t.key}`}>
-                            <span className="text-[15px]">{t.label} ({t.percent}٪) — <span className="tabular">{fmtSAR(t.total)}</span> <span className="text-[13px] text-muted">{TERM_DUE_LABEL[t.due]}{t.beforeStart ? " · شرط للبدء" : ""}</span></span>
+                            <span className="text-[15px]">{t.label} ({t.percent}٪) — <span className="tabular">{fmtSAR(t.total)}</span> <span className="text-[13px] text-muted">{termWhen(t)}{t.beforeStart ? " · شرط للبدء" : ""}</span></span>
                             <span className="flex flex-wrap items-center gap-2">
                               {invs.map((i) => (
                                 <Link key={i.id} href={`/admin/finance/${i.id}`} className="text-[14px] text-ink hover:underline">

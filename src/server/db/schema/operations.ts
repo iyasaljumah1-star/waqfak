@@ -173,7 +173,12 @@ export const requestRevisions = pgTable("request_revisions", {
  * Closing a cycle never closes the request. Billing is NOT driven by cycles: invoices follow the contract's
  * installments (see docs/CONTINUOUS-SERVICES.md).
  */
-export type Cadence = "monthly" | "quarterly" | "semiannual" | "annual" | "event";
+export type Cadence = "monthly" | "quarterly" | "semiannual" | "annual" | "event" | "custom";
+/** Contractual delivery dates or stages (cadence «custom»). */
+export type CustomDelivery = { label: string; due: string; from?: string | null; to?: string | null };
+/** required = the client must approve each delivery before its cycle closes; info = delivered for information (the
+ *  client may still approve or ask for changes). Set per service, adjustable per contract by an authorized manager. */
+export type ClientAcceptance = "required" | "info";
 /** active → suspended (request on hold) → active; terminated (early end by decision, with reason and reference).
  *  «ended» is derived: end_on has passed. */
 export type TermStatus = "active" | "suspended" | "terminated";
@@ -193,6 +198,10 @@ export const serviceTerms = pgTable("service_terms", {
   /** Days after the end of a period by which its delivery is due. */
   dueOffsetDays: integer().default(10).notNull(),
   status: text().$type<TermStatus>().default("active").notNull(),
+  customDates: jsonb().$type<CustomDelivery[]>().default([]).notNull(),
+  clientAcceptance: text().$type<ClientAcceptance>().default("required").notNull(),
+  /** Where the cadence came from: «quote» (the accepted quote), «catalog», or «set» (chosen at setup by the user). */
+  cadenceSource: text(),
   suspendedAt: timestamp({ withTimezone: true }),
   suspendReason: text(),
   terminatedOn: date(),
@@ -209,6 +218,7 @@ export const serviceTerms = pgTable("service_terms", {
 export type CycleKind = "periodic" | "event" | "closing";
 /** open → sent (delivered to the client) → closed; skipped (with reason). Output review states live on the output. */
 export type CycleStatus = "open" | "sent" | "closed" | "skipped";
+export type CycleClientEvent = { at: string; by: string | null; kind: "available" | "viewed" | "approved" | "revision_requested" | "reminder"; version?: number | null; note?: string | null };
 export type CycleCheck = { key: string; label: string; done: boolean; by?: string | null; at?: string | null };
 
 export const serviceCycles = pgTable("service_cycles", {
@@ -238,5 +248,48 @@ export const serviceCycles = pgTable("service_cycles", {
   closeNote: text(),
   skippedReason: text(),
   dueChanges: jsonb().$type<{ at: string; by: string; from: string; to: string; reason: string }[]>().default([]).notNull(),
+  /** First time a client party opened the delivered file (recorded by the platform, not assumed). */
+  viewedAt: timestamp({ withTimezone: true }),
+  /** The client's explicit decision on the delivery (never implied by silence or time). */
+  clientDecision: text().$type<"approved" | "revision_requested">(),
+  clientDecisionAt: timestamp({ withTimezone: true }),
+  clientDecisionBy: uuid(),
+  clientDecisionNote: text(),
+  /** Version of the cycle output the client approved. */
+  clientApprovedVersion: integer(),
+  /** Every client decision and reminder of the cycle (append-only list). */
+  clientEvents: jsonb().$type<CycleClientEvent[]>().default([]).notNull(),
   ...tracking(),
 }, (t) => [uniqueIndex("service_cycles_req_seq_uq").on(t.requestId, t.seq), index("service_cycles_due_idx").on(t.dueOn)]);
+
+// ───────────────────────── Payment schedule (contract installments) ─────────────────────────
+
+export type ScheduleEvent = { at: string; by: string | null; kind: "created" | "due_set" | "due_changed" | "alert"; note?: string | null; from?: string | null; to?: string | null };
+
+/**
+ * The installments of an executed contract, one row per payment term of its quote. The due date is the contract's
+ * (set date, signing date) or set later when a milestone is reached; every change is kept in `history`. Invoices are
+ * never created from a row: the finance team is alerted and issues them through the invoice cycle.
+ */
+export const paymentSchedule = pgTable("payment_schedule", {
+  id: id(),
+  requestId: uuid().notNull().references(() => serviceRequests.id, { onDelete: "cascade" }),
+  waqfId: uuid(),
+  quoteId: uuid().notNull(),
+  contractId: uuid(),
+  termKey: text().notNull(),
+  label: text().notNull(),
+  percent: text().notNull(),
+  net: text().notNull(),
+  vat: text().notNull(),
+  total: text().notNull(),
+  dueKind: text().notNull(),
+  dueOn: date(),
+  milestone: text(),
+  beforeStart: boolean().default(false).notNull(),
+  series: text(),
+  history: jsonb().$type<ScheduleEvent[]>().default([]).notNull(),
+  /** Alerts already sent (keys like «before», «due», «overdue:7») so each is sent once. */
+  alerts: jsonb().$type<string[]>().default([]).notNull(),
+  ...tracking(),
+}, (t) => [uniqueIndex("payment_schedule_quote_term_uq").on(t.quoteId, t.termKey), index("payment_schedule_due_idx").on(t.dueOn)]);

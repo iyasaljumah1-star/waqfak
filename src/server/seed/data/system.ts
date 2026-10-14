@@ -38,6 +38,11 @@ export const NOTIFICATION_TEMPLATES = [
   { key: "request.status", titleAr: "تحديث على طلبك {number}", bodyAr: "الحالة الآن: {status}", severity: "info" as const, channels: ["in_app", "email"] },
   { key: "request.awaiting_client", titleAr: "طلبك {number} بانتظار إجراء منك", bodyAr: "{note}", severity: "important" as const, channels: ["in_app", "email"] },
   { key: "contract.sign", titleAr: "عقد بانتظار توقيعك: {number}", bodyAr: "{note}", severity: "important" as const, channels: ["in_app", "email"] },
+  // In-platform only: deliveries and installment alerts are not sent by email or SMS (no such channel is integrated for them).
+  { key: "delivery.available", titleAr: "تسليم جديد متاح في طلبك {number}", bodyAr: "{title}. اطّلع عليه في صفحة الطلب ثم اعتمده أو اطلب تعديله.", severity: "important" as const, channels: ["in_app"] },
+  { key: "delivery.client_decision", titleAr: "رد العميل على تسليم في الطلب {number}", bodyAr: "{decision}: {title}. {note}", severity: "important" as const, channels: ["in_app"] },
+  { key: "delivery.response_overdue", titleAr: "تسليم بانتظار ردك في الطلب {number}", bodyAr: "{title} متاح منذ {days} يومًا ولم يُعتمد أو يُطلب تعديله.", severity: "info" as const, channels: ["in_app"] },
+  { key: "billing.installment_due", titleAr: "استحقاق دفعة: {label} — {number}", bodyAr: "{stage}. المبلغ {amount}، والاستحقاق {due}. لا تُصدر فاتورة تلقائيًا: أعدّ مسودتها من صفحة الطلب.", severity: "important" as const, channels: ["in_app"] },
   { key: "contract.executed", titleAr: "نفذ العقد {number} بتوقيع جميع أطرافه", bodyAr: "نسخته الموقّعة متاحة في صفحة الطلب {request}.", severity: "info" as const, channels: ["in_app", "email"] },
   { key: "request.assigned", titleAr: "طلب جديد مسند إليك: {number}", bodyAr: "{service} — {waqf}", severity: "important" as const, channels: ["in_app", "email"] },
   { key: "nazara.update", titleAr: "النظارة {number}: {status}", bodyAr: "{waqf} — {note}", severity: "important" as const, channels: ["in_app", "email"] },

@@ -3,6 +3,8 @@ import { Fragment } from "react";
 import { Badge, Steps } from "@/components/ui";
 import { cn, daysUntil, fmtDate, fmtDateTime, relDays } from "@/lib/utils";
 import { STATUS_LABEL, STATUS_TONE, type RequestStatus } from "@/server/modules/requests/workflow";
+import { deliveryScheduleText, splitInstallments, termWhen, type DeliverySchedule } from "@/server/modules/commerce/pure";
+import type { PaymentTerm } from "@/server/db/schema/commerce";
 
 export const PRIORITY_LABEL: Record<string, string> = { urgent: "عاجل", high: "مرتفعة", normal: "عادية", low: "منخفضة" };
 export const CONTACT_LABEL: Record<string, string> = { platform: "رسائل المنصة", phone: "اتصال هاتفي", email: "البريد الإلكتروني", whatsapp: "واتساب" };
@@ -163,13 +165,13 @@ export function IntakeSummaryView({ sections, docs, docTitles }: { sections: { k
 }
 
 export function QuoteDocument({ q, today, names }: {
-  q: { number: string; version: number; kind: string; status: string; scope: string; deliverables: string | null; exclusions: string | null; assumptions: string | null; clientObligations: string | null; durationDays: number | null; lines: { description: string; qty: number; unit: number; total: number }[]; subtotal: string; discount: string; net: string; vatRate: string; vat: string; total: string; paymentTerms: { key: string; label: string; percent: number; due: string; beforeStart: boolean }[]; validUntil: string; contentHash: string | null; preparedBy: string | null; approvedBy: string | null; sentAt: Date | null; respondedAt: Date | null; responseNote: string | null };
+  q: { number: string; version: number; kind: string; status: string; scope: string; deliverables: string | null; exclusions: string | null; assumptions: string | null; clientObligations: string | null; durationDays: number | null; lines: { description: string; qty: number; unit: number; total: number }[]; subtotal: string; discount: string; net: string; vatRate: string; vat: string; total: string; paymentTerms: PaymentTerm[]; validUntil: string; deliverySchedule?: DeliverySchedule; contentHash: string | null; preparedBy: string | null; approvedBy: string | null; sentAt: Date | null; respondedAt: Date | null; responseNote: string | null };
   today: string;
   names?: Map<string, { name: string; isStaff: boolean }>;
 }) {
   const expired = q.status === "sent" && q.validUntil < today;
   const sar = (n: number | string) => `${Number(n).toLocaleString("ar-SA-u-nu-latn", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ر.س`;
-  const DUE: Record<string, string> = { on_contract: "عند توقيع العقد", before_start: "قبل بدء التنفيذ", on_delivery: "عند تسليم المخرجات", on_completion: "عند اكتمال الخدمة" };
+  const parts = splitInstallments(Number(q.net), Number(q.vatRate), q.paymentTerms);
   return (
     <article className="space-y-3 text-[15px]" aria-label={`عرض السعر ${q.number}`}>
       <p className="text-[13px] text-muted">
@@ -181,6 +183,7 @@ export function QuoteDocument({ q, today, names }: {
       {q.exclusions ? <section><h4 className="font-semibold">ما لا يشمله النطاق</h4><p className="whitespace-pre-line leading-7">{q.exclusions}</p></section> : null}
       {q.assumptions ? <section><h4 className="font-semibold">الافتراضات</h4><p className="whitespace-pre-line leading-7">{q.assumptions}</p></section> : null}
       {q.clientObligations ? <section><h4 className="font-semibold">التزاماتك</h4><p className="whitespace-pre-line leading-7">{q.clientObligations}</p></section> : null}
+      {deliveryScheduleText(q.deliverySchedule ?? null) ? <p data-testid="quote-delivery"><span className="text-muted">التسليمات الدورية: </span>{deliveryScheduleText(q.deliverySchedule ?? null)!.replace("دورية التسليمات: ", "")}</p> : null}
       {q.durationDays ? <p><span className="text-muted">المدة: </span>{q.durationDays} يومًا من نفاذ العقد واكتمال ما يلزم منك</p> : null}
       <div className="overflow-x-auto">
         <table className="w-full border-collapse text-[14px]">
@@ -196,8 +199,19 @@ export function QuoteDocument({ q, today, names }: {
         <dt className="border-t border-line-strong pt-1 font-semibold">الإجمالي</dt><dd className="tabular border-t border-line-strong pt-1 text-end font-semibold">{sar(q.total)}</dd>
       </dl>
       <section>
-        <h4 className="font-semibold">شروط الدفع</h4>
-        <ul className="list-disc space-y-0.5 ps-5">{q.paymentTerms.map((t) => <li key={t.key}>{t.label} — {t.percent}٪ — {DUE[t.due] ?? t.due}{t.beforeStart ? " — يُشترط سدادها قبل البدء" : ""}</li>)}</ul>
+        <h4 className="font-semibold">جدول الدفعات</h4>
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-[14px]" data-testid="quote-schedule">
+            <caption className="sr-only">جدول الدفعات</caption>
+            <thead><tr className="border-b border-line-strong text-[13px] text-muted"><th scope="col" className="py-1.5 text-start font-medium">الدفعة</th><th scope="col" className="w-14 py-1.5 text-center font-medium">النسبة</th><th scope="col" className="w-28 py-1.5 text-end font-medium">المبلغ</th><th scope="col" className="py-1.5 ps-3 text-start font-medium">الاستحقاق</th></tr></thead>
+            <tbody>{parts.map((t) => (
+              <tr key={t.key} className="border-b border-line">
+                <td className="py-1.5 pe-2">{t.label}</td><td className="tabular py-1.5 text-center">{t.percent}٪</td><td className="tabular py-1.5 text-end">{sar(t.total)}</td>
+                <td className="py-1.5 ps-3">{termWhen(t)}{t.beforeStart ? " — يُشترط سدادها قبل البدء" : ""}</td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
       </section>
       {q.responseNote ? <p className="rounded-md bg-surface-2 px-3 py-2"><span className="text-muted">ملاحظة الرد: </span>{q.responseNote}</p> : null}
       {names ? (

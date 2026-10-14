@@ -29,13 +29,43 @@ export const QUOTE_STATUS_TONE: Record<QuoteStatus, "neutral" | "info" | "seal" 
 
 export const TERM_DUE_LABEL: Record<PaymentTerm["due"], string> = {
   on_contract: "عند توقيع العقد", before_start: "قبل بدء التنفيذ", on_delivery: "عند تسليم المخرجات", on_completion: "عند اكتمال الخدمة",
+  on_date: "في تاريخ محدد", on_milestone: "عند إنجاز مرحلة أو فترة تعاقدية",
 };
+
+/** When an installment falls due, in words (shown to the client in the quote, the contract and the schedule). */
+export function termWhen(t: Pick<PaymentTerm, "due" | "dueOn" | "milestone">) {
+  if (t.due === "on_date" && t.dueOn) return `في ${t.dueOn}`;
+  if (t.due === "on_milestone" && t.milestone) return `عند ${t.milestone}`;
+  return TERM_DUE_LABEL[t.due] + (t.milestone ? ` (${t.milestone})` : "");
+}
+
+export type RecurringPlan = { count: number; every: "monthly" | "quarterly" | "semiannual" | "annual"; firstOn: string; percent: number; label: string };
+const EVERY_MONTHS = { monthly: 1, quarterly: 3, semiannual: 6, annual: 12 } as const;
+export const EVERY_AR = { monthly: "شهرية", quarterly: "ربع سنوية", semiannual: "نصف سنوية", annual: "سنوية" } as const;
+
+/** A recurring plan as dated installments: `count` equal shares of `percent` (rounding goes to the last one). */
+export function recurringTerms(p: RecurringPlan): { label: string; percent: number; due: "on_date"; dueOn: string; beforeStart: false; series: string }[] {
+  if (!(p.count >= 1 && p.count <= 60) || !/^\d{4}-\d{2}-\d{2}$/.test(p.firstOn) || !(p.percent > 0 && p.percent <= 100)) return [];
+  const each = Math.floor((p.percent / p.count) * 100) / 100;
+  const out = [];
+  for (let i = 0; i < p.count; i++) {
+    const [y, m, d] = p.firstOn.split("-").map(Number);
+    const total = m - 1 + i * EVERY_MONTHS[p.every];
+    const yy = y + Math.floor(total / 12);
+    const mm = (total % 12) + 1;
+    const last = new Date(Date.UTC(yy, mm, 0)).getUTCDate();
+    const dueOn = `${yy}-${String(mm).padStart(2, "0")}-${String(Math.min(d, last)).padStart(2, "0")}`;
+    const percent = i === p.count - 1 ? round2(p.percent - each * (p.count - 1)) : each;
+    out.push({ label: `${p.label.trim() || "دفعة"} ${i + 1} من ${p.count}`, percent, due: "on_date" as const, dueOn, beforeStart: false as const, series: EVERY_AR[p.every] });
+  }
+  return out;
+}
 
 export type QuoteDraftInput = {
   lines: { description: string; qty: number; unit: number }[];
   discount: number;
   vatRate: number;
-  terms: { label: string; percent: number; due: PaymentTerm["due"]; beforeStart: boolean }[];
+  terms: { label: string; percent: number; due: PaymentTerm["due"]; beforeStart: boolean; dueOn?: string | null; milestone?: string | null; series?: string | null }[];
   validUntil: string;
   today: string;
 };
@@ -65,12 +95,20 @@ export function buildQuote(x: QuoteDraftInput):
   terms.forEach((p, i) => {
     if (!p.label.trim()) errors.push(`الدفعة ${i + 1}: اكتب وصفها.`);
     if (!(p.percent > 0)) errors.push(`الدفعة ${i + 1}: النسبة أكبر من صفر.`);
+    if (p.due === "on_date" && !/^\d{4}-\d{2}-\d{2}$/.test(p.dueOn ?? "")) errors.push(`الدفعة ${i + 1}: حدّد تاريخ استحقاقها.`);
+    else if (p.due === "on_date" && p.dueOn! < x.today) errors.push(`الدفعة ${i + 1}: تاريخ الاستحقاق لا يسبق اليوم.`);
+    if (p.due === "on_milestone" && (p.milestone ?? "").trim().length < 3) errors.push(`الدفعة ${i + 1}: سمِّ المرحلة أو الفترة التي ترتبط بها.`);
   });
   if (!/^\d{4}-\d{2}-\d{2}$/.test(x.validUntil) || x.validUntil < x.today) errors.push("تاريخ صلاحية العرض يجب ألا يسبق اليوم.");
   if (errors.length) return { ok: false, errors };
   return {
     ok: true, lines: out, subtotal: t.subtotal, discount: t.discount, net: t.net, vat: t.vat, total: t.total,
-    terms: terms.map((p, i) => ({ key: `t${i + 1}`, label: p.label.trim().slice(0, 120), percent: p.percent, due: p.due, beforeStart: p.beforeStart || p.due === "before_start" })),
+    terms: terms.map((p, i) => ({
+      key: `t${i + 1}`, label: p.label.trim().slice(0, 120), percent: p.percent, due: p.due, beforeStart: p.beforeStart || p.due === "before_start",
+      ...(p.due === "on_date" ? { dueOn: p.dueOn } : {}),
+      ...((p.milestone ?? "").trim() ? { milestone: p.milestone!.trim().slice(0, 160) } : {}),
+      ...(p.series ? { series: p.series.slice(0, 40) } : {}),
+    })),
   };
 }
 
@@ -99,8 +137,19 @@ export function splitInstallments(net: number, vatRate: number, terms: PaymentTe
 }
 
 /** Canonical text of a quote, hashed when it is sent (what the client saw and accepted). */
-export function quoteCanonical(q: { number: string; version: number; scope: string; deliverables?: string | null; exclusions?: string | null; assumptions?: string | null; clientObligations?: string | null; durationDays?: number | null; lines: QuoteLine[]; subtotal: string | number; discount: string | number; net: string | number; vatRate: string | number; vat: string | number; total: string | number; paymentTerms: PaymentTerm[]; validUntil: string }) {
+export type DeliverySchedule = { cadence: string; customDates?: { label: string; due: string }[] } | null;
+const DELIVERY_AR: Record<string, string> = { monthly: "شهرية", quarterly: "ربع سنوية", semiannual: "نصف سنوية", annual: "سنوية", event: "بحسب الحدث (اجتماع أو دفعة)", custom: "تواريخ أو مراحل محددة" };
+/** Delivery cadence agreed in a quote, in words (continuous services). */
+export function deliveryScheduleText(d: DeliverySchedule) {
+  if (!d?.cadence) return null;
+  const base = `دورية التسليمات: ${DELIVERY_AR[d.cadence] ?? d.cadence}`;
+  return d.cadence === "custom" && d.customDates?.length ? `${base} — ${d.customDates.map((x) => `${x.label} (${x.due})`).join("، ")}` : base;
+}
+
+export function quoteCanonical(q: { number: string; version: number; scope: string; deliverables?: string | null; exclusions?: string | null; assumptions?: string | null; clientObligations?: string | null; durationDays?: number | null; lines: QuoteLine[]; subtotal: string | number; discount: string | number; net: string | number; vatRate: string | number; vat: string | number; total: string | number; paymentTerms: PaymentTerm[]; validUntil: string; deliverySchedule?: DeliverySchedule }) {
   return JSON.stringify({
+    // Present only when the quote fixes a delivery cadence (keeps the hash of earlier quotes unchanged).
+    ...(q.deliverySchedule?.cadence ? { deliverySchedule: q.deliverySchedule } : {}),
     number: q.number, version: q.version, scope: q.scope, deliverables: q.deliverables ?? "", exclusions: q.exclusions ?? "", assumptions: q.assumptions ?? "",
     clientObligations: q.clientObligations ?? "", durationDays: q.durationDays ?? null, lines: q.lines, subtotal: Number(q.subtotal).toFixed(2),
     discount: Number(q.discount).toFixed(2), net: Number(q.net).toFixed(2), vatRate: Number(q.vatRate).toFixed(2), vat: Number(q.vat).toFixed(2),

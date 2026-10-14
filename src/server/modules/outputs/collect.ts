@@ -15,7 +15,7 @@ import { CHECK_STATUS_AR, STATUS_AR } from "@/server/modules/nazara/pure";
 import type { RequestCtx } from "@/server/modules/requests/access";
 import { docRequired, findField, sanitizeAnswers, summarize, tableRows, visibleDocs, visibleFields, visibleSteps } from "@/server/modules/requests/intake/engine";
 import { intakeOf, serviceForm } from "@/server/modules/requests/intake/server";
-import type { OutputContext } from "./build";
+import type { DeliveryRecordFacts, OutputContext } from "./build";
 import { fiscalPeriodOfYear, lastFiscalPeriod } from "./fiscal";
 
 const ACCOUNT_LABEL = new Map(ACCOUNTS.map((a) => [a.code, a.label]));
@@ -26,7 +26,7 @@ const num = (v: unknown) => (v == null || v === "" ? null : Number(v));
  * Reads everything an output draft may rest on, inside the caller's transaction (RLS applies: the staff member reads
  * only what their access allows). Nothing is inferred: absent data stays absent and becomes a gap in the draft.
  */
-export async function collectContext(tx: Tx, rc: RequestCtx, opts: { cycle?: { label: string; from: string | null; to: string | null; due: string } } = {}): Promise<OutputContext> {
+export async function collectContext(tx: Tx, rc: RequestCtx, opts: { cycle?: { label: string; from: string | null; to: string | null; due: string }; record?: DeliveryRecordFacts | null } = {}): Promise<OutputContext> {
   const today = todayISO();
   const req = rc.req;
   const form = serviceForm(rc.service);
@@ -86,6 +86,7 @@ export async function collectContext(tx: Tx, rc: RequestCtx, opts: { cycle?: { l
     stages: stageRows.map((s) => ({ name: s.name, status: STAGE_STATUS[s.status] ?? s.status })),
     nazara: null,
     cycle: opts.cycle ?? null,
+    record: opts.record ?? null,
     refs: refs.map((r) => ({ code: r.code, name: r.name, binding: r.binding, verification: r.verification })),
   };
   ctx.parties.push({ role: "مقدّم الطلب", name: ctx.requester.name, detail: capacity, prov: "client" });
@@ -169,8 +170,14 @@ export async function collectContext(tx: Tx, rc: RequestCtx, opts: { cycle?: { l
     policy: p ? { version: p.version, status: p.status, targetReturnPct: num(p.targetReturnPct), riskTolerance: p.riskTolerance, prohibited: p.prohibited, leverage: p.leveragePolicy } : null,
     portfolios: pf.map((x) => ({ manager: x.managerName, license: x.managerCmaLicense, strategy: x.strategy, risk: x.riskLevel })),
   };
+  const resFrom = opts.cycle?.from ?? addDays(today, -365);
+  const resTo = opts.cycle?.to ?? today;
+  const resRows = await tx.select({ number: resolutions.number, text: resolutions.text, category: resolutions.category, status: resolutions.status, at: resolutions.createdAt })
+    .from(resolutions).where(and(eq(resolutions.waqfId, wid), gte(resolutions.createdAt, new Date(`${resFrom}T00:00:00+03:00`)), lte(resolutions.createdAt, new Date(`${resTo}T23:59:59+03:00`)))).limit(40);
+  ctx.resolutions = resRows.map((r) => ({ number: r.number, text: r.text.length > 160 ? `${r.text.slice(0, 160)}…` : r.text, category: r.category, status: r.status, on: r.at.toISOString().slice(0, 10) }));
   if (eng) {
     ctx.nazara = {
+      appointmentNo: eng.appointmentDecisionNo, appointmentDate: eng.appointmentDecisionDate, appointmentAuthority: eng.appointmentAuthority, startedOn: eng.startedOn,
       number: eng.number, status: eng.status, statusLabel: STATUS_AR[eng.status as keyof typeof STATUS_AR] ?? eng.status,
       checklist: (eng.checklist ?? []).map((i) => ({ label: i.label, status: CHECK_STATUS_AR[i.status], required: i.required, source: i.source })),
     };

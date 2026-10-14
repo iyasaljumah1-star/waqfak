@@ -3,7 +3,7 @@
  * The engine is one (status machine, guards, plan, tasks, outputs, billing); each service declares which capabilities
  * apply — commercial path, its own workflow stages, its outputs and review policy — so the plan shows only what applies.
  */
-import { CADENCE_AR, continuousSpec } from "./continuous-pure";
+import { ACCEPTANCE_AR, CADENCE_AR, continuousSpec } from "./continuous-pure";
 import { outputsFor, PROFILE_FORMAT, REVIEW_LABEL, type Profile } from "@/server/modules/outputs/catalog";
 
 export type Family =
@@ -27,7 +27,7 @@ const PROFILE_FAMILY: Record<Profile, Family> = {
   sharia_opinion: "opinion", finance_opinion: "opinion", investment_opinion: "opinion", legal_review: "opinion",
   sharia_memo: "study", investment_assets: "investment", investment_policy: "investment",
   finance_report: "finance", governance_package: "governance", aml_program: "governance",
-  legal_package: "procedure", ops_package: "procedure", nazara_study: "waqf_management", periodic_report: "waqf_management",
+  legal_package: "procedure", ops_package: "procedure", nazara_study: "waqf_management", periodic_report: "waqf_management", nazara_report: "waqf_management", delivery_record: "waqf_management",
 };
 
 export type ServiceLike = { code: string; nameAr?: string; outputs?: string | null; pricingModel: string; workflowTemplateCode?: string | null; workflow?: string | null };
@@ -52,7 +52,7 @@ export function executionProfile(s: ServiceLike, stages: { key: string; name: st
   else if (wf === "registration") family = "registration";
   const notes: string[] = [];
   if (s.pricingModel === "subscription") notes.push("تسعير اشتراك: يُفوتر وفق دفعات العقد، ولا تُنشئ دورات التسليم فواتير.");
-  if (spec) notes.push(`خدمة مستمرة: يبقى الطلب مفتوحًا طوال مدة العقد. دورية التسليم ${CADENCE_AR[spec.cadence]}${spec.allowed.length > 1 ? ` (يجوز بالعقد: ${spec.allowed.map((c) => CADENCE_AR[c]).join("، ")})` : ""}.`);
+  if (spec) notes.push(`خدمة مستمرة: يبقى الطلب مفتوحًا طوال مدة العقد. ${spec.cadence ? `دورية التسليم ${CADENCE_AR[spec.cadence]} (${spec.cadenceSource})` : "دورية التسليم غير محددة: تُحدد في العرض أو عند تفعيل المدة ضمن نطاق العقد، ولا تُنشأ دورات قبل ذلك"}. ${ACCEPTANCE_AR[spec.acceptance.mode]}${spec.acceptance.fixed ? "" : " (يجوز للعقد ضبطه بصلاحية مدير)"}.`);
   if (s.pricingModel === "hourly" || s.pricingModel === "percentage") notes.push(`تسعير ${s.pricingModel === "hourly" ? "بالساعة" : "بالنسبة"}: يُقدَّر في العرض ويُعدّل بملحق عند تغيّر النطاق.`);
   if (wf === "registration") notes.push("خطوة يقدمها العميل أو وكيله عبر بوابة الجهة المختصة؛ المنصة تجهّز الحزمة وتتابع ولا تدّعي التسجيل.");
   if (s.code === "N01") notes.push("القبول بقرار ملف النظارة، والمباشرة بقرار التعيين والترخيص الساري.");
@@ -72,7 +72,7 @@ export function executionProfile(s: ServiceLike, stages: { key: string; name: st
       ...(spec?.closing ? [{ title: `${spec.closing.title} (عند الانتهاء)`, format: PROFILE_FORMAT[spec.closing.profile], review: REVIEW_LABEL.independent }] : []),
     ],
     delivery: spec
-      ? `دورات تسليم ${CADENCE_AR[spec.cadence]}: إعداد ← مراجعة ← اعتماد ← إرسال ← إقفال الدورة، والطلب مفتوح حتى نهاية المدة`
+      ? `دورات تسليم ${spec.cadence ? CADENCE_AR[spec.cadence] : "بدورية يحددها العقد"}: إعداد ← مراجعة داخلية ← اعتماد ← إتاحة للعميل ← ${spec.acceptance.mode === "required" ? "اعتماد العميل" : "اطلاعه"} ← إقفال الدورة، والطلب مفتوح حتى نهاية المدة`
       : client ? `بعد مراجعة الجودة، ثم «${client.name}»` : "بعد مراجعة الجودة واعتماد العميل",
     notes,
   };

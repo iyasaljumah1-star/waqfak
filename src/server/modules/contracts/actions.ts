@@ -1,5 +1,6 @@
 "use server";
 
+import { materializeSchedule } from "@/server/modules/billing/schedule";
 import { redirect } from "next/navigation";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
@@ -289,6 +290,8 @@ export async function signContract(_: ActionState, fd: FormData): Promise<Action
     await logEvent(c.tx, rc.req, c.auth.user.id, `وقّع ${signerName} ${capacity} ${k.parentContractId ? "ملحق التعديل" : "العقد"} ${k.number} برمز تحقق${executed ? " — نفذ العقد بتوقيع جميع الأطراف" : ""}`);
     await audit(c.tx, { actorUserId: c.auth.user.id, action: "contracts.sign", entityType: "contract", entityId: k.id, waqfId: k.waqfId, ip: c.ip, userAgent: c.userAgent, after: { partyKey: party?.key, method: "otp", contentHash: k.contentHash, challengeId: d.challengeId, executed } });
     if (executed) {
+      // The contract's payment schedule, with the due dates it fixes (dated installments, or the signing date).
+      await materializeSchedule(c.tx, rc.req.id, c.auth.user.id);
       if (k.parentContractId && k.quoteId) {
         // An executed amendment adds its net amount to the agreed price.
         const [q] = await c.tx.select({ net: quotes.net }).from(quotes).where(eq(quotes.id, k.quoteId));

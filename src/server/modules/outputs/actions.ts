@@ -15,7 +15,7 @@ import { buildDraft } from "./build";
 import { collectContext } from "./collect";
 import { applyEdits, approvalCheck, mergeRegenerated, readiness } from "./pure";
 import { addVersion, ensureOutput, outputsOf, preparersOf, versionOf, type OutputRow } from "./server";
-import { cycleOutputFor } from "@/server/modules/operations/continuous";
+import { cycleOutputFor, deliveryRecordFacts, termOf } from "@/server/modules/operations/continuous";
 import { parseCycleKey, requestOutputs } from "@/server/modules/operations/continuous-pure";
 
 /**
@@ -58,13 +58,16 @@ export async function generateOutput(_: ActionState, fd: FormData): Promise<Acti
     const rc = await ctxFor(c, d.id);
     if (!WORKING.includes(rc.req.status)) throw new UserError("تُعد المخرجات أثناء دراسة الطلب أو تنفيذه.");
     const cyc = parseCycleKey(d.outputKey) ? await cycleOutputFor(c.tx, rc, d.outputKey) : null;
-    if (cyc && cyc.cycle.status !== "open") throw new UserError("الدورة ليست مفتوحة: أُرسل تسليمها أو أُقفلت أو تُجووزت.");
+    if (cyc && !cyc.record && cyc.cycle.status !== "open") throw new UserError("الدورة ليست مفتوحة: أُتيح تسليمها أو أُقفلت أو تُجووزت.");
+    if (cyc?.record && cyc.cycle.status !== "sent") throw new UserError("يُعدّ محضر التسليم بعد إتاحة التسليم للعميل وقبل إقفال الدورة.");
     if (cyc && rc.req.status !== "in_progress") throw new UserError("تُعد مخرجات الدورات أثناء سريان الخدمة (لا أثناء التعليق).");
     const def = cyc?.def ?? requestOutputs(rc.service, (await outputsOf(c.tx, rc.req.id)).map((o) => o.outputKey)).find((x) => x.key === d.outputKey);
     if (!def) throw new UserError("هذا المخرج غير معرّف لهذه الخدمة.");
     const prepTask = await linkedTask(c, rc.req.id, "prepare_output", def.key);
     const o = await ensureOutput(c.tx, rc, def, c.auth.user.id, prepTask?.id ?? null);
-    const ctx = await collectContext(c.tx, rc, cyc ? { cycle: { label: cyc.cycle.label, from: cyc.cycle.periodStart, to: cyc.cycle.periodEnd, due: cyc.cycle.dueOn } } : {});
+    const term = cyc?.record ? await termOf(c.tx, rc.req.id) : null;
+    const record = cyc?.record ? await deliveryRecordFacts(c.tx, rc, cyc.cycle, term?.clientAcceptance ?? "required") : null;
+    const ctx = await collectContext(c.tx, rc, cyc ? { cycle: { label: cyc.cycle.label, from: cyc.cycle.periodStart, to: cyc.cycle.periodEnd, due: cyc.cycle.dueOn }, record } : {});
     const fresh = buildDraft(ctx, def);
     let version: number;
     let kept = 0;

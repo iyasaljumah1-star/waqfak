@@ -8,7 +8,7 @@ import { ActionForm } from "@/components/requests/forms";
 import { fmtDateTime } from "@/lib/utils";
 import { requireStaff } from "@/server/authz/context";
 import type { OutputBlock, OutputSection } from "@/server/db/schema/operations";
-import { approveOutput, generateOutput, returnOutput, saveOutputEdits, submitOutput } from "@/server/modules/outputs/actions";
+import { approveOutput, generateOutput, returnOutput, reviseOutput, saveOutputEdits, submitOutput } from "@/server/modules/outputs/actions";
 import { ORIGIN_LABEL, OUTPUT_STATUS_LABEL, OUTPUT_STATUS_TONE, PROV_LABEL } from "@/server/modules/outputs/pure";
 import { outputPageData } from "@/server/modules/outputs/queries";
 
@@ -211,7 +211,14 @@ export default async function OutputPage({ params, searchParams }: { params: Pro
                   </ActionForm>
                 </>
               ) : null}
-              <Link href={`/admin/requests/${id}#outputs`} className="block text-[14px] text-ink hover:underline">العودة إلى الطلب</Link>
+              {o.status === "approved" && canDeliver && rc.req.status === "in_progress" ? (
+                <ActionForm action={reviseOutput} hidden={{ outputId: o.id, requestId: id }} submit="افتح مراجعة جديدة" size="sm" variant="secondary">
+                  <p className="text-[13px] text-muted">تبقى النسخة المعتمدة وملفها كما هما في السجل، وتُفتح نسخة عمل جديدة تُراجع وتُعتمد من جديد.</p>
+                  <Field label="سبب المراجعة" name="note"><Input name="note" maxLength={2000} /></Field>
+                </ActionForm>
+              ) : null}
+              {d.cycle ? <p className="text-[13px] text-muted">مخرج دورة: {d.cycle.label} — تستحق {d.cycle.dueOn}</p> : null}
+              <Link href={`/admin/requests/${id}${d.cycle ? "#service" : "#outputs"}`} className="block text-[14px] text-ink hover:underline">العودة إلى الطلب</Link>
             </div>
           </Panel>
           <Panel title="النسخ" description="لا تُمحى نسخة. قارن أي نسختين.">

@@ -26,6 +26,10 @@ export function ActionForm({ action, hidden, children, submit, pendingText, vari
       <Hidden fields={hidden} />
       {children}
       <FormMessage state={s} />
+      {/* fields here are not wired to the state, so the reasons are listed under the message */}
+      {s.fieldErrors && Object.keys(s.fieldErrors).length ? (
+        <ul className="list-disc ps-5 text-[14px] text-critical">{Object.entries(s.fieldErrors).filter(([, v]) => v).map(([k, v]) => <li key={k}>{v}</li>)}</ul>
+      ) : null}
       <SubmitButton variant={variant} size={size} pendingText={pendingText ?? "جارٍ التنفيذ…"}>{submit}</SubmitButton>
     </form>
   );

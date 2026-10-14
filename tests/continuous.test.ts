@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   CONTINUOUS, CONTINUOUS_CODES, cycleCounts, cycleOutputKey, cyclePhase, endBlockers, isLate, nextPeriodic, parseCycleKey, periodOf, requestOutputs,
-  schedule, suggestedCadence, termState, type ContinuousSnap, type CycleLike, type TermLike,
+  schedule, clientPreference, closeBlockers, customDeliveries, parseCustomDates, termState, type ContinuousSnap, type CycleLike, type TermLike,
 } from "@/server/modules/operations/continuous-pure";
 import { guardTransition, appliesTo, findTransition } from "@/server/modules/requests/workflow";
 import { planRequest, type Snapshot } from "@/server/modules/operations/next-step";
@@ -17,14 +17,29 @@ describe("continuous services registry", () => {
     expect([...CONTINUOUS_CODES].sort()).toEqual(subs);
   });
 
-  it("does not impose one monthly cycle on all services", () => {
-    const cadences = new Set(CONTINUOUS_CODES.map((c) => CONTINUOUS[c].cadence));
-    expect(cadences.size).toBeGreaterThanOrEqual(4);
+  it("presets a cadence only where its source states it; every other service is unset until the contract fixes it", () => {
     expect(CONTINUOUS.F03.cadence).toBe("monthly"); // catalog: «قيود شهرية»
     expect(CONTINUOUS.I07.cadence).toBe("quarterly"); // catalog: «تقرير ربعي»
-    expect(suggestedCadence(CONTINUOUS.I07, {})).toBe("quarterly");
-    expect(suggestedCadence(CONTINUOUS.N07, { frequency: "irregular" })).toBe("event");
-    expect(suggestedCadence(CONTINUOUS.F03, { frequency: "annual" })).toBe("monthly"); // not allowed → the service default
+    expect(CONTINUOUS.N02.cadence).toBe("event");
+    expect(CONTINUOUS.N05.cadence).toBe("event");
+    for (const code of ["N01", "N03", "F08", "N04", "N06", "I09", "C06", "N07"]) {
+      expect(CONTINUOUS[code].cadence, code).toBeNull();
+      expect(CONTINUOUS[code].cadenceSource, code).toBeNull();
+    }
+    for (const code of CONTINUOUS_CODES.filter((c) => CONTINUOUS[c].cadence)) expect(CONTINUOUS[code].cadenceSource, code).toBeTruthy();
+    // every service may be customized per contract, including contractual dates
+    for (const code of ["N03", "F08", "C06"]) expect(CONTINUOUS[code].allowed).toEqual(expect.arrayContaining(["monthly", "quarterly", "semiannual", "annual", "custom"]));
+    // the client's form answer is a hint, never applied by itself
+    expect(clientPreference({ frequency: "irregular" })).toBe("event");
+    expect(clientPreference({})).toBeNull();
+  });
+
+  it("client acceptance is set per service; fixed where the nature of the service sets it", () => {
+    expect(CONTINUOUS.N01.acceptance).toEqual({ mode: "required", fixed: true });
+    expect(CONTINUOUS.N05.acceptance).toEqual({ mode: "info", fixed: true });
+    expect(CONTINUOUS.F08.acceptance.fixed).toBe(false);
+    expect(CONTINUOUS.N01.deliveryRecord).toBe(true);
+    expect(CONTINUOUS.N01.delivery).toMatchObject({ kind: "output", profile: "nazara_report", review: "independent" });
   });
 
   it("a service with no periodic document gets a follow-up record, not a fabricated report", () => {
@@ -40,8 +55,9 @@ describe("continuous services registry", () => {
   });
 
   it("cycle output keys round-trip", () => {
-    expect(parseCycleKey(cycleOutputKey("I07", 3))).toEqual({ code: "I07", closing: false, seq: 3 });
-    expect(parseCycleKey(cycleOutputKey("N01", 9, "closing"))).toEqual({ code: "N01", closing: true, seq: 9 });
+    expect(parseCycleKey(cycleOutputKey("I07", 3))).toEqual({ code: "I07", closing: false, record: false, seq: 3 });
+    expect(parseCycleKey(cycleOutputKey("N01", 9, "closing"))).toEqual({ code: "N01", closing: true, record: false, seq: 9 });
+    expect(parseCycleKey("N01.record@c2")).toEqual({ code: "N01", closing: false, record: true, seq: 2 });
     expect(parseCycleKey("F03.main")).toBeNull();
   });
 });
@@ -75,7 +91,11 @@ describe("states", () => {
     expect(cyclePhase({ status: "open", outputKey: "k" }, null, "output")).toBe("preparing");
     expect(cyclePhase({ status: "open", outputKey: "k" }, { status: "returned" }, "output")).toBe("returned");
     expect(cyclePhase({ status: "open", outputKey: "k" }, { status: "approved" }, "output")).toBe("approved");
-    expect(cyclePhase({ status: "sent", outputKey: "k" }, { status: "approved" }, "output")).toBe("sent");
+    expect(cyclePhase({ status: "sent", outputKey: "k" }, { status: "approved" }, "output")).toBe("client_review");
+    expect(cyclePhase({ status: "sent", outputKey: "k", clientDecision: "approved" }, { status: "approved" }, "output")).toBe("client_approved");
+    expect(cyclePhase({ status: "open", outputKey: "k", clientDecision: "revision_requested" }, { status: "approved" }, "output")).toBe("client_revision");
+    expect(cyclePhase({ status: "open", outputKey: "k", clientDecision: "revision_requested" }, { status: "draft" }, "output")).toBe("preparing");
+    expect(cyclePhase({ status: "open", outputKey: "k", clientDecision: "revision_requested" }, { status: "approved", reapproved: true }, "output")).toBe("approved");
     expect(cyclePhase({ status: "open", outputKey: null }, null, "followup")).toBe("followup");
   });
 
@@ -156,7 +176,7 @@ describe("execution plan of a continuous service", () => {
     expect(key(cs({ cycles: [cy({ outputId: "o1", outputStatus: "draft" })] }))).toBe("submit_output");
     expect(key(cs({ cycles: [cy({ outputId: "o1", phase: "in_review" })] }))).toBe("approve_output");
     expect(key(cs({ cycles: [cy({ outputId: "o1", phase: "approved" })] }))).toBe("send_cycle");
-    expect(key(cs({ cycles: [cy({ outputId: "o1", phase: "sent" })] }))).toBe("close_cycle");
+    expect(key(cs({ cycles: [cy({ outputId: "o1", phase: "client_approved", closeBlockers: [] })] }))).toBe("close_cycle");
     expect(key(cs({ cycles: [cy({ phase: "closed" })], next: { label: "فبراير 2026", due: "2026-03-10" }, canOpenNext: true }))).toBe("open_cycle");
   });
   it("a returned draft shows the reviewer's note and links to the editor", () => {
@@ -168,5 +188,54 @@ describe("execution plan of a continuous service", () => {
     expect(key(cs({ termState: "ended", endBlockers: [] }))).toBe("end_service");
     const p = planRequest(snap(cs({ termState: "ended", endBlockers: ["فترات بلا دورة: x"] })));
     expect(p.steps.find((s) => s.key === "end_service")?.state).toBe("blocked");
+  });
+});
+
+describe("contractual dates, client acceptance and closing", () => {
+  it("custom cadence: contractual dates in order, within the term, open from the term's start", () => {
+    const t = term({ cadence: "custom", customDates: [{ label: "تقرير الخطة", due: "2026-06-30" }, { label: "تقرير التأسيس", due: "2026-02-15" }, { label: "بعد الإنهاء", due: "2027-03-01" }] });
+    expect(customDeliveries(t).map((x) => x.label)).toEqual(["تقرير التأسيس", "تقرير الخطة"]);
+    expect(periodOf(t, 1)).toMatchObject({ label: "تقرير التأسيس", from: "2026-01-01", due: "2026-02-15" });
+    expect(nextPeriodic(t, [cyc(1)])?.label).toBe("تقرير الخطة");
+    expect(schedule(t)).toHaveLength(2);
+    const parsed = parseCustomDates("2026-03-31 | تسليم المرحلة الأولى\nخطأ\n2026-05-01 | ب");
+    expect(parsed.dates).toEqual([{ label: "تسليم المرحلة الأولى", due: "2026-03-31" }]);
+    expect(parsed.errors).toHaveLength(2);
+  });
+
+  it("an event-only term has no schedule: no fabricated dates", () => {
+    expect(schedule(term({ cadence: "event" }))).toEqual([]);
+  });
+
+  it("a cycle never closes on the client's silence when acceptance is required", () => {
+    const base = { status: "sent", clientDecision: null, checklist: [{ done: true, label: "x" }] };
+    const opts = { acceptance: "required" as const, needsOutput: true, recordRequired: false, recordApproved: false };
+    expect(closeBlockers(base, opts).join(" ")).toContain("لا يُعد سكوته اعتمادًا");
+    expect(closeBlockers({ ...base, clientDecision: "revision_requested" }, opts).join(" ")).toContain("طلب العميل تعديل");
+    expect(closeBlockers({ ...base, clientDecision: "approved" }, opts)).toEqual([]);
+    expect(closeBlockers(base, { ...opts, acceptance: "info" })).toEqual([]);
+    expect(closeBlockers({ ...base, clientDecision: "approved" }, { ...opts, recordRequired: true })).toEqual(["محضر التسليم لم يُعتمد داخليًا بعد."]);
+    expect(closeBlockers({ ...base, status: "open" }, opts)[0]).toContain("لم يُتح");
+  });
+
+  it("plan: awaiting the client is the client's step; a revision request sends the work back to the specialist", () => {
+    const ID = "00000000-0000-4000-8000-000000000003";
+    const snap = (c: Partial<ContinuousSnap["cycles"][number]>): Snapshot => ({
+      id: ID, status: "in_progress", resumeTo: null, holdParty: null, holdLabel: null, paid: false, conflictBlocked: false, assigneeName: null,
+      viewer: { id: "u1", isOps: true, isAssignee: false, canDeliver: true, canQA: true, canApproveQuote: true, canApproveContract: true, isDeliverer: false },
+      intake: { legacy: false, invalidFields: [], missingDocs: [], unverifiedDocs: [], verified: true, accepted: true }, items: { clientOpen: 0, awaitingReview: 0, internalOpen: 0 },
+      quote: null, contract: null, prestart: [], stages: [{ key: "onboarding", name: "ت", status: "done" }, { key: "running", name: "ش", status: "active" }], canAdvanceStage: false,
+      outputs: [], deliverables: { submitted: 0, unsignedOpinion: 0 }, opinion: false, selfQA: false, waqf: { linked: true, name: "و" },
+      continuous: { hasTerm: true, termState: "active", termLabel: "سارية", cadence: "ربع سنوية", deliveryKind: "output", next: null, canOpenNext: false, closingDue: false, endBlockers: ["x"],
+        cycles: [{ id: "c", seq: 1, label: "الربع 1", due: "2026-04-15", late: false, phase: "client_review", kind: "periodic", outputKey: "F08.cycle@c1", outputId: "o", outputStatus: "approved", returnedNote: null, blocking: [], unwritten: [], viewerCanApprove: false, inputsMissing: [], checklistOpen: 0, closeBlockers: ["لم يعتمد العميل التسليم بعد (لا يُعد سكوته اعتمادًا)."], ...c }] },
+    });
+    const waiting = planRequest(snap({}));
+    expect(waiting.current?.owner).toBe("client");
+    expect(waiting.primary).toBeNull();
+    const back = planRequest(snap({ phase: "client_revision", clientNote: "أضف المقارنة" }));
+    expect(back.current?.blockers[0].text).toContain("أضف المقارنة");
+    expect(back.primary).toMatchObject({ kind: "link", href: `/admin/requests/${ID}/outputs/o` });
+    const rec = planRequest(snap({ phase: "client_approved", closeBlockers: ["محضر التسليم لم يُعتمد داخليًا بعد."], record: { key: "N01.record@c1", outputId: null, status: null, viewerCanApprove: false, blocking: [], unwritten: [] } }));
+    expect(rec.primary).toMatchObject({ kind: "run", key: "generate_output", args: { outputKey: "N01.record@c1" } });
   });
 });

@@ -2,7 +2,7 @@
 
 import { and, eq, max } from "drizzle-orm";
 import { z } from "zod";
-import { deliverables, documents, meetings, outputs, quotes, serviceCycles, serviceTerms, tasks } from "@/server/db/schema";
+import { deliverables, documents, meetings, outputs, quotes, serviceCycles, serviceTerms, settings, tasks } from "@/server/db/schema";
 import { ForbiddenError } from "@/server/authz/context";
 import { audit } from "@/server/lib/audit";
 import { addDays, addMonths, todayISO } from "@/server/engines/dates";
@@ -13,8 +13,8 @@ import { notify } from "@/server/modules/notify";
 import { releaseOutput } from "@/server/modules/outputs/server";
 import type { ActionState } from "@/lib/utils";
 import { syncTask, taskEvent } from "./exec";
-import { cyclesOf, inputChecks, specOf, termEvent, termOf, type CycleRow } from "./continuous";
-import { CADENCE_AR, checklistOf, cycleOutputKey, effectiveEnd, nextPeriodic, termState } from "./continuous-pure";
+import { cyclesOf, inputChecks, quoteCadence, specOf, termEvent, termLike, termOf, type CycleRow } from "./continuous";
+import { ACCEPTANCE_AR, CADENCE_AR, checklistOf, parseCustomDates, closeBlockers, cycleOutputKey, effectiveEnd, nextPeriodic, recordOutputKey, termState } from "./continuous-pure";
 
 /**
  * Continuous services: term setup, renewal, termination, and the life of each delivery cycle.
@@ -62,12 +62,19 @@ const cycleTaskKey = (code: string, seq: number) => `${code}.cycle-task@c${seq}`
 
 const termSchema = z.object({
   id: uuid, startOn: isoDate, endOn: isoDate,
-  cadence: z.enum(["monthly", "quarterly", "semiannual", "annual", "event"], { message: "اختر دورية التسليم." }),
+  cadence: z.enum(["monthly", "quarterly", "semiannual", "annual", "event", "custom"], { message: "حدّد دورية التسليم كما في العقد: لا دورية افتراضية لهذه الخدمة." }),
+  customDates: z.string().max(6000).optional().default(""),
+  clientAcceptance: z.enum(["required", "info"]).optional(),
   dueOffsetDays: z.coerce.number().int().min(0, "أيام الاستحقاق لا تقل عن صفر.").max(90, "أيام الاستحقاق لا تزيد على 90."),
   note: z.string().trim().max(1000).optional().default(""),
 });
 
-/** Records the service term from the contract: start, end, cadence (within what the service allows), due offset. */
+/**
+ * Records the service term from the contract: start, end, the cadence agreed (there is no default where the sources
+ * set none), contractual dates when the cadence is «custom», the due offset, and whether the client must approve each
+ * delivery. A cadence different from the accepted quote, or an acceptance mode different from the service's, is a
+ * contract-level decision reserved to an authorized manager and must be explained.
+ */
 export async function setupTerm(_: ActionState, fd: FormData): Promise<ActionState> {
   const r = parseForm(termSchema, fd);
   if ("state" in r) return r.state;
@@ -80,17 +87,58 @@ export async function setupTerm(_: ActionState, fd: FormData): Promise<ActionSta
     if (!spec.allowed.includes(d.cadence)) throw new UserError(`دورية غير متاحة لهذه الخدمة. المتاح: ${spec.allowed.map((x) => CADENCE_AR[x]).join("، ")}.`);
     if (d.endOn <= d.startOn) throw new UserError("تاريخ النهاية يلي تاريخ البداية.");
     if (d.endOn > addMonths(d.startOn, 60)) throw new UserError("المدة أطول من خمس سنوات: راجع العقد.");
+    let customDates: { label: string; due: string }[] = [];
+    if (d.cadence === "custom") {
+      const parsed = parseCustomDates(d.customDates);
+      if (parsed.errors.length) throw new UserError(parsed.errors.slice(0, 3).join(" "));
+      if (!parsed.dates.length) throw new UserError("أدخل تواريخ التسليم أو مراحله التعاقدية، سطرًا لكل تسليم.");
+      const outside = parsed.dates.filter((x) => x.due < d.startOn || x.due > addDays(d.endOn, 90));
+      if (outside.length) throw new UserError(`تواريخ خارج مدة الخدمة: ${outside.map((x) => x.due).join("، ")}.`);
+      customDates = parsed.dates;
+    }
+    const qc = await quoteCadence(c.tx, rc.req.id);
+    if (qc?.cadence && qc.cadence !== d.cadence && !rc.isOps) throw new ForbiddenError("الدورية تخالف العرض المقبول: يغيّرها مدير التشغيل بسبب مكتوب (ملحق أو اتفاق).");
+    if (qc?.cadence && qc.cadence !== d.cadence && d.note.length < 10) throw new UserError("الدورية تخالف العرض المقبول: اكتب في الملاحظة سبب المخالفة ومرجع الاتفاق.");
+    if (qc?.cadence === "custom" && d.cadence === "custom" && !d.customDates.trim()) customDates = (qc.customDates ?? []).map((x) => ({ label: x.label, due: x.due }));
+    const acceptance = d.clientAcceptance ?? spec.acceptance.mode;
+    if (acceptance !== spec.acceptance.mode) {
+      if (spec.acceptance.fixed) throw new UserError(`اعتماد العميل في هذه الخدمة ثابت: ${ACCEPTANCE_AR[spec.acceptance.mode]}.`);
+      if (!rc.isOps) throw new ForbiddenError("ضبط اعتماد العميل على مستوى العقد لمدير التشغيل.");
+      if (d.note.length < 10) throw new UserError("اكتب في الملاحظة سبب ضبط اعتماد العميل خلاف الأصل في الخدمة ومرجعه في العقد.");
+    }
+    const source = qc?.cadence === d.cadence ? "quote" : spec.cadence === d.cadence ? "catalog" : "set";
     const cs = await contractState(c.tx, rc.req.id);
     const [q] = await c.tx.select({ id: quotes.id }).from(quotes).where(and(eq(quotes.requestId, rc.req.id), eq(quotes.kind, "initial"), eq(quotes.status, "accepted"))).limit(1);
     const [t] = await c.tx.insert(serviceTerms).values({
       requestId: rc.req.id, waqfId: rc.req.waqfId, serviceCode: rc.service.code, contractId: cs.executed ? cs.contract?.id ?? null : null, quoteId: q?.id ?? null,
-      cadence: d.cadence, startOn: d.startOn, endOn: d.endOn, dueOffsetDays: d.dueOffsetDays, status: rc.req.status === "on_hold" ? "suspended" : "active",
-      history: [{ at: new Date().toISOString(), by: c.auth.user.id, kind: "setup", note: d.note || null, after: { startOn: d.startOn, endOn: d.endOn, cadence: d.cadence, dueOffsetDays: d.dueOffsetDays } }],
+      cadence: d.cadence, customDates, clientAcceptance: acceptance, cadenceSource: source,
+      startOn: d.startOn, endOn: d.endOn, dueOffsetDays: d.dueOffsetDays, status: rc.req.status === "on_hold" ? "suspended" : "active",
+      history: [{ at: new Date().toISOString(), by: c.auth.user.id, kind: "setup", note: d.note || null, after: { startOn: d.startOn, endOn: d.endOn, cadence: d.cadence, customDates, dueOffsetDays: d.dueOffsetDays, clientAcceptance: acceptance, cadenceSource: source } }],
       createdBy: c.auth.user.id, updatedBy: c.auth.user.id,
     }).returning();
-    await logEvent(c.tx, rc.req, c.auth.user.id, `حُددت مدة الخدمة من ${d.startOn} إلى ${d.endOn}، ودورية التسليم ${CADENCE_AR[d.cadence]}`);
-    await audit(c.tx, { actorUserId: c.auth.user.id, action: "continuous.term_setup", entityType: "service_term", entityId: t.id, waqfId: rc.req.waqfId, ip: c.ip, userAgent: c.userAgent, after: { startOn: d.startOn, endOn: d.endOn, cadence: d.cadence, contractId: t.contractId, quoteId: t.quoteId, note: d.note || undefined } });
+    await logEvent(c.tx, rc.req, c.auth.user.id, `حُددت مدة الخدمة من ${d.startOn} إلى ${d.endOn}، ودورية التسليم ${CADENCE_AR[d.cadence]}${customDates.length ? ` (${customDates.length} تسليمًا بتواريخ محددة)` : ""}`);
+    await audit(c.tx, { actorUserId: c.auth.user.id, action: "continuous.term_setup", entityType: "service_term", entityId: t.id, waqfId: rc.req.waqfId, ip: c.ip, userAgent: c.userAgent, after: { startOn: d.startOn, endOn: d.endOn, cadence: d.cadence, customDates, clientAcceptance: acceptance, cadenceSource: source, contractId: t.contractId, quoteId: t.quoteId, note: d.note || undefined } });
     return { ok: true, message: `حُددت مدة الخدمة ودوريتها (${CADENCE_AR[d.cadence]}).` };
+  }, { revalidate: reval(d.id) });
+}
+
+const accSchema = z.object({ id: uuid, clientAcceptance: z.enum(["required", "info"]), reason: z.string().trim().min(10, "اكتب السبب ومرجعه في العقد (10 أحرف على الأقل).").max(1000) });
+
+/** Changes whether the client must approve each delivery (contract level; managers only; never for a fixed service). */
+export async function changeAcceptance(_: ActionState, fd: FormData): Promise<ActionState> {
+  const r = parseForm(accSchema, fd);
+  if ("state" in r) return r.state;
+  const d = r.data;
+  return userAction(async (c) => {
+    const { rc, spec } = await load(c, d.id);
+    manager(rc);
+    if (spec.acceptance.fixed) throw new UserError(`اعتماد العميل في هذه الخدمة ثابت: ${ACCEPTANCE_AR[spec.acceptance.mode]}.`);
+    const t = await termOf(c.tx, rc.req.id);
+    if (!t) throw new UserError("لم تُحدد مدة الخدمة بعد.");
+    if (t.clientAcceptance === d.clientAcceptance) return { ok: true, message: "لا تغيير." };
+    await c.tx.update(serviceTerms).set({ clientAcceptance: d.clientAcceptance, history: termEvent(t, { by: c.auth.user.id, kind: "edit", note: d.reason, before: { clientAcceptance: t.clientAcceptance }, after: { clientAcceptance: d.clientAcceptance } }), updatedBy: c.auth.user.id }).where(eq(serviceTerms.id, t.id));
+    await audit(c.tx, { actorUserId: c.auth.user.id, action: "continuous.acceptance_change", entityType: "service_term", entityId: t.id, waqfId: rc.req.waqfId, ip: c.ip, userAgent: c.userAgent, before: { clientAcceptance: t.clientAcceptance }, after: { clientAcceptance: d.clientAcceptance, reason: d.reason } });
+    return { ok: true, message: "ضُبط اعتماد العميل على مستوى العقد." };
   }, { revalidate: reval(d.id) });
 }
 
@@ -177,7 +225,7 @@ export async function openCycle(_: ActionState, fd: FormData): Promise<ActionSta
     const t = await termOf(c.tx, rc.req.id);
     if (!t) throw new UserError("حدّد مدة الخدمة ودوريتها أولًا.");
     const today = todayISO();
-    const like = { cadence: t.cadence, startOn: t.startOn, endOn: t.endOn, dueOffsetDays: t.dueOffsetDays, status: t.status, terminatedOn: t.terminatedOn };
+    const like = termLike(t);
     const ts = termState(like, today);
     const end = effectiveEnd(like);
     const existing = await cyclesOf(c.tx, rc.req.id);
@@ -313,12 +361,16 @@ export async function sendCycle(_: ActionState, fd: FormData): Promise<ActionSta
     rid = rc.req.id;
     worker(rc);
     running(rc);
-    if (cy.status !== "open") throw new UserError(cy.status === "sent" ? "أُرسل تسليم هذه الدورة من قبل." : "الدورة مقفلة.");
+    if (cy.status !== "open") throw new UserError(cy.status === "sent" ? "أُتيح تسليم هذه الدورة للعميل من قبل." : "الدورة مقفلة.");
     const now = new Date();
     let title = cy.label;
+    let version: number | null = null;
     if (cy.outputKey) {
       const [o] = await c.tx.select().from(outputs).where(and(eq(outputs.requestId, rc.req.id), eq(outputs.outputKey, cy.outputKey))).limit(1).for("update");
-      if (!o || o.status !== "approved") throw new UserError("يُرسل التسليم بعد اعتماد مخرج الدورة. الإنشاء وحده لا يعدّ اعتمادًا ولا إرسالًا.");
+      if (!o || o.status !== "approved") throw new UserError("يُتاح التسليم بعد اعتماد مخرج الدورة داخليًا. الإنشاء وحده لا يعدّ اعتمادًا ولا إتاحة.");
+      if (cy.clientDecision === "revision_requested" && o.approvedAt && cy.clientDecisionAt && o.approvedAt < cy.clientDecisionAt)
+        throw new UserError("طلب العميل تعديل هذا التسليم: افتح مراجعة جديدة للمخرج وعدّله واعتمده قبل إتاحته مجددًا.");
+      version = o.approvedVersion;
       await releaseOutput(c.tx, rc, o, c.auth.user.id, { ip: c.ip, userAgent: c.userAgent });
       const [o2] = await c.tx.select({ deliverableId: outputs.deliverableId, documentId: outputs.documentId, title: outputs.title }).from(outputs).where(eq(outputs.id, o.id));
       if (!o2.deliverableId) throw new UserError("لا سجل تسليم للمخرج المعتمد.");
@@ -332,12 +384,18 @@ export async function sendCycle(_: ActionState, fd: FormData): Promise<ActionSta
     } else {
       throw new UserError("هذه دورة متابعة بلا مستند يُرسل: أكمل مهامها وأقفلها بملاحظة المتابعة.");
     }
-    await c.tx.update(serviceCycles).set({ status: "sent", sentAt: now, sentBy: c.auth.user.id, deliveredOn: todayISO(), updatedBy: c.auth.user.id }).where(eq(serviceCycles.id, cy.id));
-    await logEvent(c.tx, rc.req, c.auth.user.id, `أُرسل تسليم الدورة: ${title}`);
-    await audit(c.tx, { actorUserId: c.auth.user.id, action: "continuous.cycle_send", entityType: "service_cycle", entityId: cy.id, waqfId: cy.waqfId, ip: c.ip, userAgent: c.userAgent, after: { seq: cy.seq, label: cy.label, outputKey: cy.outputKey, channel: "in_platform" } });
+    // A new availability resets the client's decision (the earlier one stays in the cycle's events and on the old version).
+    await c.tx.update(serviceCycles).set({
+      status: "sent", sentAt: now, sentBy: c.auth.user.id, deliveredOn: todayISO(), viewedAt: null,
+      clientDecision: null, clientDecisionAt: null, clientDecisionBy: null, clientDecisionNote: null, clientApprovedVersion: null,
+      clientEvents: [...(cy.clientEvents ?? []), { at: now.toISOString(), by: c.auth.user.id, kind: "available", version, note: null }], updatedBy: c.auth.user.id,
+    }).where(eq(serviceCycles.id, cy.id));
+    await logEvent(c.tx, rc.req, c.auth.user.id, `أُتيح لك تسليم داخل المنصة: ${title}${version ? ` (النسخة ${version})` : ""}`);
+    await audit(c.tx, { actorUserId: c.auth.user.id, action: "continuous.cycle_available", entityType: "service_cycle", entityId: cy.id, waqfId: cy.waqfId, ip: c.ip, userAgent: c.userAgent, after: { seq: cy.seq, label: cy.label, outputKey: cy.outputKey, version, channel: "in_platform" } });
+    // In-platform notification only (no email or SMS channel is integrated for deliveries).
     if (rc.req.requesterUserId !== c.auth.user.id)
-      await notify(rc.req.requesterUserId, "request.status", { number: rc.req.number, status: "تسليم دوري", note: title }, { waqfId: rc.req.waqfId, link: `/app/requests/${rc.req.id}`, tx: c.tx });
-    return { ok: true, message: "أُرسل التسليم للعميل داخل المنصة. الطلب مستمر؛ أقفل الدورة بعد إتمام مهامها." };
+      await notify(rc.req.requesterUserId, "delivery.available", { number: rc.req.number, title }, { waqfId: rc.req.waqfId, link: `/app/requests/${rc.req.id}#deliveries`, tx: c.tx });
+    return { ok: true, message: "أُتيح التسليم للعميل داخل المنصة، وأُشعر داخلها. الطلب مستمر." };
   }, { revalidate: () => reval(rid) });
 }
 
@@ -353,13 +411,22 @@ export async function closeCycle(_: ActionState, fd: FormData): Promise<ActionSt
     worker(rc);
     running(rc);
     const followup = !cy.outputKey && spec.delivery.kind === "followup";
-    if (followup ? cy.status !== "open" : cy.status !== "sent") throw new UserError(followup ? "الدورة ليست مفتوحة." : "تُقفل الدورة بعد إرسال تسليمها للعميل.");
-    const open = (cy.checklist ?? []).filter((x) => !x.done);
-    if (open.length) throw new UserError(`مهام الدورة غير المنجزة: ${open.map((x) => x.label).join("، ")}.`);
+    if (followup ? cy.status !== "open" : cy.status !== "sent") throw new UserError(followup ? "الدورة ليست مفتوحة." : "تُقفل الدورة بعد إتاحة تسليمها للعميل.");
+    const t = await termOf(c.tx, rc.req.id);
+    const recKey = spec.deliveryRecord && cy.kind !== "closing" ? recordOutputKey(spec.code, cy.seq) : null;
+    const [rec] = recKey ? await c.tx.select().from(outputs).where(and(eq(outputs.requestId, rc.req.id), eq(outputs.outputKey, recKey))).limit(1).for("update") : [];
+    const blockers = closeBlockers(cy, { acceptance: followup ? "info" : t?.clientAcceptance ?? spec.acceptance.mode, needsOutput: !followup, recordRequired: !!recKey, recordApproved: rec?.status === "approved" });
+    if (blockers.length) throw new UserError(`لا تُقفل الدورة بعد: ${blockers.join(" ")}`);
     if (followup) {
       if (note.length < 10) return { error: "اكتب ملاحظة المتابعة: ما حضره العضو أو نفّذه وما سجّله (10 أحرف على الأقل).", fieldErrors: { note: "اكتب ملاحظة المتابعة." } };
       const miss = (await inputChecks(c.tx, rc, cy, spec)).filter((x) => !x.ok);
       if (miss.length) throw new UserError(`لا تُقفل الدورة قبل: ${miss.map((x) => x.label).join("، ")}.`);
+    }
+    // N01: the approved delivery record is made available with the cycle's files.
+    if (rec) {
+      await releaseOutput(c.tx, rc, rec, c.auth.user.id, { ip: c.ip, userAgent: c.userAgent });
+      const [r2] = await c.tx.select({ deliverableId: outputs.deliverableId }).from(outputs).where(eq(outputs.id, rec.id));
+      if (r2?.deliverableId) await c.tx.update(deliverables).set({ cycleId: cy.id, releasedAt: new Date(), updatedBy: c.auth.user.id }).where(eq(deliverables.id, r2.deliverableId));
     }
     const now = new Date();
     await c.tx.update(serviceCycles).set({ status: "closed", closedAt: now, closedBy: c.auth.user.id, closeNote: note || null, deliveredOn: cy.deliveredOn ?? (followup ? todayISO() : null), updatedBy: c.auth.user.id }).where(eq(serviceCycles.id, cy.id));
@@ -411,4 +478,20 @@ export async function endService(_: ActionState, fd: FormData): Promise<ActionSt
     await transition(c, rc, { to: "completed", note });
     return { ok: true, message: "أُنهيت الخدمة واكتمل الطلب. يُغلق بعد أرشفة ملفه." };
   }, { revalidate: reval(r.data.id) });
+}
+
+const remSchema = z.object({ days: z.coerce.number().int().min(1, "من يوم إلى 60 يومًا.").max(60, "من يوم إلى 60 يومًا.") });
+
+/** After how many days without the client's decision a reminder goes to the client and the team (managers only). */
+export async function saveResponseReminderDays(_: ActionState, fd: FormData): Promise<ActionState> {
+  const r = parseForm(remSchema, fd);
+  if ("state" in r) return r.state;
+  return userAction(async (c) => {
+    const value = { days: r.data.days };
+    const [old] = await c.tx.select().from(settings).where(eq(settings.key, "delivery.response_reminder_days")).limit(1);
+    await c.tx.insert(settings).values({ key: "delivery.response_reminder_days", value, description: "تذكير العميل بالتسليمات بانتظار رده", updatedBy: c.auth.user.id })
+      .onConflictDoUpdate({ target: settings.key, set: { value, updatedBy: c.auth.user.id, updatedAt: new Date() } });
+    await audit(c.tx, { actorUserId: c.auth.user.id, action: "settings.update", entityType: "setting", entityId: "delivery.response_reminder_days", ip: c.ip, userAgent: c.userAgent, before: old?.value as Record<string, unknown> | undefined, after: value });
+    return { ok: true, message: "حُفظ توقيت التذكير." };
+  }, { perm: "admin.requests.all", revalidate: "/admin/continuous" });
 }
