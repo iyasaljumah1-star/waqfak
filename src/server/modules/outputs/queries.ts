@@ -1,11 +1,17 @@
 import "server-only";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { ForbiddenError, type Auth } from "@/server/authz/context";
-import { outputs, outputVersions, users } from "@/server/db/schema";
+import { documents, outputs, outputVersions, regulatoryReferences, users } from "@/server/db/schema";
 import { read } from "@/server/modules/_shared";
 import { loadRequestCtx } from "@/server/modules/requests/access";
 import { outputsFor, PROFILE_FORMAT, REVIEW_LABEL, SPECIALTY_LABEL } from "./catalog";
-import { diffVersions, readiness } from "./pure";
+import { diffVersions, readiness, wordDiff } from "./pure";
+import { dataHash } from "./build";
+import { checkBlockers } from "./checks";
+import { draftInputs } from "./live";
+import { checksOf, conflictRegister, officialRecordsOf, reviewsOf } from "./quality";
+import { requirementBlockers, requirementsOf } from "./requirements";
+import { nextAction, outputStage } from "./stages";
 import { preparersOf } from "./server";
 import { livePreview } from "./live";
 import { cycleOutputFor } from "@/server/modules/operations/continuous";
@@ -31,11 +37,42 @@ export async function outputPageData(auth: Auth, requestId: string, outputId: st
     const people = ids.length ? await tx.select({ id: users.id, name: users.fullName }).from(users).where(inArray(users.id, ids)) : [];
     const def = outputsFor(rc.service).find((d) => d.key === o.outputKey) ?? (await cycleOutputFor(tx, rc, o.outputKey))?.def ?? null;
     const cycle = parseCycleKey(o.outputKey) ? (await cycleOutputFor(tx, rc, o.outputKey))?.cycle ?? null : null;
+    const head = versions.find((v) => v.version === o.currentVersion) ?? null;
+    // read-only re-validation on the live data (nothing is written on a page view)
+    const inp = await draftInputs(tx, rc, o.outputKey);
+    const liveConflicts = inp?.ctx.conflicts ?? [];
+    const stale = !!(head?.dataHash && inp && head.dataHash !== dataHash(inp.ctx));
+    const reviews = await reviewsOf(tx, o.id, head?.version);
+    const checks = head ? checksOf(head.sections) : [];
+    const cb = checkBlockers(checks, [...reviews.checks.values()]);
+    const requirements = head ? requirementsOf({ serviceCode: rc.service.code, keys: inp?.ctx.keys ?? {}, tables: inp?.ctx.tables ?? {}, gaps: head.gaps, checks, reviews: [...reviews.checks.values()] }) : [];
+    const rb = requirementBlockers(requirements);
+    const headReady = head ? readiness(head.sections, head.gaps) : null;
+    const liveMaterial = liveConflicts.filter((c) => c.severity === "material");
+    // why each move is (not) possible — the same rules the server applies on the action
+    const submitReasons = head ? [
+      ...liveMaterial.map((c) => `تعارض قائم: ${c.label}`),
+      ...(stale ? ["تغيّرت بيانات الطلب بعد هذه النسخة: أعد التوليد."] : []),
+      ...(headReady?.blocking ?? []).filter((g) => !liveMaterial.some((c) => `conflict:${c.key}` === g.key)).map((g) => g.label),
+      ...(headReady?.unwritten ?? []).map((u) => `لم يُكتب: ${u.section}`),
+      ...cb.failed.map((c) => `فشل التحقق: ${c.label}`),
+    ] : ["لا مسودة."];
+    const approveReasons = [...submitReasons, ...cb.pendingSpecialist.map((c) => `بانتظار رأي المختص: ${c.label}`)];
+    const official = await officialRecordsOf(tx, o.id);
+    const stage = outputStage({ status: o.status, origin: head?.origin ?? null, submitBlockers: submitReasons.length, approveBlockers: cb.pendingSpecialist.length, requestStatus: rc.req.status, released: !!o.documentId, officialRecords: official.length });
+    const refs = await tx.select({ code: regulatoryReferences.code, name: regulatoryReferences.sourceName, binding: regulatoryReferences.bindingLevel, verification: regulatoryReferences.verificationStatus, url: regulatoryReferences.sourceUrl, documentId: regulatoryReferences.documentId, lastVerifiedOn: regulatoryReferences.lastVerifiedOn }).from(regulatoryReferences);
+    const reqDocs = await tx.select({ id: documents.id, title: documents.title }).from(documents).where(eq(documents.requestId, rc.req.id)).orderBy(desc(documents.createdAt)).limit(50);
+    const diffRows = a && b ? diffVersions(a.sections, b.sections).map((r) => ({ ...r, words: r.change === "changed" ? wordDiff(r.before ?? "", r.after ?? "") : null })) : null;
     return {
       rc, o, def, versions: versions.map((v) => ({ version: v.version, origin: v.origin, basedOn: v.basedOn, note: v.note, createdBy: v.createdBy, createdAt: v.createdAt })),
       current, isCurrent: !!current && current.version === o.currentVersion,
       ready: current ? readiness(current.sections, current.gaps) : null,
-      diff: a && b ? { a: a.version, b: b.version, rows: diffVersions(a.sections, b.sections) } : null,
+      diff: a && b ? { a: a.version, b: b.version, rows: diffRows! } : null,
+      quality: {
+        liveConflicts, stale, register: await conflictRegister(tx, rc.req.id), reviews, checks, checkState: cb, requirements, blockers: rb,
+        submitReasons, approveReasons, official, stage, next: nextAction(stage, { submitBlockers: submitReasons.length, approveBlockers: cb.pendingSpecialist.length }),
+        refs: new Map(refs.map((r) => [r.code, r])), reqDocs,
+      },
       preparers: await preparersOf(tx, o),
       names: new Map(people.map((p) => [p.id, p.name ?? "—"])),
       specialtyLabel: SPECIALTY_LABEL[o.specialty], reviewLabel: REVIEW_LABEL[o.reviewPolicy], formatLabel: def ? PROFILE_FORMAT[def.profile] : "مخرج",

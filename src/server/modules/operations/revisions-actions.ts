@@ -1,5 +1,7 @@
 "use server";
 
+import { collectContext } from "@/server/modules/outputs/collect";
+import { syncConflicts } from "@/server/modules/outputs/quality";
 import { asc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { contracts, invoices, outputs, quotes, requestRevisions, requestStages, serviceRequests } from "@/server/db/schema";
@@ -124,8 +126,21 @@ export async function staffEditIntake(_: ActionState, fd: FormData): Promise<Act
     if (JSON.stringify(before) === JSON.stringify(next[f.key] ?? null)) return { ok: true, message: "القيمة لم تتغير." };
     await c.tx.update(serviceRequests).set({ intake: { ...intake, answers: next }, updatedBy: c.auth.user.id }).where(eq(serviceRequests.id, d.id));
     const impact = await impactOf(c, rc, "intake_edit");
-    await c.tx.insert(requestRevisions).values({ requestId: d.id, waqfId: rc.req.waqfId, kind: "intake_edit", target: f.key, reason: d.reason, before: { [f.key]: before }, after: { [f.key]: next[f.key] ?? null }, impact, actorUserId: c.auth.user.id });
+    // answers that depended on this one and are no longer shown are cleared by the form rules: they are recorded in the
+    // revision with their previous value (nothing disappears without a trace, and they can be restored)
+    const dropped = Object.keys(answers).filter((k) => k !== f.key && answers[k] !== undefined && answers[k] !== "" && next[k] === undefined);
+    await c.tx.insert(requestRevisions).values({
+      requestId: d.id, waqfId: rc.req.waqfId, kind: "intake_edit", target: f.key, reason: d.reason,
+      before: { [f.key]: before, ...Object.fromEntries(dropped.map((k) => [k, answers[k]])) }, after: { [f.key]: next[f.key] ?? null, ...Object.fromEntries(dropped.map((k) => [k, null])) },
+      impact, actorUserId: c.auth.user.id,
+    });
     await audit(c.tx, { actorUserId: c.auth.user.id, action: "requests.intake_edit", entityType: "service_request", entityId: d.id, waqfId: rc.req.waqfId, ip: c.ip, userAgent: c.userAgent, before: { field: f.key }, after: { field: f.key, reason: d.reason } });
-    return { ok: true, message: `صُحّح «${f.label}».${impact.some((x) => x.kind === "output") ? " أعد توليد المخرجات المبنية على البيانات السابقة." : ""}` };
+    // validation runs again on the corrected data: conflicts it removed are resolved (by this correction), new ones open
+    const fresh = { ...rc, req: { ...rc.req, intake: { ...intake, answers: next } } };
+    const ctx = await collectContext(c.tx, fresh);
+    const sync = await syncConflicts(c.tx, fresh, ctx.conflicts ?? [], { actorId: c.auth.user.id, ip: c.ip, userAgent: c.userAgent, reason: `تصحيح «${f.label}»: ${d.reason}` });
+    const conflictLine = [sync.resolved.length ? ` زال ${sync.resolved.length} تعارض.` : "", sync.opened.length ? ` ظهر ${sync.opened.length} تعارض جديد.` : "", sync.open.length ? ` التعارضات القائمة: ${sync.open.length}.` : ""].join("");
+    const droppedLine = dropped.length ? ` أُسقطت ${dropped.length} من الإجابات المرتبطة التي لم تعد تنطبق (محفوظة بقيمها في سجل التعديلات): ${dropped.map((k) => findField(form, k)?.field.label ?? k).join("، ")}.` : "";
+    return { ok: true, message: `صُحّح «${f.label}».${droppedLine}${conflictLine}${impact.some((x) => x.kind === "output") ? " أعد توليد المخرجات المبنية على البيانات السابقة." : ""}` };
   }, { revalidate: reval(d.id) });
 }

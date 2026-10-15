@@ -26,7 +26,12 @@ describe("will drafting (W01)", () => {
     expect(t).not.toContain("[يُستكمل");
     expect(d.gaps.filter((g) => g.severity === "blocking")).toEqual([]);
     expect(d.clauses.every((c) => c.refs?.length)).toBe(true);
-    expect(d.checks.every((c) => c.ok)).toBe(true);
+    // no check fails, and none shows as verified merely because an answer exists
+    expect(d.checks.some((c) => c.status === "failed")).toBe(false);
+    expect(d.checks.find((c) => c.key === "third_legal")?.status).toBe("specialist");
+    expect(d.checks.find((c) => c.key === "attestation")?.status).toBe("na");
+    expect(d.checks.find((c) => c.key === "official")?.status).toBe("incomplete");
+    for (const c of d.checks) expect(c.reason && c.source && c.rule).toBeTruthy();
   });
 
   it("never invents: missing values become placeholders and gaps naming the field and owner", () => {
@@ -44,13 +49,17 @@ describe("will drafting (W01)", () => {
     expect(text(over)).toContain("وما زاد من وصاياي على ثلث تركتي فلا ينفذ إلا بإجازة الورثة");
     expect(over.gaps.find((g) => g.key === "third_over")).toMatchObject({ severity: "warning", owner: "specialist" });
     expect(over.gaps.find((g) => g.key === "heir_bequest")?.owner).toBe("specialist");
-    expect(over.checks.find((c) => c.label.includes("ثلث"))?.ok).toBe(false);
+    expect(over.checks.find((c) => c.key === "third_arith")?.status).toBe("specialist");
+    expect(over.checks.find((c) => c.key === "heir")?.status).toBe("specialist");
     // amounts: unknown without an estate estimate, computed with it
     const amt = { bequests: [{ kind: "charity", recipient: "جمعية", relation: "entity", basis: "amount", amount: "100000" }] };
     expect(draftWill(will({ ...FULL_WILL.keys, includesWaqf: "no" }, amt, { previousWill: 1 })).gaps.some((g) => g.key === "third_unknown")).toBe(true);
     const ok = draftWill(will({ ...FULL_WILL.keys, includesWaqf: "no", estimatedEstate: "1000000" }, amt, { previousWill: 1 }));
     expect(ok.gaps.some((g) => g.key.startsWith("third"))).toBe(false);
-    expect(ok.checks.find((c) => c.label.includes("ثلث"))?.detail).toContain("10٪");
+    const third = ok.checks.find((c) => c.key === "third_arith")!;
+    expect(third.reason).toContain("10٪");
+    // computed from the client's own estimate: not «verified»
+    expect(third.status).toBe("client_attested");
   });
 
   it("detects a waqf choice that the bequests table does not carry", () => {

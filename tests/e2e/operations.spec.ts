@@ -166,9 +166,9 @@ test.describe.serial("service flows as one operating system", () => {
     await ex(admin.getByTestId("section-governance")).toContainText("سياسة تعارض مصالح");
     await ex(admin.getByTestId("output-gaps")).toContainText("لم يُكتب");
 
-    // submission is refused while the specialist parts are empty
-    await act(admin, "أرسلها للمراجعة والاعتماد");
-    await ex(admin.getByText(/لا تُرسل المسودة للمراجعة وفيها نواقص/)).toBeVisible();
+    // submission is not offered while the specialist parts are empty, and the reason is shown
+    await ex(admin.getByTestId("submit-blocked")).toContainText("لم يُكتب");
+    await ex(admin.getByRole("button", { name: "أرسلها للمراجعة والاعتماد" })).toBeDisabled();
 
     // edit: write the specialist parts, correct a value, add a section → new version (history kept)
     for (const t of await admin.locator('textarea[name^="spec:"]').all()) await t.fill("نص كتبه المختص في الاختبار الآلي.");

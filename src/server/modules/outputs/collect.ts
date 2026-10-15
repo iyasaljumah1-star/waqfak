@@ -4,7 +4,7 @@ import type { Tx } from "@/server/db";
 import {
   assets, beneficialOwners, beneficiaries, beneficiaryClasses, bodies, budgets, conditions, contracts, distributions, documents, founders,
   investmentPolicies, ledgerEntries, leases, meetings, nazaraEngagements, obligationInstances, obligations, policies, portfolios, quotes,
-  regulatoryReferences, requestLinks, requestStages, resolutions, trustees, users, waqfs,
+  regulatoryReferences, requestLinks, requestRevisions, requestStages, resolutions, trustees, users, waqfs,
 } from "@/server/db/schema";
 import { addDays, todayISO } from "@/server/engines/dates";
 import { summarize as summarizeLedger } from "@/server/modules/finance/pure";
@@ -16,6 +16,7 @@ import type { RequestCtx } from "@/server/modules/requests/access";
 import { docRequired, findField, sanitizeAnswers, summarize, tableRows, visibleDocs, visibleFields, visibleSteps } from "@/server/modules/requests/intake/engine";
 import { intakeOf, serviceForm } from "@/server/modules/requests/intake/server";
 import type { DeliveryRecordFacts, OutputContext } from "./build";
+import { detectConflicts } from "./conflicts";
 import { fiscalPeriodOfYear, lastFiscalPeriod } from "./fiscal";
 
 const ACCOUNT_LABEL = new Map(ACCOUNTS.map((a) => [a.code, a.label]));
@@ -26,7 +27,53 @@ const num = (v: unknown) => (v == null || v === "" ? null : Number(v));
  * Reads everything an output draft may rest on, inside the caller's transaction (RLS applies: the staff member reads
  * only what their access allows). Nothing is inferred: absent data stays absent and becomes a gap in the draft.
  */
-export async function collectContext(tx: Tx, rc: RequestCtx, opts: { cycle?: { label: string; from: string | null; to: string | null; due: string }; record?: DeliveryRecordFacts | null } = {}): Promise<OutputContext> {
+type CollectOpts = { cycle?: { label: string; from: string | null; to: string | null; due: string }; record?: DeliveryRecordFacts | null };
+
+export async function collectContext(tx: Tx, rc: RequestCtx, opts: CollectOpts = {}): Promise<OutputContext> {
+  const ctx = await collectBase(tx, rc, opts);
+  return withDataQuality(tx, rc, ctx);
+}
+
+/**
+ * Adds what the drafting needs to tell data from conflict: the conflicts between the request's data sources
+ * (conflicts.ts), the document slots the team verified, the field labels, and when the data was last given or corrected.
+ */
+async function withDataQuality(tx: Tx, rc: RequestCtx, ctx: OutputContext): Promise<OutputContext> {
+  const form = serviceForm(rc.service);
+  const intake = intakeOf(rc.req) as ReturnType<typeof intakeOf> & { docReview?: Record<string, { status: string; slot?: string; at: string }> };
+  const answers = intake.answers ?? {};
+  const labels: Record<string, string> = {};
+  const options: Record<string, Record<string, string>> = {};
+  const prefills: Record<string, string> = {};
+  for (const st of form.steps) for (const f of st.fields) {
+    labels[f.key] = f.label;
+    if (f.options) options[f.key] = Object.fromEntries(f.options);
+    else if (f.type === "yesno") options[f.key] = { yes: "نعم", no: "لا" };
+    for (const c of f.columns ?? []) if (c.options) options[`${f.key}.${c.key}`] = Object.fromEntries(c.options);
+    if (f.prefill?.startsWith("waqf.")) prefills[f.key] = f.prefill;
+  }
+  const docSlots: { slot: string; title: string; number: string | null; issuedOn: string | null }[] = [];
+  const verifiedDocs: Record<string, string> = {};
+  for (const d of ctx.documents) if (d.slot && d.scope === "request") docSlots.push({ slot: d.slot, title: d.title, number: d.number, issuedOn: d.issuedOn });
+  for (const [docId, r] of Object.entries(intake.docReview ?? {})) {
+    const slot = r.slot ?? Object.entries(intake.docs ?? {}).find(([, ids]) => ids.includes(docId))?.[0];
+    if (slot && r.status === "verified" && (intake.docs?.[slot] ?? []).includes(docId)) verifiedDocs[slot] = r.at.slice(0, 10);
+  }
+  const w = ctx.waqf;
+  const waqf = w ? { "waqf.name": w.name, "waqf.deedNo": w.deedNo, "waqf.registrationCertNo": w.registrationCertNo, "waqf.fiscalYearEnd": w.fiscalYearEnd, "waqf.nationalUnifiedNumber": w.nationalUnifiedNumber, "waqf.sizeClass": w.sizeClass } : null;
+  ctx.conflicts = detectConflicts({
+    serviceCode: rc.service.code, keys: ctx.keys ?? {}, tables: ctx.tables ?? {}, labels, options,
+    requester: { name: ctx.requester.name, capacityKey: typeof answers.capacity === "string" ? answers.capacity : null },
+    docs: docSlots, waqf, prefills,
+  });
+  ctx.verifiedDocs = verifiedDocs;
+  ctx.fieldLabels = labels;
+  const [rev] = await tx.select({ at: requestRevisions.at }).from(requestRevisions).where(and(eq(requestRevisions.requestId, rc.req.id), eq(requestRevisions.kind, "intake_edit"))).orderBy(desc(requestRevisions.at)).limit(1);
+  ctx.dataAt = rev ? { on: rev.at.toISOString().slice(0, 10), by: "staff_edit" } : ctx.request.submittedAt ? { on: ctx.request.submittedAt, by: "client" } : null;
+  return ctx;
+}
+
+async function collectBase(tx: Tx, rc: RequestCtx, opts: CollectOpts): Promise<OutputContext> {
   const today = todayISO();
   const req = rc.req;
   const form = serviceForm(rc.service);

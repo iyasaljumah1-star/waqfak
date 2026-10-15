@@ -252,3 +252,84 @@ CREATE POLICY staff_update ON payment_schedule AS RESTRICTIVE FOR UPDATE TO waqf
   USING (app_current_user() IS NULL OR app_is_staff()) WITH CHECK (app_current_user() IS NULL OR app_is_staff());
 DROP POLICY IF EXISTS staff_delete ON payment_schedule;
 CREATE POLICY staff_delete ON payment_schedule AS RESTRICTIVE FOR DELETE TO waqfak_app USING (app_current_user() IS NULL OR app_is_staff());
+
+-- ───────────── Output quality: conflicts, specialist findings, official documentation ─────────────
+-- Team records: clients never read conflicts, findings or the review trail (they receive the approved document only).
+REVOKE UPDATE, DELETE, TRUNCATE ON output_reviews FROM waqfak_app;
+REVOKE UPDATE, DELETE, TRUNCATE ON output_official_records FROM waqfak_app;
+REVOKE DELETE, TRUNCATE ON data_conflicts FROM waqfak_app;
+DROP POLICY IF EXISTS staff_only ON data_conflicts;
+CREATE POLICY staff_only ON data_conflicts AS RESTRICTIVE FOR ALL TO waqfak_app USING (app_current_user() IS NULL OR app_is_staff()) WITH CHECK (app_current_user() IS NULL OR app_is_staff());
+DROP POLICY IF EXISTS staff_only ON output_reviews;
+CREATE POLICY staff_only ON output_reviews AS RESTRICTIVE FOR ALL TO waqfak_app USING (app_current_user() IS NULL OR app_is_staff()) WITH CHECK (app_current_user() IS NULL OR app_is_staff());
+DROP POLICY IF EXISTS staff_only ON output_official_records;
+CREATE POLICY staff_only ON output_official_records AS RESTRICTIVE FOR ALL TO waqfak_app USING (app_current_user() IS NULL OR app_is_staff()) WITH CHECK (app_current_user() IS NULL OR app_is_staff());
+DO $$
+DECLARE
+  p record;
+BEGIN
+  FOR p IN SELECT * FROM (VALUES
+    ('data_conflicts', 'EXISTS (SELECT 1 FROM service_requests r WHERE r.id = data_conflicts.request_id AND r.assigned_to_user_id = app_current_user())'),
+    ('output_reviews', 'EXISTS (SELECT 1 FROM service_requests r WHERE r.id = output_reviews.request_id AND r.assigned_to_user_id = app_current_user())'),
+    ('output_official_records', 'EXISTS (SELECT 1 FROM service_requests r WHERE r.id = output_official_records.request_id AND r.assigned_to_user_id = app_current_user())')
+  ) AS v(tbl, expr)
+  LOOP
+    EXECUTE format('DROP POLICY IF EXISTS nullwaqf_owner ON %I', p.tbl);
+    EXECUTE format(
+      'CREATE POLICY nullwaqf_owner ON %I AS RESTRICTIVE FOR ALL TO waqfak_app USING (waqf_id IS NOT NULL OR app_current_user() IS NULL OR app_has_global_access() OR %s) WITH CHECK (waqf_id IS NOT NULL OR app_current_user() IS NULL OR app_has_global_access() OR %s)',
+      p.tbl, p.expr, p.expr);
+  END LOOP;
+END $$;
+-- One open record per conflict of a request (a conflict that returns after resolution is a new row).
+CREATE UNIQUE INDEX IF NOT EXISTS data_conflicts_open_uq ON data_conflicts (request_id, conflict_key) WHERE status = 'open';
+
+-- Guard on output transitions, independent of the application: an output is not sent for review or approved while its
+-- current version has blocking gaps, unwritten specialist parts, failed checks, or the request has an open material
+-- conflict; it is not approved while a check that needs a specialist has no finding on that version.
+CREATE OR REPLACE FUNCTION guard_output_transition() RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+  v record;
+  n int;
+BEGIN
+  -- a version under review or approved is not swapped underneath its reviewer or approver
+  IF OLD.status IN ('in_review', 'approved') AND NEW.status = OLD.status AND NEW.current_version IS DISTINCT FROM OLD.current_version THEN
+    RAISE EXCEPTION 'output_guard: version changed while %', OLD.status USING ERRCODE = 'check_violation';
+  END IF;
+  IF NEW.status NOT IN ('in_review', 'approved') OR NEW.status IS NOT DISTINCT FROM OLD.status THEN
+    RETURN NEW;
+  END IF;
+  SELECT gaps, sections INTO v FROM output_versions WHERE output_id = NEW.id AND version = NEW.current_version;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'output_guard: no current version' USING ERRCODE = 'check_violation';
+  END IF;
+  IF jsonb_path_exists(v.gaps, '$[*] ? (@.severity == "blocking")') THEN
+    RAISE EXCEPTION 'output_guard: blocking gaps on version %', NEW.current_version USING ERRCODE = 'check_violation';
+  END IF;
+  IF jsonb_path_exists(v.sections, '$[*] ? (!(exists(@.removed)) || @.removed != true).blocks[*] ? (@.type == "specialist" && @.text like_regex "^\\s*$")') THEN
+    RAISE EXCEPTION 'output_guard: unwritten specialist parts' USING ERRCODE = 'check_violation';
+  END IF;
+  SELECT count(*) INTO n FROM data_conflicts WHERE request_id = NEW.request_id AND status = 'open' AND severity = 'material';
+  IF n > 0 THEN
+    RAISE EXCEPTION 'output_guard: % open material conflict(s)', n USING ERRCODE = 'check_violation';
+  END IF;
+  -- checks: latest finding per check on this version
+  WITH items AS (
+    SELECT i->>'key' AS key, i->>'status' AS status
+    FROM jsonb_path_query(v.sections, '$[*].blocks[*] ? (@.type == "checks").items[*]') AS i
+  ), latest AS (
+    SELECT DISTINCT ON (target_key) target_key, status FROM output_reviews
+    WHERE output_id = NEW.id AND version = NEW.current_version AND kind = 'check' ORDER BY target_key, created_at DESC
+  )
+  SELECT count(*) INTO n FROM items LEFT JOIN latest l ON l.target_key = items.key
+  WHERE items.status = 'failed'
+     OR l.status = 'failed'
+     OR (NEW.status = 'approved' AND items.status = 'specialist' AND l.status IS NULL);
+  IF n > 0 THEN
+    RAISE EXCEPTION 'output_guard: % check(s) failed or awaiting a specialist finding', n USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS outputs_transition_guard ON outputs;
+CREATE TRIGGER outputs_transition_guard BEFORE UPDATE OF status, current_version ON outputs
+  FOR EACH ROW EXECUTE FUNCTION guard_output_transition();

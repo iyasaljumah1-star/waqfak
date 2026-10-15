@@ -171,7 +171,10 @@ test.describe.serial("execution engine: next step, drafted documents, verificati
     await ex(doc).toContainText("يُسمّى «وقف الاختبار الآلي للوصية»");
     await ex(doc).toContainText("أُسند تنفيذ هذه الوصية إلى منفذ تجريبي، وهو من ورثتي");
     await ex(doc).not.toContainText(/\[يُستكمل: [^…]/);
-    await ex(admin.getByTestId("section-will_clauses:checks")).toContainText("✓ مجموع الوصايا في حدود ثلث التركة — المجموع 25٪");
+    // the third: computed from the client's own estimate → «client's statement», never a tick; the ruling → specialist
+    await ex(admin.getByTestId("check-third_arith")).toHaveAttribute("data-status", "client_attested");
+    await ex(admin.getByTestId("check-third_arith")).toContainText("المجموع 25٪ من التركة");
+    await ex(admin.getByTestId("check-third_legal")).toHaveAttribute("data-status", "specialist");
     await admin.screenshot({ path: `${shots}/will-draft-desktop.png`, fullPage: true });
 
     // the panel blocks on the specialist note and links to the editor
@@ -194,6 +197,15 @@ test.describe.serial("execution engine: next step, drafted documents, verificati
     const ops = await as(browser, "ops");
     await go(ops, `/admin/requests/${willReq}`);
     await ex(ops.getByTestId("next-step-link")).toContainText("يلزم توقيع المستشار");
+    await go(ops, `/admin/requests/${willReq}/outputs/${o.id}`);
+    // approval waits for the specialist's finding on the ruling the platform cannot decide
+    await ex(ops.getByTestId("approve-blocked")).toContainText("بانتظار رأي المختص");
+    const third = ops.getByTestId("check-third_legal");
+    await third.getByText("سجّل رأي المختص").click();
+    await third.locator('select[name="status"]').selectOption("verified");
+    await third.locator('textarea[name="note"]').fill("الوصايا دون الثلث ولا وصية لوارث (اختبار آلي).");
+    await third.getByRole("button", { name: "سجّل الرأي" }).click();
+    await ex(ops.getByText("سُجّل رأي المختص في الفحص.")).toBeVisible();
     await go(ops, `/admin/requests/${willReq}/outputs/${o.id}`);
     await ops.getByLabel("التوقيع: اسم المستشار وصفته").fill("مستشار تجريبي — مستشار شرعي");
     await ops.getByRole("button", { name: "اعتمد المخرج" }).click();

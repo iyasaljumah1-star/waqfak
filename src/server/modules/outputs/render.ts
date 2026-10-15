@@ -2,13 +2,16 @@
  * HTML of an output version for the PDF (escaped; trusted structure). Status is printed on the document: drafts carry
  * a visible "draft — not approved" banner and never leave the team; the approved version names its approver.
  */
-import type { OutputBlock, OutputSection } from "@/server/db/schema/operations";
+import type { OutputBlock, OutputGap, OutputSection } from "@/server/db/schema/operations";
+import { CHECK_STATUS_AR } from "./checks";
+import { citationOf } from "./citations";
 import { PROV_LABEL } from "./pure";
 
 const esc = (s: unknown) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 const prov = (p?: string) => (p ? `<span class="prov">${esc(PROV_LABEL[p as keyof typeof PROV_LABEL] ?? p)}</span>` : "");
 
 function block(b: OutputBlock, final: boolean): string {
+  if (final && b.type === "para" && b.internal) return "";
   switch (b.type) {
     case "para":
       return `<p style="white-space:pre-line">${esc(b.text)}${final ? "" : ` ${prov(b.prov)}`}</p>`;
@@ -23,7 +26,9 @@ function block(b: OutputBlock, final: boolean): string {
         ? `<p style="white-space:pre-line">${esc(b.text)}</p>`
         : `<div class="box critical">لم يُكتب بعد: ${esc(b.prompt)}</div>`;
     case "clause":
-      return `<div class="clause"><p><strong>${esc(b.n)}. ${esc(b.title)}</strong></p><p style="white-space:pre-line">${esc(b.text)}</p>${final ? "" : `<p class="small muted">${prov(b.text === b.generated ? b.prov : "specialist")}${b.refs?.length ? ` — ${esc(b.refs.join("؛ "))}` : ""}</p>`}</div>`;
+      return `<div class="clause"><p><strong>${esc(b.n)}. ${esc(b.title)}</strong></p><p style="white-space:pre-line">${esc(b.text)}</p>${final ? "" : `<p class="small muted">${prov(b.text === b.generated ? b.prov : "specialist")}${b.refs?.length ? ` — ${esc(b.refs.map((r) => { const c = citationOf(r); return c ? `${c.refCode} ${c.location}` : r; }).join("؛ "))}` : ""}</p>`}</div>`;
+    case "checks":
+      return `<table class="checks"><thead><tr><th>الفحص</th><th>النتيجة</th><th>السبب</th><th>البيانات والقاعدة</th></tr></thead><tbody>${b.items.map((c) => `<tr class="st-${esc(c.status)}"><td>${esc(c.label)}</td><td><strong>${esc(CHECK_STATUS_AR[c.status])}</strong><br><span class="small muted">${c.mode === "auto" ? "آلي" : "مهني"}</span></td><td>${esc(c.reason)}</td><td class="small">${esc(c.source)}<br>${esc(c.rule)}</td></tr>`).join("")}</tbody></table>`;
     case "signatures":
       return `<table class="sign"><thead><tr><th>الصفة</th><th>الاسم</th><th>التوقيع</th><th>التاريخ</th></tr></thead><tbody>${b.rows.map((r) => `<tr><td>${esc(r.role)}</td><td>${esc(r.name)}</td><td class="line"></td><td class="line"></td></tr>`).join("")}</tbody></table><p class="small muted">خانات توقيع تُستكمل عند التوثيق لدى الجهة المختصة أو بالإشهاد؛ لا تُعد توقيعًا إلكترونيًا.</p>`;
   }
@@ -36,13 +41,27 @@ export type OutputDocMeta = {
   reviewRounds?: string[];
   /** Date of this version, and where it stands: draft, under review, or approved. */
   versionDate?: string; workflowStatus?: "draft" | "in_review" | "approved" | "preview";
+  /** Gaps and conflicts of the version (printed at the top of a draft; never on the approved copy). */
+  gaps?: OutputGap[];
 };
+
+const NEED_AR: Record<string, string> = { mandatory: "إلزامي", optional: "اختياري", review: "يقرره المختص" };
+
+function gapReport(gaps: OutputGap[]) {
+  if (!gaps.length) return "";
+  const conflicts = gaps.filter((g) => g.kind === "conflict");
+  const rest = gaps.filter((g) => g.kind !== "conflict");
+  return `<div class="box gapreport"><p><strong>تقرير النواقص والتعارضات (${gaps.length})</strong></p>
+${conflicts.length ? `<p><strong>تعارضات لا تُحسم آليًا:</strong></p><ul>${conflicts.map((g) => `<li>${esc(g.label)}${g.sides?.length ? `<br><span class="small">${g.sides.map((s) => `${esc(s.label)}: «${esc(s.value)}» (${esc(s.source)})`).join(" ↔ ")}</span>` : ""}${g.hint ? `<br><span class="small muted">المطلوب: ${esc(g.hint)}</span>` : ""}</li>`).join("")}</ul>` : ""}
+${rest.length ? `<ul>${rest.map((g) => `<li>${esc(g.label)} — <span class="small">${esc(NEED_AR[g.need ?? (g.severity === "blocking" ? "mandatory" : "optional")])}</span></li>`).join("")}</ul>` : ""}</div>`;
+}
 
 const DOC_STATUS: Record<string, string> = { draft: "مسودة غير معتمدة", in_review: "بانتظار المراجعة والاعتماد", approved: "معتمد", preview: "معاينة من البيانات الحالية — لم تُحفظ مسودة" };
 
 export function outputHtml(meta: OutputDocMeta, sections: OutputSection[]): string {
   const final = meta.status === "approved";
-  const body = sections.filter((s) => !s.removed && s.key !== "meta").map((s) => `<h2>${esc(s.title)}</h2>${s.blocks.map((b) => block(b, final)).join("")}`).join("");
+  // the approved copy goes to the client: internal review material (checks, notes) stays out of it
+  const body = sections.filter((s) => !s.removed && s.key !== "meta" && !(final && s.audience === "internal")).map((s) => `<h2>${esc(s.title)}</h2>${s.blocks.map((b) => block(b, final)).join("")}`).join("");
   return `<div class="brandbar"></div>
 <h1>${esc(meta.title)}</h1>
 <dl class="kv small">
@@ -60,10 +79,15 @@ ${meta.signedBy ? `<dt>التوقيع</dt><dd>${esc(meta.signedBy)}</dd>` : ""}
 </dl>
 ${final ? "" : meta.workflowStatus === "preview" ? `<div class="box critical">معاينة غير محفوظة من بيانات الطلب الحالية — ليست مسودة ولا مخرجًا معتمدًا، ولا تُسلَّم للعميل. ما ينقص مبيّن في موضعه.</div>` : `<div class="box critical">مسودة داخلية غير معتمدة — لا تُسلَّم للعميل. الوسوم بجانب كل معلومة تبين مصدرها.</div>`}
 ${meta.isDemo ? `<div class="box critical">وقف تجريبي: البيانات اصطناعية.</div>` : ""}
+${final ? "" : gapReport(meta.gaps ?? [])}
 ${body}`;
 }
 
 export const OUTPUT_PDF_CSS = `.prov{font-size:9px;color:#7a6a3a;background:#f5eedf;border-radius:3px;padding:0 4px;white-space:nowrap}
 tr.total td{border-top:2px solid #333}
 .clause{margin:0 0 10px;page-break-inside:avoid}.clause p{margin:2px 0}
-table.sign td.line{height:34px;min-width:110px;border-bottom:1px solid #333}`;
+table.sign td.line{height:34px;min-width:110px;border-bottom:1px solid #333}
+table.checks td{vertical-align:top;font-size:10.5px}table.checks tr{page-break-inside:avoid}
+tr.st-failed td:nth-child(2){color:#9b1c1c}tr.st-verified td:nth-child(2){color:#1d5e3a}tr.st-specialist td:nth-child(2){color:#7a5a12}
+.gapreport{border:1px solid #c9a227;background:#fbf6e6;page-break-inside:avoid}.gapreport ul{margin:4px 0;padding-inline-start:18px}
+h2{page-break-after:avoid}table{page-break-inside:auto}tr{page-break-inside:avoid}`;

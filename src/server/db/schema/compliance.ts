@@ -18,6 +18,8 @@ export const regulatoryReferences = pgTable("regulatory_references", {
   lastVerifiedOn: date(),
   supersededBy: text(),
   notes: text(),
+  /** A saved copy of the source (a document in the vault), opened when the link is unavailable. */
+  documentId: uuid(),
   ...tracking(),
 }, (t) => [uniqueIndex("regref_code_uq").on(t.code)]);
 

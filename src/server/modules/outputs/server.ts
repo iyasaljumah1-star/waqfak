@@ -44,13 +44,13 @@ export async function ensureOutput(tx: Tx, rc: RequestCtx, def: OutputDef, actor
 }
 
 /** Appends a version (history is never rewritten) and points the output at it. */
-export async function addVersion(tx: Tx, o: OutputRow, v: { origin: "generated" | "regenerated" | "edited"; sections: OutputSection[]; gaps: OutputGap[]; sources: OutputSource[]; inputsHash: string | null; basedOn: number | null; note?: string | null; actorId: string }) {
+export async function addVersion(tx: Tx, o: OutputRow, v: { origin: "generated" | "regenerated" | "edited"; sections: OutputSection[]; gaps: OutputGap[]; sources: OutputSource[]; inputsHash: string | null; dataHash?: string | null; basedOn: number | null; note?: string | null; actorId: string }) {
   if (o.status === "approved") throw new UserError("المخرج معتمد؛ لا تُضاف إليه نسخ. افتح مراجعة جديدة إن لزم.");
   if (o.status === "in_review") throw new UserError("المخرج بانتظار المراجعة؛ يعدّله المراجع بإعادته للتعديل أولًا.");
   const version = o.currentVersion + 1;
   await tx.insert(outputVersions).values({
     outputId: o.id, requestId: o.requestId, waqfId: o.waqfId, version, origin: v.origin, basedOn: v.basedOn, sections: v.sections, gaps: v.gaps, sources: v.sources,
-    inputsHash: v.inputsHash, note: v.note ?? null, createdBy: v.actorId,
+    inputsHash: v.inputsHash, dataHash: v.dataHash ?? null, note: v.note ?? null, createdBy: v.actorId,
   });
   await tx.update(outputs).set({ currentVersion: version, status: "draft", updatedBy: v.actorId }).where(eq(outputs.id, o.id));
   return version;
@@ -95,6 +95,7 @@ export async function outputDocHtml(tx: Tx, rc: RequestCtx, o: OutputRow, v: Ver
     approvedAt: o.approvedAt ? o.approvedAt.toISOString().slice(0, 10) : null, selfApproved: o.selfApproved, signedBy, isDemo: !!w?.isDemo,
     versionDate: v.createdAt.toISOString().slice(0, 10),
     reviewRounds: returns.filter((r) => r.note?.startsWith("أُعيد المخرج")).map((r) => `أعاده للتعديل ${n.get(r.by ?? "") ?? "—"} في ${r.at.toISOString().slice(0, 10)}`), workflowStatus: isApprovedVersion ? "approved" : o.status === "in_review" && o.currentVersion === v.version ? "in_review" : "draft",
+    gaps: v.gaps,
   }, v.sections);
   return pdfShell(o.title, html, OUTPUT_PDF_CSS);
 }
@@ -102,12 +103,11 @@ export async function outputDocHtml(tx: Tx, rc: RequestCtx, o: OutputRow, v: Ver
 /** HTML of an output's live preview (no saved draft): same layout as a draft, marked as an unsaved preview, gaps listed. */
 export async function previewDocHtml(tx: Tx, rc: RequestCtx, def: OutputDef, sections: OutputSection[], gaps: OutputGap[]) {
   const [w] = rc.req.waqfId ? await tx.select({ name: waqfs.name, isDemo: waqfs.isDemo }).from(waqfs).where(eq(waqfs.id, rc.req.waqfId)).limit(1) : [];
-  const gapList: OutputSection = { key: "preview_gaps", title: "ما ينقص قبل الاعتماد", required: true, blocks: [{ type: "list", items: gaps.map((g) => ({ text: `${g.severity === "blocking" ? "نقص جوهري" : "تنبيه"}: ${g.label}${g.hint ? ` — ${g.hint}` : ""}`, prov: "system" as const })) }] };
   const html = outputHtml({
     number: "—", title: def.title, specialty: SPECIALTY_LABEL[def.specialty], serviceLine: `${rc.service.code} — ${rc.service.nameAr}`, requestNumber: rc.req.number,
     waqfName: w?.name ?? null, version: 0, status: "draft", preparedBy: null, approvedBy: null, approvedAt: null, selfApproved: false, signedBy: null, isDemo: !!w?.isDemo,
-    versionDate: new Date().toISOString().slice(0, 10), workflowStatus: "preview",
-  }, gaps.length ? [gapList, ...sections] : sections);
+    versionDate: new Date().toISOString().slice(0, 10), workflowStatus: "preview", gaps,
+  }, sections);
   return pdfShell(def.title, html, OUTPUT_PDF_CSS);
 }
 

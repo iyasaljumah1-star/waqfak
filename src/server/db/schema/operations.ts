@@ -66,7 +66,7 @@ export type OutputStatus = "draft" | "in_review" | "returned" | "approved";
 export type Provenance = "document" | "client" | "system" | "computed" | "assumption" | "unverified" | "specialist";
 
 export type OutputBlock =
-  | { type: "para"; text: string; prov?: Provenance; ref?: string }
+  | { type: "para"; text: string; prov?: Provenance; ref?: string; internal?: boolean }
   | { type: "facts"; rows: { label: string; value: string; prov: Provenance; ref?: string }[] }
   | { type: "table"; head: string[]; rows: string[][]; prov: Provenance; ref?: string; total?: string[] }
   | { type: "list"; items: { text: string; prov?: Provenance; ref?: string }[]; ordered?: boolean }
@@ -74,9 +74,15 @@ export type OutputBlock =
   | { type: "specialist"; prompt: string; text: string }
   /** A drafted clause of a document (will, deed, policy): `generated` is the text built from the data; `text` is what
    *  the document says now (equal to `generated` until a person edits it). `refs` = where the rule behind it comes from. */
-  | { type: "clause"; key: string; n: number; title: string; text: string; generated: string; prov: Provenance; refs?: string[] }
+  | { type: "clause"; key: string; n: number; title: string; text: string; generated: string; prov: Provenance; refs?: string[]; data?: ClauseDatum[] }
   /** Signature lines printed on the document (wet or official signing outside the platform; not an e-signature). */
-  | { type: "signatures"; rows: { role: string; name: string }[] };
+  | { type: "signatures"; rows: { role: string; name: string }[] }
+  /** Structured drafting checks (internal: never printed in the client copy). */
+  | { type: "checks"; items: OutputCheck[] };
+
+/** The data a clause rests on: field, value, its state, and where/when it came from. */
+export type ClauseDatum = { field: string; value: string; status: "provided" | "missing" | "conflict" | "default" | "computed"; label?: string; source?: string; at?: string };
+export type OutputCheck = { key: string; label: string; status: "verified" | "specialist" | "client_attested" | "incomplete" | "na" | "failed"; reason: string; source: string; rule: string; ref?: string; mode: "auto" | "professional" };
 
 export type OutputSection = {
   key: string;
@@ -87,11 +93,23 @@ export type OutputSection = {
   manual?: boolean;
   /** An optional section a reviewer removed: kept (hidden) so regeneration does not bring it back. */
   removed?: boolean;
+  /** internal = review material (checks, sources, notes) kept out of the client copy. */
+  audience?: "client" | "internal";
   blocks: OutputBlock[];
 };
 
-/** A gap never gets invented content: it names the missing field or document and who must complete it. */
-export type OutputGap = { key: string; label: string; severity: "blocking" | "warning"; hint?: string; field?: string; owner?: "client" | "specialist" | "team" };
+/**
+ * A gap never gets invented content: it names the missing field or document and who must complete it.
+ * need: mandatory (blocks approval) / optional (does not) / review (a specialist must decide). kind: what is missing
+ * (data, a document, a check, or a conflict to settle). `effect` says what the gap stops in the next stage.
+ */
+export type OutputGap = {
+  key: string; label: string; severity: "blocking" | "warning"; hint?: string; field?: string; owner?: "client" | "specialist" | "team";
+  need?: "mandatory" | "optional" | "review"; why?: string; kind?: "data" | "conflict" | "check" | "document"; source?: string; effect?: string;
+  sides?: { field: string; label: string; value: string; source: string }[];
+  /** A gap the specialist closes by writing the clause (its key): closed once the clause is edited and has no placeholder. */
+  clause?: string;
+};
 export type OutputSource = { code: string; label: string; status: "verified" | "pending_verification" | "operational" | "internal"; detail?: string };
 
 export const outputs = pgTable("outputs", {
@@ -136,10 +154,87 @@ export const outputVersions = pgTable("output_versions", {
   sources: jsonb().$type<OutputSource[]>().default([]).notNull(),
   /** Hash of the data the generator read (to tell whether regeneration would change anything). */
   inputsHash: text(),
+  /** Hash of the request's own data (answers, documents, waqf file values) the version was drafted from: approval is
+   *  refused when the data changed after the version (regenerate first). */
+  dataHash: text(),
   note: text(),
   createdBy: uuid(),
   createdAt: createdAt(),
 }, (t) => [uniqueIndex("output_versions_uq").on(t.outputId, t.version)]);
+
+// ───────────────────────── Data conflicts, specialist findings, official documentation ─────────────────────────
+
+/**
+ * A conflict between the sources of a request's data (answers, waqf file, attached documents), as detected when an
+ * output is drafted or validated. Never resolved by choosing a value: it closes when the data is corrected at its source
+ * and the detection no longer finds it (resolved_by = who corrected or re-validated it). A conflict that comes back is
+ * a new row; the closed one stays as history.
+ */
+export const dataConflicts = pgTable("data_conflicts", {
+  id: id(),
+  requestId: uuid().notNull().references(() => serviceRequests.id, { onDelete: "cascade" }),
+  waqfId: uuid(),
+  outputId: uuid(),
+  conflictKey: text().notNull(),
+  severity: text().$type<"material" | "minor">().notNull(),
+  label: text().notNull(),
+  sides: jsonb().$type<{ field: string; label: string; value: string; source: string }[]>().notNull(),
+  action: text().notNull(),
+  fields: jsonb().$type<string[]>().default([]).notNull(),
+  status: text().$type<"open" | "resolved">().default("open").notNull(),
+  detectedAt: timestamp({ withTimezone: true }).defaultNow().notNull(),
+  detectedBy: uuid(),
+  lastSeenAt: timestamp({ withTimezone: true }).defaultNow().notNull(),
+  resolvedAt: timestamp({ withTimezone: true }),
+  resolvedBy: uuid(),
+  /** How it was resolved (the correction that removed it). */
+  resolution: text(),
+  /** The deficiency item raised for the client to correct it, when one was. */
+  itemId: uuid(),
+}, (t) => [
+  index("data_conflicts_req_idx").on(t.requestId, t.status),
+]);
+
+/**
+ * A specialist's finding, append-only (latest per target wins): on a drafting check (verified / failed / not
+ * applicable) or on a clause's citation (supports / needs another source / unavailable / unverified), with the reasoning.
+ */
+export const outputReviews = pgTable("output_reviews", {
+  id: id(),
+  outputId: uuid().notNull().references(() => outputs.id, { onDelete: "cascade" }),
+  requestId: uuid().notNull(),
+  waqfId: uuid(),
+  version: integer().notNull(),
+  kind: text().$type<"check" | "citation">().notNull(),
+  /** check key, or «clause key|citation key». */
+  targetKey: text().notNull(),
+  status: text().notNull(),
+  note: text().notNull(),
+  /** Where in the source the reviewer found it (page, article…), for citations. */
+  location: text(),
+  createdBy: uuid().notNull(),
+  createdAt: createdAt(),
+}, (t) => [index("output_reviews_out_idx").on(t.outputId, t.kind)]);
+
+/**
+ * Official documentation of an approved output with the competent authority (court, notary, Najiz…), recorded only
+ * after it happened, with what proves it. The platform's approval is never official documentation. Append-only.
+ */
+export const outputOfficialRecords = pgTable("output_official_records", {
+  id: id(),
+  outputId: uuid().notNull().references(() => outputs.id, { onDelete: "cascade" }),
+  requestId: uuid().notNull(),
+  waqfId: uuid(),
+  version: integer().notNull(),
+  authority: text().notNull(),
+  referenceNo: text().notNull(),
+  issuedOn: date().notNull(),
+  /** The proof (a document of the request: the official instrument or its copy). */
+  documentId: uuid().notNull(),
+  note: text(),
+  createdBy: uuid().notNull(),
+  createdAt: createdAt(),
+});
 
 // ───────────────────────── Request revisions (staff corrections and rollbacks) ─────────────────────────
 

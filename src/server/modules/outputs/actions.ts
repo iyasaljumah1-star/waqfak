@@ -13,7 +13,8 @@ import type { ActionState } from "@/lib/utils";
 import { SPECIALTY_LABEL } from "./catalog";
 import { draftInputs } from "./live";
 import { readSeparationPolicy } from "@/server/modules/approvals/policy";
-import { applyEdits, approvalCheck, DRAFT_STATUSES, mergeRegenerated, readiness } from "./pure";
+import { applyEdits, approvalCheck, DRAFT_STATUSES, mergeRegenerated, readiness, regenNote, regenSummary, settleGaps } from "./pure";
+import { syncConflicts, transitionGate } from "./quality";
 import { addVersion, ensureOutput, preparersOf, versionOf, type OutputRow } from "./server";
 import { cycleOutputFor } from "@/server/modules/operations/continuous";
 import { parseCycleKey } from "@/server/modules/operations/continuous-pure";
@@ -68,8 +69,11 @@ export async function generateOutput(_: ActionState, fd: FormData): Promise<Acti
     const fresh = inp.draft;
     let version: number;
     let kept = 0;
+    // the conflict register follows every detection run (opened, still open, or resolved after a correction)
+    const sync = await syncConflicts(c.tx, rc, inp.ctx.conflicts ?? [], { actorId: c.auth.user.id, ip: c.ip, userAgent: c.userAgent, outputId: o.id, reason: "عند توليد المسودة" });
+    let summary = "";
     if (!o.currentVersion) {
-      version = await addVersion(c.tx, o, { origin: "generated", sections: fresh.sections, gaps: fresh.gaps, sources: fresh.sources, inputsHash: fresh.inputsHash, basedOn: null, actorId: c.auth.user.id, note: "مسودة أولى من بيانات الطلب والوقف" });
+      version = await addVersion(c.tx, o, { origin: "generated", sections: fresh.sections, gaps: fresh.gaps, sources: fresh.sources, inputsHash: fresh.inputsHash, dataHash: fresh.dataHash, basedOn: null, actorId: c.auth.user.id, note: "مسودة أولى من بيانات الطلب والوقف" });
     } else {
       const cur = await versionOf(c.tx, o.id, o.currentVersion);
       if (cur?.inputsHash === fresh.inputsHash && cur.origin !== "edited") return { ok: true, message: "لم تتغير البيانات منذ آخر توليد؛ المسودة الحالية مطابقة." };
@@ -77,12 +81,14 @@ export async function generateOutput(_: ActionState, fd: FormData): Promise<Acti
         return { error: "النسخة الحالية فيها تعديلات بشرية. أكّد إعادة التوليد: تبقى النسخة الحالية في السجل، وتُنقل التعديلات والنصوص المكتوبة إلى النسخة الجديدة.", data: { needConfirm: true } };
       const merged = cur ? mergeRegenerated(cur.sections, fresh.sections, fresh.gaps) : { sections: fresh.sections, gaps: fresh.gaps, kept: 0 };
       kept = merged.kept;
-      version = await addVersion(c.tx, { ...o, status: o.status === "returned" ? "draft" : o.status }, { origin: "regenerated", sections: merged.sections, gaps: merged.gaps, sources: fresh.sources, inputsHash: fresh.inputsHash, basedOn: o.currentVersion, actorId: c.auth.user.id, note: kept ? `أُعيد التوليد مع الإبقاء على ${kept} من التعديلات البشرية` : "أُعيد التوليد من البيانات الحالية" });
+      summary = regenNote(regenSummary(cur?.sections ?? [], merged.sections, cur?.gaps ?? [], merged.gaps), kept);
+      version = await addVersion(c.tx, { ...o, status: o.status === "returned" ? "draft" : o.status }, { origin: "regenerated", sections: merged.sections, gaps: merged.gaps, sources: fresh.sources, inputsHash: fresh.inputsHash, dataHash: fresh.dataHash, basedOn: o.currentVersion, actorId: c.auth.user.id, note: `أُعيد التوليد من البيانات الحالية: ${summary}` });
     }
     if (prepTask && prepTask.status === "todo") await syncTask(c.tx, rc.req.id, "prepare_output", { outputKey: def.key }, "in_progress", c.auth.user.id, "بدأ إعداد المسودة");
     if (prepTask) await taskEvent(c.tx, prepTask, { action: "output", actorId: c.auth.user.id, note: `${version === 1 ? "وُلّدت المسودة" : "أُعيد توليد المسودة"} (نسخة ${version})`, outputId: o.id });
-    await audit(c.tx, { actorUserId: c.auth.user.id, action: version === 1 ? "outputs.generate" : "outputs.regenerate", entityType: "output", entityId: o.id, waqfId: rc.req.waqfId, ip: c.ip, userAgent: c.userAgent, after: { number: o.number, version, gaps: fresh.gaps.length, keptEdits: kept } });
-    return { ok: true, message: version === 1 ? "أُعدّت المسودة من بيانات الطلب والوقف. راجعها وأكمل ما يكتبه المختص." : `أُعيد توليد المسودة (نسخة ${version}).`, data: { outputId: o.id } };
+    await audit(c.tx, { actorUserId: c.auth.user.id, action: version === 1 ? "outputs.generate" : "outputs.regenerate", entityType: "output", entityId: o.id, waqfId: rc.req.waqfId, ip: c.ip, userAgent: c.userAgent, after: { number: o.number, version, gaps: fresh.gaps.length, keptEdits: kept, conflicts: sync.open.map((x) => x.key) } });
+    const conflictsLine = sync.open.length ? ` في البيانات ${sync.open.length} تعارض لا تختار المنصة فيه قيمة؛ يُصحَّح من مصدره.` : "";
+    return { ok: true, message: (version === 1 ? "أُعدّت المسودة من بيانات الطلب والوقف. راجعها وأكمل ما يكتبه المختص." : `أُعيد توليد المسودة (نسخة ${version}): ${summary}.`) + conflictsLine, data: { outputId: o.id } };
   }, { revalidate: reval(d.id) });
 }
 
@@ -103,7 +109,10 @@ export async function saveOutputEdits(_: ActionState, fd: FormData): Promise<Act
     if (!cur) throw new UserError("لا مسودة لتعديلها. ولّد المسودة أولًا.");
     const edited = applyEdits(cur.sections, fields);
     if (!edited.changed) return { ok: true, message: "لا تغييرات للحفظ." };
-    const version = await addVersion(c.tx, o, { origin: "edited", sections: edited.sections, gaps: cur.gaps.filter((g) => !g.key.startsWith("conflict:")), sources: cur.sources, inputsHash: cur.inputsHash, basedOn: cur.version, actorId: c.auth.user.id, note: String(fd.get("note") ?? "").slice(0, 500) || null });
+    // every version says why it exists: the editor's reason, or a description of what was edited
+    const touched = Object.keys(fields).filter((k) => fields[k] !== "" || k.startsWith("drop:")).map((k) => k.split(":")[0]);
+    const auto = `تعديل يدوي: ${[...new Set(touched)].map((k) => ({ clause: "نص بند", spec: "نص المختص", fact: "قيمة", note: "ملاحظة", drop: "حذف قسم", new_title: "قسم مضاف", new_body: "قسم مضاف" })[k] ?? k).join("، ")}`;
+    const version = await addVersion(c.tx, o, { origin: "edited", sections: edited.sections, gaps: settleGaps(edited.sections, cur.gaps.filter((g) => !(g.key.startsWith("conflict:") && !g.sides))), sources: cur.sources, inputsHash: cur.inputsHash, dataHash: cur.dataHash, basedOn: cur.version, actorId: c.auth.user.id, note: String(fd.get("note") ?? "").trim().slice(0, 500) || auto });
     await audit(c.tx, { actorUserId: c.auth.user.id, action: "outputs.edit", entityType: "output", entityId: o.id, waqfId: o.waqfId, ip: c.ip, userAgent: c.userAgent, after: { number: o.number, version } });
     return { ok: true, message: `حُفظت التعديلات في نسخة جديدة (${version}).` };
   }, { revalidate: reval(requestId) });
@@ -123,9 +132,11 @@ export async function submitOutput(_: ActionState, fd: FormData): Promise<Action
     const cur = await versionOf(c.tx, o.id, o.currentVersion);
     if (!cur) throw new UserError("لا مسودة لإرسالها.");
     const ready = readiness(cur.sections, cur.gaps);
-    if (!ready.ready) {
-      const parts = [...ready.blocking.map((g) => g.label), ...ready.unwritten.map((u) => `لم يُكتب: ${u.section}`)];
-      throw new UserError(`لا تُرسل المسودة للمراجعة وفيها نواقص: ${parts.slice(0, 4).join("؛ ")}${parts.length > 4 ? "…" : ""}`);
+    // validated on the live data, whatever the screen showed (the register is updated even when the move is refused)
+    const gate = await transitionGate(c.tx, rc, o, cur, "submit", { actorId: c.auth.user.id, ip: c.ip, userAgent: c.userAgent });
+    if (gate.errors.length) {
+      await audit(c.tx, { actorUserId: c.auth.user.id, action: "outputs.submit_blocked", entityType: "output", entityId: o.id, waqfId: o.waqfId, ip: c.ip, userAgent: c.userAgent, after: { number: o.number, version: o.currentVersion, reasons: gate.errors.slice(0, 10) } });
+      return { error: `لا تُرسل المسودة للمراجعة: ${gate.errors.slice(0, 4).join("؛ ")}${gate.errors.length > 4 ? `… (${gate.errors.length})` : ""}` };
     }
     await c.tx.update(outputs).set({ status: "in_review", submittedBy: c.auth.user.id, submittedAt: new Date(), reviewNote: null, updatedBy: c.auth.user.id }).where(eq(outputs.id, o.id));
     await syncTask(c.tx, rc.req.id, "prepare_output", { outputKey: o.outputKey }, "done", c.auth.user.id, `أُرسلت المسودة (نسخة ${o.currentVersion}) للمراجعة`);
@@ -163,8 +174,11 @@ export async function approveOutput(_: ActionState, fd: FormData): Promise<Actio
     if (!check.ok) throw new UserError(check.error);
     const cur = await versionOf(c.tx, o.id, o.currentVersion);
     if (!cur) throw new UserError("لا نسخة لاعتمادها.");
-    const ready = readiness(cur.sections, cur.gaps);
-    if (!ready.ready) throw new UserError("لا يُعتمد مخرج فيه نواقص جوهرية أو أجزاء لم يكتبها المختص.");
+    const gate = await transitionGate(c.tx, rc, o, cur, "approve", { actorId: c.auth.user.id, ip: c.ip, userAgent: c.userAgent });
+    if (gate.errors.length) {
+      await audit(c.tx, { actorUserId: c.auth.user.id, action: "outputs.approve_blocked", entityType: "output", entityId: o.id, waqfId: o.waqfId, ip: c.ip, userAgent: c.userAgent, after: { number: o.number, version: o.currentVersion, reasons: gate.errors.slice(0, 10) } });
+      return { error: `لا يُعتمد المخرج: ${gate.errors.slice(0, 4).join("؛ ")}${gate.errors.length > 4 ? `… (${gate.errors.length})` : ""}` };
+    }
     const opinion = rc.workflowCode === "opinion" || o.specialty === "sharia";
     if (opinion && r.data.signedBy.length < 5) return { error: "الرأي المتخصص يُوقَّع باسم المستشار وصفته.", fieldErrors: { signedBy: "اكتب اسم المستشار وصفته." } };
     const now = new Date();

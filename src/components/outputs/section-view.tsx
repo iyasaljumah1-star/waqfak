@@ -1,12 +1,17 @@
 import { Alert, Badge } from "@/components/ui";
 import type { OutputBlock, OutputSection } from "@/server/db/schema/operations";
 import { PROV_LABEL } from "@/server/modules/outputs/pure";
+import { CHECK_STATUS_AR, CHECK_STATUS_TONE } from "@/server/modules/outputs/checks";
+import { citationOf } from "@/server/modules/outputs/citations";
+import { ClauseData } from "./quality-panels";
 
 /** Read-only rendering of an output's sections (the saved draft, an earlier version, or a live preview). */
 const PROV_TONE: Record<string, "neutral" | "info" | "seal" | "fine" | "ok"> = { document: "ok", client: "info", system: "neutral", computed: "neutral", assumption: "fine", unverified: "fine", specialist: "seal" };
 const Prov = ({ p }: { p?: string }) => (p ? <Badge tone={PROV_TONE[p] ?? "neutral"} icon={false} className="ms-1 align-middle text-[11px]">{PROV_LABEL[p as keyof typeof PROV_LABEL] ?? p}</Badge> : null);
 
-export function Block({ b }: { b: OutputBlock }) {
+const refLabel = (r: string) => { const c = citationOf(r); return c ? `${c.refCode} — ${c.location}` : r; };
+
+export function Block({ b, internal = false }: { b: OutputBlock; internal?: boolean }) {
   switch (b.type) {
     case "para":
       return <p className="whitespace-pre-line text-[15px] leading-8">{b.text}<Prov p={b.prov} /></p>;
@@ -45,8 +50,15 @@ export function Block({ b }: { b: OutputBlock }) {
         <div className="rounded-md border border-line p-3" data-testid={`clause-${b.key}`}>
           <p className="font-semibold">{b.n}. {b.title}</p>
           <p className="whitespace-pre-line text-[15px] leading-8">{b.text}</p>
-          <p className="mt-1 text-[12px] text-muted"><Prov p={b.text === b.generated ? b.prov : "specialist"} />{b.refs?.length ? ` ${b.refs.join("؛ ")}` : ""}</p>
+          <p className="mt-1 text-[12px] text-muted"><Prov p={b.text === b.generated ? b.prov : "specialist"} />{b.refs?.length ? ` ${b.refs.map(refLabel).join("؛ ")}` : ""}</p>
+          {internal ? <ClauseData b={b} /> : null}
         </div>
+      );
+    case "checks":
+      return (
+        <ul className="space-y-1 text-[14px]">
+          {b.items.map((c) => <li key={c.key}><Badge tone={CHECK_STATUS_TONE[c.status]} icon={false}>{CHECK_STATUS_AR[c.status]}</Badge> {c.label} — <span className="text-muted">{c.reason}</span></li>)}
+        </ul>
       );
     case "signatures":
       return (
@@ -58,11 +70,11 @@ export function Block({ b }: { b: OutputBlock }) {
   }
 }
 
-export function SectionView({ s }: { s: OutputSection }) {
+export function SectionView({ s, internal = false }: { s: OutputSection; internal?: boolean }) {
   return (
     <section className="space-y-3" data-testid={`section-${s.key}`}>
-      <h2 className="text-[17px] font-semibold">{s.title}{s.manual ? <Badge tone="seal" icon={false} className="ms-2">قسم أضافه إنسان</Badge> : null}</h2>
-      {s.blocks.map((b, i) => <Block key={i} b={b} />)}
+      <h2 className="text-[17px] font-semibold">{s.title}{s.manual ? <Badge tone="seal" icon={false} className="ms-2">قسم أضافه إنسان</Badge> : null}{s.audience === "internal" ? <Badge tone="neutral" icon={false} className="ms-2">داخلي — لا يظهر في نسخة العميل</Badge> : null}</h2>
+      {s.blocks.map((b, i) => <Block key={i} b={b} internal={internal} />)}
     </section>
   );
 }

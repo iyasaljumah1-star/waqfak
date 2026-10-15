@@ -4,7 +4,7 @@ import { makerChecker } from "@/server/authz/separation";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import type { Tx } from "@/server/db";
 import type { Auth } from "@/server/authz/context";
-import { deliverables, outputs, outputVersions, requestItems, requestLinks, requestRevisions, requestStages, users } from "@/server/db/schema";
+import { dataConflicts, deliverables, outputs, outputVersions, requestItems, requestLinks, requestRevisions, requestStages, users } from "@/server/db/schema";
 import type { RequestCtx } from "@/server/modules/requests/access";
 import { contractState } from "@/server/modules/requests/access";
 import { currentPlan, selfApprovalCoversQA } from "@/server/modules/requests/engine";
@@ -20,6 +20,8 @@ import { parseCycleKey, requestOutputs } from "./continuous-pure";
 import { continuousSnapshot } from "./continuous";
 import { approvalCheck, readiness } from "@/server/modules/outputs/pure";
 import { preparersOf } from "@/server/modules/outputs/server";
+import { checkBlockers } from "@/server/modules/outputs/checks";
+import { checksOf, reviewsOf } from "@/server/modules/outputs/quality";
 import { todayISO } from "@/server/engines/dates";
 import { planRequest, type Snapshot } from "./next-step";
 
@@ -70,22 +72,27 @@ export async function requestSnapshot(tx: Tx, auth: Auth, rc: RequestCtx): Promi
   const opinion = rc.workflowCode === "opinion";
   const edits = await tx.select({ at: requestRevisions.at }).from(requestRevisions).where(and(eq(requestRevisions.requestId, id), eq(requestRevisions.kind, "intake_edit")));
   const lastEdit = edits.reduce<Date | null>((m, e) => (!m || e.at > m ? e.at : m), null);
+  const openConflicts = await tx.select({ conflictKey: dataConflicts.conflictKey, label: dataConflicts.label, severity: dataConflicts.severity, action: dataConflicts.action }).from(dataConflicts).where(and(eq(dataConflicts.requestId, id), eq(dataConflicts.status, "open")));
   const outs = [];
   for (const def of defs) {
     const o = outRows.find((x) => x.outputKey === def.key) ?? null;
     const v = o ? vers.find((x) => x.outputId === o.id && x.version === o.currentVersion) : null;
     const ready = v ? readiness(v.sections, v.gaps) : null;
+    // checks: failed ones block like gaps; those awaiting a specialist block approval (outputs/checks.ts)
+    const cb = v && o ? checkBlockers(checksOf(v.sections), [...(await reviewsOf(tx, o.id, v.version)).checks.values()]) : null;
+    const conflictGaps = openConflicts.filter((c) => c.severity === "material" && !(ready?.blocking ?? []).some((g) => g.key === `conflict:${c.conflictKey}`)).map((c) => ({ label: `تعارض قائم: ${c.label}`, fix: c.action as string | undefined }));
     let viewerCanApprove = false;
     let reason: string | undefined;
     if (o?.status === "in_review") {
       const ck = approvalCheck({ policy: o.reviewPolicy, approverId: me, preparers: await preparersOf(tx, o), canReview: has("staff.quality_review"), isManager: has("admin.requests.all"), direct: has("approvals.direct"), separation: await readSeparationPolicy(tx) });
       viewerCanApprove = ck.ok;
       if (!ck.ok) reason = ck.error;
+      else if (cb?.pendingSpecialist.length) { viewerCanApprove = false; reason = `بانتظار رأي المختص في: ${cb.pendingSpecialist.map((c) => c.label).join("، ")} (من صفحة المسودة)`; }
     }
     const del = o?.deliverableId ? dels.find((x) => x.id === o.deliverableId) : null;
     outs.push({
       key: def.key, title: def.title, specialty: SPECIALTY_LABEL[def.specialty], id: o?.id ?? null, status: (o?.status ?? null) as Snapshot["outputs"][number]["status"],
-      blocking: (ready?.blocking ?? []).map((g) => ({ label: g.label, fix: g.hint })), unwritten: (ready?.unwritten ?? []).map((u) => u.section),
+      blocking: [...(ready?.blocking ?? []).map((g) => ({ label: g.label, fix: g.hint })), ...(o && o.status !== "approved" ? conflictGaps : []), ...(cb?.failed ?? []).map((c) => ({ label: `فشل التحقق: ${c.label}`, fix: c.reason as string | undefined }))], unwritten: (ready?.unwritten ?? []).map((u) => u.section),
       returnedNote: o?.status === "returned" ? o.reviewNote : null,
       viewerCanApprove, approveBlockedReason: reason, needsSignature: opinion || def.specialty === "sharia",
       needsRevision: o?.status === "approved" && (!o.deliverableId || del?.status === "revision_requested"),

@@ -12,6 +12,7 @@ import { approvalCheck, ORIGIN_LABEL, OUTPUT_STATUS_LABEL, OUTPUT_STATUS_TONE } 
 import { separationFor } from "@/server/modules/approvals/policy";
 import { SectionView } from "@/components/outputs/section-view";
 import { outputPageData } from "@/server/modules/outputs/queries";
+import { ChecksPanel, ConflictsPanel, OfficialPanel, ReferencesPanel, RequirementsPanel, StagePanel, SummaryPanel, WordDiff } from "@/components/outputs/quality-panels";
 
 export const metadata: Metadata = { title: "مسودة مخرج" };
 
@@ -33,6 +34,17 @@ export default async function OutputPage({ params, searchParams }: { params: Pro
   const incomplete = !!ready && (ready.blocking.length > 0 || ready.unwritten.length > 0) && o.status !== "approved";
   const sections = (current?.sections ?? []).filter((s) => !s.removed);
   const name = (x: string | null | undefined) => (x ? d.names.get(x) ?? "—" : "—");
+  const q = d.quality;
+  // the page keeps three things apart: what the client gave, the document itself, and the team's internal material
+  const CLIENT_KEYS = new Set(["request", "documents", "waqf"]);
+  const clientData = sections.filter((s) => CLIENT_KEYS.has(s.key));
+  // the document as printed, with its internal working parts (the specialist's notes) shown in place
+  const docSections = sections.filter((s) => !CLIENT_KEYS.has(s.key) && !s.blocks.some((b) => b.type === "checks") && s.key !== "references");
+  const internalSections = sections.filter((s) => s.audience === "internal" && !CLIENT_KEYS.has(s.key));
+  const refSection = sections.filter((s) => s.key === "references");
+  const reviewerCan = auth.perms.has("staff.quality_review") || auth.perms.has("admin.requests.all") || auth.perms.has("approvals.direct");
+  const openForReview = o.status !== "approved" && d.isCurrent;
+  const mandatoryOpen = q.requirements.filter((r) => r.need === "mandatory" && (r.status === "missing" || r.status === "failed")).length;
 
   return (
     <div className="space-y-6">
@@ -43,6 +55,8 @@ export default async function OutputPage({ params, searchParams }: { params: Pro
         actions={current ? <a href={`/admin/requests/${id}/outputs/${o.id}/pdf?v=${current.version}`} target="_blank" rel="noopener" data-testid="output-pdf" className="inline-flex h-9 items-center gap-1 rounded-md border border-line px-3 text-sm text-ink hover:bg-ink-soft"><FileDown aria-hidden className="size-4" />معاينة PDF — النسخة {current.version}</a> : null}
       />
 
+      <StagePanel stage={q.stage} next={q.next} />
+      {current ? <SummaryPanel conflicts={q.liveConflicts.length} mandatory={mandatoryOpen} specialist={q.checkState.pendingSpecialist.length} failed={q.checkState.failed.length} stale={q.stale} /> : null}
       {incomplete ? <div data-testid="draft-incomplete"><Alert tone="fine" title="مسودة غير مكتملة — بانتظار استكمال البيانات">تُعرض المسودة كما هي الآن. ما ينقص مبيّن أدناه في «ما يلزم قبل الاعتماد»، ولا يُملأ بقيمة افتراضية.</Alert></div> : null}
       {o.status === "returned" && o.reviewNote ? <Alert tone="fine" title="أعاده المراجع للتعديل">{o.reviewNote}</Alert> : null}
       {o.status === "approved" ? <Alert tone="ok" title={`معتمد — النسخة ${o.approvedVersion}`}>اعتمده {name(o.approvedBy)} {o.approvedAt ? fmtDateTime(o.approvedAt) : ""}{o.selfApproved ? " (اعتماد ذاتي من مدير مخوّل وفق سياسة المخرج)" : ""}. يظهر للعميل بعد مراجعة الجودة وإرسال الطلب له.</Alert> : null}
@@ -66,10 +80,14 @@ export default async function OutputPage({ params, searchParams }: { params: Pro
                 {d.diff.rows.filter((r) => r.change !== "same").map((r) => (
                   <li key={r.key} className="rounded-md border border-line p-2">
                     <p className="font-medium">{r.title} <Badge tone={r.change === "added" ? "ok" : r.change === "removed" ? "critical" : "info"} icon={false}>{r.change === "added" ? "أضيف" : r.change === "removed" ? "حُذف" : "تغيّر"}</Badge></p>
-                    <div className="mt-1 grid gap-2 text-[13px] sm:grid-cols-2">
-                      <pre className="whitespace-pre-wrap rounded bg-surface-2 p-2 font-sans">{r.before ?? "—"}</pre>
-                      <pre className="whitespace-pre-wrap rounded bg-ink-soft/40 p-2 font-sans">{r.after ?? "—"}</pre>
-                    </div>
+                    {r.words ? (
+                      <div className="mt-1 rounded bg-surface-2 p-2"><WordDiff segs={r.words} /></div>
+                    ) : (
+                      <div className="mt-1 grid gap-2 text-[13px] sm:grid-cols-2">
+                        <pre className="whitespace-pre-wrap rounded bg-surface-2 p-2 font-sans">{r.before ?? "—"}</pre>
+                        <pre className="whitespace-pre-wrap rounded bg-ink-soft/40 p-2 font-sans">{r.after ?? "—"}</pre>
+                      </div>
+                    )}
                   </li>
                 ))}
                 {!d.diff.rows.some((r) => r.change !== "same") ? <li className="text-muted">لا فروق في المحتوى.</li> : null}
@@ -77,9 +95,27 @@ export default async function OutputPage({ params, searchParams }: { params: Pro
             </Panel>
           ) : null}
 
-          <Panel title={current ? `المسودة — النسخة ${current.version} (${ORIGIN_LABEL[current.origin]})` : "لا مسودة"}>
-            {current ? <div className="space-y-6">{sections.map((s) => <SectionView key={s.key} s={s} />)}</div> : <p className="text-muted">لم تُعدّ مسودة بعد.</p>}
+          {current ? <ConflictsPanel live={q.liveConflicts} register={q.register} requestId={id} canAct={rc.isAssignee || rc.isOps} /> : null}
+          {current ? <RequirementsPanel list={q.requirements} /> : null}
+
+          <Panel id="document" title={current ? `المستند — النسخة ${current.version} (${ORIGIN_LABEL[current.origin]})` : "لا مسودة"} description={current ? "نص المستند كما سيُطبع. ما بين معقوفين ناقص أو متعارض ولا يُملأ بقيمة افتراضية." : undefined}>
+            {current ? <div className="space-y-6">{docSections.map((s) => <SectionView key={s.key} s={s} internal />)}</div> : <p className="text-muted">لم تُعدّ مسودة بعد.</p>}
           </Panel>
+
+          {clientData.length ? (
+            <Panel id="client-data" title="بيانات العميل والمستندات" description="ما قدّمه العميل وما في ملف الوقف، منفصلًا عن نص المستند.">
+              <div className="space-y-6">{clientData.map((s) => <SectionView key={s.key} s={s} />)}</div>
+            </Panel>
+          ) : null}
+
+          {current ? <ReferencesPanel sections={docSections} refs={q.refs} reviews={q.reviews.citations} outputId={o.id} requestId={id} canReview={reviewerCan || canDeliver} /> : null}
+          {refSection.length ? <Panel title="المصادر العامة للمخرج"><div className="space-y-6">{refSection.map((s) => <SectionView key={s.key} s={s} />)}</div></Panel> : null}
+
+          {current ? <ChecksPanel checks={q.checks} findings={q.reviews.checks} canReview={reviewerCan} outputId={o.id} requestId={id} open={openForReview} /> : null}
+          {internalSections.filter((s) => !s.blocks.some((b) => b.type === "checks") && !docSections.includes(s)).length ? (
+            <Panel id="internal" title="ملاحظات داخلية"><div className="space-y-6">{internalSections.filter((s) => !s.blocks.some((b) => b.type === "checks") && !docSections.includes(s)).map((s) => <SectionView key={s.key} s={s} internal />)}</div></Panel>
+          ) : null}
+          {o.status === "approved" ? <OfficialPanel rows={q.official} approved canRecord={reviewerCan} docs={q.reqDocs} outputId={o.id} requestId={id} /> : null}
 
           {editable && current ? (
             <Panel id="edit" title="عدّل المسودة" description="كل حفظ ينشئ نسخة جديدة، وتبقى السابقة في السجل. البيانات المعدّلة تُوسم «كتبه المختص» مع قيمتها الأصلية.">
@@ -130,11 +166,17 @@ export default async function OutputPage({ params, searchParams }: { params: Pro
         </div>
 
         <aside className="min-w-0 space-y-4">
-          <Panel title="الإجراءات">
+          <Panel id="actions" title="الإجراءات">
             <div className="space-y-3">
               {canDeliver && d.isCurrent && (o.status === "draft" || o.status === "returned") ? (
                 <>
-                  <ActionForm action={submitOutput} hidden={{ outputId: o.id, requestId: id }} submit="أرسلها للمراجعة والاعتماد" size="sm" />
+                  {q.submitReasons.length ? (
+                    <div data-testid="submit-blocked">
+                      <button type="button" disabled aria-describedby="submit-why" className="h-9 w-full cursor-not-allowed rounded-md bg-ink/40 px-3 text-sm text-white">أرسلها للمراجعة والاعتماد</button>
+                      <ul id="submit-why" className="mt-1 list-disc ps-5 text-[13px] text-critical">{q.submitReasons.slice(0, 6).map((x, i) => <li key={i}>{x}</li>)}{q.submitReasons.length > 6 ? <li>و{q.submitReasons.length - 6} غيرها</li> : null}</ul>
+                      <p className="mt-1 text-[12px] text-muted">المعاينة والحفظ والتعديل الداخلي متاحة.</p>
+                    </div>
+                  ) : <ActionForm action={submitOutput} hidden={{ outputId: o.id, requestId: id }} submit="أرسلها للمراجعة والاعتماد" size="sm" />}
                   <ActionForm action={generateOutput} hidden={{ id, outputKey: o.outputKey }} submit="أعد التوليد من البيانات الحالية" size="sm" variant="secondary">
                     {current?.origin === "edited" ? <Checkbox name="confirm" label="أؤكد إعادة التوليد: تبقى النسخة الحالية في السجل، وتُنقل النصوص المكتوبة والبيانات المصححة إلى النسخة الجديدة." /> : null}
                   </ActionForm>
@@ -142,7 +184,12 @@ export default async function OutputPage({ params, searchParams }: { params: Pro
               ) : null}
               {o.status === "in_review" && canReview ? (
                 <>
-                  {approve?.ok ? (
+                  {approve?.ok && q.approveReasons.length ? (
+                    <div data-testid="approve-blocked">
+                      <button type="button" disabled aria-describedby="approve-why" className="h-9 w-full cursor-not-allowed rounded-md bg-seal/40 px-3 text-sm text-white">اعتمد المخرج</button>
+                      <ul id="approve-why" className="mt-1 list-disc ps-5 text-[13px] text-critical">{q.approveReasons.slice(0, 6).map((x, i) => <li key={i}>{x}</li>)}</ul>
+                    </div>
+                  ) : approve?.ok ? (
                     <>
                       {approve.self ? <p className="text-[13px] text-muted">أنت ممن أعدّوا هذا المخرج؛ يُسجَّل اعتمادك اعتمادًا ذاتيًا في سجله وسجل التدقيق.</p> : null}
                       <ActionForm action={approveOutput} hidden={{ outputId: o.id, requestId: id }} submit="اعتمد المخرج" size="sm" variant="seal">

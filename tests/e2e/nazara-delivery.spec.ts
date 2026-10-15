@@ -211,9 +211,9 @@ test.describe.serial("nazir periodic report and delivery record", () => {
     await ex(admin.getByTestId("section-distributions")).toBeVisible(); // stated even when empty, never omitted
     await ex(admin.getByText(/لا يُعد تقديمًا لتقرير رسمي/).first()).toBeVisible();
     await admin.screenshot({ path: `${shots}/nazara-report-gaps.png`, fullPage: true });
-    // it cannot be sent for review with these gaps (server-side)
-    await admin.getByRole("button", { name: "أرسلها للمراجعة والاعتماد" }).click();
-    await ex(admin.getByText(/لا تُرسل المسودة للمراجعة وفيها نواقص/)).toBeVisible();
+    // it cannot be sent for review with these gaps: not offered, with the reasons (the server check is in output-quality.spec)
+    await ex(admin.getByTestId("submit-blocked")).toContainText("قرار تعيين «وقفك» ناظرًا غير مسجل");
+    await ex(admin.getByRole("button", { name: "أرسلها للمراجعة والاعتماد" })).toBeDisabled();
     expect((await sql<{ status: string }>("select status from outputs where id = $1", [reportId]))[0].status).toBe("draft");
 
     // 5) the missing data is recorded where it belongs: the appointment in the nazara file, entries in the ledger

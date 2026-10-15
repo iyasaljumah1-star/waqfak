@@ -6,6 +6,7 @@
 import { createHash } from "node:crypto";
 import type { OutputBlock, OutputGap, OutputSection, OutputSource, Provenance } from "@/server/db/schema/operations";
 import { PROFILE_REFS, TEMPLATES, type OutputDef, type SectionKind } from "./catalog";
+import type { Conflict } from "./conflicts";
 import { draftDeed, draftWill } from "./drafting";
 
 export type CtxDoc = { id: string; title: string; docType: string; typeLabel: string; number: string | null; issuedOn: string | null; expiresOn: string | null; scope: "request" | "waqf"; slot: string | null };
@@ -72,6 +73,14 @@ export type OutputContext = {
   refs: { code: string; name: string; binding: string; verification: string }[];
   /** Delivery cycle of a continuous service (period the output covers). */
   cycle?: { label: string; from: string | null; to: string | null; due: string } | null;
+  /** Conflicts between the request's data sources (conflicts.ts). */
+  conflicts?: Conflict[];
+  /** Form document slots the team verified (slot → date). */
+  verifiedDocs?: Record<string, string>;
+  /** Labels of the form's fields (key → label). */
+  fieldLabels?: Record<string, string>;
+  /** When the request's data was last given (client) or corrected (staff). */
+  dataAt?: { on: string; by: "client" | "staff_edit" } | null;
 };
 
 const fmt = (n: number | null | undefined) => (n == null ? "—" : `${n.toLocaleString("en-US", { maximumFractionDigits: 2 })} ر.س`);
@@ -284,16 +293,26 @@ function build(kind: SectionKind, c: OutputContext, def: OutputDef): Built {
     }
     case "deed_clauses":
     case "will_clauses": {
-      const input = { keys: c.keys ?? {}, tables: c.tables ?? {}, attached: Object.fromEntries(c.formDocs.map((f) => [f.key, f.attached])), requesterName: c.requester.name };
+      const input = {
+        keys: c.keys ?? {}, tables: c.tables ?? {}, attached: Object.fromEntries(c.formDocs.map((f) => [f.key, f.attached])), requesterName: c.requester.name,
+        conflicts: c.conflicts ?? [], verifiedDocs: c.verifiedDocs ?? {}, today: c.today,
+      };
       const dr = kind === "will_clauses" ? draftWill(input) : draftDeed(input);
       gaps.push(...dr.gaps);
+      // each clause names where its data came from and when (the client's answer, or the team's correction)
+      const at = c.dataAt?.on;
+      const from = c.dataAt?.by === "staff_edit" ? "إجابة العميل بعد تصحيح الفريق (سجل التعديلات)" : "إجابة العميل في نموذج الطلب";
+      for (const cl of dr.clauses) cl.data = (cl.data ?? []).map((x) => ({ ...x, label: c.fieldLabels?.[x.field] ?? x.field, source: x.status === "computed" || x.status === "default" ? "الصياغة الآلية" : from, at: at ?? undefined }));
       const sections: OutputSection[] = [
-        section(kind, `${dr.title} (مسودة مولدة من بيانات النموذج)`, [
-          { type: "para", text: "صيغت البنود من اختيارات العميل في نموذج الطلب وفق مبادئ الصياغة في المراجع المذكورة مع كل بند. ما بين معقوفين [يُستكمل: …] لم يُقدَّم بعد ولا يُفترض. البند الذي يعدّله المختص يبقى بنصه عند إعادة التوليد.", prov: "system" },
+        section(kind, dr.title, [
+          { type: "para", internal: true, text: "مسودة مولدة من بيانات النموذج: صيغت البنود من اختيارات العميل في نموذج الطلب وفق مبادئ الصياغة في المراجع المذكورة مع كل بند. ما بين معقوفين [يُستكمل: …] لم يُقدَّم بعد ولا يُفترض، وما بين [تعارض يُحسم: …] اختلفت فيه البيانات ولا يُختار أحد الطرفين. البند الذي يعدّله المختص يبقى بنصه عند إعادة التوليد.", prov: "system" },
           ...dr.clauses,
           { type: "signatures", rows: dr.signatures },
         ]),
-        section(`${kind}:checks`, "فحوص الصياغة", [{ type: "list", items: dr.checks.map((x) => ({ text: `${x.ok ? "✓" : "✗"} ${x.label}${x.detail ? ` — ${x.detail}` : ""}`, prov: "computed" as Provenance })) }], false),
+        { ...section(`${kind}:checks`, "فحوص الصياغة (داخلية)", [
+          { type: "checks", items: dr.checks },
+          { type: "para", text: "الفحص الآلي لا يثبت صحة الحكم الشرعي أو النظامي. ما يحتاج مختصًا يسجّل فيه المراجع رأيه قبل الاعتماد.", prov: "system" },
+        ], false), audience: "internal" },
       ];
       return { sections, gaps };
     }
@@ -438,8 +457,40 @@ export function buildDraft(c: OutputContext, def: OutputDef) {
     { type: "list", items: sources.map((s) => ({ text: `${s.label} — ${SOURCE_STATUS[s.status]}${s.detail ? ` (${s.detail})` : ""}`, prov: s.status === "verified" ? "document" : "unverified" })) },
     ...(t.disclaimer ? [{ type: "para" as const, text: t.disclaimer, prov: "system" as Provenance }] : []),
   ]));
+  // the client copy carries the document, not the team's working material: the client's raw answers (contact data,
+  // priority) and the stages stay internal everywhere; a drafted document (will, deed) keeps only its clauses and sources
+  const DOCUMENT_PROFILES = new Set(["will_text", "deed_draft"]);
+  for (const s of sections) {
+    if (s.key === "request" || s.key === "stages") s.audience = "internal";
+    else if (DOCUMENT_PROFILES.has(def.profile) && !(s.key === "will_clauses" || s.key === "deed_clauses" || s.key === "references")) s.audience = "internal";
+  }
   if (c.waqf?.isDemo) gaps.push({ key: "demo", label: "الوقف تجريبي: المخرج للاختبار فقط", severity: "warning" });
-  return { sections, gaps, sources, inputsHash: hashInputs(c) };
+  // conflicts between the data sources: never resolved by the generator, listed with each side's value
+  for (const cf of c.conflicts ?? []) {
+    const g: OutputGap = {
+      key: `conflict:${cf.key}`, label: cf.label, severity: cf.severity === "material" ? "blocking" : "warning", kind: "conflict",
+      need: cf.severity === "material" ? "mandatory" : "review", owner: "client", field: cf.fields[0], hint: cf.action, sides: cf.sides,
+      why: "لا يُصاغ المستند على قيمتين متعارضتين، ولا تختار المنصة إحداهما.", effect: cf.severity === "material" ? "يمنع الإرسال للمراجعة والاعتماد حتى يُصحَّح مصدر البيانات." : undefined,
+    };
+    const i = gaps.findIndex((x) => x.key === g.key);
+    if (i >= 0) gaps[i] = g; else gaps.unshift(g);
+  }
+  return { sections, gaps, sources, inputsHash: hashInputs(c), dataHash: dataHash(c) };
+}
+
+/**
+ * Hash of the request's own data a document is drafted from: the answers, the documents attached (with their recorded
+ * number and date), the waqf file's identity values and the team's document verifications. A version drafted from other
+ * data is not approved: it is regenerated first (so the approved text always matches the data on record).
+ */
+export function dataHash(c: OutputContext) {
+  const w = c.waqf;
+  return createHash("sha256").update(JSON.stringify({
+    keys: c.keys ?? {}, tables: c.tables ?? {}, requester: c.requester,
+    docs: c.documents.filter((d) => d.scope === "request").map((d) => [d.id, d.number, d.issuedOn, d.expiresOn, d.slot]).sort(),
+    formDocs: c.formDocs.map((f) => [f.key, f.attached]), verified: c.verifiedDocs ?? {},
+    waqf: w ? [w.name, w.deedNo, w.registrationCertNo, w.fiscalYearEnd, w.nationalUnifiedNumber, w.sizeClass] : null,
+  })).digest("hex").slice(0, 32);
 }
 
 export function hashInputs(c: OutputContext) {
