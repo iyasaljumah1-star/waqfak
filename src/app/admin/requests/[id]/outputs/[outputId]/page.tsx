@@ -186,6 +186,7 @@ export default async function OutputPage({ params, searchParams }: { params: Pro
                 <>
                   {approve?.ok && q.approveReasons.length ? (
                     <div data-testid="approve-blocked">
+                      {approve.self ? <p className="mb-1 text-[13px] text-muted">أنت ممن أعدّوا هذا المخرج؛ يُسجَّل اعتمادك اعتمادًا ذاتيًا في سجله وسجل التدقيق.</p> : null}
                       <button type="button" disabled aria-describedby="approve-why" className="h-9 w-full cursor-not-allowed rounded-md bg-seal/40 px-3 text-sm text-white">اعتمد المخرج</button>
                       <ul id="approve-why" className="mt-1 list-disc ps-5 text-[13px] text-critical">{q.approveReasons.slice(0, 6).map((x, i) => <li key={i}>{x}</li>)}</ul>
                     </div>

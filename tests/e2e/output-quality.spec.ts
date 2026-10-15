@@ -141,6 +141,8 @@ test.describe.serial("output quality: conflicts, checks, deficiency list, stages
     await sql("update service_requests set status = 'cancelled' where requester_user_id = $1 and status = 'draft'", [U().waqif.id]);
   });
   test.afterAll(async () => {
+    // emp1 was assigned for this test only: hand the request back so the assignment grants no lasting waqf access
+    if (reqId) await sql("update service_requests set assigned_to_user_id = $2 where id = $1", [reqId, U().ops.id]);
     for (const p of pages.values()) await p.context().close();
     pages.clear();
   });
