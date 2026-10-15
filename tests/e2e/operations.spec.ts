@@ -158,7 +158,8 @@ test.describe.serial("service flows as one operating system", () => {
     // output drafted from the platform's data
     await go(admin, `/admin/requests/${reqId}`);
     await admin.getByTestId("output-G01.main").getByRole("button", { name: "احفظ مسودة من بيانات الطلب" }).click();
-    await ex(admin.getByTestId("output-G01.main").getByRole("link", { name: /معاينة/ })).toBeVisible();
+    await ex(admin.getByTestId("output-G01.main").getByRole("link", { name: /معاينة وتحرير/ })).toBeVisible();
+    await ex.poll(async () => (await sql("select 1 from outputs where request_id = $1", [reqId])).length).toBe(1);
     [{ id: outputId }] = await sql<{ id: string }>("select id from outputs where request_id = $1", [reqId]);
     await go(admin, `/admin/requests/${reqId}/outputs/${outputId}`);
     await ex(admin.getByTestId("section-waqf")).toContainText("وقف النور التعليمي");

@@ -186,10 +186,10 @@ test.describe.serial("execution engine: next step, drafted documents, verificati
     await ex(admin.getByTestId("output-versions").locator("li")).toHaveCount(2);
 
     await nextStep(admin, willReq, /أرسل المسودة للمراجعة/);
-    // independent policy: the preparer cannot approve; the panel says who must
-    await go(admin, `/admin/requests/${willReq}`);
-    await ex(admin.getByTestId("no-action")).toBeVisible();
-    await ex(admin.getByTestId("blockers")).toContainText("اعتمادًا مستقلًا");
+    // independent policy: the preparer here is the system administrator — direct approval would be allowed and
+    // recorded (no written policy requires a second person); a reviewer who did not prepare it approves instead
+    await go(admin, `/admin/requests/${willReq}/outputs/${o.id}`);
+    await ex(admin.getByText("أنت ممن أعدّوا هذا المخرج؛ يُسجَّل اعتمادك اعتمادًا ذاتيًا", { exact: false })).toBeVisible();
     // another reviewer approves with the advisor's signature (sharia output → in the editor)
     const ops = await as(browser, "ops");
     await go(ops, `/admin/requests/${willReq}`);
@@ -203,8 +203,9 @@ test.describe.serial("execution engine: next step, drafted documents, verificati
 
     // to quality review (the preparer), then QA by a non-preparer
     await nextStep(admin, willReq, /أرسل لمراجعة الجودة/);
+    // the administrator delivered the work: his own quality review would be a recorded direct approval
     await go(admin, `/admin/requests/${willReq}`);
-    await ex(admin.getByTestId("no-action")).toBeVisible();
+    await ex(admin.getByTestId("next-step")).toContainText("اعتماد ذاتي مسجّل");
     await nextStep(ops, willReq, /اعتمد الجودة وأرسل للعميل/);
     await ex.poll(() => status(willReq)).toBe("awaiting_client_approval");
     const [pdf] = await sql<{ document_id: string | null }>("select document_id from outputs where id = $1", [o.id]);
