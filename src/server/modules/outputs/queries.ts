@@ -7,6 +7,7 @@ import { loadRequestCtx } from "@/server/modules/requests/access";
 import { outputsFor, PROFILE_FORMAT, REVIEW_LABEL, SPECIALTY_LABEL } from "./catalog";
 import { diffVersions, readiness } from "./pure";
 import { preparersOf } from "./server";
+import { livePreview } from "./live";
 import { cycleOutputFor } from "@/server/modules/operations/continuous";
 import { parseCycleKey } from "@/server/modules/operations/continuous-pure";
 
@@ -40,6 +41,30 @@ export async function outputPageData(auth: Auth, requestId: string, outputId: st
       specialtyLabel: SPECIALTY_LABEL[o.specialty], reviewLabel: REVIEW_LABEL[o.reviewPolicy], formatLabel: def ? PROFILE_FORMAT[def.profile] : "مخرج",
       delivered: o.status === "approved" && !!o.documentId && (!!cycle?.sentAt || ["awaiting_client_approval", "completed", "closed"].includes(rc.req.status)),
       cycle: cycle ? { id: cycle.id, label: cycle.label, status: cycle.status, dueOn: cycle.dueOn } : null,
+    };
+  });
+}
+
+/**
+ * Preview of an output with no saved draft: built live from the request's current data (nothing is stored). When a
+ * draft already exists, its id is returned so the page opens the saved draft instead.
+ */
+export async function outputPreviewData(auth: Auth, requestId: string, outputKey: string) {
+  return read(auth, async (tx) => {
+    let rc;
+    try {
+      rc = await loadRequestCtx(tx, auth, requestId, "staff");
+    } catch (e) {
+      if (e instanceof ForbiddenError) return null;
+      throw e;
+    }
+    const [existing] = await tx.select({ id: outputs.id }).from(outputs).where(and(eq(outputs.requestId, requestId), eq(outputs.outputKey, outputKey))).limit(1);
+    if (existing) return { rc, existingId: existing.id, preview: null };
+    const preview = await livePreview(tx, rc, outputKey);
+    if (!preview) return null;
+    return {
+      rc, existingId: null, preview,
+      specialtyLabel: SPECIALTY_LABEL[preview.def.specialty], reviewLabel: REVIEW_LABEL[preview.def.review], formatLabel: PROFILE_FORMAT[preview.def.profile],
     };
   });
 }

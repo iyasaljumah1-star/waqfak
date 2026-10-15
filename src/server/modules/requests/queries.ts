@@ -196,13 +196,26 @@ export async function requestDetail(auth: Auth, id: string, side: "client" | "st
     const names = new Map(people.map((p) => [p.id, { name: p.name ?? "مستخدم", isStaff: p.isStaff }]));
     const requester = people.find((p) => p.id === rc.req.requesterUserId);
     const transitions = availableTransitions(rc.req.status as RequestStatus, rc.actors, { resumeTo: rc.resumeTo }).filter((t) => appliesTo(t, !!continuousSpec(rc.service.code)));
-    // an authorized manager who prepared outputs approved under a self-approval policy may pass quality review (recorded)
-    if (staff && rc.req.status === "quality_review" && rc.isOps && rc.deliverers.includes(auth.user.id) && !transitions.some((t) => t.to === "awaiting_client_approval")) {
-      const { selfApprovalCoversQA } = await import("./engine");
-      const { outputsOf } = await import("@/server/modules/outputs/server");
-      if (await selfApprovalCoversQA(tx, id, await outputsOf(tx, id))) {
-        const t = findTransition("quality_review", "awaiting_client_approval");
-        if (t) transitions.push(t);
+    // Quality review by someone who prepared the work (recorded): a holder of direct approval may pass or return it; an
+    // authorized manager may pass it when every delivery is an output approved under a self-approval policy. A written
+    // policy requiring a second person for quality review applies to everyone.
+    if (staff && rc.req.status === "quality_review" && rc.deliverers.includes(auth.user.id)) {
+      const { readSeparationPolicy } = await import("@/server/modules/approvals/policy");
+      const sep = await readSeparationPolicy(tx);
+      if (!sep.quality_review.enforced) {
+        const direct = auth.perms.has("approvals.direct") && auth.perms.has("staff.quality_review") && rc.isOps;
+        let pass = direct;
+        if (!pass && rc.isOps) {
+          const { selfApprovalCoversQA } = await import("./engine");
+          const { outputsOf } = await import("@/server/modules/outputs/server");
+          pass = await selfApprovalCoversQA(tx, id, await outputsOf(tx, id));
+        }
+        const moves: RequestStatus[] = direct ? ["awaiting_client_approval", "in_progress"] : ["awaiting_client_approval"];
+        for (const to of moves) {
+          if (to === "awaiting_client_approval" && !pass) continue;
+          const t = findTransition("quality_review", to);
+          if (t && !transitions.some((x) => x.to === to)) transitions.push(t);
+        }
       }
     }
 

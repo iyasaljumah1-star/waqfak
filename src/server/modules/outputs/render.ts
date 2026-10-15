@@ -35,10 +35,10 @@ export type OutputDocMeta = {
   /** Earlier review rounds (who returned the draft for revision, and when). */
   reviewRounds?: string[];
   /** Date of this version, and where it stands: draft, under review, or approved. */
-  versionDate?: string; workflowStatus?: "draft" | "in_review" | "approved";
+  versionDate?: string; workflowStatus?: "draft" | "in_review" | "approved" | "preview";
 };
 
-const DOC_STATUS: Record<string, string> = { draft: "مسودة غير معتمدة", in_review: "بانتظار المراجعة والاعتماد", approved: "معتمد" };
+const DOC_STATUS: Record<string, string> = { draft: "مسودة غير معتمدة", in_review: "بانتظار المراجعة والاعتماد", approved: "معتمد", preview: "معاينة من البيانات الحالية — لم تُحفظ مسودة" };
 
 export function outputHtml(meta: OutputDocMeta, sections: OutputSection[]): string {
   const final = meta.status === "approved";
@@ -46,7 +46,7 @@ export function outputHtml(meta: OutputDocMeta, sections: OutputSection[]): stri
   return `<div class="brandbar"></div>
 <h1>${esc(meta.title)}</h1>
 <dl class="kv small">
-<dt>رقم المخرج</dt><dd dir="ltr" class="tabular">${esc(meta.number)} · v${meta.version}</dd>
+${meta.workflowStatus === "preview" ? "" : `<dt>رقم المخرج</dt><dd dir="ltr" class="tabular">${esc(meta.number)} · v${meta.version}</dd>`}
 <dt>الحالة</dt><dd>${esc(DOC_STATUS[meta.workflowStatus ?? (final ? "approved" : "draft")])}${final ? " — الاعتماد داخلي من «وقفك»، ولا يغني عن التوثيق لدى الجهة المختصة متى لزم" : ""}</dd>
 ${meta.versionDate ? `<dt>تاريخ النسخة</dt><dd class="tabular">${esc(meta.versionDate)}</dd>` : ""}
 <dt>الخدمة</dt><dd>${esc(meta.serviceLine)}</dd>
@@ -58,7 +58,7 @@ ${meta.reviewRounds?.length ? `<dt>المراجعة</dt><dd>${meta.reviewRounds.
 ${final ? `<dt>راجعه واعتمده</dt><dd>${esc(meta.approvedBy ?? "—")}${meta.selfApproved ? " (اعتماد ذاتي وفق سياسة المخرج)" : ""} — ${esc(meta.approvedAt ?? "")}</dd>` : ""}
 ${meta.signedBy ? `<dt>التوقيع</dt><dd>${esc(meta.signedBy)}</dd>` : ""}
 </dl>
-${final ? "" : `<div class="box critical">مسودة داخلية غير معتمدة — لا تُسلَّم للعميل. الوسوم بجانب كل معلومة تبين مصدرها.</div>`}
+${final ? "" : meta.workflowStatus === "preview" ? `<div class="box critical">معاينة غير محفوظة من بيانات الطلب الحالية — ليست مسودة ولا مخرجًا معتمدًا، ولا تُسلَّم للعميل. ما ينقص مبيّن في موضعه.</div>` : `<div class="box critical">مسودة داخلية غير معتمدة — لا تُسلَّم للعميل. الوسوم بجانب كل معلومة تبين مصدرها.</div>`}
 ${meta.isDemo ? `<div class="box critical">وقف تجريبي: البيانات اصطناعية.</div>` : ""}
 ${body}`;
 }

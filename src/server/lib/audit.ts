@@ -47,14 +47,19 @@ export async function audit(tx: Tx, e: AuditEntry) {
   // The previous hash is read through a SECURITY DEFINER function so the chain is linear regardless of the caller's RLS view.
   const last = await tx.execute<{ h: string | null }>(sql`select app_audit_last_hash() as h`);
   const prevHash = last.rows[0]?.h ?? "GENESIS";
+  // The roles the actor held at that moment (set on the transaction from the session); empty for system jobs.
+  const r = e.actorUserId ? await tx.execute<{ r: string | null }>(sql`select current_setting('app.actor_roles', true) as r`) : null;
+  const actorRoles = r?.rows[0]?.r ? r.rows[0].r.split(",").filter(Boolean) : null;
   const before = redact(plain(e.before));
   const after = redact(plain(e.after));
   const at = new Date().toISOString();
   // Canonical form (sorted keys) because jsonb does not preserve key order; verifiers re-hash the same way.
-  const hash = sha256(JSON.stringify(canonical([prevHash, at, e.actorUserId ?? null, e.action, e.entityType, e.entityId ?? null, e.waqfId ?? null, before ?? null, after ?? null])));
+  // The actor's roles are part of the hash when recorded (appended, so entries written before they existed still verify).
+  const hash = sha256(JSON.stringify(canonical([prevHash, at, e.actorUserId ?? null, e.action, e.entityType, e.entityId ?? null, e.waqfId ?? null, before ?? null, after ?? null, ...(actorRoles ? [actorRoles] : [])])));
   await tx.insert(auditLogs).values({
     actorUserId: e.actorUserId ?? null,
     actorLabel: e.actorLabel ?? null,
+    actorRoles,
     action: e.action,
     entityType: e.entityType,
     entityId: e.entityId ?? null,

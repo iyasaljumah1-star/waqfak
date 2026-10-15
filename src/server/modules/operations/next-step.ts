@@ -50,11 +50,12 @@ export type Snapshot = {
   paid: boolean;
   conflictBlocked: boolean;
   assigneeName: string | null;
-  viewer: { id: string; isOps: boolean; isAssignee: boolean; canDeliver: boolean; canQA: boolean; canApproveQuote: boolean; canApproveContract: boolean; isDeliverer: boolean; canApproveInvoice?: boolean };
+  viewer: { id: string; isOps: boolean; isAssignee: boolean; canDeliver: boolean; canQA: boolean; canApproveQuote: boolean; canApproveContract: boolean; isDeliverer: boolean; canApproveInvoice?: boolean; qaBlockedReason?: string | null };
   intake: { legacy: boolean; invalidFields: string[]; missingDocs: string[]; unverifiedDocs: string[]; verified: boolean; accepted: boolean };
   items: { clientOpen: number; awaitingReview: number; internalOpen: number };
-  quote: { id: string; status: string; preparedByViewer: boolean; expired: boolean } | null;
-  contract: { id: string; status: string; byViewer: boolean; pendingClient: string[]; companyPending: boolean; executed: boolean; clientSigned: boolean } | null;
+  /** preparedByViewer: the viewer prepared it AND may not approve it (separation); `makerReason`: why. */
+  quote: { id: string; status: string; preparedByViewer: boolean; makerReason?: string | null; expired: boolean } | null;
+  contract: { id: string; status: string; byViewer: boolean; makerReason?: string | null; pendingClient: string[]; companyPending: boolean; executed: boolean; clientSigned: boolean } | null;
   /** Before-start installments of the accepted quote. */
   prestart: { quoteId: string; key: string; label: string; invoiced: boolean; paid: boolean; invoiceId?: string | null; invoiceStatus?: string | null; sendError?: string | null }[];
   stages: { key: string; name: string; status: string }[];
@@ -303,7 +304,7 @@ export function planRequest(s: Snapshot): { steps: Step[]; current: Step | null;
         if (worker) qs.action = { kind: "link", href: anchor(s.id, "quote"), label: "أعدّ عرض السعر" };
       } else if (q.status === "draft") {
         if (s.viewer.canApproveQuote && !q.preparedByViewer) qs.action = { kind: "run", key: "approve_quote", label: "اعتمد عرض السعر", args: { quoteId: q.id } };
-        else { qs.state = "waiting"; qs.owner = "ops"; qs.blockers.push({ text: "يعتمد العرضَ زميلٌ يملك صلاحية اعتماد العروض (غير من أعدّه)", who: "ops" }); }
+        else { qs.state = "waiting"; qs.owner = "ops"; qs.blockers.push({ text: q.preparedByViewer && q.makerReason ? q.makerReason : "يعتمد العرضَ من يملك صلاحية اعتماد العروض", who: "ops" }); }
       } else if (q.status === "approved") {
         if (worker) qs.action = { kind: "run", key: "send_quote", label: "أرسل العرض للعميل", args: { quoteId: q.id } };
       } else if (q.status === "sent") {
@@ -324,7 +325,7 @@ export function planRequest(s: Snapshot): { steps: Step[]; current: Step | null;
         if (worker) ks.action = { kind: "link", href: anchor(s.id, "contract"), label: "أعدّ العقد" };
       } else if (k.status === "draft") {
         if (s.viewer.canApproveContract && !k.byViewer) ks.action = { kind: "run", key: "approve_contract", label: "اعتمد العقد", args: { contractId: k.id } };
-        else { ks.state = "waiting"; ks.owner = "ops"; ks.blockers.push({ text: "يعتمد العقدَ زميلٌ يملك صلاحية اعتماد العقود (غير من أعدّه)", who: "ops" }); }
+        else { ks.state = "waiting"; ks.owner = "ops"; ks.blockers.push({ text: k.byViewer && k.makerReason ? k.makerReason : "يعتمد العقدَ من يملك صلاحية اعتماد العقود", who: "ops" }); }
       } else if (k.status === "approved") {
         if (worker) ks.action = { kind: "run", key: "send_contract", label: "أرسل العقد للتوقيع", args: { contractId: k.id } };
       } else {
@@ -405,8 +406,8 @@ export function planRequest(s: Snapshot): { steps: Step[]; current: Step | null;
       if (s.opinion && s.deliverables.unsignedOpinion) qr.blockers.push({ text: "الرأي المتخصص غير موقّع باسم المستشار وصفته", who: "specialist", href: anchor(s.id, "outputs") });
       const canPass = s.viewer.canQA && (!s.viewer.isDeliverer || s.selfQA);
       if (qr.blockers.length) qr.state = "blocked";
-      else if (canPass) qr.action = { kind: "run", key: "pass_quality", label: s.viewer.isDeliverer ? "اعتمد الجودة (اعتماد ذاتي وفق سياسة المخرج) وأرسل للعميل" : "اعتمد الجودة وأرسل للعميل" };
-      else { qr.state = "waiting"; qr.blockers.push({ text: s.viewer.isDeliverer ? "مبدأ العينين الأربع: يراجع الجودةَ زميلٌ غير من أعدّ العمل" : "يراجعه من يملك صلاحية مراجعة الجودة", who: "reviewer" }); }
+      else if (canPass) qr.action = { kind: "run", key: "pass_quality", label: s.viewer.isDeliverer ? "اعتمد الجودة (اعتماد ذاتي مسجّل) وأرسل للعميل" : "اعتمد الجودة وأرسل للعميل" };
+      else { qr.state = "waiting"; qr.blockers.push({ text: s.viewer.isDeliverer ? s.viewer.qaBlockedReason ?? "مبدأ العينين الأربع: يراجع الجودةَ زميلٌ غير من أعدّ العمل" : "يراجعه من يملك صلاحية مراجعة الجودة", who: "reviewer" }); }
     }
     add(qr);
   }

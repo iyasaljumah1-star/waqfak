@@ -3,6 +3,7 @@
  * human edits, and comparing versions.
  */
 import type { OutputBlock, OutputGap, OutputSection, Provenance, ReviewPolicy } from "@/server/db/schema/operations";
+import { DEFAULT_SEPARATION, makerChecker, type SeparationPolicy } from "@/server/authz/separation";
 
 export const OUTPUT_STATUS_LABEL: Record<string, string> = { draft: "مسودة", in_review: "بانتظار المراجعة", returned: "أُعيدت للتعديل", approved: "معتمد" };
 export const OUTPUT_STATUS_TONE: Record<string, "neutral" | "info" | "fine" | "ok"> = { draft: "neutral", in_review: "info", returned: "fine", approved: "ok" };
@@ -30,14 +31,22 @@ export function readiness(sections: OutputSection[], gaps: OutputGap[]) {
 
 /**
  * Approval policy. `preparers` = everyone who created a version (generated or edited) or submitted it.
- * independent → the approver prepared nothing. self_allowed → a preparer may approve only as an authorized manager
+ * independent → the approver prepared nothing, except a holder of direct approval (recorded as a self-approval) when no
+ * written policy requires a second person. self_allowed → a preparer may approve only as an authorized manager
  * (admin.requests.all), and it is recorded as a self-approval.
  */
-export function approvalCheck(p: { policy: ReviewPolicy; approverId: string; preparers: string[]; canReview: boolean; isManager: boolean }): { ok: true; self: boolean } | { ok: false; error: string } {
+export function approvalCheck(p: {
+  policy: ReviewPolicy; approverId: string; preparers: string[]; canReview: boolean; isManager: boolean;
+  /** Holds approvals.direct; `separation`: the written separation policy (when it requires a second person). */
+  direct?: boolean; separation?: SeparationPolicy;
+}): { ok: true; self: boolean } | { ok: false; error: string } {
   if (!p.canReview && !p.isManager) return { ok: false, error: "اعتماد المخرجات لمن يملك صلاحية مراجعة الجودة." };
   const prepared = p.preparers.includes(p.approverId);
   if (!prepared) return { ok: true, self: false };
-  if (p.policy === "independent") return { ok: false, error: "هذا المخرج يتطلب اعتمادًا مستقلًا: يعتمده زميل لم يُعدّ أي نسخة منه." };
+  if (p.policy === "independent") {
+    const mk = makerChecker({ key: "output", isMaker: true, canDirect: !!p.direct, policy: p.separation ?? DEFAULT_SEPARATION, fallback: "هذا المخرج يتطلب اعتمادًا مستقلًا: يعتمده زميل لم يُعدّ أي نسخة منه." });
+    return mk.ok ? { ok: true, self: true } : mk;
+  }
   if (!p.isManager) return { ok: false, error: "اعتماد المعدّ لمخرجه متاح لمدير مخوّل فقط، ويُسجَّل اعتمادًا ذاتيًا." };
   return { ok: true, self: true };
 }
@@ -207,3 +216,6 @@ export function applyEdits(sections: OutputSection[], fields: Record<string, str
   }
   return { sections: out, changed };
 }
+
+/** Request statuses in which a draft may be saved (from receipt until hand-over; saving changes no status). */
+export const DRAFT_STATUSES = ["submitted", "triage", "awaiting_client", "in_progress", "quality_review"];

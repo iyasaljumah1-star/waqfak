@@ -99,6 +99,18 @@ export async function outputDocHtml(tx: Tx, rc: RequestCtx, o: OutputRow, v: Ver
   return pdfShell(o.title, html, OUTPUT_PDF_CSS);
 }
 
+/** HTML of an output's live preview (no saved draft): same layout as a draft, marked as an unsaved preview, gaps listed. */
+export async function previewDocHtml(tx: Tx, rc: RequestCtx, def: OutputDef, sections: OutputSection[], gaps: OutputGap[]) {
+  const [w] = rc.req.waqfId ? await tx.select({ name: waqfs.name, isDemo: waqfs.isDemo }).from(waqfs).where(eq(waqfs.id, rc.req.waqfId)).limit(1) : [];
+  const gapList: OutputSection = { key: "preview_gaps", title: "ما ينقص قبل الاعتماد", required: true, blocks: [{ type: "list", items: gaps.map((g) => ({ text: `${g.severity === "blocking" ? "نقص جوهري" : "تنبيه"}: ${g.label}${g.hint ? ` — ${g.hint}` : ""}`, prov: "system" as const })) }] };
+  const html = outputHtml({
+    number: "—", title: def.title, specialty: SPECIALTY_LABEL[def.specialty], serviceLine: `${rc.service.code} — ${rc.service.nameAr}`, requestNumber: rc.req.number,
+    waqfName: w?.name ?? null, version: 0, status: "draft", preparedBy: null, approvedBy: null, approvedAt: null, selfApproved: false, signedBy: null, isDemo: !!w?.isDemo,
+    versionDate: new Date().toISOString().slice(0, 10), workflowStatus: "preview",
+  }, gaps.length ? [gapList, ...sections] : sections);
+  return pdfShell(def.title, html, OUTPUT_PDF_CSS);
+}
+
 /** Stores a generated PDF in the documents vault (encrypted like any upload; generated, so no malware scan applies). */
 async function storeGeneratedPdf(tx: Tx, p: { waqfId: string | null; requestId: string; title: string; data: Buffer; ownerUserId: string; fileName: string }) {
   const key = await dataKeyFor(tx, p.waqfId);

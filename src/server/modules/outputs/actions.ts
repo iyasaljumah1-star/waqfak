@@ -11,12 +11,12 @@ import type { ActCtx } from "@/server/modules/requests/engine";
 import { syncTask, taskEvent } from "@/server/modules/operations/exec";
 import type { ActionState } from "@/lib/utils";
 import { SPECIALTY_LABEL } from "./catalog";
-import { buildDraft } from "./build";
-import { collectContext } from "./collect";
-import { applyEdits, approvalCheck, mergeRegenerated, readiness } from "./pure";
-import { addVersion, ensureOutput, outputsOf, preparersOf, versionOf, type OutputRow } from "./server";
-import { cycleOutputFor, deliveryRecordFacts, termOf } from "@/server/modules/operations/continuous";
-import { parseCycleKey, requestOutputs } from "@/server/modules/operations/continuous-pure";
+import { draftInputs } from "./live";
+import { readSeparationPolicy } from "@/server/modules/approvals/policy";
+import { applyEdits, approvalCheck, DRAFT_STATUSES, mergeRegenerated, readiness } from "./pure";
+import { addVersion, ensureOutput, preparersOf, versionOf, type OutputRow } from "./server";
+import { cycleOutputFor } from "@/server/modules/operations/continuous";
+import { parseCycleKey } from "@/server/modules/operations/continuous-pure";
 
 /**
  * Service outputs: generate a draft from the request's data, edit it, submit it for review, return or approve it.
@@ -26,7 +26,7 @@ import { parseCycleKey, requestOutputs } from "@/server/modules/operations/conti
 
 const uuid = z.string().uuid("قيمة غير صالحة.");
 const reval = (id: string) => [`/admin/requests/${id}`, `/app/requests/${id}`, "/admin"];
-const WORKING = ["triage", "awaiting_client", "in_progress", "quality_review"];
+const WORKING = DRAFT_STATUSES;
 
 async function ctxFor(c: ActCtx, requestId: string) {
   const rc = await loadRequestCtx(c.tx, c.auth, requestId, "staff");
@@ -56,19 +56,16 @@ export async function generateOutput(_: ActionState, fd: FormData): Promise<Acti
   return userAction(async (c) => {
     if (!c.auth.perms.has("staff.deliver")) throw new ForbiddenError("إعداد المخرجات يتطلب صلاحية التسليم.");
     const rc = await ctxFor(c, d.id);
-    if (!WORKING.includes(rc.req.status)) throw new UserError("تُعد المخرجات أثناء دراسة الطلب أو تنفيذه.");
-    const cyc = parseCycleKey(d.outputKey) ? await cycleOutputFor(c.tx, rc, d.outputKey) : null;
+    if (!WORKING.includes(rc.req.status)) throw new UserError("تُعد المسودة ما دام الطلب مفتوحًا قبل تسليمه (من استلامه حتى مراجعة الجودة). للاطلاع على مخرج طلب منتهٍ افتح معاينته.");
+    const inp = await draftInputs(c.tx, rc, d.outputKey);
+    if (!inp) throw new UserError("هذا المخرج غير معرّف لهذه الخدمة.");
+    const { def, cyc } = inp;
     if (cyc && !cyc.record && cyc.cycle.status !== "open") throw new UserError("الدورة ليست مفتوحة: أُتيح تسليمها أو أُقفلت أو تُجووزت.");
     if (cyc?.record && cyc.cycle.status !== "sent") throw new UserError("يُعدّ محضر التسليم بعد إتاحة التسليم للعميل وقبل إقفال الدورة.");
     if (cyc && rc.req.status !== "in_progress") throw new UserError("تُعد مخرجات الدورات أثناء سريان الخدمة (لا أثناء التعليق).");
-    const def = cyc?.def ?? requestOutputs(rc.service, (await outputsOf(c.tx, rc.req.id)).map((o) => o.outputKey)).find((x) => x.key === d.outputKey);
-    if (!def) throw new UserError("هذا المخرج غير معرّف لهذه الخدمة.");
     const prepTask = await linkedTask(c, rc.req.id, "prepare_output", def.key);
     const o = await ensureOutput(c.tx, rc, def, c.auth.user.id, prepTask?.id ?? null);
-    const term = cyc?.record ? await termOf(c.tx, rc.req.id) : null;
-    const record = cyc?.record ? await deliveryRecordFacts(c.tx, rc, cyc.cycle, term?.clientAcceptance ?? "required") : null;
-    const ctx = await collectContext(c.tx, rc, cyc ? { cycle: { label: cyc.cycle.label, from: cyc.cycle.periodStart, to: cyc.cycle.periodEnd, due: cyc.cycle.dueOn }, record } : {});
-    const fresh = buildDraft(ctx, def);
+    const fresh = inp.draft;
     let version: number;
     let kept = 0;
     if (!o.currentVersion) {
@@ -161,6 +158,7 @@ export async function approveOutput(_: ActionState, fd: FormData): Promise<Actio
     const check = approvalCheck({
       policy: o.reviewPolicy, approverId: c.auth.user.id, preparers: await preparersOf(c.tx, o),
       canReview: c.auth.perms.has("staff.quality_review"), isManager: c.auth.perms.has("admin.requests.all"),
+      direct: c.auth.perms.has("approvals.direct"), separation: await readSeparationPolicy(c.tx),
     });
     if (!check.ok) throw new UserError(check.error);
     const cur = await versionOf(c.tx, o.id, o.currentVersion);

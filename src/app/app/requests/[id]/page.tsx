@@ -236,7 +236,7 @@ export default async function RequestPage({ params, searchParams }: { params: Pr
                     </div>
                     <div className="flex items-center gap-2">
                       <Badge tone={x.status === "approved" || x.releasedAt ? "ok" : x.status === "revision_requested" ? "fine" : "info"} icon={false}>{x.releasedAt ? `تسليم دوري — ${x.releasedAt.toISOString().slice(0, 10)}` : x.status === "approved" ? "معتمد" : x.status === "revision_requested" ? "طُلب تعديله" : "بانتظار اعتمادك"}</Badge>
-                      {x.documentId ? <a href={`/api/files/${x.documentId}?disposition=inline`} target="_blank" rel="noopener" className="text-sm text-ink underline">فتح</a> : null}
+                      {x.documentId ? <a href={`/api/files/${x.documentId}?disposition=inline`} target="_blank" rel="noopener" className="text-sm text-ink underline">معاينة</a> : null}
                     </div>
                   </li>
                 ))}

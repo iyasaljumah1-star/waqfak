@@ -9,6 +9,7 @@ import { audit, nextNumber } from "@/server/lib/audit";
 import { sha256 } from "@/server/lib/crypto";
 import { todayISO } from "@/server/engines/dates";
 import { notify } from "@/server/modules/notify";
+import { checkMaker, approvalMode } from "@/server/modules/approvals/policy";
 import { parseForm, userAction, UserError } from "@/server/modules/_shared";
 import { fmtSAR, type ActionState } from "@/lib/utils";
 import { loadRequestCtx } from "@/server/modules/requests/access";
@@ -122,7 +123,7 @@ async function loadQuote(c: Parameters<Parameters<typeof userAction>[0]>[0], quo
   return { q, rc };
 }
 
-/** Maker-checker: a quote is approved by a second person holding requests.quotes.approve. */
+/** A quote is approved by a holder of requests.quotes.approve; its preparer may approve it only with direct approval (recorded), unless a written policy requires a second person. */
 export async function approveQuote(_: ActionState, fd: FormData): Promise<ActionState> {
   const r = parseForm(qSchema, fd);
   if ("state" in r) return r.state;
@@ -132,13 +133,14 @@ export async function approveQuote(_: ActionState, fd: FormData): Promise<Action
     const { q, rc } = await loadQuote(c, d.quoteId, "staff");
     reqId = q.requestId;
     if (q.status !== "draft") throw new UserError("تُعتمد المسودات فقط.");
-    if (q.preparedBy === c.auth.user.id) throw new UserError("مبدأ الفصل بين المهام: يعتمد العرض شخص غير من أعدّه.");
+    const mk = await checkMaker(c.tx, c.auth, "quote", q.preparedBy === c.auth.user.id, "مبدأ الفصل بين المهام: يعتمد العرض شخص غير من أعدّه.");
+    if (!mk.ok) throw new UserError(mk.error);
     if (q.validUntil < todayISO()) throw new UserError("تاريخ صلاحية العرض مضى. عدّله في المسودة ثم اعتمده.");
     await c.tx.update(quotes).set({ status: "approved", approvedBy: c.auth.user.id, approvedAt: new Date(), updatedBy: c.auth.user.id }).where(and(eq(quotes.id, q.id), eq(quotes.status, "draft")));
-    await audit(c.tx, { actorUserId: c.auth.user.id, action: "quotes.approve", entityType: "quote", entityId: q.id, waqfId: rc.req.waqfId, ip: c.ip, userAgent: c.userAgent, after: { number: q.number, version: q.version } });
+    await audit(c.tx, { actorUserId: c.auth.user.id, action: "quotes.approve", entityType: "quote", entityId: q.id, waqfId: rc.req.waqfId, ip: c.ip, userAgent: c.userAgent, before: { status: "draft", preparedBy: q.preparedBy }, after: { number: q.number, version: q.version, status: "approved", request: rc.req.number, ...approvalMode(mk) } });
     if (rc.req.assignedToUserId && rc.req.assignedToUserId !== c.auth.user.id)
       await notify(rc.req.assignedToUserId, "request.status", { number: rc.req.number, status: `اعتُمد العرض ${q.number} (نسخة ${q.version}) وجاهز للإرسال` }, { waqfId: rc.req.waqfId, link: `/admin/requests/${rc.req.id}#quote`, tx: c.tx });
-    return { ok: true, message: "اعتُمد العرض. أرسله للعميل." };
+    return { ok: true, message: mk.self ? "اعتُمد العرض (اعتماد مباشر مسجّل لمعدّه). أرسله للعميل." : "اعتُمد العرض. أرسله للعميل." };
   }, { perm: "requests.quotes.approve" });
   return revalidated(res, reqId);
 }

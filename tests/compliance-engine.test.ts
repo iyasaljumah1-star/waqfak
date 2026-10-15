@@ -57,7 +57,7 @@ describe.skipIf(!hasDemo)("compliance engine (DB, rolled back)", () => {
       const after = await tx.select().from(s.obligationInstances).where(eq(s.obligationInstances.obligationId, o.id));
       expect(after.map((i) => i.waqfId)).toEqual([demo!.waqfs.B]);
     });
-  });
+  }, 30_000); // re-syncs every waqf in the database twice; grows with the number of test waqfs
 
   it("emits a regulatory event once per reference (dedupe) with a business-day due date", async () => {
     const s = await import("../src/server/db/schema");

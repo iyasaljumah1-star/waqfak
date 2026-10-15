@@ -5,7 +5,9 @@ import { documents, documentVersions } from "@/server/db/schema";
 import { getAuth } from "@/server/authz/context";
 import { requestInfo } from "@/server/lib/request-info";
 import { canSeeDocument, logAccess, readVersionPlain, resolveDocAccess } from "@/server/modules/documents/service";
-import { fileResponse, jsonError } from "@/server/modules/documents/http";
+import { fileResponse, htmlPreviewResponse, jsonError } from "@/server/modules/documents/http";
+import { kindFromMime } from "@/server/adapters/scan";
+import { officePreview } from "@/server/adapters/office-preview";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,6 +16,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * GET /api/files/[documentId]?v=<versionId>&disposition=inline|attachment
+ * inline on a Word/Excel file returns a read-only HTML preview of its text (sandboxed, no script).
  * RLS (user context) + confidentiality gate; only clean versions are served; every access is logged.
  */
 export async function GET(req: NextRequest, ctx: { params: Promise<{ documentId: string }> }) {
@@ -53,6 +56,12 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ documentId:
       if (out.error === 404) return jsonError(404, "الوثيقة غير موجودة أو لا تملك صلاحية الوصول إليها.");
       if (out.error === 403) return jsonError(403, "ليست لديك صلاحية الاطلاع على هذه الوثيقة بحسب درجة سريتها.");
       return jsonError(409, "هذه النسخة لم تجتز الفحص الأمني، ولا يمكن فتحها.");
+    }
+    // Word and Excel cannot be shown by the browser: «view» returns a read-only text preview of the file instead.
+    const kind = kindFromMime(out.ver.mimeType);
+    if (inline && (kind === "docx" || kind === "xlsx")) {
+      const pv = officePreview(out.data, kind, out.doc.title);
+      return pv.ok ? htmlPreviewResponse(pv.html) : jsonError(422, pv.reason);
     }
     return fileResponse(out.data, out.ver.mimeType, out.ver.originalName, inline);
   } catch (e) {

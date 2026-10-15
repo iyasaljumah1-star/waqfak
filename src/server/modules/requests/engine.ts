@@ -1,4 +1,6 @@
 import "server-only";
+import { readSeparationPolicy } from "@/server/modules/approvals/policy";
+import { makerChecker } from "@/server/authz/separation";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import type { Tx } from "@/server/db";
 import { deliverables, documents, holidays, quotes, requestEvents, requestItems, requestStages, roles, serviceRequests, services, userRoles, users, workflowTemplates } from "@/server/db/schema";
@@ -155,13 +157,17 @@ export async function transition(c: ActCtx, rc: RequestCtx, input: TransitionInp
   if (!t) throw new UserError(`لا يمكن نقل الطلب من «${STATUS_LABEL[from]}» إلى «${STATUS_LABEL[to]}».`);
   const allowed = input.system || availableTransitions(from, rc.actors, { resumeTo: rc.resumeTo }).some((x) => x.to === to);
   const outs = await outputGate(tx, rc.req.id, { excludeCycles: true });
-  // Quality review by the preparer is allowed only when every delivery is an output approved under a self-approval
-  // policy and the actor is an authorized manager (the output approval is the recorded quality check).
-  const selfQA = from === "quality_review" && to === "awaiting_client_approval" && rc.isOps && rc.deliverers.includes(auth.user.id)
-    && (await selfApprovalCoversQA(tx, rc.req.id, outs.rows));
+  // Quality review by someone who prepared the work: allowed (and recorded) for a holder of direct approval, or for an
+  // authorized manager when every delivery is an output approved under a self-approval policy — unless a written policy
+  // requires a second person for quality review, which then applies to everyone.
+  const qaMove = from === "quality_review" && (to === "awaiting_client_approval" || to === "in_progress");
+  const qaByDeliverer = qaMove && rc.deliverers.includes(auth.user.id);
+  const sep = qaByDeliverer ? await readSeparationPolicy(tx) : null;
+  const qaMk = sep ? makerChecker({ key: "quality_review", isMaker: true, canDirect: auth.perms.has("approvals.direct") && auth.perms.has("staff.quality_review"), policy: sep, fallback: "مبدأ العينين الأربع: يراجع جودةَ العمل زميلٌ آخر غير من أعدّه." }) : null;
+  const policySelf = !!sep && !sep.quality_review.enforced && to === "awaiting_client_approval" && rc.isOps && (await selfApprovalCoversQA(tx, rc.req.id, outs.rows));
+  const selfQA = qaByDeliverer && (!!qaMk?.ok || policySelf);
   if (!allowed && !(selfQA && rc.actors.includes("ops"))) {
-    if (from === "quality_review" && to === "awaiting_client_approval" && rc.deliverers.includes(auth.user.id))
-      throw new UserError("مبدأ العينين الأربع: يراجع جودةَ العمل زميلٌ آخر غير من أعدّه.");
+    if (qaByDeliverer) throw new UserError(qaMk && !qaMk.ok ? qaMk.error : "مبدأ العينين الأربع: يراجع جودةَ العمل زميلٌ آخر غير من أعدّه.");
     throw new UserError("ليست لديك صلاحية لهذا الإجراء على الطلب في حالته الحالية.");
   }
   const note = input.note?.trim() ?? "";
@@ -236,7 +242,7 @@ export async function transition(c: ActCtx, rc: RequestCtx, input: TransitionInp
   await logEvent(tx, rc.req, auth.user.id, eventNote, from, to);
   await audit(tx, {
     actorUserId: auth.user.id, action: `requests.transition.${to}`, entityType: "service_request", entityId: rc.req.id, waqfId: rc.req.waqfId,
-    ip: c.ip, userAgent: c.userAgent, before: { status: from }, after: { status: to, note: note || undefined, holdParty: input.holdParty, selfApprovalQA: selfQA || undefined },
+    ip: c.ip, userAgent: c.userAgent, before: { status: from }, after: { status: to, note: note || undefined, holdParty: input.holdParty, selfApprovalQA: selfQA || undefined, approvalMode: selfQA ? (qaMk?.ok ? "direct_self" : "self_allowed_outputs") : undefined, request: rc.req.number },
   });
 
   // Notifications: the client hears about every change; staff hear about client actions.

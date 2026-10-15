@@ -11,6 +11,7 @@ import { issueOtp, maskPhone, otpErrorText, verifyOtp } from "@/server/auth/otp"
 import { audit, nextNumber } from "@/server/lib/audit";
 import { sha256 } from "@/server/lib/crypto";
 import { notify } from "@/server/modules/notify";
+import { checkMaker, approvalMode } from "@/server/modules/approvals/policy";
 import { parseForm, userAction, UserError } from "@/server/modules/_shared";
 import { fmtBoth, type ActionState } from "@/lib/utils";
 import { todayISO } from "@/server/engines/dates";
@@ -140,7 +141,7 @@ async function loadContract(c: Ctx, contractId: string, side: "staff" | "client"
   return { k, rc };
 }
 
-/** Maker-checker: approved by someone other than who prepared it, holding admin.contracts.approve. */
+/** Approved by a holder of admin.contracts.approve; its preparer only with direct approval (recorded), unless a written policy requires a second person. */
 export async function approveContract(_: ActionState, fd: FormData): Promise<ActionState> {
   const r = parseForm(cSchema, fd);
   if ("state" in r) return r.state;
@@ -149,7 +150,8 @@ export async function approveContract(_: ActionState, fd: FormData): Promise<Act
     const { k, rc } = await loadContract(c, r.data.contractId, "staff");
     reqId = rc.req.id;
     if (k.status !== "draft") throw new UserError("تُعتمد المسودات فقط.");
-    if (k.createdBy === c.auth.user.id || k.updatedBy === c.auth.user.id) throw new UserError("مبدأ الفصل بين المهام: يعتمد العقد شخص غير من أعدّه.");
+    const mk = await checkMaker(c.tx, c.auth, "contract", k.createdBy === c.auth.user.id || k.updatedBy === c.auth.user.id, "مبدأ الفصل بين المهام: يعتمد العقد شخص غير من أعدّه أو عدّل مسودته.");
+    if (!mk.ok) throw new UserError(mk.error);
     const gaps = contractCompanyGaps(await companyProfile(c.tx));
     if (gaps.length) throw new UserError(`بيانات الشركة ناقصة: ${gaps.join("، ")}.`);
     const errs = validateParties(k.parties);
@@ -157,7 +159,7 @@ export async function approveContract(_: ActionState, fd: FormData): Promise<Act
     if (sha256(k.body) !== k.contentHash) throw new UserError("بصمة نص العقد لا تطابق المحفوظ. أعد إعداد المسودة.");
     await c.tx.update(contracts).set({ status: "approved", approvedBy: c.auth.user.id, approvedAt: new Date(), updatedBy: c.auth.user.id }).where(and(eq(contracts.id, k.id), eq(contracts.status, "draft")));
     await logEvent(c.tx, rc.req, c.auth.user.id, `اعتُمد ${k.parentContractId ? "ملحق التعديل" : "العقد"} ${k.number} (إصدار ${k.version}) داخليًا`);
-    await audit(c.tx, { actorUserId: c.auth.user.id, action: "contracts.approve", entityType: "contract", entityId: k.id, waqfId: k.waqfId, ip: c.ip, userAgent: c.userAgent, after: { contentHash: k.contentHash } });
+    await audit(c.tx, { actorUserId: c.auth.user.id, action: "contracts.approve", entityType: "contract", entityId: k.id, waqfId: k.waqfId, ip: c.ip, userAgent: c.userAgent, before: { status: "draft", createdBy: k.createdBy, updatedBy: k.updatedBy }, after: { number: k.number, version: k.version, status: "approved", request: rc.req.number, contentHash: k.contentHash, ...approvalMode(mk) } });
     return { ok: true, message: "اعتُمد العقد. أرسله للتوقيع." };
   }, { perm: "admin.contracts.approve" });
   return revalidated(res, reqId);

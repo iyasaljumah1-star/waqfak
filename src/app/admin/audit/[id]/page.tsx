@@ -1,3 +1,4 @@
+import { roleName } from "@/server/authz/catalog";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -48,6 +49,7 @@ export default async function AuditEntryPage({ params }: { params: Promise<{ id:
               { label: "الرمز", value: <span dir="ltr" className="font-mono text-[14px]">{r.action}</span> },
               { label: "الوقت", value: fmtDateTime(r.at) },
               { label: "المنفّذ", value: r.actorUserId ? <Link href={`/admin/audit?actor=${r.actorUserId}`} className="text-ink hover:underline">{e.actor ?? "—"}</Link> : r.actorLabel ?? "النظام" },
+              { label: "أدواره وقت التنفيذ", value: r.actorRoles?.length ? r.actorRoles.map((k) => roleName(k)).join("، ") : r.actorUserId ? "لم تُسجَّل (قيد سابق لتسجيل الأدوار)" : "—" },
               { label: "السجل", value: <span>{ADMIN_ENTITY_LABEL[r.entityType] ?? r.entityType}{r.entityId ? <span dir="ltr" className="ms-2 break-all font-mono text-[13px] text-muted">{r.entityId}</span> : null}</span> },
               { label: "الوقف", value: r.waqfId ? <Link href={`/admin/waqfs/${r.waqfId}`} className="text-ink hover:underline">{e.waqf ? `${e.waqf.name} (${e.waqf.number})` : r.waqfId}</Link> : "—" },
               { label: "العنوان والجهاز", value: <span dir="ltr" className="break-all text-[13px]">{[r.ip, r.userAgent].filter(Boolean).join(" · ") || "—"}</span> },

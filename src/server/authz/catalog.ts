@@ -68,6 +68,7 @@ export const PERMISSIONS = {
   "admin.pii.view": ["عرض البيانات الشخصية كاملة (الجوال والبريد)", "admin"],
   "requests.quotes.approve": ["اعتماد عروض الأسعار قبل إرسالها", "admin"],
   "admin.contracts.approve": ["اعتماد العقود والتوقيع عن الشركة", "admin"],
+  "approvals.direct": ["الاعتماد المباشر ولو كان المعتمِد معدّ المعاملة (يُسجَّل اعتمادًا ذاتيًا، ولا يتجاوز سياسة فصل معتمدة)", "admin"],
   // corporate nazara (Waqfak as legal-entity nazir)
   "nazara.view": ["عرض لوحة النظارة الاعتبارية", "nazara"],
   "nazara.manage": ["إدارة ملفات النظارة: الاستلام والتحقق والفريق", "nazara"],
@@ -162,7 +163,7 @@ export const ROLES: Record<string, { nameAr: string; scope: "global" | "waqf"; p
       "admin.compliance", "admin.content", "admin.settings", "admin.audit", "admin.requests.all", "admin.waqfs.all",
       "admin.notifications", "admin.finance", "admin.reports", "breakglass.approve", "staff.requests.assigned",
       "staff.deliver", "staff.quality_review", "staff.assessment_review", "admin.clients.edit", "admin.pii.view",
-      "nazara.view", "nazara.manage", "nazara.approve", "requests.quotes.approve", "admin.contracts.approve"],
+      "nazara.view", "nazara.manage", "nazara.approve", "requests.quotes.approve", "admin.contracts.approve", "approvals.direct"],
   },
   system_admin: {
     // manages configuration and users but does not read waqf content

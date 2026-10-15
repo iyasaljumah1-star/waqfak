@@ -61,7 +61,8 @@ export default async function DocumentDetailPage({ params }: { params: Promise<{
   const fileUrl = (v?: string, inline = false) => `/api/files/${doc.id}?${v ? `v=${v}&` : ""}disposition=${inline ? "inline" : "attachment"}`;
   const now = Date.now();
   const kind = current?.mimeType ?? "";
-  const previewable = servable && (kind === "application/pdf" || kind.startsWith("image/") || kind === "text/plain");
+  const office = kind === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" || kind === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+  const previewable = servable && (kind === "application/pdf" || kind.startsWith("image/") || kind === "text/plain" || office);
 
   type LogRow = (typeof log)[number];
   const logColumns: { key: string; label: string; render: (r: LogRow) => ReactNode; className?: string; hideOnMobile?: boolean }[] = [
@@ -113,7 +114,7 @@ export default async function DocumentDetailPage({ params }: { params: Promise<{
           <Panel title="معاينة" description={current ? `${current.originalName} · ${fmtBytes(current.sizeBytes)}` : undefined} tight>
             {previewable && current ? (
               <div>
-                <DocumentPreview src={fileUrl(current.id, true)} kind={kind === "application/pdf" ? "pdf" : kind === "text/plain" ? "text" : "image"} title={doc.title} />
+                <DocumentPreview src={fileUrl(current.id, true)} kind={kind === "application/pdf" ? "pdf" : kind === "text/plain" ? "text" : office ? "html" : "image"} title={doc.title} />
                 <p className="border-t border-line px-4 py-2 text-[13px] text-muted">
                   إن لم تظهر المعاينة على جهازك، <a href={fileUrl(current.id, true)} target="_blank" rel="noopener" className="text-ink underline">افتح الملف في نافذة جديدة</a>.
                 </p>

@@ -17,7 +17,8 @@ export type Db = NodePgDatabase<typeof schema>;
 export type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 export { schema };
 
-export type DbContext = { userId: string | null; globalAccess: boolean; mlro?: boolean };
+/** `roles`: the caller's global roles, recorded with every audit entry written in this transaction. */
+export type DbContext = { userId: string | null; globalAccess: boolean; mlro?: boolean; roles?: string[] };
 
 /**
  * Every data access runs inside a transaction that carries the caller identity into PostgreSQL,
@@ -26,7 +27,7 @@ export type DbContext = { userId: string | null; globalAccess: boolean; mlro?: b
 export async function withContext<T>(ctx: DbContext, fn: (tx: Tx) => Promise<T>): Promise<T> {
   return db.transaction(async (tx) => {
     await tx.execute(
-      sql`select set_config('app.user_id', ${ctx.userId ?? ""}, true), set_config('app.global_access', ${ctx.globalAccess ? "on" : "off"}, true)`,
+      sql`select set_config('app.user_id', ${ctx.userId ?? ""}, true), set_config('app.global_access', ${ctx.globalAccess ? "on" : "off"}, true), set_config('app.actor_roles', ${(ctx.roles ?? []).join(",")}, true)`,
     );
     if (ctx.mlro) await tx.execute(sql`set local role waqfak_mlro`);
     return fn(tx);

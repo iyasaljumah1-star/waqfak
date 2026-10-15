@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Eye, FileDown } from "lucide-react";
 import type { ReactNode } from "react";
 import { Alert, Badge, DefinitionList, Panel, Stat } from "@/components/ui";
 import { Field, Input, Select, Textarea } from "@/components/ui/form";
@@ -169,7 +170,7 @@ export function ContinuousPanel({ v, requestId, status, worker, ops, canDeliver,
               <Row label="الإتاحة للعميل في المنصة">{c.sentAt ? `أُتيح ${fmtDate(c.sentAt)}${c.sentByName ? ` — ${c.sentByName}` : ""}` : "لم يُتح"}</Row>
               <Row label="اطلاع العميل">{c.viewedAt ? `اطّلع عليه ${fmtDate(c.viewedAt)}` : c.sentAt ? "لم يُسجَّل اطلاع" : "—"}</Row>
               <Row label="اعتماد العميل للاستلام">{c.clientDecision === "approved" ? `اعتمده ${c.clientDecisionByName ?? "—"} في ${fmtDate(c.clientDecisionAt!)} (النسخة ${c.clientApprovedVersion ?? "—"})` : c.clientDecision === "revision_requested" ? `طلب تعديلًا: ${c.clientDecisionNote}` : c.sentAt ? (v.acceptance === "required" ? "بانتظار رده — لا يُعد سكوته اعتمادًا" : "للإحاطة: لم يرد") : "—"}</Row>
-              {c.record ? <Row label="محضر التسليم">{c.record.status === "approved" ? `معتمد — ${c.record.approvedBy ?? "—"}` : c.record.outputId ? PHASE_AR[(c.record.status === "in_review" ? "in_review" : "preparing")] : "لم يُعدّ"}{c.record.outputId ? <> · <Link className="underline" href={`/admin/requests/${requestId}/outputs/${c.record.outputId}`}>افتحه</Link></> : null}</Row> : null}
+              {c.record ? <Row label="محضر التسليم">{c.record.status === "approved" ? `معتمد — ${c.record.approvedBy ?? "—"}` : c.record.outputId ? PHASE_AR[(c.record.status === "in_review" ? "in_review" : "preparing")] : "لم يُعدّ"}{c.record.outputId ? <> · <Link className="underline" href={`/admin/requests/${requestId}/outputs/${c.record.outputId}`}>معاينته</Link></> : c.status === "sent" ? <> · <Link className="underline" href={`/admin/requests/${requestId}/outputs/preview?key=${encodeURIComponent(c.record.key)}`}>معاينته من البيانات الحالية</Link></> : null}</Row> : null}
               <Row label="الاعتماد المالي والرسمي">مستقلان: الفواتير في دورة الاستحقاق المالي، ولا إجراء رسمي خارجي مسجل لهذا التسليم</Row>
             </div>
             {c.files?.length ? (
@@ -185,7 +186,14 @@ export function ContinuousPanel({ v, requestId, status, worker, ops, canDeliver,
               <p className="text-[13px] text-muted">قبل الإقفال: {c.closeBlockers.join(" ")}</p>
             ) : null}
             <div className="flex flex-wrap items-start gap-3 border-t border-line pt-3">
-              {c.output ? <Link href={`/admin/requests/${requestId}/outputs/${c.output.id}`} className="text-sm text-ink underline">افتح مخرج الدورة (نسخة {c.output.version})</Link> : null}
+              {c.output ? (
+                <>
+                  <Link href={`/admin/requests/${requestId}/outputs/${c.output.id}`} className="inline-flex items-center gap-1 text-sm text-ink underline" data-testid={`cycle-${c.seq}-preview`}><Eye aria-hidden className="size-4" />معاينة مخرج الدورة (نسخة {c.output.version})</Link>
+                  <a href={`/admin/requests/${requestId}/outputs/${c.output.id}/pdf?v=${c.output.version}`} target="_blank" rel="noopener" className="inline-flex items-center gap-1 text-sm text-ink underline"><FileDown aria-hidden className="size-4" />PDF</a>
+                </>
+              ) : c.outputKey && c.status === "open" ? (
+                <Link href={`/admin/requests/${requestId}/outputs/preview?key=${encodeURIComponent(c.outputKey)}`} className="inline-flex items-center gap-1 text-sm text-ink underline" data-testid={`cycle-${c.seq}-preview`}><Eye aria-hidden className="size-4" />معاينة مخرج الدورة من البيانات الحالية</Link>
+              ) : null}
               {worker && running && c.status === "open" && (c.phase === "approved" || (spec.delivery.kind === "minutes" && c.kind !== "closing")) ? (
                 <ActionForm action={a.sendCycle} hidden={{ cycleId: c.id }} submit={spec.delivery.kind === "minutes" && c.kind !== "closing" ? "سجّل إتاحة المحضر المعتمد" : "أتح التسليم للعميل في المنصة"} size="sm" />
               ) : null}

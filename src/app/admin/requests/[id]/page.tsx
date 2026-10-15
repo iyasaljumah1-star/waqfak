@@ -1,7 +1,8 @@
+import { viewerMakerRules } from "@/server/modules/approvals/policy";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { CheckCircle2, FileCheck2, FileDown, FolderOpen } from "lucide-react";
+import { CheckCircle2, Eye, FileCheck2, FileDown, FolderOpen } from "lucide-react";
 import { Alert, Badge, ButtonLink, DefinitionList, PageHeader, Panel } from "@/components/ui";
 import { Field, Input, Select, Textarea } from "@/components/ui/form";
 import { DocumentList } from "@/components/documents/list";
@@ -78,6 +79,7 @@ export default async function StaffRequest({ params }: { params: Promise<{ id: s
   const docTitle = new Map(docs.map((x) => [x.id, x.title]));
   const canApproveQuote = auth.perms.has("requests.quotes.approve");
   const canApproveContract = auth.perms.has("admin.contracts.approve");
+  const maker = await viewerMakerRules(auth);
   const ops2 = await read(auth, (tx) => requestOperations(tx, auth, rc));
   const plan = await read(auth, (tx) => requestPlan(tx, auth, rc));
   const sched = paid ? await read(auth, async (tx) => { await materializeSchedule(tx, r.id, null); return scheduleOf(tx, r.id); }) : null;
@@ -390,8 +392,12 @@ export default async function StaffRequest({ params }: { params: Promise<{ id: s
                         </summary>
                         <div className="mt-3"><QuoteDocument q={q} today={today} names={names} /></div>
                         <div className="mt-3 flex flex-wrap gap-2">
-                          {q.status === "draft" && canApproveQuote && q.preparedBy !== auth.user.id ? <ActionForm action={approveQuote} hidden={{ quoteId: q.id }} submit="اعتمد العرض" size="sm" inline /> : null}
-                          {q.status === "draft" && q.preparedBy === auth.user.id ? <p className="text-[13px] text-muted">يعتمده زميل يملك صلاحية اعتماد العروض.</p> : null}
+                          {(() => {
+                            if (q.status !== "draft") return null;
+                            const mk = maker.check("quote", q.preparedBy === auth.user.id, "أعددتَ هذا العرض: يعتمده زميل يملك صلاحية اعتماد العروض.");
+                            if (canApproveQuote && mk.ok) return <ActionForm action={approveQuote} hidden={{ quoteId: q.id }} submit={mk.self ? "اعتمد العرض (اعتماد مباشر مسجّل)" : "اعتمد العرض"} size="sm" inline />;
+                            return <p className="text-[13px] text-muted">{!mk.ok ? mk.error : "يعتمده من يملك صلاحية اعتماد العروض."}</p>;
+                          })()}
                           {q.status === "approved" && worker ? <ActionForm action={sendQuote} hidden={{ quoteId: q.id }} submit="أرسل العرض للعميل" size="sm" variant="seal" inline /> : null}
                           <a href={`/app/requests/${r.id}/quote/${q.id}`} className="inline-flex h-8 items-center gap-1 rounded-md px-2 text-sm text-ink hover:bg-ink-soft"><FileDown aria-hidden className="size-4" />PDF</a>
                         </div>
@@ -444,15 +450,19 @@ export default async function StaffRequest({ params }: { params: Promise<{ id: s
                         <ul className="mt-2 space-y-1 text-[13px] text-muted">{k.signatures.map((s) => <li key={s.id}>{s.method === "otp" ? "العميل" : "الشركة"}: {names.get(s.userId)?.name ?? "—"} · {fmtDateTime(s.signedAt)}</li>)}</ul>
                       )}
                       <details className="mt-2">
-                        <summary className="cursor-pointer text-[15px] text-ink">نص العقد</summary>
+                        <summary className="cursor-pointer text-[15px] text-ink">معاينة نص العقد</summary>
                         <div className="mt-2"><ContractPaper body={k.body} number={k.number} hash={k.contentHash} /></div>
                       </details>
                       <div className="mt-3 flex flex-wrap items-start gap-2">
-                        {k.status === "draft" && canApproveContract && k.createdBy !== auth.user.id && k.updatedBy !== auth.user.id ? <ActionForm action={approveContract} hidden={{ contractId: k.id }} submit="اعتمد العقد" size="sm" inline /> : null}
-                        {k.status === "draft" && (k.createdBy === auth.user.id || k.updatedBy === auth.user.id) ? <p className="text-[13px] text-muted">يعتمده زميل يملك صلاحية اعتماد العقود.</p> : null}
+                        {(() => {
+                          if (k.status !== "draft") return null;
+                          const mk = maker.check("contract", k.createdBy === auth.user.id || k.updatedBy === auth.user.id, "أعددتَ هذا العقد أو عدّلت مسودته: يعتمده زميل يملك صلاحية اعتماد العقود.");
+                          if (canApproveContract && mk.ok) return <ActionForm action={approveContract} hidden={{ contractId: k.id }} submit={mk.self ? "اعتمد العقد (اعتماد مباشر مسجّل)" : "اعتمد العقد"} size="sm" inline />;
+                          return <p className="text-[13px] text-muted">{!mk.ok ? mk.error : "يعتمده من يملك صلاحية اعتماد العقود."}</p>;
+                        })()}
                         {k.status === "approved" && worker ? <ActionForm action={sendContract} hidden={{ contractId: k.id }} submit="أرسل للتوقيع" size="sm" variant="seal" inline /> : null}
                         {!k.parties.length && k.signing.clientSigned && !k.signing.companySigned && ops && k.status !== "void" ? <ActionForm action={countersignContract} hidden={{ contractId: k.id }} submit="وقّع عن الشركة" variant="seal" size="sm" inline /> : null}
-                        {["sent", "partially_signed", "signed"].includes(k.status) ? <a href={`/app/requests/${r.id}/contract/${k.id}`} className="inline-flex h-8 items-center gap-1 rounded-md px-2 text-sm text-ink hover:bg-ink-soft"><FileDown aria-hidden className="size-4" />{k.status === "signed" ? "النسخة الموقّعة PDF" : "PDF"}</a> : null}
+                        <a href={`/app/requests/${r.id}/contract/${k.id}`} target="_blank" rel="noopener" className="inline-flex h-8 items-center gap-1 rounded-md px-2 text-sm text-ink hover:bg-ink-soft" data-testid={`contract-pdf-${k.number}`}><FileDown aria-hidden className="size-4" />{k.status === "signed" ? "النسخة الموقّعة PDF" : k.status === "draft" ? "معاينة PDF (مسودة)" : k.status === "approved" ? "معاينة PDF (معتمد لم يُرسل)" : "PDF"}</a>
                       </div>
                       {myCompanySign ? (
                         <div className="mt-3 border-t border-line pt-3"><SignContractForm requestOtp={requestSignOtp} sign={signContract} contractId={k.id} partyKey="company" asLabel={`عن «${k.parties.find((p) => p.side === "company")?.name}» بصفتك مفوّضًا بالتوقيع`} /></div>
@@ -475,12 +485,15 @@ export default async function StaffRequest({ params }: { params: Promise<{ id: s
                     </div>
                   );
                 })}
-                {worker ? needsContract.map((q) => (
+                {needsContract.map((q) => (
                   <div key={q.id} className="rounded-lg border border-dashed border-line-strong p-3">
-                    <p className="mb-3 font-medium">أعدّ {q.kind === "amendment" ? "ملحق التعديل" : "العقد"} من العرض المقبول <span dir="ltr" className="tabular">{q.number}</span> (نسخة {q.version})</p>
-                    <ContractPrepareForm action={prepareContract} requestId={r.id} quoteId={q.id} signers={d.signers} docs={docOpts} gaps={d.companyGaps} seed={partySeed} />
+                    <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                      <p className="font-medium">{worker ? "أعدّ" : "لم يُعدّ"} {q.kind === "amendment" ? "ملحق التعديل" : "العقد"} من العرض المقبول <span dir="ltr" className="tabular">{q.number}</span> (نسخة {q.version})</p>
+                      <Link href={`/admin/requests/${r.id}/contract-preview?quoteId=${q.id}`} className="inline-flex h-8 items-center gap-1 rounded-md border border-line px-3 text-sm text-ink hover:bg-ink-soft" data-testid={`contract-preview-${q.number}`}><Eye aria-hidden className="size-4" />معاينة نص العقد{d.companyGaps.length ? " (مع النواقص)" : ""}</Link>
+                    </div>
+                    {worker ? <ContractPrepareForm action={prepareContract} requestId={r.id} quoteId={q.id} signers={d.signers} docs={docOpts} gaps={d.companyGaps} seed={partySeed} /> : null}
                   </div>
-                )) : null}
+                ))}
               </div>
             </Panel>
           ) : null}
@@ -562,7 +575,8 @@ export default async function StaffRequest({ params }: { params: Promise<{ id: s
                     <span className="flex items-center gap-2">
                       {x.signedBy ? <span className="text-[13px] text-muted">موقّع: {x.signedBy}</span> : isOpinion ? <Badge tone="fine" icon={false}>غير موقّع</Badge> : null}
                       <Badge tone={x.status === "approved" ? "ok" : x.status === "revision_requested" ? "fine" : "info"} icon={false}>{x.status === "approved" ? "معتمد" : x.status === "revision_requested" ? "مطلوب تعديله" : "مُسلّم"}</Badge>
-                      {x.documentId ? <a href={`/api/files/${x.documentId}?disposition=inline`} target="_blank" rel="noopener" className="text-sm text-ink underline">فتح</a> : null}
+                      {x.documentId ? <><a href={`/api/files/${x.documentId}?disposition=inline`} target="_blank" rel="noopener" className="inline-flex items-center gap-1 text-sm text-ink underline"><Eye aria-hidden className="size-4" />معاينة</a><a href={`/api/files/${x.documentId}`} className="text-sm text-ink underline">تنزيل</a></>
+                        : x.outputId ? <Link href={`/admin/requests/${r.id}/outputs/${x.outputId}`} className="inline-flex items-center gap-1 text-sm text-ink underline"><Eye aria-hidden className="size-4" />معاينة (يصدر ملفه عند الإفراج)</Link> : null}
                     </span>
                   </li>
                 ))}

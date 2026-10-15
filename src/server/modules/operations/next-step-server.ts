@@ -1,4 +1,6 @@
 import "server-only";
+import { readSeparationPolicy } from "@/server/modules/approvals/policy";
+import { makerChecker } from "@/server/authz/separation";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import type { Tx } from "@/server/db";
 import type { Auth } from "@/server/authz/context";
@@ -76,7 +78,7 @@ export async function requestSnapshot(tx: Tx, auth: Auth, rc: RequestCtx): Promi
     let viewerCanApprove = false;
     let reason: string | undefined;
     if (o?.status === "in_review") {
-      const ck = approvalCheck({ policy: o.reviewPolicy, approverId: me, preparers: await preparersOf(tx, o), canReview: has("staff.quality_review"), isManager: has("admin.requests.all") });
+      const ck = approvalCheck({ policy: o.reviewPolicy, approverId: me, preparers: await preparersOf(tx, o), canReview: has("staff.quality_review"), isManager: has("admin.requests.all"), direct: has("approvals.direct"), separation: await readSeparationPolicy(tx) });
       viewerCanApprove = ck.ok;
       if (!ck.ok) reason = ck.error;
     }
@@ -93,6 +95,11 @@ export async function requestSnapshot(tx: Tx, auth: Auth, rc: RequestCtx): Promi
   const isDeliverer = rc.deliverers.includes(me);
   const selfQA = rc.req.status === "quality_review" && rc.isOps && isDeliverer ? await selfApprovalCoversQA(tx, id, outRows) : false;
 
+  const separation = await readSeparationPolicy(tx);
+  const direct = has("approvals.direct");
+  const qMk = makerChecker({ key: "quote", isMaker: !!q && q.preparedBy === me, canDirect: direct, policy: separation, fallback: "أعددتَ هذا العرض: يعتمده زميل يملك صلاحية اعتماد العروض." });
+  const kMk = makerChecker({ key: "contract", isMaker: !!k && (k.createdBy === me || k.updatedBy === me), canDirect: direct, policy: separation, fallback: "أعددتَ هذا العقد أو عدّلته: يعتمده زميل يملك صلاحية اعتماد العقود." });
+  const qaMk = makerChecker({ key: "quality_review", isMaker: isDeliverer, canDirect: direct, policy: separation, fallback: "مبدأ العينين الأربع: يراجع الجودةَ زميلٌ غير من أعدّ العمل" });
   const [nz] = rc.service.code === "N01" ? await tx.select({ id: requestLinks.entityId }).from(requestLinks).where(and(eq(requestLinks.requestId, id), eq(requestLinks.entityType, "nazara_engagement"))).limit(1) : [];
   const assignee = rc.req.assignedToUserId ? (await tx.select({ name: users.fullName }).from(users).where(eq(users.id, rc.req.assignedToUserId)).limit(1))[0]?.name ?? null : null;
   return {
@@ -101,6 +108,7 @@ export async function requestSnapshot(tx: Tx, auth: Auth, rc: RequestCtx): Promi
     viewer: {
       id: me, isOps: rc.isOps, isAssignee: rc.isAssignee, canDeliver: has("staff.deliver"), canQA: has("staff.quality_review"),
       canApproveQuote: has("requests.quotes.approve"), canApproveContract: has("admin.contracts.approve"), isDeliverer, canApproveInvoice: has("admin.finance"),
+      qaBlockedReason: qaMk.ok ? null : qaMk.error,
     },
     intake: {
       legacy,
@@ -114,9 +122,9 @@ export async function requestSnapshot(tx: Tx, auth: Auth, rc: RequestCtx): Promi
       awaitingReview: items.filter((i) => i.status === "answered").length,
       internalOpen: items.filter((i) => i.visibility === "internal" && i.status === "open").length,
     },
-    quote: q ? { id: q.id, status: q.status, preparedByViewer: q.preparedBy === me, expired: quoteExpired(q, todayISO()) } : null,
+    quote: q ? { id: q.id, status: q.status, preparedByViewer: !qMk.ok, makerReason: qMk.ok ? null : qMk.error, expired: quoteExpired(q, todayISO()) } : null,
     contract: k && sign ? {
-      id: k.id, status: k.status, byViewer: k.createdBy === me || k.updatedBy === me,
+      id: k.id, status: k.status, byViewer: !kMk.ok, makerReason: kMk.ok ? null : kMk.error,
       pendingClient: sign.legacy ? (sign.clientSigned ? [] : ["العميل"]) : sign.pending.filter((p) => p.side === "client").map((p) => p.signerName || p.name),
       companyPending: !sign.legacy && sign.pending.some((p) => p.side === "company"),
       executed: cs.executed || (sign.legacy && cs.clientSigned), clientSigned: cs.clientSigned,
@@ -127,7 +135,8 @@ export async function requestSnapshot(tx: Tx, auth: Auth, rc: RequestCtx): Promi
     outputs: outs,
     deliverables: { submitted: dels.filter((d) => d.status === "submitted").length, unsignedOpinion: opinion ? dels.filter((d) => d.status === "submitted" && !d.signedBy).length : 0 },
     opinion,
-    selfQA,
+    // A deliverer passes QA only with direct approval or under the self-approval policy of every output — never when a written policy requires a second person.
+    selfQA: isDeliverer && !separation.quality_review.enforced && (qaMk.ok || selfQA),
     waqf: { linked: !!rc.req.waqfId, name: rc.waqf?.name ?? null },
     flow: (() => {
       const st = rc.stagesDef;

@@ -38,18 +38,17 @@ const nextConfig: NextConfig = {
     },
   },
   async headers() {
+    const common = [
+      { key: "X-Content-Type-Options", value: "nosniff" },
+      { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+      { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), payment=(self)" },
+      ...(isDev ? [] : [{ key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" }]),
+    ];
     return [
-      {
-        source: "/:path*",
-        headers: [
-          { key: "Content-Security-Policy", value: csp },
-          { key: "X-Frame-Options", value: "DENY" },
-          { key: "X-Content-Type-Options", value: "nosniff" },
-          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-          { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), payment=(self)" },
-          ...(isDev ? [] : [{ key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" }]),
-        ],
-      },
+      // Every page and route — except the file endpoint, which sets its own, stricter policy per file (no script at all,
+      // sandboxed previews of Office files); the app-wide policy would otherwise replace it.
+      { source: "/:path((?!api/files/).*)", headers: [{ key: "Content-Security-Policy", value: csp }, { key: "X-Frame-Options", value: "DENY" }, ...common] },
+      { source: "/api/files/:path*", headers: common },
     ];
   },
 };

@@ -4,11 +4,11 @@ import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 
 /**
- * Inline preview for PDF / image / text. The global security headers forbid framing any app URL
+ * Inline preview for PDF / image / text, and the read-only HTML preview the server makes of Word/Excel files. The global security headers forbid framing any app URL
  * (X-Frame-Options: DENY, frame-ancestors 'none'), so the file is fetched and shown from a blob: URL
  * (allowed by frame-src 'self' blob:). The fetch is a normal authorised GET, logged as a "view".
  */
-export function DocumentPreview({ src, kind, title }: { src: string; kind: "pdf" | "image" | "text"; title: string }) {
+export function DocumentPreview({ src, kind, title }: { src: string; kind: "pdf" | "image" | "text" | "html"; title: string }) {
   const [state, setState] = useState<{ url?: string; text?: string; error?: string }>({});
 
   useEffect(() => {
@@ -48,5 +48,7 @@ export function DocumentPreview({ src, kind, title }: { src: string; kind: "pdf"
         <img src={state.url} alt={`معاينة ${title}`} className="max-h-[70vh] max-w-full rounded border border-line object-contain" />
       </div>
     );
+  // The Office preview is generated, escaped HTML; it is still framed sandboxed (no script, no same-origin access).
+  if (kind === "html") return <iframe src={state.url} data-src={src} sandbox="" title={`معاينة ${title}`} className="block h-[60vh] w-full border-0 bg-white lg:h-[72vh]" />;
   return <iframe src={state.url} data-src={src} title={`معاينة ${title}`} className="block h-[60vh] w-full border-0 bg-surface-2 lg:h-[72vh]" />;
 }

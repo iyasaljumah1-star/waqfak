@@ -8,7 +8,8 @@ import { requestInfo } from "@/server/lib/request-info";
 import { fail } from "@/server/modules/commerce/documents";
 import { renderPdf } from "@/server/modules/pdf/render";
 import { loadRequestCtx } from "@/server/modules/requests/access";
-import { outputDocHtml, versionOf } from "./server";
+import { outputDocHtml, previewDocHtml, versionOf } from "./server";
+import { livePreview } from "./live";
 
 const UUID = /^[0-9a-f-]{36}$/i;
 
@@ -40,6 +41,37 @@ export async function outputPdf(requestId: string, outputId: string, version: nu
   } catch (err) {
     console.error("[outputs.pdf] render failed", err);
     return fail(503, "تعذر إنشاء ملف PDF الآن. أعد المحاولة بعد قليل.");
+  }
+  return new Response(new Uint8Array(body), {
+    headers: { "content-type": "application/pdf", "content-disposition": `inline; filename="${out.name}"`, "cache-control": "private, no-store", "x-content-type-options": "nosniff" },
+  });
+}
+
+/** Staff PDF of an output's live preview (no saved draft). Nothing is stored; viewing is logged. */
+export async function previewPdf(requestId: string, outputKey: string) {
+  if (!UUID.test(requestId) || !/^[A-Z]\d{2}\.[a-z]+(@c\d+)?$/.test(outputKey)) return fail(404, "غير موجود");
+  const auth = await getAuth();
+  if (!auth || !auth.isStaff || (auth.user.mfaEnabled && !auth.session.mfaVerified)) return fail(404, "غير موجود");
+  const { ip, userAgent } = await requestInfo();
+  const out = await withContext(auth.db, async (tx) => {
+    let rc;
+    try {
+      rc = await loadRequestCtx(tx, auth, requestId, "staff");
+    } catch {
+      return null;
+    }
+    const p = await livePreview(tx, rc, outputKey);
+    if (!p) return null;
+    await audit(tx, { actorUserId: auth.user.id, action: "outputs.preview", entityType: "request", entityId: rc.req.id, waqfId: rc.req.waqfId, ip, userAgent, after: { outputKey, gaps: p.gaps.length } });
+    return { html: await previewDocHtml(tx, rc, p.def, p.sections, p.gaps), title: p.def.title, name: `${rc.req.number}-${outputKey}-preview.pdf` };
+  });
+  if (!out) return fail(404, "المخرج غير موجود أو لا تملك صلاحية معاينته.");
+  let body: Buffer;
+  try {
+    body = await renderPdf(out.html, { headerTitle: out.title });
+  } catch (err) {
+    console.error("[outputs.preview.pdf] render failed", err);
+    return fail(503, "تعذر إنشاء ملف PDF الآن. المعاينة على الصفحة متاحة؛ أعد المحاولة بعد قليل.");
   }
   return new Response(new Uint8Array(body), {
     headers: { "content-type": "application/pdf", "content-disposition": `inline; filename="${out.name}"`, "cache-control": "private, no-store", "x-content-type-options": "nosniff" },

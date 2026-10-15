@@ -10,6 +10,8 @@ import type { ActionState } from "@/lib/utils";
 import { staffAction } from "../guard";
 import { COMPANY_FIELDS, GENERAL_SETTINGS, RETENTION_DEFAULTS, RETENTION_FIELDS, type RetentionPolicy } from "./defs";
 import type { License } from "./queries";
+import { SEPARATION_AR, SEPARATION_KEYS, separationPolicy } from "@/server/authz/separation";
+import { SEPARATION_SETTING } from "@/server/modules/approvals/policy";
 
 const PATH = "/admin/settings";
 const NAZARA_LICENSE = "gaa_nazara_license";
@@ -180,4 +182,31 @@ export async function runRetention(_: ActionState, __?: FormData): Promise<Actio
     await audit(tx, { actorUserId: auth.user.id, action: "admin.retention.run", entityType: "setting", entityId: "retention.policy", ip, userAgent, after });
     return { ok: true, message: `نُفذت السياسة: حُذفت ${s.length} جلسة، و${o.length} رمز تحقق، و${m.length} رسالة صادرة.` };
   }, `${PATH}/general`);
+}
+
+/**
+ * Separation of duties for the platform's approvals. A control is switched on only with the written policy that
+ * requires it (its reference); it then applies to everyone, the system administrator included. Every change is
+ * audited with its reason and the before/after values.
+ */
+export async function saveSeparationPolicy(_: ActionState, fd: FormData): Promise<ActionState> {
+  const reason = String(fd.get("reason") ?? "").trim();
+  if (reason.length < 10) return { error: "اكتب سبب التغيير ومرجعه (10 أحرف على الأقل).", fieldErrors: { reason: "سبب التغيير ومرجعه مطلوب." } };
+  const next: Record<string, { enforced: boolean; reference: string | null }> = {};
+  const fieldErrors: Record<string, string> = {};
+  for (const k of SEPARATION_KEYS) {
+    const on = fd.get(`enforce_${k}`) === "on";
+    const ref = String(fd.get(`ref_${k}`) ?? "").trim().slice(0, 300);
+    if (on && ref.length < 5) fieldErrors[`ref_${k}`] = `اذكر السياسة المعتمدة التي تلزم بشخص ثانٍ في «${SEPARATION_AR[k]}» (اسمها ورقمها أو تاريخها).`;
+    next[k] = { enforced: on, reference: ref || null };
+  }
+  if (Object.keys(fieldErrors).length) return { error: "راجع الحقول المظللة.", fieldErrors };
+  return staffAction("admin.roles", async (c) => {
+    if (!c.auth.perms.has("admin.settings")) throw new UserError("ضبط سياسة الفصل بين المهام لمن يملك صلاحيتي الإعدادات والأدوار.");
+    const before = separationPolicy(await readValue(c.tx, SEPARATION_SETTING, {}));
+    const after = separationPolicy(next);
+    await writeValue(c.tx, SEPARATION_SETTING, after, c.auth.user.id, "سياسة الفصل بين المهام في اعتمادات المنصة");
+    await audit(c.tx, { actorUserId: c.auth.user.id, action: "settings.separation_policy", entityType: "setting", entityId: SEPARATION_SETTING, ip: c.ip, userAgent: c.userAgent, before, after: { ...after, reason } });
+    return { ok: true, message: "حُفظت سياسة الفصل بين المهام." };
+  }, PATH);
 }

@@ -1,6 +1,7 @@
 import "server-only";
 import { and, asc, desc, eq, gte, inArray, isNull, lte, ne, notInArray } from "drizzle-orm";
 import type { Tx } from "@/server/db";
+import { readSeparationPolicy } from "@/server/modules/approvals/policy";
 import {
   serviceRequests, services, waqfs,
   assets, beneficiaries, contracts, deliverables, distributions, investmentPolicies, ledgerEntries, leases, meetings, minutes, outputs,
@@ -204,9 +205,10 @@ export async function continuousSnapshot(tx: Tx, auth: Auth, rc: RequestCtx): Pr
   const like = t ? termLike(t) : null;
   const ts = like ? termState(like, today) : null;
   const acceptance = t?.clientAcceptance ?? spec.acceptance.mode;
+  const separation = await readSeparationPolicy(tx);
   const approve = async (o: typeof outs[number]) => {
     if (o.status !== "in_review") return { ok: false, reason: undefined as string | undefined };
-    const ck = approvalCheck({ policy: o.reviewPolicy, approverId: auth.user.id, preparers: await preparersOf(tx, o), canReview: auth.perms.has("staff.quality_review"), isManager: auth.perms.has("admin.requests.all") });
+    const ck = approvalCheck({ policy: o.reviewPolicy, approverId: auth.user.id, preparers: await preparersOf(tx, o), canReview: auth.perms.has("staff.quality_review"), isManager: auth.perms.has("admin.requests.all"), direct: auth.perms.has("approvals.direct"), separation });
     return { ok: ck.ok, reason: ck.ok ? undefined : ck.error };
   };
   const ready = (o: typeof outs[number] | null) => {

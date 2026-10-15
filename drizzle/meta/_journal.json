@@ -64,6 +64,13 @@
       "when": 1792017919575,
       "tag": "0008_payment_schedule_client_acceptance",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1792059223477,
+      "tag": "0009_audit_actor_roles",
+      "breakpoints": true
     }
   ]
 }

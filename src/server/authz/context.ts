@@ -66,7 +66,7 @@ export const getAuth = cache(async (): Promise<Auth | null> => {
     perms,
     globalAccess,
     isStaff: s.user.isStaff || globalRoles.length > 0,
-    db: { userId: s.user.id, globalAccess, mlro: false },
+    db: { userId: s.user.id, globalAccess, mlro: false, roles: globalRoles },
   };
 });
 

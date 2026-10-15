@@ -10,7 +10,8 @@ import { demo, loginAs } from "./helpers";
  *  - the term is set with an explicit cadence (N01 has no documented cadence); cycle 1 opens;
  *  - the first draft shows the gaps (no appointment decision, no ledger entries for the period) and cannot be sent
  *    for review; once the appointment is recorded and the period's entries exist, the regenerated draft carries them;
- *  - independent review (the preparer cannot approve his own nazir report), making it available, client approval;
+ *  - independent review by a reviewer who did not prepare it (the system administrator, who prepared it, is shown that
+ *    his own approval would be recorded as a direct self-approval), making it available, client approval;
  *  - the delivery record is drafted from the recorded facts (versions, who delivered, who received and approved),
  *    approved, and released as a PDF when the cycle closes; the request stays open.
  * Desktop only (shared demo records). The nazara file's intake checklist is marked received by SQL to keep the test
@@ -246,13 +247,9 @@ test.describe.serial("nazir periodic report and delivery record", () => {
     await sql("insert into beneficiaries (waqf_id, display_name) values ($1, $2)", [A(), benTag]);
     await nextStep(admin, reqId, /أرسل المسودة للمراجعة/);
 
-    // 6) independent review: the preparer cannot approve; another reviewer does
+    // 6) independent review: another reviewer approves (the preparer's own approval is covered in preview-approvals.spec)
     await go(admin, `/admin/requests/${reqId}/outputs/${reportId}`);
-    const selfApprove = admin.getByRole("button", { name: "اعتمد المخرج" });
-    if (await selfApprove.count()) {
-      await selfApprove.click();
-      await ex(admin.getByRole("alert").filter({ hasText: /مستقل|أعدّ|غير من أعد|المُعد/ }).first()).toBeVisible();
-    }
+    await ex(admin.getByText("أنت ممن أعدّوا هذا المخرج؛ يُسجَّل اعتمادك اعتمادًا ذاتيًا", { exact: false })).toBeVisible(); // direct approver: allowed and recorded
     expect((await sql<{ status: string }>("select status from outputs where id = $1", [reportId]))[0].status).toBe("in_review");
     await go(ops, `/admin/requests/${reqId}/outputs/${reportId}`);
     await ops.getByRole("button", { name: "اعتمد المخرج" }).click();

@@ -1,7 +1,7 @@
 /**
  * Audit hash-chain verification (pure; unit-tested in tests/admin-audit-chain.test.ts).
  *
- * `audit()` stores hash = sha256(JSON.stringify([prevHash, at, actor, action, entityType, entityId, waqfId, before, after])).
+ * `audit()` stores hash = sha256(JSON.stringify([prevHash, at, actor, action, entityType, entityId, waqfId, before, after(, actorRoles)])).
  * Two properties of the current writer shape what can be proven:
  *  1. `before`/`after` live in jsonb, which does not keep object key order. A row whose payload has an object with two or
  *     more keys can only be re-hashed if the writer happened to use jsonb's order (or sorted keys). Such rows are reported
@@ -24,6 +24,8 @@ export type ChainRow = {
   after: unknown;
   prevHash: string | null;
   hash: string;
+  /** Recorded since the actor's roles are stored; part of the hash when present. */
+  actorRoles?: string[] | null;
 };
 
 export type ChainIssue = { id: number; at: string; action: string; kind: "link" | "content" };
@@ -59,7 +61,7 @@ export function orderSensitive(v: unknown): boolean {
 }
 
 export function rowHash(r: ChainRow, transform: (v: unknown) => unknown = (v) => v) {
-  return sha(JSON.stringify([r.prevHash, r.at.toISOString(), r.actorUserId, r.action, r.entityType, r.entityId, r.waqfId, transform(r.before ?? null), transform(r.after ?? null)]));
+  return sha(JSON.stringify([r.prevHash, r.at.toISOString(), r.actorUserId, r.action, r.entityType, r.entityId, r.waqfId, transform(r.before ?? null), transform(r.after ?? null), ...(r.actorRoles ? [r.actorRoles] : [])]));
 }
 
 /** Incremental verifier: feed rows in ascending id order, then call `report()`. */

@@ -1,3 +1,4 @@
+import { viewerMakerRules } from "@/server/modules/approvals/policy";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -43,6 +44,7 @@ export default async function EngagementPage({ params }: { params: Promise<{ id:
   const status = e.status as EngagementStatus;
   const canManage = auth.perms.has("nazara.manage");
   const canApprove = auth.perms.has("nazara.approve");
+  const maker = await viewerMakerRules(auth);
   const running = (RUNNING_STATUSES as string[]).includes(status);
   const closed = status === "ended" || status === "rejected";
   const intakeEditable = ["intake", "under_review", "pending_completion"].includes(status);
@@ -334,9 +336,13 @@ export default async function EngagementPage({ params }: { params: Promise<{ id:
                         <Badge tone={r.status === "draft" ? "warn" : "ok"} icon={false}>{r.status === "draft" ? "مسودة" : r.status === "approved" ? "معتمد" : "نهائي"}</Badge>
                         <a className={buttonClass("secondary", "sm")} href={`/admin/nazara/${e.id}/reports/${r.id}`} download>PDF</a>
                         {r.kind === "nazara_periodic" ? <a className={buttonClass("secondary", "sm")} href={`/admin/nazara/${e.id}/reports/${r.id}?format=csv`} download>CSV</a> : null}
-                        {r.status === "draft" && canApprove && r.generatedBy !== auth.user.id ? (
-                          <ActionForm action={approveNazaraReport} hidden={{ id: e.id, reportId: r.id }} className="space-y-1"><SubmitButton size="sm">اعتمد</SubmitButton></ActionForm>
-                        ) : null}
+                        {(() => {
+                          if (r.status !== "draft" || !canApprove) return null;
+                          const mk = maker.check("nazara_report", r.generatedBy === auth.user.id, "أعددتَ هذا التقرير: يعتمده مسؤول نظارة آخر.");
+                          return mk.ok
+                            ? <ActionForm action={approveNazaraReport} hidden={{ id: e.id, reportId: r.id }} className="space-y-1"><SubmitButton size="sm">{mk.self ? "اعتمد (اعتماد مباشر مسجّل)" : "اعتمد"}</SubmitButton></ActionForm>
+                            : <span className="text-[13px] text-muted">{mk.error}</span>;
+                        })()}
                       </div>
                     </li>
                   ))}

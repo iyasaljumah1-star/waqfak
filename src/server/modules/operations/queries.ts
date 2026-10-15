@@ -5,7 +5,9 @@ import type { Auth } from "@/server/authz/context";
 import { outputs, outputVersions, taskEvents, tasks, users, waqfMemberships, waqfs } from "@/server/db/schema";
 import type { RequestCtx } from "@/server/modules/requests/access";
 import { PROFILE_FORMAT, REVIEW_LABEL, SPECIALTY_LABEL } from "@/server/modules/outputs/catalog";
-import { readiness } from "@/server/modules/outputs/pure";
+import { approvalCheck, readiness } from "@/server/modules/outputs/pure";
+import { preparersOf } from "@/server/modules/outputs/server";
+import { readSeparationPolicy } from "@/server/modules/approvals/policy";
 import { executeRight, taskActions } from "./exec-pure";
 import { linksOfRequest } from "./links";
 import { requestOutputs } from "./continuous-pure";
@@ -30,6 +32,12 @@ export async function requestOperations(tx: Tx, auth: Auth, rc: RequestCtx) {
     return { ...t, right, actions: terminal ? [] : taskActions(t, right), events: events.filter((e) => e.taskId === t.id) };
   });
   const defs = requestOutputs(rc.service, outRows.map((o) => o.outputKey));
+  const separation = outRows.some((o) => o.status === "in_review") ? await readSeparationPolicy(tx) : null;
+  const approveOf = new Map<string, { ok: boolean; self: boolean; reason: string | null }>();
+  for (const o of outRows.filter((x) => x.status === "in_review")) {
+    const ck = approvalCheck({ policy: o.reviewPolicy, approverId: auth.user.id, preparers: await preparersOf(tx, o), canReview: auth.perms.has("staff.quality_review"), isManager: auth.perms.has("admin.requests.all"), direct: auth.perms.has("approvals.direct"), separation: separation ?? undefined });
+    approveOf.set(o.id, ck.ok ? { ok: true, self: ck.self, reason: null } : { ok: false, self: false, reason: ck.error });
+  }
   const outputList = defs.map((def) => {
     const o = outRows.find((x) => x.outputKey === def.key) ?? null;
     const v = o ? curVersions.find((x) => x.outputId === o.id && x.version === o.currentVersion) : null;
@@ -39,6 +47,8 @@ export async function requestOperations(tx: Tx, auth: Auth, rc: RequestCtx) {
       delivered: o?.status === "approved" && !!o.documentId && ["awaiting_client_approval", "completed", "closed"].includes(rc.req.status),
       version: v ? { version: v.version, origin: v.origin, at: v.at } : null,
       blocking: ready?.blocking.length ?? 0, unwritten: ready?.unwritten.length ?? 0, warnings: ready?.warnings.length ?? 0,
+      /** For an output under review: whether this viewer may approve it (the same check the server runs). */
+      approve: o ? approveOf.get(o.id) ?? null : null,
     };
   });
   // Waqfs the requester holds a role in (for linking a request sent with no waqf)

@@ -24,7 +24,7 @@ export async function verifyAuditChain(_: ActionState, __?: FormData): Promise<A
         s
           .select({
             id: auditLogs.id, at: auditLogs.at, actorUserId: auditLogs.actorUserId, action: auditLogs.action, entityType: auditLogs.entityType,
-            entityId: auditLogs.entityId, waqfId: auditLogs.waqfId, before: auditLogs.before, after: auditLogs.after, prevHash: auditLogs.prevHash, hash: auditLogs.hash,
+            entityId: auditLogs.entityId, waqfId: auditLogs.waqfId, before: auditLogs.before, after: auditLogs.after, prevHash: auditLogs.prevHash, hash: auditLogs.hash, actorRoles: auditLogs.actorRoles,
           })
           .from(auditLogs)
           .where(gt(auditLogs.id, after))

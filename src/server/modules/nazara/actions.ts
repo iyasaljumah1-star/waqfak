@@ -11,6 +11,7 @@ import {
 import { rolePermissionMap, type Auth } from "@/server/authz/context";
 import { audit, nextNumber } from "@/server/lib/audit";
 import { addBusinessDays, addDays, todayISO } from "@/server/engines/dates";
+import { checkMaker, approvalMode } from "@/server/modules/approvals/policy";
 import { parseForm, UserError } from "@/server/modules/_shared";
 import { staffAction } from "@/server/modules/admin/guard";
 import { notify } from "@/server/modules/notify";
@@ -533,7 +534,7 @@ export async function generateNazaraReport(_: ActionState, fd: FormData): Promis
 }
 
 const approveSchema = z.object({ id: uuid, reportId: uuid });
-/** Approves a periodic report. Maker-checker: the person who prepared it cannot approve it. */
+/** Approves a periodic report. Its preparer may approve it only with direct approval (recorded), unless a written policy requires a second person. */
 export async function approveNazaraReport(_: ActionState, fd: FormData): Promise<ActionState> {
   const r = parseForm(approveSchema, fd);
   if ("state" in r) return r.state;
@@ -542,9 +543,10 @@ export async function approveNazaraReport(_: ActionState, fd: FormData): Promise
     const [rep] = await c.tx.select().from(reports).where(and(eq(reports.id, r.data.reportId), eq(reports.waqfId, e.waqfId), eq(reports.kind, "nazara_periodic"), isNull(reports.revokedAt))).limit(1);
     if (!rep) throw new UserError("التقرير غير موجود.");
     if (rep.status !== "draft") throw new UserError("التقرير معتمد مسبقًا.");
-    if (rep.generatedBy === c.auth.user.id) throw new UserError("لا يعتمد معدّ التقرير تقريره؛ يعتمده مسؤول نظارة آخر.");
+    const mk = await checkMaker(c.tx, c.auth, "nazara_report", rep.generatedBy === c.auth.user.id, "لا يعتمد معدّ التقرير تقريره؛ يعتمده مسؤول نظارة آخر.");
+    if (!mk.ok) throw new UserError(mk.error);
     await c.tx.update(reports).set({ status: "approved", approvedBy: c.auth.user.id, approvedAt: new Date() }).where(eq(reports.id, rep.id));
-    await audit(c.tx, { actorUserId: c.auth.user.id, action: "nazara.report_approved", entityType: "report", entityId: rep.id, waqfId: e.waqfId, ip: c.ip, userAgent: c.userAgent, before: { status: "draft" }, after: { status: "approved", number: rep.number } });
-    return { ok: true, message: `اعتُمد التقرير ${rep.number}، وأصبح متاحًا لأعضاء الوقف في «التقارير».` };
+    await audit(c.tx, { actorUserId: c.auth.user.id, action: "nazara.report_approved", entityType: "report", entityId: rep.id, waqfId: e.waqfId, ip: c.ip, userAgent: c.userAgent, before: { status: "draft", generatedBy: rep.generatedBy }, after: { status: "approved", number: rep.number, engagement: e.number, ...approvalMode(mk) } });
+    return { ok: true, message: `اعتُمد التقرير ${rep.number}${mk.self ? " (اعتماد مباشر مسجّل لمعدّه)" : ""}، وأصبح متاحًا لأعضاء الوقف في «التقارير».` };
   }, PATH(r.data.id));
 }

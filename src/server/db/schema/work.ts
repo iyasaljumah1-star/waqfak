@@ -531,6 +531,8 @@ export const auditLogs = pgTable("audit_logs", {
   at: createdAt(),
   actorUserId: uuid(),
   actorLabel: text(),
+  /** The actor's global roles when the action was taken (from the transaction's context). */
+  actorRoles: text().array(),
   action: text().notNull(),
   entityType: text().notNull(),
   entityId: text(),

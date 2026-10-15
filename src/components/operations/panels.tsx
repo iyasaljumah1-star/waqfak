@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ExternalLink, FileText, Link2 } from "lucide-react";
+import { Eye, FileDown, FileText, Link2 } from "lucide-react";
 import { Badge, Panel } from "@/components/ui";
 import { Field, Input, Select, Textarea } from "@/components/ui/form";
 import { ActionForm } from "@/components/requests/forms";
@@ -8,7 +8,7 @@ import { createExecTasks, taskAction } from "@/server/modules/operations/exec-ac
 import { createWaqfFromRequest, linkRequestToWaqf } from "@/server/modules/operations/link-actions";
 import { EXEC_KIND_LABEL, TASK_EVENT_LABEL, type ExecKind } from "@/server/modules/operations/exec-pure";
 import { approveOutput, generateOutput, returnOutput, reviseOutput, submitOutput } from "@/server/modules/outputs/actions";
-import { OUTPUT_STATUS_LABEL, OUTPUT_STATUS_TONE } from "@/server/modules/outputs/pure";
+import { DRAFT_STATUSES, OUTPUT_STATUS_LABEL, OUTPUT_STATUS_TONE } from "@/server/modules/outputs/pure";
 import { TASK_STATUS_AR } from "@/server/modules/tasks/pure";
 import { STATUS_AR as NAZARA_STATUS } from "@/server/modules/nazara/pure";
 import type { requestOperations } from "@/server/modules/operations/queries";
@@ -103,25 +103,26 @@ export function TasksPanel({ ops, requestId, staff, today, status, canWork }: { 
 }
 
 /** Platform outputs of the service: draft generated from the data, edited, reviewed and approved per its policy. */
-export function OutputsPanel({ ops, requestId, status, canDeliver, canReview, isManager, me, opinion }: {
+export function OutputsPanel({ ops, requestId, status, canDeliver, canReview, isManager, opinion }: {
   ops: Ops; requestId: string; status: string; canDeliver: boolean; canReview: boolean; isManager: boolean; me: string; opinion: boolean;
 }) {
-  const working = ["triage", "awaiting_client", "in_progress", "quality_review"].includes(status);
+  const working = DRAFT_STATUSES.includes(status);
   if (!ops.outputs.length) return null;
   return (
     <div className="space-y-3" data-testid="outputs">
-      {ops.outputs.map(({ def, o, version, blocking, unwritten, warnings, specialtyLabel, reviewLabel, formatLabel, delivered }) => (
+      {ops.outputs.map(({ def, o, version, blocking, unwritten, warnings, specialtyLabel, reviewLabel, formatLabel, delivered, approve }) => (
         <div key={def.key} className="rounded-lg border border-line p-3" data-testid={`output-${def.key}`}>
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="flex items-center gap-2 font-medium"><FileText aria-hidden className="size-4 text-muted" />{def.title}</p>
             <span className="flex flex-wrap gap-1">
               <Badge tone="neutral" icon={false}>{formatLabel}</Badge>
               <Badge tone="neutral" icon={false}>{specialtyLabel}</Badge>
-              <Badge tone={delivered ? "ok" : o ? OUTPUT_STATUS_TONE[o.status] : "neutral"} icon={false}>{delivered ? "مُسلَّم للعميل" : o ? OUTPUT_STATUS_LABEL[o.status] : "لم تُعدّ"}</Badge>
+              <Badge tone={delivered ? "ok" : o ? OUTPUT_STATUS_TONE[o.status] : "neutral"} icon={false}>{delivered ? "مُسلَّم للعميل" : o ? OUTPUT_STATUS_LABEL[o.status] : "لم تُحفظ مسودة"}</Badge>
+              {o && (blocking || unwritten) && o.status !== "approved" ? <Badge tone="fine" icon={false}>مسودة غير مكتملة</Badge> : null}
             </span>
           </div>
           <p className="mt-1 text-[13px] text-muted">
-            {o ? <><span dir="ltr" className="tabular">{o.number}</span> · النسخة {o.currentVersion}{o.approvedVersion ? ` · المعتمدة ${o.approvedVersion}${o.selfApproved ? " (اعتماد ذاتي)" : ""}` : ""} · </> : null}
+            {o ? <><span dir="ltr" className="tabular">{o.number}</span> · النسخة {o.currentVersion}{version ? ` (${fmtDate(version.at)})` : ""}{o.approvedVersion ? ` · المعتمدة ${o.approvedVersion}${o.selfApproved ? " (اعتماد ذاتي)" : ""}` : ""} · </> : null}
             {reviewLabel}
           </p>
           {o && version ? (
@@ -134,16 +135,25 @@ export function OutputsPanel({ ops, requestId, status, canDeliver, canReview, is
           ) : null}
           {o?.reviewNote && o.status === "returned" ? <p className="mt-1 text-[13px] text-fine">ملاحظة المراجع: {o.reviewNote}</p> : null}
           <div className="mt-2 flex flex-wrap items-start gap-2">
-            {o ? <Link href={`/admin/requests/${requestId}/outputs/${o.id}`} className="inline-flex h-8 items-center gap-1 rounded-md border border-line px-3 text-sm text-ink hover:bg-ink-soft">افتح المسودة<ExternalLink aria-hidden className="size-3.5" /></Link> : null}
-            {!o && canDeliver && working ? <ActionForm action={generateOutput} hidden={{ id: requestId, outputKey: def.key }} submit={status === "in_progress" ? "أعدّ المسودة من بيانات الطلب" : "أعدّ مسودة للمعاينة الآن"} size="sm" inline /> : null}
+            {o ? (
+              <>
+                <Link href={`/admin/requests/${requestId}/outputs/${o.id}`} className="inline-flex h-8 items-center gap-1 rounded-md border border-line px-3 text-sm text-ink hover:bg-ink-soft" data-testid={`preview-${def.key}`}><Eye aria-hidden className="size-4" />معاينة{(o.status === "draft" || o.status === "returned") && canDeliver ? " وتحرير" : ""}</Link>
+                {o.currentVersion ? <a href={`/admin/requests/${requestId}/outputs/${o.id}/pdf?v=${o.currentVersion}`} target="_blank" rel="noopener" className="inline-flex h-8 items-center gap-1 rounded-md px-2 text-sm text-ink hover:bg-ink-soft"><FileDown aria-hidden className="size-4" />PDF النسخة {o.currentVersion}</a> : null}
+              </>
+            ) : (
+              <Link href={`/admin/requests/${requestId}/outputs/preview?key=${encodeURIComponent(def.key)}`} className="inline-flex h-8 items-center gap-1 rounded-md border border-line px-3 text-sm text-ink hover:bg-ink-soft" data-testid={`preview-${def.key}`}><Eye aria-hidden className="size-4" />معاينة من البيانات الحالية</Link>
+            )}
+            {!o && canDeliver && working ? <ActionForm action={generateOutput} hidden={{ id: requestId, outputKey: def.key }} submit="احفظ مسودة من بيانات الطلب" size="sm" variant="secondary" inline /> : null}
             {o && (o.status === "draft" || o.status === "returned") && canDeliver ? <ActionForm action={submitOutput} hidden={{ outputId: o.id, requestId }} submit="أرسلها للمراجعة" size="sm" variant="secondary" inline /> : null}
             {o && o.status === "in_review" && (canReview || isManager) ? (
               <details className="w-full">
-                <summary className="cursor-pointer text-[14px] text-ink">راجع واعتمد{o.submittedBy === me ? (def.review === "independent" ? " — يعتمده زميل غير المعدّ" : " — سيُسجل اعتمادًا ذاتيًا") : ""}</summary>
+                <summary className="cursor-pointer text-[14px] text-ink">راجع واعتمد{approve?.ok && approve.self ? " — سيُسجَّل اعتمادًا ذاتيًا" : ""}</summary>
                 <div className="mt-2 grid gap-3 sm:grid-cols-2">
-                  <ActionForm action={approveOutput} hidden={{ outputId: o.id, requestId }} submit="اعتمد المخرج" size="sm" variant="seal">
-                    {opinion || def.specialty === "sharia" ? <Field label="التوقيع: اسم المستشار وصفته" name={`sign-${o.id}`} required><Input id={`sign-${o.id}`} name="signedBy" required minLength={5} /></Field> : null}
-                  </ActionForm>
+                  {approve?.ok ? (
+                    <ActionForm action={approveOutput} hidden={{ outputId: o.id, requestId }} submit="اعتمد المخرج" size="sm" variant="seal">
+                      {opinion || def.specialty === "sharia" ? <Field label="التوقيع: اسم المستشار وصفته" name={`sign-${o.id}`} required><Input id={`sign-${o.id}`} name="signedBy" required minLength={5} /></Field> : null}
+                    </ActionForm>
+                  ) : <p className="text-[13px] text-muted">{approve?.reason ?? "يعتمده من يملك صلاحية المراجعة."}</p>}
                   <ActionForm action={returnOutput} hidden={{ outputId: o.id, requestId }} submit="أعده للتعديل" size="sm" variant="secondary">
                     <Field label="ما يلزم تعديله" name={`ret-${o.id}`} required><Textarea id={`ret-${o.id}`} name="note" required minLength={5} className="min-h-16" /></Field>
                   </ActionForm>

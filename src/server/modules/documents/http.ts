@@ -2,7 +2,7 @@ import "server-only";
 import { kindFromMime } from "../../adapters/scan";
 
 export const jsonError = (status: number, error: string, extra: Record<string, unknown> = {}) =>
-  Response.json({ error, ...extra }, { status, headers: { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" } });
+  Response.json({ error, ...extra }, { status, headers: { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'", "X-Frame-Options": "DENY" } });
 
 /** RFC 6266 / 5987: ASCII fallback plus UTF-8 filename*. */
 export function contentDisposition(type: "inline" | "attachment", name: string) {
@@ -29,6 +29,22 @@ export function fileResponse(data: Buffer, mime: string, name: string, wantInlin
       "X-Content-Type-Options": "nosniff",
       "Cache-Control": "private, no-store",
       "Content-Security-Policy": csp.join("; "),
+      "X-Frame-Options": "SAMEORIGIN",
+      "Cross-Origin-Resource-Policy": "same-origin",
+      "Referrer-Policy": "no-referrer",
+    },
+  });
+}
+
+/** A generated, escaped HTML preview (Office files): sandboxed, no script, no remote resource. */
+export function htmlPreviewResponse(html: string) {
+  return new Response(html, {
+    status: 200,
+    headers: {
+      "Content-Type": "text/html; charset=utf-8",
+      "X-Content-Type-Options": "nosniff",
+      "Cache-Control": "private, no-store",
+      "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'self'; sandbox",
       "X-Frame-Options": "SAMEORIGIN",
       "Cross-Origin-Resource-Policy": "same-origin",
       "Referrer-Policy": "no-referrer",
