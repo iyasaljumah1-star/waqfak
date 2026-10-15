@@ -196,7 +196,7 @@ test.describe.serial("execution engine: next step, drafted documents, verificati
     // another reviewer approves with the advisor's signature (sharia output → in the editor)
     const ops = await as(browser, "ops");
     await go(ops, `/admin/requests/${willReq}`);
-    await ex(ops.getByTestId("next-step-link")).toContainText("يلزم توقيع المستشار");
+    await ex(ops.getByTestId("next-step-link")).toContainText("سجّل رأي المختص في 1 من الفحوص ثم اعتمد (يلزم توقيع المستشار)");
     await go(ops, `/admin/requests/${willReq}/outputs/${o.id}`);
     // approval waits for the specialist's finding on the ruling the platform cannot decide
     await ex(ops.getByTestId("approve-blocked")).toContainText("بانتظار رأي المختص");

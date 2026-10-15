@@ -35,6 +35,8 @@ export type OutputSnap = {
   blocking: { label: string; fix?: string }[]; unwritten: string[]; returnedNote?: string | null;
   /** The viewer may approve under the output's policy (computed with approvalCheck). */
   viewerCanApprove: boolean; approveBlockedReason?: string; needsSignature: boolean;
+  /** Checks waiting for the specialist's finding (the viewer may approve once they are recorded). */
+  pendingFindings?: string[];
   /** Approved, but the client (or quality review) sent the work back: a new review round must be opened. */
   needsRevision: boolean;
   /** The request's answers were corrected after this version was drafted. */
@@ -111,7 +113,9 @@ function outputSteps(s: Snapshot, add: Add, executing: boolean, rank: number, wo
       add(prep);
       const appr: Step = { key: `approve:${o.key}`, title: `مراجعة واعتماد: ${o.title}`, owner: "reviewer", blockers: [], output: `«${o.title}» معتمد بنسخته`, state: (o.status === "approved" && !(executing && (o.needsRevision || o.stale))) || rank >= 6 ? "done" : o.status === "in_review" ? "current" : "pending" };
       if (o.status === "in_review") {
-        if (o.viewerCanApprove) {
+        if (o.viewerCanApprove && o.pendingFindings?.length) {
+          appr.action = { kind: "link", href: `/admin/requests/${s.id}/outputs/${o.id}#checks`, label: `سجّل رأي المختص في ${o.pendingFindings.length} من الفحوص ثم اعتمد${o.needsSignature ? " (يلزم توقيع المستشار)" : ""}` };
+        } else if (o.viewerCanApprove) {
           appr.action = o.needsSignature
             ? { kind: "link", href: `/admin/requests/${s.id}/outputs/${o.id}`, label: "راجع واعتمد (يلزم توقيع المستشار)" }
             : { kind: "run", key: "approve_output", label: `اعتمد «${o.title}»`, args: { outputId: o.id! } };
