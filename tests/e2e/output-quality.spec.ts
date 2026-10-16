@@ -257,7 +257,7 @@ test.describe.serial("output quality: conflicts, checks, deficiency list, stages
     expect(pdf1.status()).toBe(200);
     expect(pdf1.headers()["content-type"]).toContain("application/pdf");
     const t1 = pdfText(await pdf1.body(), "w01-v1-conflict");
-    expect(t1).toContain(flat("تعارض في الوقف بعد الوفاة"));
+    expect(t1).toContain(flat("تعارض في نوع الوصية"));
     expect(t1).toContain(flat("تقرير النواقص والتعارضات"));
     expect(t1).toContain(flat("فحوص الصياغة (داخلية)"));
     expect(await out(outputId)).toEqual(before);

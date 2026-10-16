@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { startTransition, useActionState, useEffect, useRef, useState } from "react";
 import { Field, FormMessage, Select, SubmitButton, Textarea } from "@/components/ui/form";
 import { FieldInput } from "@/components/requests/intake-wizard";
 import { initialState, type ActionState } from "@/lib/utils";
@@ -13,13 +13,17 @@ type Act = (s: ActionState, fd: FormData) => Promise<ActionState>;
  * the field's own validation on the server; the previous value is kept in the request's revisions.
  */
 export function StaffIntakeEditor({ action, requestId, fields }: { action: Act; requestId: string; fields: { step: string; field: FormField; value: AnswerValue | undefined }[] }) {
-  const [s, a] = useActionState(action, initialState);
+  const [s, a, pending] = useActionState(action, initialState);
   const [key, setKey] = useState("");
   const cur = fields.find((x) => x.field.key === key);
   const [value, setValue] = useState<AnswerValue | undefined>(undefined);
   const pick = (k: string) => { setKey(k); setValue(fields.find((x) => x.field.key === k)?.value); };
+  const form = useRef<HTMLFormElement>(null);
+  // Submitted without React's automatic form reset: when the server asks to confirm dropped answers, the chosen value
+  // and the reason stay as typed, so confirming does not mean entering them again. A saved correction clears the form.
+  useEffect(() => { if (s.ok) { form.current?.reset(); setKey(""); setValue(undefined); } }, [s]);
   return (
-    <form action={a} className="space-y-3" data-testid="staff-intake-editor">
+    <form ref={form} onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); startTransition(() => a(fd)); }} className="space-y-3" data-testid="staff-intake-editor">
       <input type="hidden" name="id" value={requestId} />
       <input type="hidden" name="field" value={key} />
       {Array.isArray(value) ? value.map((v) => <input key={v} type="hidden" name="values" value={v} />) : <input type="hidden" name="value" value={value === undefined || value === null ? "" : String(value)} />}
@@ -37,7 +41,7 @@ export function StaffIntakeEditor({ action, requestId, fields }: { action: Act; 
         </label>
       ) : null}
       <FormMessage state={s} />
-      <SubmitButton size="sm" disabled={!key}>احفظ التصحيح</SubmitButton>
+      <SubmitButton size="sm" disabled={!key || pending}>{pending ? "جارٍ الحفظ…" : "احفظ التصحيح"}</SubmitButton>
     </form>
   );
 }

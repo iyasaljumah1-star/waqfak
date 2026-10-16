@@ -129,7 +129,7 @@ test("scenario 3: board meeting from invitation to locked minutes and a resoluti
   await expect(chair.getByRole("heading", { level: 1, name: title })).toBeVisible();
   await expect(chair.getByText(/MTG-\d{6}/).first()).toBeVisible();
   await chair.getByRole("button", { name: "أرسل الدعوات" }).click();
-  await expect(chair.getByText(/أُرسلت الدعوة إلى 4/)).toBeVisible({ timeout: T });
+  await expect(chair.getByText(/أُرسل إشعار الدعوة داخل المنصة إلى 4 من الأعضاء/)).toBeVisible({ timeout: T });
 
   // ── Conflict declarations: member1 declares an actual conflict on item 1; everyone else declares none
   const m1 = await as(browser, "member1");
