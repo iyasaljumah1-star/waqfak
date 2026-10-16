@@ -6,7 +6,7 @@ import { buttonClass } from "@/components/ui";
 import { FormMessage } from "@/components/ui/form";
 import { deriveType } from "@/server/engines/assessment";
 import { cn, initialState, type ActionState } from "@/lib/utils";
-import { RowsEditor, type RowField } from "./action-form";
+import { RowsEditor } from "./action-form";
 import { AssetRowsEditor, type AssetDraft } from "./asset-editor";
 
 type Action = (prev: ActionState, fd: FormData) => Promise<ActionState>;

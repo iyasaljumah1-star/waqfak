@@ -32,7 +32,6 @@ import { draftState, myDrafts } from "./queries";
 import { firstIncompleteWizardStep } from "./journey";
 import { syncJourneyAfterChange } from "./journey-server";
 
-const CATS = ["real_estate", "movable", "usufruct", "intellectual_property", "cash", "shares", "fund_units", "portfolio", "sukuk"];
 const COND_CATS = ["asset", "revenue", "masraf", "nazara", "founder_self", "governance_finance"];
 const s = (v: FormDataEntryValue | null, max = 500) => (typeof v === "string" ? v.trim().slice(0, max) : "");
 

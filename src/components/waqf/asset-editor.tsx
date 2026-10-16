@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useMemo, useState } from "react";
+import { useActionState, useMemo, useState } from "react";
 import { FormMessage } from "@/components/ui/form";
 import { buttonClass } from "@/components/ui";
 import { initialState, type ActionState } from "@/lib/utils";
@@ -146,7 +146,11 @@ export function AssetForm({ action, waqfId, asset, submitLabel, testId }: { acti
   // An added asset is saved even when incomplete (its gaps are listed): the add form clears so that submitting again
   // never creates a second copy, and the saved asset is completed from its own page.
   const added = !asset && state.ok && typeof state.data?.assetId === "string" ? state.data.assetId : null;
-  useEffect(() => { if (added) setV(blankAsset()); }, [added, state]);
+  const [handled, setHandled] = useState(state);
+  if (handled !== state) {
+    setHandled(state);
+    if (added) setV(blankAsset());
+  }
   return (
     <form action={dispatch} className="space-y-4" data-testid={testId} noValidate>
       <input type="hidden" name="waqfId" value={waqfId} />
