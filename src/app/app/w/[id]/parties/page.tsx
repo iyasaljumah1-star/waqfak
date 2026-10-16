@@ -79,7 +79,7 @@ export default async function PartiesPage({ params }: { params: Promise<{ id: st
         ) : null}
       </Panel>
 
-      <Panel title="النظارة" description={`صيغة النظارة في ملف الوقف: ${w.nazirMode ? NAZIR_MODE_LABEL[w.nazirMode] : "غير محددة"}.`}>
+      <Panel id="trustees" title="النظارة" description={`صيغة النظارة في ملف الوقف: ${w.nazirMode ? NAZIR_MODE_LABEL[w.nazirMode] : "غير محددة"}.`}>
         {!active.length ? (
           <Alert tone="warn" title="لا ناظر نشط مسجل">سجّل الناظر الحالي وقرار تعيينه. إن شغرت النظارة فالجهة المختصة تقيم ناظرًا.</Alert>
         ) : null}
@@ -207,7 +207,7 @@ export default async function PartiesPage({ params }: { params: Promise<{ id: st
         ) : null}
       </Panel>
 
-      <Panel title="المجالس واللجان" description="أجهزة الوقف وعضويتها واستقلال أعضائها.">
+      <Panel id="bodies" title="المجالس واللجان" description="أجهزة الوقف وعضويتها واستقلال أعضائها.">
         {d.bodies.length ? (
           <div className="space-y-4">
             {d.bodies.map((b) => {

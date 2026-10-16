@@ -6,13 +6,13 @@ import { Alert, Badge, DefinitionList, PageHeader, Panel } from "@/components/ui
 import { ActionLink } from "@/components/portal/action-link";
 import { ActionButton } from "@/components/waqf/action-form";
 import { DeedPaper, DeedText, Muted } from "@/components/waqf/bits";
-import { AllocationStep, AssetsStep, ClassificationFields, WizardStepForm } from "@/components/waqf/establish-steps";
+import { AllocationStep, AssetsStep, BoardMembersEditor, ClassificationFields, WizardStepForm } from "@/components/waqf/establish-steps";
 import { EstablishRows } from "@/components/waqf/establish-rows";
 import { cn, fmtNumber, NAZIR_MODE_LABEL, TYPE_LABEL } from "@/lib/utils";
 import { loadWaqfAccess, requireAuth } from "@/server/authz/context";
 import { read } from "@/server/modules/_shared";
 import { discardEstablishDraft, finishEstablish, saveEstablishStep } from "@/server/modules/establish/actions";
-import { buildDeedDraft, classify, ESTABLISH_STEPS, missingItems } from "@/server/modules/establish/pure";
+import { BOARD_ROLES, buildDeedDraft, classify, ESTABLISH_STEPS, missingItems } from "@/server/modules/establish/pure";
 import { draftState } from "@/server/modules/establish/queries";
 import { isFlagOn } from "@/server/modules/requests/catalog";
 import { todayIso } from "@/server/modules/waqf-file/form";
@@ -132,26 +132,16 @@ export default async function EstablishDraftPage({ params, searchParams }: { par
       ) : null}
 
       {!finished && step === 3 ? (
-        <Panel title="الأصول الموقوفة" description="صف كل أصل بما يميزه عن غيره، مع رقم مستند ملكيته. يلزم أن يكون الأصل مملوكًا للواقف بصك ساري قبل التوثيق.">
+        <Panel title="الأصول الموقوفة" description="اختر نوع كل أصل فتظهر الحقول التي تناسبه: العقار بصكه وموقعه ومساحته، والمنقول بكميته ومكانه، والأصل المالي بجهته وعدد وحداته. الحقول المعلّمة بنجمة لازمة لاكتمال الأصل.">
           <WizardStepForm action={saveEstablishStep} draftId={draftId} step={3} isFirst={false}>
-            <AssetsStep
-              initial={st.assets as unknown as Record<string, string>[]}
-              fields={[
-                { key: "category", label: "النوع", type: "select", options: options(ASSET_CATEGORY_LABEL) },
-                { key: "title", label: "الوصف", width: "lg:col-span-3", placeholder: "مثال: عمارة سكنية في حي النرجس بالرياض" },
-                { key: "ownershipDocNo", label: "رقم مستند الملكية" },
-                { key: "value", label: "القيمة التقديرية (ريال)", type: "number" },
-                { key: "sharePct", label: "حصة مشاعة % (إن وُجدت)", type: "number" },
-                { key: "inFounderName", label: "الملكية باسم الواقف", type: "checkbox" },
-              ]}
-            />
+            <AssetsStep initial={st.assets.map((a) => ({ category: a.category, title: a.title, value: a.value, ownershipDocNo: a.ownershipDocNo, sharePct: a.sharePct, held: a.inFounderName, details: a.details ?? {} }))} />
             <Muted>اختيار الأصل: راعِ استدامته وقابليته للنمو وسهولة إدارته (الدليل الإرشادي لاختيار الأصول الوقفية). إن كنت مترددًا اطلب خدمة «اختيار الأصل الموقوف».</Muted>
           </WizardStepForm>
         </Panel>
       ) : null}
 
       {!finished && step === 4 ? (
-        <Panel title="المصارف والشروط" description="رتّب المستحقين في طبقات. «ثم» تعني أن الطبقة لا تستحق حتى تنقرض التي قبلها، و«و» تعني الاشتراك.">
+        <Panel id="conditions" title="المصارف والشروط" description="رتّب المستحقين في طبقات. «ثم» تعني أن الطبقة لا تستحق حتى تنقرض التي قبلها، و«و» تعني الاشتراك.">
           <WizardStepForm action={saveEstablishStep} draftId={draftId} step={4} isFirst={false}>
             <EstablishRows
               classes={st.classes as unknown as Record<string, string>[]}
@@ -167,7 +157,7 @@ export default async function EstablishDraftPage({ params, searchParams }: { par
       ) : null}
 
       {!finished && step === 5 ? (
-        <Panel title="النظارة" description="من يدير الوقف ويحفظه ويصرف غلته، ومن يخلفه.">
+        <Panel id="nazara" title="النظارة" description="من يدير الوقف ويحفظه ويصرف غلته، ومن يخلفه.">
           <WizardStepForm action={saveEstablishStep} draftId={draftId} step={5} isFirst={false}>
             <div className="grid gap-4 sm:grid-cols-2">
               <L label="صيغة النظارة">
@@ -176,13 +166,17 @@ export default async function EstablishDraftPage({ params, searchParams }: { par
                   {(["founder", "individual", "board", "legal_entity"] as const).map((m) => <option key={m} value={m}>{NAZIR_MODE_LABEL[m]}</option>)}
                 </select>
               </L>
-              <L label="اسم الناظر أو أعضاء المجلس أو الجهة" hint="اتركه فارغًا إن كان الواقف هو الناظر."><input name="nazirName" defaultValue={st.nazara.nazirName} maxLength={500} className={input} /></L>
-              <L label="عدد أعضاء المجلس (للمجلس)"><input name="boardSize" inputMode="numeric" dir="ltr" defaultValue={st.nazara.boardSize} className={input} /></L>
+              <L label="اسم الناظر أو الجهة الناظرة" hint="اتركه فارغًا إن كان الواقف هو الناظر. لمجلس النظارة أضف أعضاءه أدناه."><input name="nazirName" defaultValue={st.nazara.mode === "board" ? "" : st.nazara.nazirName} maxLength={500} className={input} /></L>
               <L label="خلافة النظارة" hint="مثال: ثم للأرشد من أولادي"><input name="successionRule" defaultValue={st.nazara.successionRule} maxLength={500} className={input} /></L>
               <L label="أجرة الناظر — نسبة من الغلة (%)"><input name="feePct" inputMode="decimal" dir="ltr" defaultValue={st.nazara.feePct} className={input} /></L>
               <L label="أو أجرة ثابتة سنوية (ريال)"><input name="feeFixed" inputMode="decimal" dir="ltr" defaultValue={st.nazara.feeFixed} className={input} /></L>
               <L label="واجبات أو صلاحيات إضافية للناظر" className="sm:col-span-2"><textarea name="duties" defaultValue={st.nazara.duties} maxLength={1500} className="block min-h-20 w-full rounded-md border border-line-strong bg-surface px-3 py-2" /></L>
             </div>
+            <fieldset id="board" className="scroll-mt-24 space-y-2 rounded-md border border-line p-3">
+              <legend className="px-1 text-[15px] font-semibold">أعضاء مجلس النظارة (عند اختيار «مجلس نظارة»)</legend>
+              <p className="text-[13px] text-muted">ثلاثة أعضاء فأكثر، منهم رئيس واحد. يُنشأ بهم المجلس في ملف الوقف عند اعتماد المسودة، ويُدعون إلى الاجتماعات. بيانات التواصل لا تظهر إلا لمن يدير الحوكمة.</p>
+              <BoardMembersEditor initial={st.nazara.members as unknown as Record<string, string>[]} roleOptions={BOARD_ROLES.map(([value, label]) => ({ value, label }))} />
+            </fieldset>
             <Muted>يلزم الناظرَ الاعتباري ترخيصٌ من الهيئة، ويُستحسن أن تُدار الأوقاف الكبيرة بمجلس نظارة يضم أعضاء مستقلين.</Muted>
           </WizardStepForm>
         </Panel>
@@ -225,7 +219,7 @@ export default async function EstablishDraftPage({ params, searchParams }: { par
             <DeedText text={deedText} />
           </DeedPaper>
 
-          <Panel title={finished ? "الخطوة التالية" : "اعتماد المسودة"}>
+          <Panel id="approve" title={finished ? "الخطوة التالية" : "اعتماد المسودة"}>
             {!finished ? (
               <div className="space-y-3">
                 {missing.length ? (

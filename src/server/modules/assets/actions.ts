@@ -15,6 +15,9 @@ import type { ActionState } from "@/lib/utils";
 import { flag, optDate, optInt, optMoney, optPct, optText, readRows, reqDate, reqMoney, reqText, todayIso } from "../waqf-file/form";
 import { addTimeline, assertFound, fileAction, materialChange } from "../waqf-file/guard";
 import { assetValue, suggestSizeClass } from "./pure";
+import { ASSET_TYPES, checkAsset } from "./types";
+
+const FINANCIAL: string[] = ["cash", "shares", "fund_units", "portfolio", "sukuk"];
 
 const meta = (c: { ip: string; userAgent: string }) => ({ ip: c.ip, userAgent: c.userAgent });
 const optUuid = z.union([z.literal(""), z.uuid()]).optional().transform((v) => v || null);
@@ -56,19 +59,34 @@ export async function saveAsset(_: ActionState, fd: FormData): Promise<ActionSta
   const res = await fileAction(fd, assetSchema, "assets.edit", async (c, d) => {
     const w = c.access.waqf;
     const { assetId, ...values } = d;
+    // the type decides the asset's fields: data of another type is never kept, and formats are checked here
+    let raw: Record<string, unknown> = {};
+    try { raw = JSON.parse(String(fd.get("details") ?? "{}")) ?? {}; } catch { raw = {}; }
+    const chk = checkAsset({ category: d.category, title: d.title, value: d.marketValue ?? "", ownershipDocNo: d.ownershipDocNo ?? "", sharePct: d.sharePct ?? "", held: "off", details: Object.fromEntries(Object.entries(raw).map(([k, v]) => [k, String(v ?? "")])) });
+    if (chk.errors.length) return { error: chk.errors.join(" "), fieldErrors: { details: chk.errors.join(" ") } };
+    const spec = ASSET_TYPES[d.category];
+    const typed = { ...values, ownershipDocNo: spec.ownershipDoc ? values.ownershipDocNo : null, sharePct: spec.share ? values.sharePct : null, details: chk.asset.details,
+      status: FINANCIAL.includes(d.category) && !["income", "idle", "disputed"].includes(values.status) ? "income" as const : values.status };
+    const tail = chk.missing.length ? ` ينقصه لاكتماله: ${chk.missing.join("، ")}.` : "";
+    let id = assetId;
     if (assetId) {
       const cur = await loadAsset(c.tx, w.id, assetId);
-      await c.tx.update(assets).set({ ...values, updatedBy: c.auth.user.id }).where(eq(assets.id, assetId));
-      await audit(c.tx, { actorUserId: c.auth.user.id, action: "assets.updated", entityType: "asset", entityId: assetId, waqfId: w.id, ...meta(c), before: { title: cur.title, marketValue: cur.marketValue, bookValue: cur.bookValue, status: cur.status, inWaqfName: cur.inWaqfName }, after: values });
-      await refreshTotals(c.tx, w.id);
-      return { ok: true, message: "حُفظ الأصل." };
+      await c.tx.update(assets).set({ ...typed, updatedBy: c.auth.user.id }).where(eq(assets.id, assetId));
+      await audit(c.tx, { actorUserId: c.auth.user.id, action: "assets.updated", entityType: "asset", entityId: assetId, waqfId: w.id, ...meta(c), before: { category: cur.category, title: cur.title, marketValue: cur.marketValue, bookValue: cur.bookValue, status: cur.status, inWaqfName: cur.inWaqfName, details: cur.details }, after: typed });
+    } else {
+      const [a] = await c.tx.insert(assets).values({ ...typed, waqfId: w.id, createdBy: c.auth.user.id, updatedBy: c.auth.user.id }).returning({ id: assets.id });
+      id = a.id;
+      await audit(c.tx, { actorUserId: c.auth.user.id, action: "assets.added", entityType: "asset", entityId: a.id, waqfId: w.id, ...meta(c), after: typed });
+      await addTimeline(c.tx, w, c.auth.user.id, "asset", `إضافة أصل: ${d.title}`);
+      await materialChange(c.tx, w, "assets", c.auth.user.id, { action: "added", assetId: a.id });
     }
-    const [a] = await c.tx.insert(assets).values({ ...values, waqfId: w.id, createdBy: c.auth.user.id, updatedBy: c.auth.user.id }).returning({ id: assets.id });
-    await audit(c.tx, { actorUserId: c.auth.user.id, action: "assets.added", entityType: "asset", entityId: a.id, waqfId: w.id, ...meta(c), after: values });
+    // real estate also keeps its property record (leases, maintenance) in step with the asset's own data
+    if (d.category === "real_estate") {
+      const p = { deedNo: typed.ownershipDocNo ?? null, city: chk.asset.details.city ?? null, district: chk.asset.details.district ?? null, usage: chk.asset.details.usage ?? null, areaSqm: chk.asset.details.areaSqm ? Number(chk.asset.details.areaSqm).toFixed(2) : null };
+      await c.tx.insert(properties).values({ assetId: id!, waqfId: w.id, ...p, createdBy: c.auth.user.id }).onConflictDoUpdate({ target: properties.assetId, set: { ...p, updatedBy: c.auth.user.id } });
+    }
     await refreshTotals(c.tx, w.id);
-    await addTimeline(c.tx, w, c.auth.user.id, "asset", `إضافة أصل: ${d.title}`);
-    await materialChange(c.tx, w, "assets", c.auth.user.id, { action: "added", assetId: a.id });
-    return { ok: true, message: "أُضيف الأصل.", data: { assetId: a.id } };
+    return { ok: true, message: (assetId ? "حُفظ الأصل." : "أُضيف الأصل.") + tail, data: { assetId: id } };
   }, (id) => sections(id, String(fd.get("assetId") || "") || null));
   if (res.ok && typeof res.data?.assetId === "string" && fd.get("open") === "1") redirect(`/app/w/${waqfId}/assets/${res.data.assetId}`);
   return res;
@@ -161,6 +179,12 @@ export async function saveProperty(_: ActionState, fd: FormData): Promise<Action
     if (cur) await c.tx.update(properties).set({ ...v, updatedBy: c.auth.user.id }).where(eq(properties.assetId, assetId));
     else await c.tx.insert(properties).values({ ...v, assetId, waqfId: w.id, createdBy: c.auth.user.id });
     await audit(c.tx, { actorUserId: c.auth.user.id, action: "assets.property_saved", entityType: "property", entityId: assetId, waqfId: w.id, ...meta(c), before: cur ?? null, after: v });
+    // one source for the identifying data: the asset's own fields follow the property record
+    const det = { ...((a.details as Record<string, string>) ?? {}) };
+    for (const [k, val] of [["city", v.city], ["district", v.district], ["areaSqm", v.areaSqm], ...(["residential", "commercial", "mixed", "agricultural"].includes(String(v.usage ?? "")) ? [["usage", v.usage]] : [])] as [string, unknown][]) {
+      if (val != null && val !== "") det[k] = String(val); else delete det[k];
+    }
+    await c.tx.update(assets).set({ details: det, ...(v.deedNo ? { ownershipDocNo: v.deedNo } : {}), updatedBy: c.auth.user.id }).where(eq(assets.id, assetId));
     return { ok: true, message: "حُفظت بيانات العقار." };
   }, (id) => sections(id, d_assetId(fd)));
 }

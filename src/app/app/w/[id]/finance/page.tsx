@@ -109,7 +109,7 @@ export default async function FinancePage({ params, searchParams }: { params: Pr
             ) : null}
           </Panel>
 
-          <Panel title={`الموازنة التقديرية ${fy}`} actions={budget ? <Badge tone={budget.status === "approved" ? "ok" : "neutral"}>{budget.status === "approved" ? "معتمدة" : "مسودة"}</Badge> : null}>
+          <Panel id="budget" title={`الموازنة التقديرية ${fy}`} actions={budget ? <Badge tone={budget.status === "approved" ? "ok" : "neutral"}>{budget.status === "approved" ? "معتمدة" : "مسودة"}</Badge> : null}>
             {budget ? (
               <>
                 <DataTable

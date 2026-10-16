@@ -51,6 +51,7 @@ export async function waqfFacts(tx: Tx, waqfId: string): Promise<WaqfFacts | nul
   return {
     today,
     waqfakIsNazir: w.waqfakRole === "nazir",
+    establishing: ["idea", "draft", "documenting"].includes(w.status),
     deed: { no: w.deedNo, date: w.deedDate ?? w.deedDateHijri, docs: Number(deedDocs[0]?.n ?? 0), conditions: Number(cond[0]?.n ?? 0) },
     registration: { on: w.registeredOn, expiresOn: w.registrationExpiresOn },
     assets: { count: ast.length, staleValuation: ast.filter((a) => !a.last || a.last < yearAgo).length },

@@ -32,9 +32,9 @@ import { PaymentScheduleTable } from "@/components/billing/payment-schedule";
 
 export const metadata: Metadata = { title: "تفاصيل الطلب" };
 
-export default async function RequestPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ created?: string; signed?: string }> }) {
+export default async function RequestPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ created?: string; signed?: string; existing?: string }> }) {
   const { id } = await params;
-  const { created, signed } = await searchParams;
+  const { created, signed, existing } = await searchParams;
   const auth = await requireAuth({ next: `/app/requests/${id}` });
   const d = await requestDetail(auth, id, "client");
   if (!d) notFound();
@@ -68,6 +68,7 @@ export default async function RequestPage({ params, searchParams }: { params: Pr
           حُفظت إجاباتك ومستنداتك. لا يصل الطلب إلى الفريق حتى ترسله من خطوة «المراجعة والإرسال».
         </Alert>
       ) : null}
+      {existing ? <Alert tone="info" title="لهذا الوقف طلب مفتوح للخدمة نفسها" data-testid="existing-request">فتحنا لك الطلب القائم بدل إنشاء طلب مكرر؛ تابع منه، أو راسل الفريق إن كانت حاجتك مختلفة.</Alert> : null}
       {created ? <Alert tone="ok" title={`أُرسل طلبك ${r.number}`}>وصلنا الطلب ببياناته ومستنداته. يتابعه الآن مدير التشغيل بإسناده إلى مختص، وستجد الخطوة التالية ومن عليه أعلى هذه الصفحة دائمًا.</Alert> : null}
       {signed && d.contract.stage ? <Alert tone="ok" title="سُجّل توقيعك">حُفظ توقيعك مع بصمة نص العقد. {d.contract.executed ? "نفذ العقد بتوقيع جميع الأطراف، ونسخته الموقّعة متاحة أدناه." : "يُستكمل العقد بتوقيع بقية الأطراف."}</Alert> : null}
       {r.conflictCheck === "blocked" ? (

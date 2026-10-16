@@ -4,7 +4,8 @@ import { ArrowLeft, Building2, Landmark } from "lucide-react";
 import { Alert, Badge, DataTable, EmptyState, PageHeader, Panel, Stat } from "@/components/ui";
 import { ActionButton, ActionForm, Disclosure, RawActionForm, RowsEditor } from "@/components/waqf/action-form";
 import { Muted } from "@/components/waqf/bits";
-import { assetFields } from "@/components/waqf/asset-fields";
+import { AssetForm } from "@/components/waqf/asset-editor";
+import { assetGaps, assetSummary } from "@/server/modules/assets/types";
 import { fmtBoth, fmtDate, fmtNumber, fmtPct, fmtSAR, relDays, SIZE_LABEL } from "@/lib/utils";
 import { requireAuth, waqfCan } from "@/server/authz/context";
 import { read } from "@/server/modules/_shared";
@@ -19,7 +20,8 @@ export const metadata: Metadata = { title: "الأصول والاستثمار" }
 
 const ALLOC_LABEL: Record<string, string> = { real_estate: "عقارات", equities: "أسهم", sukuk: "صكوك", funds: "صناديق استثمار", deposits: "ودائع ومرابحات", cash: "نقد", other: "أخرى" };
 
-export default async function AssetsPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function AssetsPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ add?: string }> }) {
+  const sp = await searchParams;
   const { id } = await params;
   const auth = await requireAuth({ next: `/app/w/${id}/assets` });
   const access = await waqfAccess(auth, id, "assets.view");
@@ -86,7 +88,11 @@ export default async function AssetsPage({ params }: { params: Promise<{ id: str
             rowKey={(a) => a.id}
             empty={<EmptyState icon={Building2} title="لا أصول مسجلة">سجّل كل أصل بوصف يميزه ومستند ملكيته وقيمته.</EmptyState>}
             columns={[
-              { key: "t", label: "الأصل", render: (a) => <Link href={`/app/w/${id}/assets/${a.id}`} className="font-medium text-ink hover:underline">{a.title}</Link> },
+              { key: "t", label: "الأصل", render: (a) => {
+                const sum = assetSummary(a.category, a.details as Record<string, string>);
+                const miss = assetGaps({ ...a, details: a.details as Record<string, string> });
+                return <div><Link href={`/app/w/${id}/assets/${a.id}`} className="font-medium text-ink hover:underline">{a.title}</Link>{sum ? <p className="text-[13px] text-muted">{sum}</p> : null}{miss.length ? <p className="text-[12px] text-fine">ينقص: {miss.join("، ")}</p> : null}</div>;
+              } },
               { key: "c", label: "النوع", render: (a) => ASSET_CATEGORY_LABEL[a.category] ?? a.category },
               { key: "v", label: "القيمة", render: (a) => <span className="tabular">{fmtSAR(a.marketValue ?? a.bookValue)}</span> },
               { key: "i", label: "الدخل السنوي", render: (a) => fmtSAR(a.annualIncome), hideOnMobile: true },
@@ -105,9 +111,11 @@ export default async function AssetsPage({ params }: { params: Promise<{ id: str
           ) : null}
           {canEdit ? (
             <div className="mt-4">
-              <Disclosure summary="أضف أصلًا" testId="add-asset">
-                <ActionForm action={saveAsset} hidden={{ waqfId: id }} submitLabel="أضف الأصل" fields={assetFields()} testId="add-asset-form" />
-              </Disclosure>
+              <div id="add-asset" className="scroll-mt-24">
+                <Disclosure summary="أضف أصلًا" testId="add-asset" defaultOpen={sp.add === "1"}>
+                  <AssetForm action={saveAsset} waqfId={id} submitLabel="أضف الأصل" testId="add-asset-form" />
+                </Disclosure>
+              </div>
             </div>
           ) : null}
         </div>

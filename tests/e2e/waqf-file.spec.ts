@@ -43,11 +43,15 @@ test.describe("waqf file & establish wizard", () => {
     await page.getByRole("button", { name: "التالي" }).click();
     await page.waitForURL(/step=3/);
 
-    // 3. assets — then save and leave
+    // 3. assets (the fields follow the type) — then save and leave
     const step3 = page.getByTestId("wizard-step-3");
-    await step3.locator('select[name="a.category"]').first().selectOption("real_estate");
-    await step3.locator('input[name="a.title"]').first().fill("عمارة سكنية للاختبار (تجريبي)");
-    await step3.locator('input[name="a.value"]').first().fill("2500000");
+    await step3.locator("#as-0-category").selectOption("real_estate");
+    await step3.locator("#as-0-title").fill("عمارة سكنية للاختبار (تجريبي)");
+    await step3.locator("#as-0-propertyType").selectOption("residential_building");
+    await step3.locator("#as-0-city").fill("الرياض");
+    await step3.locator("#as-0-areaSqm").fill("900");
+    await step3.locator("#as-0-ownershipDocNo").fill("4410000001");
+    await step3.locator("#as-0-value").fill("2500000");
     await expect(step3).toContainText("صغير");
     await page.getByRole("button", { name: "احفظ واخرج" }).click();
     await page.waitForURL(/\/app\/establish\?saved=/);
@@ -55,9 +59,12 @@ test.describe("waqf file & establish wizard", () => {
     // leave, then resume from the drafts list
     await page.goto("/app");
     await page.goto("/app/establish");
-    await page.locator(`a[href^="/app/establish/${draftId}"]`).click();
-    await page.waitForURL(new RegExp(`${draftId}\\?step=3`));
-    await expect(page.locator('input[name="a.title"]').first()).toHaveValue("عمارة سكنية للاختبار (تجريبي)");
+    await page.getByTestId("resume-draft").click(); // the open draft is resumed, never duplicated
+    // the assets step was saved complete, so the draft resumes at the first step not yet completed (4)
+    await page.waitForURL(new RegExp(`${draftId}\\?step=4`));
+    await page.goto(`/app/establish/${draftId}?step=3`);
+    await expect(page.locator("#as-0-title")).toHaveValue("عمارة سكنية للاختبار (تجريبي)");
+    await expect(page.locator("#as-0-city")).toHaveValue("الرياض");
     await page.getByRole("button", { name: "التالي" }).click();
     await page.waitForURL(/step=4/);
 
@@ -151,9 +158,9 @@ test.describe("waqf file & establish wizard", () => {
     await page.goto(`/app/w/${A}/assets`);
     await page.getByTestId("add-asset").locator("summary").click();
     const form = page.getByTestId("add-asset-form");
-    await form.getByLabel("وصف الأصل").fill(title);
-    await form.getByLabel("النوع").selectOption("real_estate");
-    await form.getByLabel("القيمة السوقية (ريال)").fill("1200000");
+    await form.getByLabel("نوع الأصل").selectOption("real_estate");
+    await form.getByLabel("وصف العقار").fill(title);
+    await form.getByLabel("القيمة التقديرية (ريال)").fill("1200000");
     await form.getByRole("button", { name: "أضف الأصل" }).click();
     await expect(form.getByRole("status")).toContainText("أُضيف الأصل", { timeout: 30_000 });
     await expect(page.getByRole("link", { name: title }).first()).toBeVisible();

@@ -10,6 +10,11 @@ import { fmtBoth, NAZIR_MODE_LABEL, SIZE_LABEL, STATUS_LABEL, TYPE_LABEL } from 
 import { requireAuth } from "@/server/authz/context";
 import { roleName } from "@/server/authz/catalog";
 import { isUuid, waqfAccess } from "@/server/modules/waqf-core/queries";
+import { read } from "@/server/modules/_shared";
+import { draftState } from "@/server/modules/establish/queries";
+import { missingItems } from "@/server/modules/establish/pure";
+import { firstIncompleteWizardStep } from "@/server/modules/establish/journey";
+import { ActionLink } from "@/components/portal/action-link";
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
   const { id } = await params;
@@ -32,6 +37,9 @@ export default async function WaqfLayout({ children, params }: { children: React
     icon: n.icon,
   }));
   const asStaff = (access.isStaffAssigned || access.viaGlobal) && access.roles.length === 0;
+  // a file still in the establishment wizard: every section says where its data is completed
+  const draft = ["idea", "draft"].includes(w.status) ? await read(auth, (tx) => draftState(tx, id)) : null;
+  const openDraft = draft && !draft.state.finishedAt && w.createdBy === auth.user.id ? draft.state : null;
 
   return (
     <div>
@@ -51,6 +59,12 @@ export default async function WaqfLayout({ children, params }: { children: React
             <span className="ms-1 text-[13px] text-muted">بصفتك {access.roles.map(roleName).join("، ")}</span>
           ) : null}
         </div>
+        {openDraft ? (
+          <div className="mt-3 flex flex-wrap items-center gap-3 rounded-md border border-warn/40 bg-warn-soft px-3 py-2" data-testid="draft-banner">
+            <p className="min-w-0 flex-1 text-[14px]">هذا الوقف مسودة تأسيس لم تُعتمد بعد: تُستكمل بياناته من معالج التأسيس، وتُنقل إلى أقسام الملف عند اعتماد المسودة.</p>
+            <ActionLink href={`/app/establish/${id}?step=${firstIncompleteWizardStep({ completed: openDraft.completed, missing: missingItems(openDraft) })}`} size="sm" data-testid="resume-establishment-banner">استكمال تأسيس الوقف</ActionLink>
+          </div>
+        ) : null}
         {asStaff ? (
           <p className="mt-3 inline-flex items-center gap-2 rounded-md border border-line bg-surface px-3 py-1.5 text-[13px] text-muted">
             <BriefcaseBusiness aria-hidden className="size-4 text-ink" />

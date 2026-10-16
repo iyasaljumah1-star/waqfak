@@ -7,6 +7,7 @@ import { FormMessage } from "@/components/ui/form";
 import { deriveType } from "@/server/engines/assessment";
 import { cn, initialState, type ActionState } from "@/lib/utils";
 import { RowsEditor, type RowField } from "./action-form";
+import { AssetRowsEditor, type AssetDraft } from "./asset-editor";
 
 type Action = (prev: ActionState, fd: FormData) => Promise<ActionState>;
 
@@ -122,13 +123,12 @@ export function ClassificationFields({ initial, temporaryAllowed }: { initial: {
 const M = 1_000_000;
 const sizeOf = (t: number) => (t >= 200 * M ? "كبير" : t >= 50 * M ? "متوسط" : "صغير");
 
-/** Step 3: assets with live total and indicative size class. */
-export function AssetsStep({ initial, fields }: { initial: Record<string, string>[]; fields: RowField[] }) {
-  const [rows, setRows] = useState(initial);
-  const total = rows.reduce((s, r) => s + (Number(String(r.value ?? "").replace(/,/g, "")) || 0), 0);
+/** Step 3: assets — each with the fields of its own type — with live total and indicative size class. */
+export function AssetsStep({ initial }: { initial: AssetDraft[] }) {
+  const [total, setTotal] = useState(() => initial.reduce((s, r) => s + (Number(String(r.value ?? "").replace(/,/g, "")) || 0), 0));
   return (
     <div className="space-y-3">
-      <RowsEditor prefix="a" fields={fields} initial={initial} addLabel="أضف أصلًا" onChange={setRows} />
+      <AssetRowsEditor initial={initial} onTotal={setTotal} />
       <p className="rounded-md bg-surface-2 px-3 py-2 text-[14px]" aria-live="polite">
         القيمة التقديرية الإجمالية: <span className="tabular font-semibold">{new Intl.NumberFormat("ar-SA-u-nu-latn").format(total)} ريال</span>
         {total > 0 ? <> — الفئة المتوقعة حسب الحجم: <span className="font-semibold">{sizeOf(total)}</span></> : null}
@@ -169,5 +169,20 @@ export function AllocationStep({ initial }: { initial: Record<string, string> })
         <textarea name="notes" defaultValue={initial.notes ?? ""} maxLength={1000} className="block min-h-20 w-full rounded-md border border-line-strong bg-surface px-3 py-2" placeholder="مثال: تُقدَّم عمارة الوقف على الصرف للمستحقين عند الحاجة." />
       </label>
     </div>
+  );
+}
+
+/** Step 5 (board): the members with their role, independence, capacity and contact. */
+export function BoardMembersEditor({ initial, roleOptions }: { initial: Record<string, string>[]; roleOptions: { value: string; label: string }[] }) {
+  return (
+    <RowsEditor prefix="m" min={0} max={15} addLabel="أضف عضوًا" initial={initial}
+      fields={[
+        { key: "name", label: "اسم العضو", width: "lg:col-span-2" },
+        { key: "role", label: "الدور", type: "select", options: roleOptions },
+        { key: "independent", label: "عضو مستقل", type: "checkbox" },
+        { key: "capacity", label: "صفته", placeholder: "مثال: ممثل الواقف، خبير مالي" },
+        { key: "email", label: "البريد (للدعوات)" },
+        { key: "phone", label: "الجوال" },
+      ]} />
   );
 }

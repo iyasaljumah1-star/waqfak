@@ -112,6 +112,7 @@ export default async function DeedPage({ params }: { params: Promise<{ id: strin
       </Panel>
 
       <Panel
+        id="conditions"
         title="فهرس الشروط"
         description="نص كل شرط كما ورد، مصنّفًا. يُسجَّل كل تفسير منسوبًا إلى مصدره، ويبقى معلّمًا حتى يعتمده مختص شرعي."
         actions={d.conditions.length ? <Badge tone={unreviewed ? "warn" : "ok"}>{unreviewed ? `${unreviewed} شرط بلا اعتماد شرعي` : "كل الشروط روجعت"}</Badge> : null}

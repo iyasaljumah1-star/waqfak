@@ -104,7 +104,7 @@ describe("establish wizard", () => {
     const full = normalizeState({
       waqfName: "وقف الاختبار (تجريبي)",
       classification: { beneficiaryKind: "private", thenToCharity: "yes" },
-      assets: [{ category: "real_estate", title: "عمارة سكنية", ownershipDocNo: "123", value: "2000000", inFounderName: "on", sharePct: "" }],
+      assets: [{ category: "real_estate", title: "عمارة سكنية", ownershipDocNo: "123", value: "2000000", inFounderName: "on", sharePct: "", details: { propertyType: "residential_building", city: "الرياض", areaSqm: "900" } }],
       classes: [{ name: "أولاد الواقف", kind: "private", tier: "1", relation: "and", sharePct: "", divisionRule: "male_double", substitutionRule: "branch_replaces" }],
       finalDestination: "الفقراء والمساكين",
       nazara: { mode: "founder" },

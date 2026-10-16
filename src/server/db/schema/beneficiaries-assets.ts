@@ -137,6 +137,8 @@ export const assets = pgTable("assets", {
   acquiredOn: date(),
   notes: text(),
   conditionId: uuid(),
+  /** Type-specific data of the asset (see modules/assets/types.ts): only the fields of its category are kept. */
+  details: jsonb().$type<Record<string, string>>().default({}).notNull(),
   ...tracking(),
   ...archival(),
 }, (t) => [index("assets_waqf_idx").on(t.waqfId)]);

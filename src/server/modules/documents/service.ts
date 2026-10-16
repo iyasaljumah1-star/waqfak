@@ -179,6 +179,11 @@ export async function ingestUpload(tx: Tx, auth: Auth, meta: { ip: string; userA
   }
 
   if (input.link && !existing) await linkDocument(tx, doc.id, input.link.entityType, input.link.entityId, waqfId);
+  // an instrument may complete an official step (documentation, registration) and the establishment journey
+  if (waqfId) {
+    const { advanceByEvidence } = await import("../establish/journey-server");
+    await advanceByEvidence(tx, waqfId, auth.user.id);
+  }
   await logAccess(tx, { documentId: doc.id, versionId: ver.id, waqfId, userId: auth.user.id, action: "upload", ip: meta.ip });
   await audit(tx, {
     actorUserId: auth.user.id,

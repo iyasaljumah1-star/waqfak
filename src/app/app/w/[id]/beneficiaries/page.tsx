@@ -105,7 +105,7 @@ export default async function BeneficiariesPage({ params }: { params: Promise<{ 
         <Stat label="كشوف بانتظار الاعتماد" value={fmtNumber(d.distributions.filter((x) => x.d.status === "planned").length)} />
       </div>
 
-      <Panel title="المصارف والطبقات" description="«ثم» ترتيب: لا تستحق الطبقة حتى تنقرض التي قبلها. «و» تشريك: تستحق معها.">
+      <Panel id="classes" title="المصارف والطبقات" description="«ثم» ترتيب: لا تستحق الطبقة حتى تنقرض التي قبلها. «و» تشريك: تستحق معها.">
         {issues.length ? <Alert tone="warn" className="mb-3">{issues.join(" ")}</Alert> : null}
         {d.classes.length ? (
           <ol className="space-y-4">
@@ -304,6 +304,7 @@ export default async function BeneficiariesPage({ params }: { params: Promise<{ 
 
       {canBo ? (
         <Panel
+          id="bo"
           title="سجل المستفيد الحقيقي"
           description="البيانات الدنيا وفق معايير المستفيد الحقيقي (م5). أرقام الهويات والعناوين والبيانات المصرفية مشفّرة وتظهر مخفية. تحقق سنويًا من الصك وشهادة التسجيل، وحدّث السجل خلال 15 يومًا من أي تغيير."
           tight

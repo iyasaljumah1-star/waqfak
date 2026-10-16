@@ -4,7 +4,8 @@ import { Alert, Badge, DataTable, DefinitionList, PageHeader, Panel } from "@/co
 import { DocumentList } from "@/components/documents";
 import { DocumentUploader } from "@/components/documents/uploader";
 import { ActionButton, ActionForm, Disclosure } from "@/components/waqf/action-form";
-import { assetFields } from "@/components/waqf/asset-fields";
+import { AssetForm } from "@/components/waqf/asset-editor";
+import { ASSET_TYPES, assetDetailRows, assetGaps, isAssetCategory } from "@/server/modules/assets/types";
 import { Muted } from "@/components/waqf/bits";
 import { fmtBoth, fmtDate, fmtNumber, fmtPct, fmtSAR, relDays } from "@/lib/utils";
 import { requireAuth, waqfCan } from "@/server/authz/context";
@@ -22,8 +23,9 @@ import {
 
 export const metadata: Metadata = { title: "تفاصيل الأصل" };
 
-export default async function AssetDetailPage({ params }: { params: Promise<{ id: string; assetId: string }> }) {
+export default async function AssetDetailPage({ params, searchParams }: { params: Promise<{ id: string; assetId: string }>; searchParams: Promise<{ edit?: string }> }) {
   const { id, assetId } = await params;
+  const sp = await searchParams;
   if (!isUuid(assetId)) notFound();
   const auth = await requireAuth({ next: `/app/w/${id}/assets/${assetId}` });
   const access = await waqfAccess(auth, id, "assets.view");
@@ -38,6 +40,8 @@ export default async function AssetDetailPage({ params }: { params: Promise<{ id
   const isFin = FINANCIAL_CATEGORIES.includes(a.category);
   const h = { waqfId: id, assetId };
   const open = !a.archivedAt && canEdit;
+  const spec = isAssetCategory(a.category) ? ASSET_TYPES[a.category] : null;
+  const gaps = assetGaps({ ...a, details: a.details as Record<string, string> });
 
   return (
     <div className="space-y-6">
@@ -56,11 +60,13 @@ export default async function AssetDetailPage({ params }: { params: Promise<{ id
             { label: "القيمة السوقية", value: fmtSAR(a.marketValue), hint: a.lastValuationOn ? `آخر تقييم ${fmtDate(a.lastValuationOn)}${a.valuer ? ` — ${a.valuer}` : ""}` : "لم يُقيّم" },
             { label: "القيمة الدفترية", value: fmtSAR(a.bookValue) },
             { label: "الدخل السنوي", value: fmtSAR(a.annualIncome) },
-            { label: "مستند الملكية", value: a.ownershipDocNo ? <span dir="ltr" className="tabular">{a.ownershipDocNo}</span> : "لم يُدخل" },
+            ...(spec?.ownershipDoc ? [{ label: spec.ownershipDoc.label, value: a.ownershipDocNo ? <span dir="ltr" className="tabular">{a.ownershipDocNo}</span> : "لم يُدخل" }] : []),
             { label: "باسم الوقف", value: a.inWaqfName ? "نعم" : <span className="font-medium text-fine">غير مؤكد</span> },
-            { label: "حصة مشاعة", value: a.sharePct ? fmtPct(a.sharePct) : "كامل الأصل" },
+            ...(spec?.share ? [{ label: "حصة مشاعة", value: a.sharePct ? fmtPct(a.sharePct) : "كامل الأصل" }] : []),
+            ...assetDetailRows(a.category, a.details as Record<string, string>).map((r) => ({ label: r.label, value: r.value })),
           ]}
         />
+        {gaps.length ? <Alert tone="fine" title="بيانات ناقصة لاكتمال الأصل"><span data-testid="asset-gaps">{gaps.join("، ")}</span></Alert> : null}
         {a.notes ? <p className="mt-3 text-[14px] text-muted">{a.notes}</p> : null}
         <div className="mt-4 space-y-2">
           <DocumentList waqfId={id} link={{ entityType: "asset", entityId: a.id }} emptyText="لا مستندات مرتبطة بالأصل (صك الملكية، رخص، تقارير)." />
@@ -68,7 +74,7 @@ export default async function AssetDetailPage({ params }: { params: Promise<{ id
         </div>
         {open ? (
           <div className="mt-4 flex flex-wrap gap-2">
-            <Disclosure summary="عدّل البيانات"><ActionForm action={saveAsset} hidden={{ ...h }} submitLabel="احفظ" fields={assetFields(a)} /></Disclosure>
+            <div id="edit" className="w-full scroll-mt-24"><Disclosure summary="عدّل البيانات" defaultOpen={sp.edit === "1"}><AssetForm action={saveAsset} waqfId={id} asset={{ ...a, details: a.details as Record<string, string> }} submitLabel="احفظ" testId="edit-asset-form" /></Disclosure></div>
             <Disclosure summary="استبدال الأصل">
               {d.subApprovals.length ? (
                 <ActionForm

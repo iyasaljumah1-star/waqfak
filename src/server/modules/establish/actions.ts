@@ -11,7 +11,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import type { Tx } from "../../db";
 import {
-  assets, beneficiaryClasses, conditions, deedVersions, founders, revenueAllocations, successions, trustees, waqfClassifications, waqfDeeds,
+  assets, beneficiaryClasses, bodies, bodyMemberships, conditions, deedVersions, founders, properties, revenueAllocations, successions, trustees, waqfClassifications, waqfDeeds,
   waqfExceptions, waqfKeys, waqfMemberships, waqfs, waqfTimelineEvents,
 } from "../../db/schema";
 import { audit, nextNumber } from "../../lib/audit";
@@ -26,8 +26,11 @@ import { suggestSizeClass } from "../assets/pure";
 import { tierShareIssues } from "../beneficiaries/pure";
 import { normalizeNumber, readRows, todayIso } from "../waqf-file/form";
 import { isUuid } from "../waqf-file/guard";
-import { buildDeedDraft, classify, emptyState, ESTABLISH_STEPS, missingItems, type EstablishState } from "./pure";
-import { draftState } from "./queries";
+import { BOARD_ROLES, buildDeedDraft, classify, emptyState, ESTABLISH_STEPS, missingItems, type EstablishState } from "./pure";
+import { checkAsset } from "../assets/types";
+import { draftState, myDrafts } from "./queries";
+import { firstIncompleteWizardStep } from "./journey";
+import { syncJourneyAfterChange } from "./journey-server";
 
 const CATS = ["real_estate", "movable", "usufruct", "intellectual_property", "cash", "shares", "fund_units", "portfolio", "sukuk"];
 const COND_CATS = ["asset", "revenue", "masraf", "nazara", "founder_self", "governance_finance"];
@@ -45,9 +48,19 @@ async function loadDraft(tx: Tx, auth: Auth, draftId: string) {
 }
 
 // ───────────── Start ─────────────
-export async function startEstablishDraft(_: ActionState, _fd: FormData): Promise<ActionState> {
-  void _fd;
+export async function startEstablishDraft(_: ActionState, fd: FormData): Promise<ActionState> {
+  let resumeTo = "";
   const res = await userAction(async ({ auth, tx, ip, userAgent }) => {
+    // One open draft at a time: starting again resumes it. A second waqf is a deliberate choice with its purpose stated.
+    const open = (await myDrafts(tx, auth.user.id)).filter((d) => !d.state?.finishedAt);
+    const another = fd.get("another") === "yes";
+    const purpose = String(fd.get("purpose") ?? "").trim().slice(0, 300);
+    if (open.length && !another) {
+      const d = open[0];
+      resumeTo = `/app/establish/${d.id}?step=${d.state ? firstIncompleteWizardStep(d.state.completed.length ? { completed: d.state.completed, missing: missingItems(d.state) } : { completed: [], missing: [] }) : 1}&resumed=1`;
+      return { ok: true };
+    }
+    if (open.length && purpose.length < 10) return { error: "لديك مسودة تأسيس مفتوحة. لبدء وقف آخر مختلف، اكتب الغرض منه (10 أحرف على الأقل).", fieldErrors: { purpose: "اكتب الغرض من الوقف الآخر." } };
     const internalNumber = await nextNumber(tx, "WQF");
     const founderName = auth.user.fullName ?? "";
     const [w] = await tx
@@ -59,9 +72,10 @@ export async function startEstablishDraft(_: ActionState, _fd: FormData): Promis
     const [deed] = await tx.insert(waqfDeeds).values({ waqfId: w.id, status: "draft", currentVersion: 1, createdBy: auth.user.id }).returning({ id: waqfDeeds.id });
     await tx.insert(deedVersions).values({ deedId: deed.id, waqfId: w.id, version: 1, structured: emptyState(founderName) as unknown as Record<string, unknown>, changeNote: "مسودة معالج التأسيس", createdBy: auth.user.id });
     await tx.insert(waqfTimelineEvents).values({ waqfId: w.id, type: "establish", occurredOn: todayIso(), title: "بدء تأسيس وقف جديد في منصة وقفك", stage: 1, createdBy: auth.user.id });
-    await audit(tx, { actorUserId: auth.user.id, action: "establish.started", entityType: "waqf", entityId: w.id, waqfId: w.id, ip, userAgent, after: { internalNumber } });
+    await audit(tx, { actorUserId: auth.user.id, action: "establish.started", entityType: "waqf", entityId: w.id, waqfId: w.id, ip, userAgent, after: { internalNumber, ...(open.length ? { alongsideOpenDraft: open.map((d) => d.internalNumber), purpose } : {}) } });
     return { ok: true, data: { id: w.id } };
   }, { revalidate: ["/app/establish", "/app/waqfs"] });
+  if (res.ok && resumeTo) redirect(resumeTo);
   if (res.ok && typeof res.data?.id === "string") redirect(`/app/establish/${res.data.id}?step=1`);
   return res;
 }
@@ -96,17 +110,24 @@ function applyStep(state: EstablishState, step: number, fd: FormData, temporaryA
     f.selfBenefitNote = s(fd.get("selfBenefitNote"), 300);
     if (f.name.length < 3) e.name = "اكتب اسم الواقف كاملًا.";
   } else if (step === 3) {
-    st.assets = readRows(fd, "a", ["category", "title", "ownershipDocNo", "value", "inFounderName", "sharePct"])
-      .filter((r) => r.title || r.value || r.ownershipDocNo)
-      .slice(0, 30)
-      .map((r) => ({ category: r.category, title: r.title.slice(0, 200), ownershipDocNo: r.ownershipDocNo.slice(0, 80), value: normalizeNumber(r.value) ?? "", inFounderName: r.inFounderName === "on" ? "on" : "off", sharePct: normalizeNumber(r.sharePct) ?? "" }));
-    if (!st.assets.length) e.assets = "أضف أصلًا واحدًا على الأقل تريد وقفه.";
-    st.assets.forEach((a, i) => {
-      if (!CATS.includes(a.category)) e[`assets.${i}`] = `اختر نوع الأصل ${i + 1}.`;
-      else if (!a.title) e[`assets.${i}`] = `صف الأصل ${i + 1} بما يميزه.`;
-      else if (a.value && !(Number(a.value) >= 0)) e[`assets.${i}`] = `قيمة الأصل ${i + 1} غير صحيحة.`;
-      else if (a.sharePct && !(Number(a.sharePct) > 0 && Number(a.sharePct) <= 100)) e[`assets.${i}`] = `الحصة المشاعة للأصل ${i + 1} بين 1 و100.`;
+    // assets arrive as one JSON list (each row carries its own type's fields); older forms post flat rows
+    let rows: Record<string, unknown>[] = [];
+    try { rows = JSON.parse(String(fd.get("assetsJson") ?? "null")) ?? []; } catch { rows = []; }
+    if (!Array.isArray(rows) || !fd.has("assetsJson"))
+      rows = readRows(fd, "a", ["category", "title", "ownershipDocNo", "value", "inFounderName", "sharePct"]);
+    st.assets = [];
+    rows.filter((r) => r && typeof r === "object").slice(0, 30).forEach((r, i) => {
+      const str = (k: string) => (typeof r[k] === "string" ? (r[k] as string) : r[k] == null ? "" : String(r[k]));
+      const details = r.details && typeof r.details === "object" ? Object.fromEntries(Object.entries(r.details as Record<string, unknown>).map(([k, v]) => [k, String(v ?? "")])) : {};
+      if (!str("title") && !str("value") && !str("ownershipDocNo") && !Object.values(details).some(Boolean)) return;
+      const c = checkAsset({ category: str("category"), title: str("title"), value: normalizeNumber(str("value")) ?? str("value"), ownershipDocNo: str("ownershipDocNo"), sharePct: normalizeNumber(str("sharePct")) ?? str("sharePct"), held: str("inFounderName"), details });
+      st.assets.push({ category: c.asset.category, title: c.asset.title, ownershipDocNo: c.asset.ownershipDocNo, value: c.asset.value, inFounderName: c.asset.held, sharePct: c.asset.sharePct, details: c.asset.details });
+      const idx = st.assets.length - 1;
+      if (c.errors.length) e[`assets.${idx}`] = `الأصل ${idx + 1}: ${c.errors.join(" ")}`;
+      else if (c.missing.length) e[`assets.${idx}`] = `الأصل ${idx + 1}${c.asset.title ? ` «${c.asset.title}»` : ""}: ينقص ${c.missing.join("، ")}.`;
+      void i;
     });
+    if (!st.assets.length) e.assets = "أضف أصلًا واحدًا على الأقل تريد وقفه.";
   } else if (step === 4) {
     st.classes = readRows(fd, "c", ["name", "kind", "tier", "relation", "sharePct", "divisionRule", "substitutionRule"])
       .filter((r) => r.name)
@@ -122,14 +143,26 @@ function applyStep(state: EstablishState, step: number, fd: FormData, temporaryA
     const n = st.nazara;
     n.mode = ["founder", "individual", "board", "legal_entity"].includes(s(fd.get("mode"))) ? s(fd.get("mode")) : "";
     n.nazirName = s(fd.get("nazirName"), 500);
-    n.boardSize = s(fd.get("boardSize"), 3);
     n.successionRule = s(fd.get("successionRule"), 500);
     n.feePct = normalizeNumber(s(fd.get("feePct"), 10)) ?? "";
     n.feeFixed = normalizeNumber(s(fd.get("feeFixed"), 20)) ?? "";
     n.duties = s(fd.get("duties"), 1500);
+    // a board is its members (each with a role), not a list of names in one field
+    n.members = n.mode === "board"
+      ? readRows(fd, "m", ["name", "role", "independent", "capacity", "email", "phone"]).filter((r) => r.name.trim()).slice(0, 15).map((r) => ({
+          name: r.name.trim().slice(0, 200), role: BOARD_ROLES.some(([k]) => k === r.role) ? r.role : "member", independent: r.independent === "on" ? "on" : "off",
+          capacity: r.capacity.trim().slice(0, 200), email: r.email.trim().slice(0, 200), phone: r.phone.replace(/[^\d+]/g, "").slice(0, 20),
+        }))
+      : [];
+    n.boardSize = n.mode === "board" ? String(n.members.length) : "";
+    if (n.mode === "board") n.nazirName = n.members.map((x) => x.name).join("، ");
     if (!n.mode) e.mode = "اختر صيغة النظارة.";
-    if (n.mode && n.mode !== "founder" && n.nazirName.length < 3) e.nazirName = "اكتب اسم الناظر أو أسماء أعضاء المجلس أو الجهة.";
-    if (n.mode === "board" && !(Number(n.boardSize) >= 3)) e.boardSize = "مجلس النظارة ثلاثة أعضاء فأكثر.";
+    if (n.mode && n.mode !== "founder" && n.mode !== "board" && n.nazirName.length < 3) e.nazirName = "اكتب اسم الناظر أو الجهة الناظرة.";
+    if (n.mode === "board") {
+      if (n.members.length < 3) e.members = `مجلس النظارة ثلاثة أعضاء فأكثر (أُدخل ${n.members.length}).`;
+      else if (n.members.filter((x) => x.role === "chair").length !== 1) e.members = "حدّد رئيسًا واحدًا للمجلس.";
+      n.members.forEach((x, i) => { if (x.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x.email)) e[`members.${i}`] = `بريد العضو ${i + 1} غير صحيح.`; });
+    }
     if (n.feePct && !(Number(n.feePct) >= 0 && Number(n.feePct) <= 100)) e.feePct = "النسبة بين 0 و100.";
     if (!st.allocation.nazirFeePct && n.feePct) st.allocation.nazirFeePct = n.feePct;
   } else if (step === 6) {
@@ -169,6 +202,7 @@ export async function saveEstablishStep(_: ActionState, fd: FormData): Promise<A
     if (step === 7 && state.waqfName.length >= 5) patch.name = state.waqfName;
     await tx.update(waqfs).set(patch).where(eq(waqfs.id, d.waqf.id));
     await audit(tx, { actorUserId: auth.user.id, action: "establish.step_saved", entityType: "waqf", entityId: d.waqf.id, waqfId: d.waqf.id, ip, userAgent, after: { step, intent, valid } });
+    await syncJourneyAfterChange(tx, d.waqf.id, auth.user.id);
     if (advancing && !valid) {
       const first = Object.values(errors)[0];
       return { error: Object.keys(errors).length > 1 ? `${first} (و${Object.keys(errors).length - 1} ملاحظة أخرى)` : first, fieldErrors: errors };
@@ -207,12 +241,18 @@ export async function finishEstablish(_: ActionState, fd: FormData): Promise<Act
     if (type.type) await tx.insert(waqfClassifications).values({ waqfId: w.id, legalType: type.type, computedType: type.type, reason: type.reason, effectiveFrom: t, decidedBy: uid });
     const powers = { canInterpret: st.founder.powers.includes("تفسير شروطه"), canAmendNazara: st.founder.powers.includes("تعديل النظارة"), canDismissNazir: st.founder.powers.includes("عزل الناظر"), canAddAssets: st.founder.powers.includes("إضافة أصول إلى الوقف") };
     await tx.insert(founders).values({ waqfId: w.id, displayName: st.founder.name, nationality: st.founder.nationality || null, isAlive: true, powers, userId: st.founder.isSelf === "on" ? uid : null, createdBy: uid });
-    if (st.assets.length)
-      await tx.insert(assets).values(st.assets.map((a) => ({
+    for (const a of st.assets) {
+      const [row] = await tx.insert(assets).values({
         waqfId: w.id, category: a.category as (typeof assets.$inferInsert)["category"], title: a.title, ownershipDocNo: a.ownershipDocNo || null,
         marketValue: a.value ? Number(a.value).toFixed(2) : null, sharePct: a.sharePct ? Number(a.sharePct).toFixed(2) : null, inWaqfName: false,
-        status: "income" as const, notes: a.inFounderName === "on" ? "مستند الملكية باسم الواقف (قبل الوقف)" : "يلزم إثبات ملكية الواقف قبل التوثيق", createdBy: uid,
-      })));
+        status: "income" as const, details: a.details ?? {}, notes: a.inFounderName === "on" ? "الملكية باسم الواقف (قبل الوقف)" : "يلزم إثبات ملكية الواقف قبل التوثيق", createdBy: uid,
+      }).returning({ id: assets.id });
+      // real estate also feeds the property record used by leases and maintenance
+      if (a.category === "real_estate") await tx.insert(properties).values({
+        assetId: row.id, waqfId: w.id, deedNo: a.ownershipDocNo || null, city: a.details.city || null, district: a.details.district || null,
+        usage: (["residential", "commercial", "mixed", "agricultural"].includes(a.details.usage ?? "") ? a.details.usage : null) as (typeof properties.$inferInsert)["usage"], areaSqm: a.details.areaSqm ? Number(a.details.areaSqm).toFixed(2) : null, createdBy: uid,
+      }).onConflictDoNothing();
+    }
     const classRows = st.classes.map((c, i) => ({
       waqfId: w.id, name: c.name, kind: c.kind, tier: Number(c.tier) || 1, position: i, relation: c.relation, sharePct: c.sharePct ? Number(c.sharePct).toFixed(2) : null,
       divisionRule: c.divisionRule || null, substitutionRule: c.substitutionRule || null, isFinalDestination: false, createdBy: uid,
@@ -232,8 +272,17 @@ export async function finishEstablish(_: ActionState, fd: FormData): Promise<Act
       waqfId: w.id, maintenancePct: pct(a.maintenancePct), developmentPct: pct(a.developmentPct), reinvestPct: pct(a.reinvestPct), reservePct: pct(a.reservePct),
       nazirFeePct: pct(a.nazirFeePct || st.nazara.feePct), nazirFeeFixed: st.nazara.feeFixed ? Number(st.nazara.feeFixed).toFixed(2) : null, adminPct: pct(a.adminPct), notes: a.notes || null, createdBy: uid,
     }).onConflictDoNothing();
-    const nazirName = nazirMode === "founder" ? st.founder.name : st.nazara.nazirName;
-    await tx.insert(trustees).values({ waqfId: w.id, kind: nazirMode === "founder" ? "founder" : nazirMode === "board" ? "board_member" : nazirMode, displayName: nazirName, userId: nazirMode === "founder" && st.founder.isSelf === "on" ? uid : null, status: "active", createdBy: uid });
+    if (nazirMode === "board") {
+      // the board as a body with its members (roles, independence, contact) — the meetings engine reads these seats
+      const [body] = await tx.insert(bodies).values({ waqfId: w.id, kind: "board", name: "مجلس النظارة", charter: null, createdBy: uid }).returning({ id: bodies.id });
+      for (const m of st.nazara.members) {
+        await tx.insert(bodyMemberships).values({ bodyId: body.id, waqfId: w.id, personName: m.name, role: m.role, isIndependent: m.independent === "on", hasVote: m.role !== "secretary", capacity: m.capacity || null, contactEmail: m.email || null, contactPhone: m.phone || null, startsOn: t, createdBy: uid });
+        await tx.insert(trustees).values({ waqfId: w.id, kind: "board_member", displayName: m.name, isChair: m.role === "chair", isIndependent: m.independent === "on", startsOn: t, status: "active", createdBy: uid });
+      }
+    } else {
+      const nazirName = nazirMode === "founder" ? st.founder.name : st.nazara.nazirName;
+      await tx.insert(trustees).values({ waqfId: w.id, kind: nazirMode === "founder" ? "founder" : nazirMode, displayName: nazirName, userId: nazirMode === "founder" && st.founder.isSelf === "on" ? uid : null, status: "active", createdBy: uid });
+    }
     if (st.nazara.successionRule) await tx.insert(successions).values({ waqfId: w.id, ruleText: st.nazara.successionRule, position: 1, createdBy: uid });
     if (nazirMode === "founder" && st.founder.isSelf === "on") {
       const [has] = await tx.select({ id: waqfMemberships.id }).from(waqfMemberships).where(and(eq(waqfMemberships.waqfId, w.id), eq(waqfMemberships.userId, uid), eq(waqfMemberships.roleKey, "nazir"))).limit(1);
@@ -245,6 +294,7 @@ export async function finishEstablish(_: ActionState, fd: FormData): Promise<Act
     await tx.insert(waqfTimelineEvents).values({ waqfId: w.id, type: "establish", occurredOn: t, title: "إعداد مسودة وثيقة الوقف", details: "مسودة أولية للمراجعة الشرعية والقانونية قبل التوثيق.", stage: 1, createdBy: uid });
     await audit(tx, { actorUserId: uid, action: "establish.finished", entityType: "waqf", entityId: w.id, waqfId: w.id, ip, userAgent, after: { name: st.waqfName, legalType: type.type, nazirMode, sizeClass, assets: st.assets.length, classes: classRows.length, conditions: st.conditions.length } });
     await syncWaqfObligations(tx, w.id);
+    await syncJourneyAfterChange(tx, w.id, uid);
     return { ok: true };
   }, { revalidate: ["/app/establish", `/app/establish/${draftId}`, "/app/waqfs", "/app"] });
   if (res.ok) redirect(`/app/establish/${draftId}?step=7&done=1`);

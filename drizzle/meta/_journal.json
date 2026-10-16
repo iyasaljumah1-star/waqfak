@@ -78,6 +78,13 @@
       "when": 1792070546037,
       "tag": "0010_output_quality",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1792160783857,
+      "tag": "0011_journey_assets_board",
+      "breakpoints": true
     }
   ]
 }

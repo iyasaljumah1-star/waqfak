@@ -18,6 +18,7 @@ import { sendSms } from "../../adapters/messaging";
 import { emitWaqfEvent, syncWaqfObligations } from "../compliance/events";
 import { notify } from "../notify";
 import { parseForm, toState, userAction, UserError, waqfAction } from "../_shared";
+import { evidenceDocs } from "../establish/journey-server";
 import type { ActionState } from "@/lib/utils";
 
 // ───────────── helpers ─────────────
@@ -480,6 +481,7 @@ const profileSchema = z
 
 const PRE_REGISTERED = ["idea", "draft", "documenting", "documented"];
 
+
 /**
  * Edits the waqf core profile (identity, deed, classification and the flags that drive obligations).
  * Date changes emit regulatory events; every save re-syncs standing obligations.
@@ -497,11 +499,18 @@ export async function updateWaqfProfile(_: ActionState, fd: FormData): Promise<A
       if (d.assetBand && !w.sizeClassLocked) sizeClass = deriveSizeClass({ asset_band: d.assetBand, direct_benefit: w.directBenefit ? "yes" : "no" });
       // Status only moves forward from the pre-registration states; later states (active, suspended…) are not touched here.
       let status = w.status;
+      // An entered number or date is the owner's statement; the status moves only with the instrument in the vault
+      // (صك الوقف for documented, شهادة التسجيل for registered). Without it the file stays «قيد التوثيق».
+      let evidenceNote = "";
       if (PRE_REGISTERED.includes(w.status)) {
-        if (d.registeredOn) status = "registered";
-        else if ((d.documentedOn || d.deedNo) && w.status !== "documented") status = "documented";
+        const ev = await evidenceDocs(tx, w.id);
+        if (d.registeredOn && ev.registration && ev.deed) status = "registered";
+        else if ((d.documentedOn || d.deedNo || d.registeredOn) && ev.deed) status = "documented";
+        else if (d.documentedOn || d.deedNo || d.registeredOn) status = "documenting";
+        if ((d.documentedOn || d.deedNo) && !ev.deed) evidenceNote = " لا يُعد الوقف موثقًا حتى يُرفع صك الوقف في الوثائق.";
+        else if (d.registeredOn && !ev.registration) evidenceNote = " لا يُعد الوقف مسجلًا حتى تُرفع شهادة التسجيل في الوثائق.";
       }
-      const stage = Math.max(w.stage, d.registeredOn ? 3 : d.documentedOn ? 2 : 1);
+      const stage = w.stage; // the stage follows the records (re-evaluated after the save)
       const before = {
         name: w.name, deedNo: w.deedNo, deedDate: w.deedDate, deedDateHijri: w.deedDateHijri, documentedOn: w.documentedOn, registeredOn: w.registeredOn,
         registrationExpiresOn: w.registrationExpiresOn, nationalUnifiedNumber: w.nationalUnifiedNumber, legalType: w.legalType, nazirMode: w.nazirMode,
@@ -524,11 +533,11 @@ export async function updateWaqfProfile(_: ActionState, fd: FormData): Promise<A
       const t = todayIso();
       const timeline: (typeof waqfTimelineEvents.$inferInsert)[] = [];
       if (changed.includes("documentedOn") && d.documentedOn) {
-        timeline.push({ waqfId: w.id, type: "documented", occurredOn: d.documentedOn, title: "توثيق صك الوقف", details: d.deedNo ? `رقم الصك ${d.deedNo}` : null, stage: 2, createdBy: auth.user.id });
+        timeline.push({ waqfId: w.id, type: "documented", occurredOn: d.documentedOn, title: status === "documenting" ? "تسجيل بيانات صك الوقف (بانتظار رفع الصك)" : "توثيق صك الوقف", details: d.deedNo ? `رقم الصك ${d.deedNo}` : null, stage: 2, createdBy: auth.user.id });
         await emitWaqfEvent(tx, { waqfId: w.id, event: "documentation", date: d.documentedOn, actorUserId: auth.user.id });
       }
       if (changed.includes("registeredOn") && d.registeredOn) {
-        timeline.push({ waqfId: w.id, type: "registered", occurredOn: d.registeredOn, title: "تسجيل الوقف لدى الهيئة العامة للأوقاف", details: d.nationalUnifiedNumber ? `الرقم الوطني الموحد ${d.nationalUnifiedNumber}` : null, stage: 2, createdBy: auth.user.id });
+        timeline.push({ waqfId: w.id, type: "registered", occurredOn: d.registeredOn, title: status === "registered" || !PRE_REGISTERED.includes(w.status) ? "تسجيل الوقف لدى الهيئة العامة للأوقاف" : "تسجيل تاريخ التسجيل لدى الهيئة (بانتظار رفع الشهادة)", details: d.nationalUnifiedNumber ? `الرقم الوطني الموحد ${d.nationalUnifiedNumber}` : null, stage: 2, createdBy: auth.user.id });
         await emitWaqfEvent(tx, { waqfId: w.id, event: "registration", date: d.registeredOn, actorUserId: auth.user.id });
       }
       if (changed.includes("registrationExpiresOn") && d.registrationExpiresOn)
@@ -542,11 +551,11 @@ export async function updateWaqfProfile(_: ActionState, fd: FormData): Promise<A
       if (timeline.length) await tx.insert(waqfTimelineEvents).values(timeline);
       await syncWaqfObligations(tx, w.id);
       const lockedNote = d.assetBand && w.sizeClassLocked ? " فئة الحجم مثبّتة من الإدارة فلم تتغير." : "";
-      return { ok: true, message: `حُفظ ملف الوقف وأُعيد حساب الالتزامات.${lockedNote}`, data: { saved: true } };
+      return { ok: true, message: `حُفظ ملف الوقف وأُعيد حساب الالتزامات.${lockedNote}${evidenceNote}`, data: { saved: true, evidence: evidenceNote ? (evidenceNote.includes("صك") ? "deed" : "reg") : "" } };
     },
     [`/app/w/${d.waqfId}`, `/app/w/${d.waqfId}/settings`, "/app", "/app/waqfs"],
   );
-  if (res.ok && res.data?.saved) redirect(`/app/w/${d.waqfId}?saved=1`);
+  if (res.ok && res.data?.saved) redirect(`/app/w/${d.waqfId}?saved=1${res.data.evidence ? `&evidence=${res.data.evidence}` : ""}`);
   return keep(res, fd);
 }
 

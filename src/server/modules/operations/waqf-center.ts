@@ -16,6 +16,8 @@ export type NazaraStage = { key: "request" | "acceptance" | "readiness" | "pract
 export type WaqfFacts = {
   today: string;
   waqfakIsNazir: boolean;
+  /** Still before documentation (idea/draft/documenting): deed data comes from the authority, not from the owner's input. */
+  establishing?: boolean;
   deed: { no: string | null; date: string | null; docs: number; conditions: number };
   registration: { on: string | null; expiresOn: string | null };
   assets: { count: number; staleValuation: number };
@@ -44,13 +46,13 @@ export function waqfCenter(waqfId: string, f: WaqfFacts): { items: CenterItem[];
 
   // Deed and conditions
   add({
-    key: "deed", area: "الوثيقة والشروط", title: "بيانات صك الوقف", state: f.deed.no && f.deed.date ? "done" : "required",
-    why: f.deed.no ? (f.deed.date ? `الصك ${f.deed.no}` : "تاريخ الصك غير مسجل") : "رقم الصك غير مسجل في الملف",
-    owner: nazir, href: `${P(waqfId, "")}?edit=1#profile`, perm: "waqf.view", output: "ملف وقف بهويته النظامية",
+    key: "deed", area: "الوثيقة والشروط", title: f.establishing ? "بيانات صك الوقف (بعد التوثيق)" : "بيانات صك الوقف", state: f.deed.no && f.deed.date ? "done" : f.establishing ? "soon" : "required",
+    why: f.deed.no ? (f.deed.date ? `الصك ${f.deed.no}` : "تاريخ الصك غير مسجل") : f.establishing ? "يصدر الصك عند توثيق الوقف لدى الجهة المختصة، ثم يُسجَّل رقمه وتاريخه" : "رقم الصك غير مسجل في الملف",
+    owner: f.establishing && !f.deed.no ? "الجهة المختصة ثم ناظر الوقف" : nazir, href: `${P(waqfId, "")}?edit=1#profile`, perm: "waqf.view", output: "ملف وقف بهويته النظامية",
   });
   add({
-    key: "deed_doc", area: "الوثيقة والشروط", title: "صورة صك الوقفية في الوثائق", state: f.deed.docs ? "done" : "required",
-    why: f.deed.docs ? `${f.deed.docs} مستند من نوع صك الوقفية` : "لا مستند من نوع «صك الوقفية»", owner: nazir, href: P(waqfId, "documents"), perm: "documents.view", output: "مرجع الشروط الأصلي",
+    key: "deed_doc", area: "الوثيقة والشروط", title: "صورة صك الوقفية في الوثائق", state: f.deed.docs ? "done" : f.establishing ? "soon" : "required",
+    why: f.deed.docs ? `${f.deed.docs} مستند من نوع صك الوقفية` : "لا مستند من نوع «صك الوقفية»", owner: f.establishing && !f.deed.docs ? "الجهة المختصة ثم ناظر الوقف" : nazir, href: `${P(waqfId, "documents")}?upload=waqf_deed#upload`, perm: "documents.view", output: "مرجع الشروط الأصلي",
   });
   add({
     key: "conditions", area: "الوثيقة والشروط", title: "شروط الواقف نصًا", state: f.deed.conditions ? "done" : "required",
@@ -63,15 +65,15 @@ export function waqfCenter(waqfId: string, f: WaqfFacts): { items: CenterItem[];
     key: "registration", area: "التسجيل", title: f.registration.on ? "سريان شهادة التسجيل" : "تسجيل الوقف لدى الهيئة",
     state: !f.registration.on || regExpired ? "required" : "done",
     why: !f.registration.on ? "لا تاريخ تسجيل في الملف" : regExpired ? `الشهادة منتهية منذ ${f.registration.expiresOn}` : `مسجل في ${f.registration.on}`,
-    remaining: !f.registration.on || regExpired ? "يتم لدى الهيئة العامة للأوقاف ثم يُحدَّث الملف" : undefined,
-    owner: nazir, href: P(waqfId, "identity"), perm: "waqf.view", output: "شهادة تسجيل سارية",
+    remaining: !f.registration.on || regExpired ? "يتم لدى الهيئة العامة للأوقاف ثم يُحدَّث الملف وتُرفع الشهادة" : undefined,
+    owner: f.establishing ? "الهيئة العامة للأوقاف ثم ناظر الوقف" : nazir, href: `${P(waqfId, "documents")}?upload=registration_certificate#upload`, perm: "waqf.view", output: "شهادة تسجيل سارية",
   });
 
   // Assets and leases
   add({
     key: "assets", area: "الأصول", title: "سجل الأصول", state: !f.assets.count ? "required" : f.assets.staleValuation ? "soon" : "done",
     why: !f.assets.count ? "لا أصول مسجلة" : f.assets.staleValuation ? `${f.assets.staleValuation} من ${f.assets.count} أصلًا بلا تقييم خلال 12 شهرًا` : `${f.assets.count} أصلًا بتقييمات حديثة`,
-    owner: nazir, href: P(waqfId, "assets"), perm: "assets.view", output: "أصول بقيم محدثة",
+    owner: nazir, href: f.assets.count ? P(waqfId, "assets") : `${P(waqfId, "assets")}?add=1#add-asset`, perm: "assets.view", output: "أصول بقيم محدثة",
   });
   if (f.leases.arrears > 0 || f.leases.endingIn90 > 0) add({
     key: "leases", area: "الأصول", title: "الإيجارات", state: f.leases.arrears > 0 ? "required" : "soon",

@@ -34,7 +34,13 @@ export async function waqfAction(waqfId: string, perm: Permission, fn: (c: WaqfC
       const access = await loadWaqfAccess(tx, auth, waqfId);
       if (!access) throw new ForbiddenError("لا تشمل صلاحياتك هذا الوقف. اطلب من ناظره دعوتك إليه.");
       if (!access.perms.has(perm)) throw new ForbiddenError();
-      return fn({ auth, access, tx, ip, userAgent });
+      const out = await fn({ auth, access, tx, ip, userAgent });
+      // every change to a waqf file re-evaluates its journey stage from the records (forward or back)
+      if (!out || !("error" in out && out.error)) {
+        const { syncJourneyAfterChange } = await import("./establish/journey-server");
+        await syncJourneyAfterChange(tx, waqfId, auth.user.id);
+      }
+      return out;
     });
     for (const p of [revalidate ?? []].flat()) revalidatePath(p);
     return res ?? { ok: true, message: "تم الحفظ." };

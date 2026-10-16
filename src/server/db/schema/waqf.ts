@@ -155,6 +155,16 @@ export const waqfGovernanceProfiles = pgTable("waqf_governance_profiles", {
   requireIndependentForQuorum: boolean().default(false).notNull(),
   reservedDecisions: jsonb().$type<string[]>().default([]).notNull(),
   executiveSpendLimit: numeric({ precision: 18, scale: 2 }),
+  /** How the board is run, as the governing documents say (free text, reviewed — not generated as final rules). */
+  competencies: text(),
+  chairPowers: text(),
+  delegationLimits: text(),
+  taskAllocation: text(),
+  signingRules: text(),
+  coiProcedure: text(),
+  recordsRule: text(),
+  /** Where these rules come from (the deed, the board charter, a resolution…). */
+  source: text(),
   ...tracking(),
 });
 
@@ -246,6 +256,18 @@ export const bodyMemberships = pgTable("body_memberships", {
   hasVote: boolean().default(true).notNull(),
   startsOn: date(),
   endsOn: date(),
+  /** Capacity in which the person sits (e.g. «ممثل الواقف»، «عضو مستقل خبير مالي»). */
+  capacity: text(),
+  isExecutive: boolean().default(false).notNull(),
+  canSign: boolean().default(false).notNull(),
+  /** active | suspended | ended. */
+  status: text().default("active").notNull(),
+  /** Contact for invitations when the member has no account (visible to governance managers only). */
+  contactEmail: text(),
+  contactPhone: text(),
+  /** The decision or document appointing the member. */
+  appointmentRef: text(),
+  appointmentDocumentId: uuid(),
   ...tracking(),
 }, (t) => [index("bm_body_idx").on(t.bodyId), index("bm_waqf_idx").on(t.waqfId)]);
 

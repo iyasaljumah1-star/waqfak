@@ -9,7 +9,8 @@ import {
 import { addDays, todayISO } from "@/server/engines/dates";
 import { summarize as summarizeLedger } from "@/server/modules/finance/pure";
 import { POLICY_TYPES } from "@/server/modules/governance/pure";
-import { ACCOUNTS } from "@/server/modules/waqf-file/labels";
+import { ACCOUNTS, ASSET_CATEGORY_LABEL, ASSET_STATUS_LABEL } from "@/server/modules/waqf-file/labels";
+import { assetSummary } from "@/server/modules/assets/types";
 import { docTypeLabel } from "@/server/modules/documents/labels";
 import { CHECK_STATUS_AR, STATUS_AR } from "@/server/modules/nazara/pure";
 import type { RequestCtx } from "@/server/modules/requests/access";
@@ -180,7 +181,7 @@ async function collectBase(tx: Tx, rc: RequestCtx, opts: CollectOpts): Promise<O
     active: bens.filter((b) => b.status === "active").length, total: bens.length, abroad: bens.filter((b) => b.abroad).length,
     classes: cls.map((k) => ({ name: k.name, share: k.sharePct == null ? null : `${k.sharePct}٪`, tier: k.tier })),
   };
-  ctx.assets = ast.map((a) => ({ title: a.title, category: a.category, status: a.status, bookValue: num(a.bookValue), marketValue: num(a.marketValue), lastValuationOn: a.lastValuationOn, annualIncome: num(a.annualIncome), ownershipDocNo: a.ownershipDocNo }));
+  ctx.assets = ast.map((a) => ({ title: [a.title, assetSummary(a.category, a.details as Record<string, string>)].filter(Boolean).join(" — "), category: ASSET_CATEGORY_LABEL[a.category] ?? a.category, status: ASSET_STATUS_LABEL[a.status] ?? a.status, bookValue: num(a.bookValue), marketValue: num(a.marketValue), lastValuationOn: a.lastValuationOn, annualIncome: num(a.annualIncome), ownershipDocNo: a.ownershipDocNo }));
   const in90 = addDays(today, 90);
   ctx.leases = {
     active: ls.filter((l) => l.status === "active").length,

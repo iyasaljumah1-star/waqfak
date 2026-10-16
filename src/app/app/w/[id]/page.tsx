@@ -13,6 +13,8 @@ import { STATUS_AR as NAZARA_STATUS_AR } from "@/server/modules/nazara/pure";
 import { read } from "@/server/modules/_shared";
 import { waqfCenterData } from "@/server/modules/operations/waqf-center-server";
 import { WaqfCenterPanel } from "@/components/operations/waqf-center";
+import { JourneyPanel } from "@/components/waqf/journey-panel";
+import { journeyOf } from "@/server/modules/establish/journey-server";
 
 export const metadata = { title: "نظرة عامة" };
 
@@ -28,7 +30,7 @@ function SectionLink({ href, children }: { href: string; children: React.ReactNo
   );
 }
 
-export default async function WaqfOverview({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ edit?: string; saved?: string }> }) {
+export default async function WaqfOverview({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ edit?: string; saved?: string; evidence?: string }> }) {
   const { id } = await params;
   const sp = await searchParams;
   const auth = await requireAuth({ next: `/app/w/${id}` });
@@ -38,7 +40,11 @@ export default async function WaqfOverview({ params, searchParams }: { params: P
   const data = await waqfOverview(auth, id);
   const nazara = await currentEngagement(auth, id);
   const can = (p: Parameters<typeof waqfCan>[1]) => waqfCan(access, p);
-  const stage = Math.min(5, Math.max(1, w.stage || 1));
+  // the journey is read from the records (the stored stage follows it after each change)
+  const j = await read(auth, (tx) => journeyOf(tx, id));
+  const stage = j?.stage ?? Math.min(5, Math.max(1, w.stage || 1));
+  const establishing = !!j && (j.stage <= 2 || (!!j.facts.wizard && !j.facts.wizard.finished));
+  const draftOpen = !!j?.facts.wizard && !j.facts.wizard.finished;
   const flags = [
     w.collectsDonations && "يجمع تبرعات",
     w.hasForeignParty && "له طرف أجنبي",
@@ -49,7 +55,8 @@ export default async function WaqfOverview({ params, searchParams }: { params: P
   const members = data.members.filter((m) => m.roleKey !== "beneficiary" || can("beneficiaries.view"));
   const totalObl = OBL_ORDER.reduce((n, k) => n + (data.oblCounts[k] ?? 0), 0);
   const editing = sp.edit === "1" && can("waqf.edit");
-  const showCenter = can("compliance.view") || can("waqf.edit");
+  // the operations center reads the file's operating records: while the wizard is open those live in the draft instead
+  const showCenter = (can("compliance.view") || can("waqf.edit")) && !draftOpen;
   const center = showCenter ? await read(auth, (tx) => waqfCenterData(tx, id)) : null;
   const centerItems = center ? center.items.filter((i) => can(i.perm as Parameters<typeof waqfCan>[1])) : [];
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Riyadh" }).format(new Date());
@@ -59,6 +66,13 @@ export default async function WaqfOverview({ params, searchParams }: { params: P
       {sp.saved === "1" ? (
         <Alert tone="ok" title="حُفظ ملف الوقف">أعدنا حساب الالتزامات النظامية ومواعيدها وفق البيانات الجديدة، وسُجّل التعديل في سجل العمليات.</Alert>
       ) : null}
+      {sp.evidence === "deed" || sp.evidence === "reg" ? (
+        <Alert tone="warn" title={sp.evidence === "deed" ? "سُجّلت بيانات الصك، ولا يُعد الوقف موثقًا بعد" : "سُجّل تاريخ التسجيل، ولا يُعد الوقف مسجلًا بعد"}>
+          {sp.evidence === "deed" ? "يُعد الوقف موثقًا حين يُرفع صك الوقف الصادر من الجهة المختصة في الوثائق." : "يُعد الوقف مسجلًا حين تُرفع شهادة التسجيل الصادرة من الهيئة في الوثائق."}
+          <div className="mt-1"><SectionLink href={`${base}/documents?upload=${sp.evidence === "deed" ? "waqf_deed" : "registration_certificate"}#upload`}>ارفع المستند</SectionLink></div>
+        </Alert>
+      ) : null}
+      {j && establishing ? <JourneyPanel j={j} updatedAt={w.updatedAt} /> : null}
       {nazara ? (
         <Alert tone={nazara.status === "active" ? "ok" : nazara.status === "suspended" ? "warn" : "info"} title={`نظارة «وقفك» على الوقف: ${NAZARA_STATUS_AR[nazara.status as keyof typeof NAZARA_STATUS_AR] ?? nazara.status}${nazara.isPractice ? " (تجريبية)" : ""}`}>
           {nazara.status === "active"

@@ -7,6 +7,7 @@ import { deriveType } from "../../engines/assessment";
 import { allocationTotal } from "../deed/pure";
 import { NAZIR_MODE_LABEL as NAZIR_MODE_LABEL_AR } from "@/lib/utils";
 import { ASSET_CATEGORY_LABEL, CONDITION_CATEGORY_LABEL, DIVISION_LABEL, SUBSTITUTION_LABEL } from "../waqf-file/labels";
+import { ASSET_TYPES, assetSummary, checkAsset, isAssetCategory } from "../assets/types";
 
 export const ESTABLISH_STEPS = [
   { key: "classification", label: "نوع الوقف" },
@@ -19,7 +20,11 @@ export const ESTABLISH_STEPS = [
 ] as const;
 export type StepKey = (typeof ESTABLISH_STEPS)[number]["key"];
 
-export type EstAsset = { category: string; title: string; ownershipDocNo: string; value: string; inFounderName: string; sharePct: string };
+/** An asset in the draft: base fields plus the data its type asks for (assets/types.ts). */
+export type EstAsset = { category: string; title: string; ownershipDocNo: string; value: string; inFounderName: string; sharePct: string; details: Record<string, string> };
+/** A member of the board of nazara, when the nazara is a board. */
+export type EstBoardMember = { name: string; role: string; independent: string; capacity: string; email: string; phone: string };
+export const BOARD_ROLES = [["chair", "رئيس المجلس"], ["vice_chair", "نائب الرئيس"], ["member", "عضو"], ["secretary", "أمين السر"]] as const;
 export type EstClass = { name: string; kind: string; tier: string; relation: string; sharePct: string; divisionRule: string; substitutionRule: string };
 export type EstCondition = { category: string; text: string };
 
@@ -35,7 +40,7 @@ export type EstablishState = {
   classes: EstClass[];
   finalDestination: string;
   conditions: EstCondition[];
-  nazara: { mode: string; nazirName: string; boardSize: string; successionRule: string; feePct: string; feeFixed: string; duties: string };
+  nazara: { mode: string; nazirName: string; boardSize: string; successionRule: string; feePct: string; feeFixed: string; duties: string; members: EstBoardMember[] };
   allocation: { maintenancePct: string; developmentPct: string; reinvestPct: string; reservePct: string; nazirFeePct: string; adminPct: string; notes: string };
   finishedAt?: string | null;
   deedText?: string | null;
@@ -47,7 +52,7 @@ export function emptyState(founderName = ""): EstablishState {
     classification: { beneficiaryKind: "", charitableQualifier: "", thenToCharity: "", duration: "perpetual", durationYears: "", fieldOfWork: "", geographicScope: "", computedType: null, reason: null },
     founder: { name: founderName, nationality: "سعودي", isSelf: "on", powers: [], selfBenefit: "none", selfBenefitNote: "" },
     assets: [], classes: [], finalDestination: "", conditions: [],
-    nazara: { mode: "", nazirName: "", boardSize: "", successionRule: "", feePct: "", feeFixed: "", duties: "" },
+    nazara: { mode: "", nazirName: "", boardSize: "", successionRule: "", feePct: "", feeFixed: "", duties: "", members: [] },
     allocation: { maintenancePct: "", developmentPct: "", reinvestPct: "", reservePct: "", nazirFeePct: "", adminPct: "", notes: "" },
   };
 }
@@ -61,9 +66,10 @@ export function normalizeState(raw: unknown, founderName = ""): EstablishState {
     ...e, ...r, v: 1, kind: "establish",
     classification: { ...e.classification, ...(r.classification ?? {}) },
     founder: { ...e.founder, ...(r.founder ?? {}) },
-    nazara: { ...e.nazara, ...(r.nazara ?? {}) },
+    nazara: { ...e.nazara, ...(r.nazara ?? {}), members: Array.isArray(r.nazara?.members) ? r.nazara!.members : [] },
     allocation: { ...e.allocation, ...(r.allocation ?? {}) },
-    assets: Array.isArray(r.assets) ? r.assets : [],
+    // drafts saved before type-specific asset data keep their rows; the missing data is listed, never invented
+    assets: Array.isArray(r.assets) ? r.assets.map((a) => ({ ...a, details: a && typeof a.details === "object" && a.details ? a.details : {} })) : [],
     classes: Array.isArray(r.classes) ? r.classes : [],
     conditions: Array.isArray(r.conditions) ? r.conditions : [],
     completed: Array.isArray(r.completed) ? r.completed : [],
@@ -84,13 +90,27 @@ export function missingItems(s: EstablishState): { step: number; text: string }[
   if (!s.classification.beneficiaryKind) m.push({ step: 1, text: "حدّد على من تُصرف غلة الوقف لنحدد نوعه." });
   if (!s.founder.name.trim()) m.push({ step: 2, text: "اكتب اسم الواقف." });
   if (!s.assets.length) m.push({ step: 3, text: "أضف أصلًا موقوفًا واحدًا على الأقل." });
+  s.assets.forEach((a, i) => {
+    const miss = assetMissing(a);
+    if (miss.length) m.push({ step: 3, text: `الأصل ${i + 1}${a.title ? ` «${a.title}»` : ""}: ينقص ${miss.join("، ")}.` });
+  });
   if (!s.classes.length) m.push({ step: 4, text: "أضف مصرفًا واحدًا على الأقل." });
   if (s.classification.beneficiaryKind !== "public" && !s.finalDestination.trim()) m.push({ step: 4, text: "حدّد مآل الوقف إذا انقطع المستحقون (جهة بر دائمة)." });
   if (!s.nazara.mode) m.push({ step: 5, text: "اختر صيغة النظارة." });
-  if (s.nazara.mode && s.nazara.mode !== "founder" && !s.nazara.nazirName.trim()) m.push({ step: 5, text: "اكتب اسم الناظر أو الجهة الناظرة." });
+  if (s.nazara.mode && s.nazara.mode !== "founder" && s.nazara.mode !== "board" && !s.nazara.nazirName.trim()) m.push({ step: 5, text: "اكتب اسم الناظر أو الجهة الناظرة." });
+  if (s.nazara.mode === "board") {
+    const members = s.nazara.members.filter((x) => x.name.trim());
+    if (members.length < 3) m.push({ step: 5, text: `أضف أعضاء مجلس النظارة (${members.length} من 3 على الأقل).` });
+    if (members.length && members.filter((x) => x.role === "chair").length !== 1) m.push({ step: 5, text: "حدّد رئيسًا واحدًا لمجلس النظارة." });
+  }
   if (allocationTotal(s.allocation) > 100) m.push({ step: 6, text: "مجموع نسب توزيع الغلة يتجاوز 100%." });
   if (!s.waqfName.trim()) m.push({ step: 7, text: "اختر اسمًا للوقف." });
   return m;
+}
+
+/** What an asset of the draft still needs for its type (empty when complete). */
+export function assetMissing(a: EstAsset) {
+  return checkAsset({ category: a.category, title: a.title, value: a.value, ownershipDocNo: a.ownershipDocNo, sharePct: a.sharePct, held: a.inFounderName, details: a.details ?? {} }).missing;
 }
 
 const n = (v: string) => Number(String(v).replace(/,/g, "")) || 0;
@@ -109,7 +129,12 @@ export function buildDeedDraft(s: EstablishState, today: string): string {
   if (s.assets.length) {
     out.push(
       s.assets
-        .map((a, i) => `${i + 1}. ${ASSET_CATEGORY_LABEL[a.category] ?? "أصل"}: ${a.title || "(وصف الأصل)"}${a.ownershipDocNo ? `، بموجب مستند الملكية رقم ${a.ownershipDocNo}` : ""}${a.sharePct && n(a.sharePct) < 100 ? `، وذلك حصة مشاعة قدرها ${a.sharePct}%` : ""}${n(a.value) ? `، وقيمته التقديرية ${sar(n(a.value))}` : ""}.`)
+        .map((a, i) => {
+          // each type is described by its own facts; a deed is cited only for real estate
+          const sum = assetSummary(a.category, a.details);
+          const deed = isAssetCategory(a.category) && ASSET_TYPES[a.category].ownershipDoc && a.ownershipDocNo ? `، بموجب صك الملكية رقم ${a.ownershipDocNo}` : "";
+          return `${i + 1}. ${ASSET_CATEGORY_LABEL[a.category] ?? "أصل"}: ${a.title || "(وصف الأصل)"}${sum ? `، ${sum}` : ""}${deed}${a.sharePct && n(a.sharePct) < 100 ? `، وذلك حصة مشاعة قدرها ${a.sharePct}%` : ""}${n(a.value) ? `، وقيمته التقديرية ${sar(n(a.value))}` : ""}.`;
+        })
         .join("\n"),
     );
     out.push("ويشمل الوقف ما يتبع الأصل ويلحق به من حقوق ومرافق، ما لم يُستثنَ في هذه الوثيقة.");
@@ -152,7 +177,11 @@ export function buildDeedDraft(s: EstablishState, today: string): string {
     mode === "founder"
       ? "النظارة على هذا الوقف للواقف نفسه مدة حياته."
       : mode === "board"
-        ? `يتولى النظارة على هذا الوقف مجلس نظارة${s.nazara.boardSize ? ` من ${s.nazara.boardSize} أعضاء` : ""}${s.nazara.nazirName ? `، هم: ${s.nazara.nazirName}` : ""}.`
+        ? (() => {
+            const ms = s.nazara.members.filter((x) => x.name.trim());
+            const role = (r: string) => BOARD_ROLES.find(([k]) => k === r)?.[1] ?? "عضو";
+            return `يتولى النظارة على هذا الوقف مجلس نظارة${ms.length ? ` من ${ms.length} أعضاء، هم: ${ms.map((x) => `${x.name.trim()} (${role(x.role)})`).join("، ")}` : s.nazara.nazirName ? `، هم: ${s.nazara.nazirName}` : ""}.`;
+          })()
         : mode
           ? `يتولى النظارة على هذا الوقف ${s.nazara.nazirName || "(اسم الناظر)"} (${NAZIR_MODE_LABEL_AR[mode] ?? ""}).`
           : "(تُحدد هنا صيغة النظارة واسم الناظر.)",

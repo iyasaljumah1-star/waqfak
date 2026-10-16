@@ -1,7 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, notInArray } from "drizzle-orm";
 import { z } from "zod";
 import { documents, recommendations, serviceRequests, services, waqfs } from "@/server/db/schema";
 import { ForbiddenError, loadWaqfAccess } from "@/server/authz/context";
@@ -27,6 +27,7 @@ export async function startRequest(_: ActionState, fd: FormData): Promise<Action
   if ("state" in r) return r.state;
   const d = r.data;
   let id = "";
+  let existingOpen = "";
   const res = await userAction(async ({ auth, tx, ip, userAgent }) => {
     const [svc] = await tx.select().from(services).where(and(eq(services.code, d.service.toUpperCase()), eq(services.isPublished, true))).limit(1);
     if (!svc) throw new UserError("الخدمة غير موجودة.");
@@ -52,6 +53,16 @@ export async function startRequest(_: ActionState, fd: FormData): Promise<Action
       id = existing.id;
       return;
     }
+    // A waqf being established has one request per establishment service: an open one is continued, not duplicated.
+    if (waqfId && /^T0\d$/.test(svc.code)) {
+      const [w] = await tx.select({ status: waqfs.status }).from(waqfs).where(eq(waqfs.id, waqfId)).limit(1);
+      if (w && ["idea", "draft", "documenting"].includes(w.status)) {
+        const [open] = await tx.select({ id: serviceRequests.id }).from(serviceRequests)
+          .where(and(eq(serviceRequests.serviceId, svc.id), eq(serviceRequests.waqfId, waqfId), notInArray(serviceRequests.status, ["draft", "closed", "cancelled", "rejected", "completed"])))
+          .orderBy(desc(serviceRequests.createdAt)).limit(1);
+        if (open) { existingOpen = open.id; return; }
+      }
+    }
 
     let recId: string | null = null;
     if (d.rec) {
@@ -75,6 +86,7 @@ export async function startRequest(_: ActionState, fd: FormData): Promise<Action
     await audit(tx, { actorUserId: auth.user.id, action: "requests.draft", entityType: "service_request", entityId: req.id, waqfId, ip, userAgent, after: { number, service: svc.code, source: recId ? "recommendation" : "manual" } });
   });
   if (res.error) return res;
+  if (existingOpen) redirect(`/app/requests/${existingOpen}?existing=1`);
   redirect(`/app/requests/${id}/intake`);
 }
 
