@@ -124,6 +124,10 @@ export async function staffEditIntake(_: ActionState, fd: FormData): Promise<Act
     if (err) return { error: err, fieldErrors: { value: err } };
     const before = answers[f.key] ?? null;
     if (JSON.stringify(before) === JSON.stringify(next[f.key] ?? null)) return { ok: true, message: "القيمة لم تتغير." };
+    // a correction that makes other answers inapplicable is confirmed first, naming them
+    const willDrop = Object.keys(answers).filter((k) => k !== f.key && answers[k] !== undefined && answers[k] !== "" && next[k] === undefined);
+    if (willDrop.length && fd.get("confirmDrop") !== "on")
+      return { error: `هذا التصحيح يجعل إجابات أخرى غير منطبقة: ${willDrop.map((k) => findField(form, k)?.field.label ?? k).join("، ")}. أكّد التصحيح لتُحفظ قيمها في سجل التعديلات وتُسقط من الطلب.`, data: { needConfirm: true } };
     await c.tx.update(serviceRequests).set({ intake: { ...intake, answers: next }, updatedBy: c.auth.user.id }).where(eq(serviceRequests.id, d.id));
     const impact = await impactOf(c, rc, "intake_edit");
     // answers that depended on this one and are no longer shown are cleared by the form rules: they are recorded in the

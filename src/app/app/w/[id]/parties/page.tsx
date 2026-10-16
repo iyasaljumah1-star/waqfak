@@ -6,9 +6,11 @@ import { Muted, SubHead } from "@/components/waqf/bits";
 import { fmtBoth, fmtDate, fmtNumber, NAZIR_MODE_LABEL } from "@/lib/utils";
 import { requireAuth, waqfCan } from "@/server/authz/context";
 import { read } from "@/server/modules/_shared";
+import { and, eq } from "drizzle-orm";
+import { users, waqfMemberships } from "@/server/db/schema";
 import { waqfAccess } from "@/server/modules/waqf-core/queries";
 import {
-  addBody, addBodyMember, addSuccession, appointTrustee, endBodyMember, endTrustee, removeSuccession, saveFounder,
+  addBody, addBodyMember, addSuccession, appointTrustee, endBodyMember, endTrustee, removeSuccession, saveFounder, updateBodyMember,
 } from "@/server/modules/waqf-file/actions";
 import { todayIso } from "@/server/modules/waqf-file/form";
 import { AUTHORITY_LABEL, BODY_KIND_LABEL, BODY_ROLE_LABEL, FOUNDER_POWERS, options, TRUSTEE_KIND_LABEL } from "@/server/modules/waqf-file/labels";
@@ -25,11 +27,17 @@ export default async function PartiesPage({ params }: { params: Promise<{ id: st
   const w = access.waqf;
   const canEdit = waqfCan(access, "waqf.edit");
   const canGov = waqfCan(access, "governance.manage");
-  const d = await read(auth, (tx) => partiesData(tx, id));
+  const { d, accounts } = await read(auth, async (tx) => ({
+    d: await partiesData(tx, id),
+    // the waqf's members with an account: a seat linked to one receives invitations, votes and signs in the platform
+    accounts: canGov ? await tx.select({ id: users.id, name: users.fullName }).from(waqfMemberships).innerJoin(users, eq(users.id, waqfMemberships.userId)).where(and(eq(waqfMemberships.waqfId, id), eq(waqfMemberships.status, "active"))) : [],
+  }));
+  const accountOpts = [...new Map(accounts.map((a) => [a.id, { value: a.id, label: a.name ?? "عضو" }])).values()];
+  const accountName = new Map(accounts.map((a) => [a.id, a.name]));
   const today = todayIso();
   const active = d.trustees.filter((t) => t.status === "active");
   const ended = d.trustees.filter((t) => t.status !== "active");
-  const liveMembers = d.memberships.filter((m) => !m.endsOn || m.endsOn > today);
+  const liveMembers = d.memberships.filter((m) => (m.status ?? "active") !== "ended" && (!m.endsOn || m.endsOn >= today));
 
   const founderFields = (f?: (typeof d.founders)[number]) => [
     { name: "displayName", label: "اسم الواقف", required: true, defaultValue: f?.displayName },
@@ -231,12 +239,36 @@ export default async function PartiesPage({ params }: { params: Promise<{ id: st
                       rowKey={(m) => m.id}
                       empty={<p className="py-3 text-center text-muted">لا أعضاء.</p>}
                       columns={[
-                        { key: "name", label: "العضو", render: (m) => m.personName },
-                        { key: "role", label: "الدور", render: (m) => BODY_ROLE_LABEL[m.role] ?? m.role },
+                        { key: "name", label: "العضو", render: (m) => <div><p>{m.personName}</p>{m.capacity ? <p className="text-[13px] text-muted">{m.capacity}</p> : null}<p className="text-[12px] text-muted">{m.userId ? `حساب في المنصة${accountName.get(m.userId) ? `: ${accountName.get(m.userId)}` : ""}` : "بلا حساب في المنصة"}</p></div> },
+                        { key: "role", label: "الدور", render: (m) => <div className="flex flex-wrap gap-1">{BODY_ROLE_LABEL[m.role] ?? m.role}{m.isExecutive ? <Badge icon={false}>تنفيذي</Badge> : null}{m.canSign ? <Badge tone="seal" icon={false}>مفوّض بالتوقيع</Badge> : null}{m.status === "suspended" ? <Badge tone="warn" icon={false}>موقوفة</Badge> : null}</div> },
                         { key: "ind", label: "الاستقلال", render: (m) => (m.isIndependent ? <Badge tone="info" icon={false}>مستقل</Badge> : "غير مستقل") },
                         { key: "vote", label: "التصويت", render: (m) => (m.hasVote ? "يصوّت" : "بلا صوت") },
                         { key: "term", label: "المدة", render: (m) => `${fmtDate(m.startsOn)} — ${m.endsOn ? fmtDate(m.endsOn) : "مفتوحة"}`, hideOnMobile: true },
-                        ...(canGov ? [{ key: "end", label: "", render: (m: (typeof ms)[number]) => <ActionButton action={endBodyMember} hidden={{ waqfId: id, membershipId: m.id }} label="أنهِ العضوية" variant="ghost" confirm={`إنهاء عضوية ${m.personName}؟`} /> }] : []),
+                        ...(canGov ? [{ key: "contact", label: "التواصل", hideOnMobile: true, render: (m: (typeof ms)[number]) => <span className="text-[13px]" dir="ltr">{[m.contactEmail, m.contactPhone].filter(Boolean).join(" · ") || "—"}</span> }] : []),
+                        ...(canGov ? [{ key: "end", label: "", render: (m: (typeof ms)[number]) => (
+                          <div className="flex flex-col gap-1">
+                            <Disclosure summary="عدّل" testId={`edit-member-${m.id}`}>
+                              <ActionForm action={updateBodyMember} hidden={{ waqfId: id, membershipId: m.id }} submitLabel="احفظ"
+                                fields={[
+                                  { name: "personName", label: "الاسم", required: true, defaultValue: m.personName },
+                                  { name: "role", label: "الدور", type: "select", options: options(BODY_ROLE_LABEL), required: true, defaultValue: m.role },
+                                  { name: "capacity", label: "صفته", defaultValue: m.capacity },
+                                  { name: "userId", label: "حسابه في المنصة", type: "select", options: accountOpts, defaultValue: m.userId ?? "" },
+                                  { name: "contactEmail", label: "البريد", defaultValue: m.contactEmail, ltr: true },
+                                  { name: "contactPhone", label: "الجوال", defaultValue: m.contactPhone, ltr: true },
+                                  { name: "startsOn", label: "بداية العضوية", type: "date", defaultValue: m.startsOn },
+                                  { name: "endsOn", label: "نهاية العضوية", type: "date", defaultValue: m.endsOn },
+                                  { name: "appointmentRef", label: "قرار التعيين أو مستنده", defaultValue: m.appointmentRef },
+                                  { name: "status", label: "حالة العضوية", type: "select", options: [{ value: "active", label: "سارية" }, { value: "suspended", label: "موقوفة" }], defaultValue: m.status ?? "active" },
+                                  { name: "isIndependent", label: "عضو مستقل", type: "checkbox", defaultValue: m.isIndependent },
+                                  { name: "hasVote", label: "له حق التصويت", type: "checkbox", defaultValue: m.hasVote },
+                                  { name: "isExecutive", label: "عضو تنفيذي", type: "checkbox", defaultValue: m.isExecutive },
+                                  { name: "canSign", label: "مفوّض بالتوقيع", type: "checkbox", defaultValue: m.canSign },
+                                ]} />
+                            </Disclosure>
+                            <ActionButton action={endBodyMember} hidden={{ waqfId: id, membershipId: m.id }} label="أنهِ العضوية" variant="ghost" confirm={`إنهاء عضوية ${m.personName}؟`} />
+                          </div>
+                        ) }] : []),
                       ]}
                     />
                     {canGov ? (
@@ -249,10 +281,17 @@ export default async function PartiesPage({ params }: { params: Promise<{ id: st
                             fields={[
                               { name: "personName", label: "الاسم", required: true },
                               { name: "role", label: "الدور", type: "select", options: options(BODY_ROLE_LABEL), required: true, defaultValue: "member" },
+                              { name: "capacity", label: "صفته", placeholder: "مثال: ممثل الواقف، خبير مالي" },
+                              { name: "userId", label: "حسابه في المنصة (إن وُجد)", type: "select", options: accountOpts },
+                              { name: "contactEmail", label: "البريد (للدعوات إن لم يكن له حساب)", ltr: true },
+                              { name: "contactPhone", label: "الجوال", ltr: true },
                               { name: "startsOn", label: "بداية العضوية", type: "date", defaultValue: today },
                               { name: "endsOn", label: "نهاية العضوية", type: "date" },
+                              { name: "appointmentRef", label: "قرار التعيين أو مستنده" },
                               { name: "isIndependent", label: "عضو مستقل", type: "checkbox" },
                               { name: "hasVote", label: "له حق التصويت", type: "checkbox", defaultValue: true },
+                              { name: "isExecutive", label: "عضو تنفيذي", type: "checkbox" },
+                              { name: "canSign", label: "مفوّض بالتوقيع", type: "checkbox" },
                             ]}
                           />
                         </Disclosure>

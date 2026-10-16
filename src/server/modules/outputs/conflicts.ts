@@ -126,6 +126,27 @@ const SERVICE: Record<string, Rule[]> = {
         }];
       return [];
     },
+    // v3: the chosen type of will against the bequests table
+    (x) => {
+      if (!x.keys.willType) return [];
+      const all = x.tables.bequests ?? [];
+      const rows = all.map((r, i) => ({ r, i })).filter(({ r }) => r.kind === "waqf");
+      const typeSide = { field: "willType", label: label(x, "willType", "نوع الوصية"), value: opt(x, "willType", x.keys.willType), source: FORM };
+      if (x.keys.willType === "pure" && rows.length)
+        return [{
+          key: "will:type_vs_bequests", label: "تعارض في نوع الوصية: اختيرت وصية خالصة لا تتضمن وقفًا، وفي جدول الوصايا وقف بعد الوفاة", severity: "material",
+          sides: [typeSide, ...rows.map(({ r, i }) => ({ field: "bequests", label: `جدول الوصايا — الصف ${i + 1} (نوع الوصية)`, value: `${opt(x, "bequests.kind", r.kind)}${r.basis === "share" && r.percent ? ` بنسبة ${r.percent}٪ من التركة` : ""} — ${r.recipient ?? ""}`.trim(), source: FORM }))],
+          action: "يُسأل العميل أي القيمتين مقصودة: تُصحَّح نوع الوصية إلى «تتضمن وقفًا» مع بيانات الوقف، أو يُصحَّح نوع الصف في الجدول. لا تُختار قيمة نيابة عنه.",
+          fields: ["willType", "bequests"],
+        }];
+      if (x.keys.willType === "with_waqf" && all.length && !rows.length)
+        return [{
+          key: "will:type_without_row", label: "تعارض في نوع الوصية: اختيرت وصية تتضمن وقفًا بعد الوفاة، ولا صف «وقف بعد الوفاة» في جدول الوصايا", severity: "material",
+          sides: [typeSide, { field: "bequests", label: "جدول الوصايا", value: all.map((r) => opt(x, "bequests.kind", r.kind)).join("، "), source: FORM }],
+          action: "يُضاف صف الوقف بمقداره في جدول الوصايا، أو يُصحَّح نوع الوصية إلى «خالصة».", fields: ["willType", "bequests"],
+        }];
+      return [];
+    },
     // a previous will said not to exist, while one is attached
     (x) => (x.keys.hasPreviousWill === "no" && x.docs.some((d) => d.slot === "previousWill")
       ? [{

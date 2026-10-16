@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import { and, desc, eq, isNull } from "drizzle-orm";
+import { documents } from "@/server/db/schema";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ExternalLink, Lock, MapPin, ShieldAlert } from "lucide-react";
@@ -35,7 +37,12 @@ export default async function MeetingPage({ params }: { params: Promise<{ id: st
   const canVote = waqfCan(access, "governance.vote");
   const canDeclare = waqfCan(access, "coi.declare");
   const me = auth.user.id;
-  const { d, members } = await read(auth, async (tx) => ({ d: await meetingPage(tx, id, mid, me), members: manage ? await assignableMembers(tx, id) : [] }));
+  const { d, members, docs } = await read(auth, async (tx) => ({
+    d: await meetingPage(tx, id, mid, me), members: manage ? await assignableMembers(tx, id) : [],
+    // the waqf's documents visible to the viewer (RLS): attachable to agenda items and listed with them
+    docs: await tx.select({ id: documents.id, title: documents.title }).from(documents).where(and(eq(documents.waqfId, id), isNull(documents.archivedAt))).orderBy(desc(documents.createdAt)).limit(100),
+  }));
+  const docTitle = new Map(docs.map((x) => [x.id, x.title]));
   if (!d) notFound();
   const m = d.meeting;
   const ids = { waqfId: id, meetingId: m.id };
@@ -104,6 +111,12 @@ export default async function MeetingPage({ params }: { params: Promise<{ id: st
                         </div>
                       </div>
 
+                      {it.presenterName || (it.documentIds ?? []).length ? (
+                        <p className="text-[14px] text-muted" data-testid={`agenda-${it.position}-meta`}>
+                          {it.presenterName ? <>يقدّمه: {it.presenterName}</> : null}
+                          {(it.documentIds ?? []).length ? <> {it.presenterName ? "· " : ""}المرفقات: {(it.documentIds ?? []).map((x: string, i: number) => <span key={x}>{i ? "، " : ""}<a className="text-ink underline" href={`/api/files/${x}?disposition=inline`} target="_blank" rel="noopener">{docTitle.get(x) ?? "مستند"}</a></span>)}</> : null}
+                        </p>
+                      ) : null}
                       {it.declarations.filter((x) => x.kind !== "none").length ? (
                         <p className="flex items-start gap-2 rounded-md bg-fine-soft px-3 py-2 text-[14px] text-fine">
                           <ShieldAlert aria-hidden className="mt-1 size-4 shrink-0" />
@@ -176,7 +189,7 @@ export default async function MeetingPage({ params }: { params: Promise<{ id: st
               <p className="p-5 text-muted">لا بنود بعد.</p>
             )}
             {manage && !cancelled && (!mn || mn.status === "draft") ? (
-              <div className="border-t border-line p-4 md:p-5"><AgendaItemForm {...ids} /></div>
+              <div className="border-t border-line p-4 md:p-5"><AgendaItemForm {...ids} docs={docs} /></div>
             ) : null}
           </Panel>
 
@@ -239,7 +252,7 @@ export default async function MeetingPage({ params }: { params: Promise<{ id: st
 
           {manage && !cancelled && !m.heldAt ? (
             <Panel title="الدعوات">
-              {d.invited ? <p className="mb-3 text-[14px] text-muted">أُرسلت الدعوات {fmtDateTime(m.invitationsSentAt)}.</p> : <p className="mb-3 text-[14px] text-muted">تصل الدعوة لكل عضو مع جدول الأعمال ورابط الإفصاح عن التعارض.</p>}
+              {d.invited ? <p className="mb-3 text-[14px] text-muted">أُرسلت الدعوات {fmtDateTime(m.invitationsSentAt)}.</p> : <p className="mb-3 text-[14px] text-muted">يصل إشعار الدعوة داخل المنصة إلى الأعضاء ذوي الحسابات، ومنه يفتحون الاجتماع وجدول أعماله ويفصحون عن التعارض. الأعضاء بلا حساب تُرسل إليهم الدعوة بجدول الأعمال على بريدهم إن سُجّل، وإلا تُبلَّغ خارج المنصة.</p>}
               <ActionButton action={sendInvitations} fields={ids} label={d.invited ? "أعد إرسال الدعوات" : "أرسل الدعوات"} variant={d.invited ? "secondary" : "primary"} pendingText="جارٍ الإرسال…" />
               <div className="mt-3 border-t border-line pt-3"><ActionButton action={cancelMeeting} fields={ids} label="ألغِ الاجتماع" variant="ghost" size="sm" confirm="إلغاء هذا الاجتماع؟" /></div>
             </Panel>

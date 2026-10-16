@@ -49,6 +49,10 @@ export default async function ReportsPage({ params }: { params: Promise<{ id: st
         </div>
       </div>
 
+      <Panel title="تقرير الحوكمة" description="تشكيل المجلس، قواعد الإدارة، الاجتماعات، القرارات وتنفيذها، السياسات، الالتزامات، الأصول والمخاطر — من سجلات الوقف لفترة تختارها.">
+        <a href={`/app/w/${id}/reports/governance`} className={buttonClass("secondary", "md")} data-testid="governance-report-link"><FileBarChart aria-hidden className="size-4" /> اعرض تقرير الحوكمة</a>
+      </Panel>
+
       <Alert tone="info">كل حزمة تحمل رقمًا ورمز تحقق، وتُحفظ لقطتها كما كانت لحظة الإعداد؛ يُسجَّل كل تنزيل في سجل العمليات.</Alert>
 
       {nazaraRows.length ? (

@@ -2,7 +2,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { CalendarPlus, Gavel, ScrollText, Users } from "lucide-react";
 import { Alert, Badge, DataTable, EmptyState, PageHeader, Panel, Stat, type Tone } from "@/components/ui";
-import { ActionButton, MeetingForm, PolicyForm, ResolutionTaskForm, ReviewForm } from "@/components/governance/forms";
+import { ActionButton, GovernanceRulesForm, MeetingForm, PolicyForm, ResolutionTaskForm, ReviewForm } from "@/components/governance/forms";
+import { eq } from "drizzle-orm";
+import { waqfGovernanceProfiles } from "@/server/db/schema";
 import { cn, daysUntil, fmtBoth, fmtDate, fmtDateTime, fmtNumber, relDays } from "@/lib/utils";
 import { requireAuth, requireWaqf, waqfCan } from "@/server/authz/context";
 import { read } from "@/server/modules/_shared";
@@ -24,7 +26,12 @@ export default async function GovernancePage({ params }: { params: Promise<{ id:
   const auth = await requireAuth({ next: `/app/w/${id}/governance` });
   const access = await requireWaqf(auth, id, "governance.view");
   const manage = waqfCan(access, "governance.manage");
-  const { data, members } = await read(auth, async (tx) => ({ data: await governanceHome(tx, id), members: manage ? await assignableMembers(tx, id) : [] }));
+  const { data, members, rules } = await read(auth, async (tx) => ({
+    data: await governanceHome(tx, id), members: manage ? await assignableMembers(tx, id) : [],
+    rules: (await tx.select().from(waqfGovernanceProfiles).where(eq(waqfGovernanceProfiles.waqfId, id)).limit(1))[0] ?? null,
+  }));
+  const isBoard = access.waqf.nazirMode === "board";
+  const RULE_LABELS: [string, string | null | undefined][] = rules ? [["اختصاصات", rules.competencies], ["صلاحيات الرئيس والأعضاء", rules.chairPowers], ["حدود التفويض", rules.delegationLimits], ["توزيع المهام", rules.taskAllocation], ["صلاحيات التوقيع", rules.signingRules], ["تعارض المصالح", rules.coiProcedure], ["حفظ المحاضر والقرارات", rules.recordsRule]] : [];
   const base = `/app/w/${id}/governance`;
   const upcoming = data.meetings.filter((m) => m.status === "scheduled" && !m.heldAt);
   const memberOpts = members.map((m) => ({ value: m.id, label: `${m.name} — ${m.roles.join("، ")}` }));
@@ -45,9 +52,10 @@ export default async function GovernancePage({ params }: { params: Promise<{ id:
       />
 
       <nav aria-label="أقسام الحوكمة" className="-mx-1 flex gap-1 overflow-x-auto pb-1 text-[14px]">
-        {[["#meetings", "الاجتماعات"], ["#resolutions", "سجل القرارات"], ["#policies", "السياسات واللوائح"], ["#board", "تشكيل المجلس"], ["#reviews", "تقييم الأداء"]].map(([h, l]) => (
+        {[["#meetings", "الاجتماعات"], ["#resolutions", "سجل القرارات"], ["#policies", "السياسات واللوائح"], ["#board", "تشكيل المجلس"], ["#rules", "الصلاحيات وآلية الإدارة"], ["#reviews", "تقييم الأداء"]].map(([h, l]) => (
           <a key={h} href={h} className="shrink-0 rounded-full border border-line bg-surface px-3 py-1.5 hover:border-ink hover:text-ink">{l}</a>
         ))}
+        <a href={`/app/w/${id}/reports/governance`} data-testid="governance-report-link" className="shrink-0 rounded-full border border-ink bg-surface px-3 py-1.5 text-ink hover:bg-surface-2">تقرير الحوكمة</a>
       </nav>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -193,6 +201,20 @@ export default async function GovernancePage({ params }: { params: Promise<{ id:
         ) : (
           <EmptyState icon={Users} title="لا أعضاء مجلس">أضف أعضاء المجلس من «الأعضاء والإعدادات» بأدوار: رئيس المجلس، عضو، أمين السر.</EmptyState>
         )}
+      </Panel>
+
+      <Panel id="rules" title={isBoard ? "صلاحيات المجلس وآلية الإدارة" : "صلاحيات الناظر وآلية الإدارة"} description="كما تنص عليه وثيقة الوقف أو لائحة المجلس، مع مصدرها. النصاب وآلية التصويت هنا هما ما يطبقه نظام الاجتماعات.">
+        {rules ? (
+          <dl className="grid gap-x-6 gap-y-3 text-[15px] sm:grid-cols-2" data-testid="rules">
+            <div><dt className="text-muted">النصاب</dt><dd>{QUORUM_AR[rules.quorumRule] ?? rules.quorumRule}{rules.requireIndependentForQuorum ? " مع عضو مستقل" : ""}</dd></div>
+            <div><dt className="text-muted">آلية التصويت</dt><dd>{MAJORITY_AR[rules.majorityRule] ?? rules.majorityRule}</dd></div>
+            {rules.executiveSpendLimit ? <div><dt className="text-muted">حد صرف التنفيذي</dt><dd className="tabular">{fmtNumber(Number(rules.executiveSpendLimit))} ريال</dd></div> : null}
+            {rules.reservedDecisions.length ? <div className="sm:col-span-2"><dt className="text-muted">قرارات محجوزة للمجلس</dt><dd>{rules.reservedDecisions.join("؛ ")}</dd></div> : null}
+            {RULE_LABELS.filter(([, v]) => v).map(([l, v]) => <div key={l} className="sm:col-span-2"><dt className="text-muted">{l}</dt><dd className="whitespace-pre-line">{v}</dd></div>)}
+            <div className="sm:col-span-2 text-[13px] text-muted">المصدر: {rules.source ?? "غير مذكور"}</div>
+          </dl>
+        ) : <p className="text-[15px] text-muted">لم تُسجَّل قواعد الإدارة والصلاحيات بعد. يُطبّق نظام الاجتماعات النصاب والأغلبية الافتراضيين حتى تُسجَّل.</p>}
+        {manage ? <details className="mt-4"><summary className="cursor-pointer text-[15px] font-medium text-ink">{rules ? "عدّل القواعد" : "سجّل القواعد"}</summary><div className="mt-3"><GovernanceRulesForm waqfId={id} rules={rules ? { ...rules, reservedDecisions: rules.reservedDecisions ?? [] } : null} /></div></details> : null}
       </Panel>
 
       <Panel id="reviews" title="تقييم الأداء" description="تقييم سنوي لأداء الناظر والمجلس وأعضائه.">

@@ -8,7 +8,7 @@ import { FormMessage, SubmitButton } from "@/components/ui/form";
 import { DocumentUploader } from "@/components/documents/uploader";
 import { cn, initialState, type ActionState } from "@/lib/utils";
 import {
-  cellVisible, checkIntake, docRequired, fieldRequired, intakeProgress, summarize, tableRows, validateStep, visibleDocs, visibleFields, visibleSteps,
+  cellVisible, checkIntake, columnOptions, docRequired, fieldRequired, intakeProgress, summarize, tableRows, validateStep, visibleDocs, visibleFields, visibleSteps,
   type Answers, type AnswerValue, type Column, type DocMap, type Field, type ServiceForm, type TableRow,
 } from "@/server/modules/requests/intake/engine";
 
@@ -20,7 +20,7 @@ const clean = (e: Record<string, string | undefined>) => Object.fromEntries(Obje
 const inputCls =
   "block w-full rounded-md border border-line-strong bg-surface px-3 text-[15px] text-text placeholder:text-muted/70 focus:border-ink focus:outline-none focus:ring-2 focus:ring-ink/20 aria-[invalid=true]:border-critical";
 
-export function FieldInput({ f, value, onChange, error, required }: { f: Field; value: AnswerValue | undefined; onChange: (v: AnswerValue | undefined) => void; error?: string; required: boolean }) {
+export function FieldInput({ f, value, onChange, error, required, answers }: { f: Field; value: AnswerValue | undefined; onChange: (v: AnswerValue | undefined) => void; error?: string; required: boolean; answers?: Answers }) {
   const id = `q-${f.key}`;
   const describedBy = error ? `${id}-error` : f.hint ? `${id}-hint` : undefined;
   const common = { id, "aria-invalid": !!error, "aria-describedby": describedBy, "aria-required": required };
@@ -85,7 +85,7 @@ export function FieldInput({ f, value, onChange, error, required }: { f: Field; 
       return (
         <fieldset className="space-y-2 sm:col-span-2" aria-describedby={describedBy} aria-invalid={!!error} data-testid={`table-${f.key}`}>
           <legend className="mb-1.5 text-[15px] font-medium">{label}</legend>
-          <TableInput f={f} value={value} onChange={onChange} />
+          <TableInput f={f} value={value} onChange={onChange} answers={answers ?? {}} />
           {f.hint && !error ? <p id={`${id}-hint`} className="text-[13px] text-muted">{f.hint}</p> : null}
           {error ? <p id={`${id}-error`} className="text-[13px] font-medium text-critical">{error}</p> : null}
         </fieldset>
@@ -121,7 +121,7 @@ export function FieldInput({ f, value, onChange, error, required }: { f: Field; 
 }
 
 /** Repeating rows: each row is a small card of cells (works on phones), with add and remove. */
-function TableInput({ f, value, onChange }: { f: Field; value: AnswerValue | undefined; onChange: (v: AnswerValue | undefined) => void }) {
+function TableInput({ f, value, onChange, answers }: { f: Field; value: AnswerValue | undefined; onChange: (v: AnswerValue | undefined) => void; answers: Answers }) {
   const rows = tableRows(value);
   const cols = f.columns ?? [];
   const max = f.maxRows ?? 30;
@@ -149,7 +149,7 @@ function TableInput({ f, value, onChange }: { f: Field; value: AnswerValue | und
                   {c.type === "select" ? (
                     <select id={cid} value={v} onChange={(e) => setCell(i, c, e.target.value)} className={cn(inputCls, "h-10")}>
                       <option value="">اختر…</option>
-                      {c.options?.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                      {columnOptions(c, answers).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
                     </select>
                   ) : (
                     <input id={cid} type={c.type === "date" ? "date" : "text"} value={v} inputMode={numeric ? "decimal" : undefined} dir={numeric || c.type === "date" ? "ltr" : undefined}
@@ -223,7 +223,24 @@ export function IntakeWizard({ requestId, form, initialAnswers, docMap, docOptio
   }, [dirty]);
 
 
+  // A change that hides answered questions (e.g. switching a will to «pure» hides the waqf's terms) is confirmed
+  // first, listing what will no longer apply; nothing is dropped silently.
+  const [pending, setPending] = useState<{ k: string; v: AnswerValue | undefined; lost: string[] } | null>(null);
+  const answered = (a: Answers) => new Set(visibleSteps(form, a).flatMap((st) => visibleFields(st, a)).filter((f) => { const x = a[f.key]; return x !== undefined && x !== "" && !(Array.isArray(x) && !x.length); }).map((f) => f.key));
   const setValue = (k: string, v: AnswerValue | undefined) => {
+    const before = answered(answers);
+    const next = { ...answers };
+    if (v === undefined || (Array.isArray(v) && !v.length)) delete next[k]; else next[k] = v;
+    const nowVisible = new Set(visibleSteps(form, next).flatMap((st) => visibleFields(st, next)).map((f) => f.key));
+    const lost = [...before].filter((x) => x !== k && !nowVisible.has(x));
+    if (lost.length && !pending) {
+      const label = (key: string) => form.steps.flatMap((st) => st.fields).find((f) => f.key === key)?.label ?? key;
+      setPending({ k, v, lost: lost.map(label) });
+      return;
+    }
+    apply(k, v);
+  };
+  const apply = (k: string, v: AnswerValue | undefined) => {
     setAnswers((a) => {
       const n = { ...a };
       if (v === undefined || (Array.isArray(v) && !v.length)) delete n[k];
@@ -330,8 +347,18 @@ export function IntakeWizard({ requestId, form, initialAnswers, docMap, docOptio
           <h2 id="step-title" className="text-lg font-semibold">{step.title}</h2>
           {step.intro ? <p className="text-[15px] text-muted">{step.intro}</p> : null}
           <div className="grid gap-4 sm:grid-cols-2">
+            {pending ? (
+              <div role="alertdialog" aria-labelledby="change-title" className="rounded-lg border border-warn/50 bg-warn-soft p-4 sm:col-span-2" data-testid="confirm-change">
+                <p id="change-title" className="font-semibold">هذا التغيير يجعل إجابات سابقة غير منطبقة</p>
+                <p className="mt-1 text-[14px]">لن تُستخدم الإجابات التالية بعد التغيير، وتُحفظ قيمها في سجل الطلب: {pending.lost.join("، ")}.</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button type="button" size="sm" onClick={() => { const p = pending; setPending(null); apply(p.k, p.v); }}>أؤكد التغيير</Button>
+                  <Button type="button" size="sm" variant="secondary" onClick={() => setPending(null)}>تراجع</Button>
+                </div>
+              </div>
+            ) : null}
             {visibleFields(step, answers).map((f) => (
-              <FieldInput key={f.key} f={f} value={answers[f.key]} onChange={(v) => setValue(f.key, v)} error={errors[f.key]} required={fieldRequired(f, answers)} />
+              <FieldInput key={f.key} f={f} value={answers[f.key]} onChange={(v) => setValue(f.key, v)} error={errors[f.key]} required={fieldRequired(f, answers)} answers={answers} />
             ))}
           </div>
         </section>

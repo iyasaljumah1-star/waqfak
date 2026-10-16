@@ -1,10 +1,12 @@
 "use server";
 
 /** Identity & registration, classification history, timeline, and parties (founders, nazara, successions, bodies). */
-import { and, eq } from "drizzle-orm";
+import { and, eq, gte, isNull, or } from "drizzle-orm";
+import type { Tx } from "../../db";
 import { z } from "zod";
 import {
   bodies, bodyMemberships, founders, successions, trusteeAppointments, trustees, waqfClassifications, waqfRegistrations, waqfs,
+ waqfMemberships,
 } from "../../db/schema";
 import { deriveSizeClass, deriveType } from "../../engines/assessment";
 import { audit } from "../../lib/audit";
@@ -277,17 +279,33 @@ export async function addBody(_: ActionState, fd: FormData): Promise<ActionState
   }, "parties");
 }
 
-const memberSchema = z.object({
-  bodyId: z.uuid({ error: "اختر الجهاز." }),
+const memberFields = {
   personName: reqText(200, "اكتب اسم العضو."),
   role: z.enum(["chair", "vice_chair", "member", "secretary", "observer"], { error: "اختر الدور." }),
+  capacity: optText(200),
   isIndependent: flag,
   hasVote: flag,
+  isExecutive: flag,
+  canSign: flag,
   startsOn: optDate,
   endsOn: optDate,
-}).superRefine((d, ctx) => {
+  contactEmail: z.union([z.literal(""), z.email("بريد غير صحيح.")]).optional().transform((v) => v || null),
+  contactPhone: optText(20),
+  appointmentRef: optText(200),
+  userId: z.union([z.literal(""), z.uuid()]).optional().transform((v) => v || null),
+};
+const termCheck = (d: { startsOn: string | null; endsOn: string | null }, ctx: z.RefinementCtx) => {
   if (d.startsOn && d.endsOn && d.endsOn <= d.startsOn) ctx.addIssue({ code: "custom", path: ["endsOn"], message: "نهاية العضوية بعد بدايتها." });
-});
+};
+const memberSchema = z.object({ bodyId: z.uuid({ error: "اختر الجهاز." }), ...memberFields }).superRefine(termCheck);
+const memberEditSchema = z.object({ membershipId: z.uuid(), ...memberFields, status: z.enum(["active", "suspended"]).default("active") }).superRefine(termCheck);
+
+/** A member's platform account must be an active member of this waqf (so invitations, votes and signatures reach them). */
+async function checkMemberUser(c: { tx: Tx; access: { waqf: { id: string } } }, userId: string | null) {
+  if (!userId) return;
+  const [m] = await c.tx.select({ id: waqfMemberships.id }).from(waqfMemberships).where(and(eq(waqfMemberships.waqfId, c.access.waqf.id), eq(waqfMemberships.userId, userId), eq(waqfMemberships.status, "active"))).limit(1);
+  if (!m) throw new UserError("الحساب المختار ليس عضوًا في الوقف. ادعُه من «الأعضاء والإعدادات» أولًا.");
+}
 
 export async function addBodyMember(_: ActionState, fd: FormData): Promise<ActionState> {
   return fileAction(fd, memberSchema, "governance.manage", async (c, d) => {
@@ -295,13 +313,39 @@ export async function addBodyMember(_: ActionState, fd: FormData): Promise<Actio
     const [b] = await c.tx.select().from(bodies).where(and(eq(bodies.id, d.bodyId), eq(bodies.waqfId, w.id))).limit(1);
     assertFound(b, "لم نجد هذا الجهاز في الوقف.");
     if (d.role === "observer" && d.hasVote) return { error: "المراقب لا يصوّت: ألغِ خيار حق التصويت." };
+    await checkMemberUser(c, d.userId);
+    if (d.role === "chair") {
+      const [chair] = await c.tx.select({ id: bodyMemberships.id }).from(bodyMemberships).where(and(eq(bodyMemberships.bodyId, d.bodyId), eq(bodyMemberships.role, "chair"), eq(bodyMemberships.status, "active"), or(isNull(bodyMemberships.endsOn), gte(bodyMemberships.endsOn, todayIso())))).limit(1);
+      if (chair) return { error: "للمجلس رئيس قائم: أنهِ عضويته أو غيّر دوره أولًا." };
+    }
     const [m] = await c.tx.insert(bodyMemberships).values({ ...d, waqfId: w.id, createdBy: c.auth.user.id }).returning({ id: bodyMemberships.id });
-    await audit(c.tx, { actorUserId: c.auth.user.id, action: "waqf.body_member_added", entityType: "body_membership", entityId: m.id, waqfId: w.id, ...meta(c), after: d });
+    await audit(c.tx, { actorUserId: c.auth.user.id, action: "waqf.body_member_added", entityType: "body_membership", entityId: m.id, waqfId: w.id, ...meta(c), after: { ...d, contactEmail: d.contactEmail ? "•••" : null, contactPhone: d.contactPhone ? "•••" : null } });
     if (b!.kind === "board") {
       await addTimeline(c.tx, w, c.auth.user.id, "governance", `عضو جديد في ${b!.name}: ${d.personName}`);
       if (w.nazirMode === "board") await materialChange(c.tx, w, "nazara", c.auth.user.id, { action: "board_member_added" });
     }
-    return { ok: true, message: "أُضيف العضو." };
+    return { ok: true, message: d.userId ? "أُضيف العضو وربط بحسابه." : "أُضيف العضو. لا حساب له في المنصة: يُبلَّغ بالدعوات على بريده إن أُدخل، ويُسجَّل حضوره وصوته يدويًا." };
+  }, "parties");
+}
+
+/** Edits a member: role, capacity, flags, term, contact, status, and the link to their platform account. */
+export async function updateBodyMember(_: ActionState, fd: FormData): Promise<ActionState> {
+  return fileAction(fd, memberEditSchema, "governance.manage", async (c, d) => {
+    const w = c.access.waqf;
+    const [m] = await c.tx.select().from(bodyMemberships).where(and(eq(bodyMemberships.id, d.membershipId), eq(bodyMemberships.waqfId, w.id))).limit(1);
+    assertFound(m);
+    if (m!.status === "ended") throw new UserError("العضوية منتهية؛ أضف عضوية جديدة إن عاد العضو.");
+    if (d.role === "observer" && d.hasVote) return { error: "المراقب لا يصوّت: ألغِ خيار حق التصويت." };
+    await checkMemberUser(c, d.userId);
+    if (d.role === "chair" && m!.role !== "chair") {
+      const [chair] = await c.tx.select({ id: bodyMemberships.id }).from(bodyMemberships).where(and(eq(bodyMemberships.bodyId, m!.bodyId), eq(bodyMemberships.role, "chair"), eq(bodyMemberships.status, "active"), or(isNull(bodyMemberships.endsOn), gte(bodyMemberships.endsOn, todayIso())))).limit(1);
+      if (chair) return { error: "للمجلس رئيس قائم: غيّر دوره أولًا." };
+    }
+    const { membershipId, ...v } = d;
+    await c.tx.update(bodyMemberships).set({ ...v, updatedBy: c.auth.user.id }).where(eq(bodyMemberships.id, membershipId));
+    const changed = (Object.keys(v) as (keyof typeof v)[]).filter((k) => String(v[k] ?? "") !== String((m as Record<string, unknown>)[k] ?? ""));
+    await audit(c.tx, { actorUserId: c.auth.user.id, action: "waqf.body_member_updated", entityType: "body_membership", entityId: membershipId, waqfId: w.id, ...meta(c), after: { changed } });
+    return { ok: true, message: changed.length ? "حُفظت بيانات العضو." : "لا تغيير." };
   }, "parties");
 }
 
@@ -312,7 +356,7 @@ export async function endBodyMember(_: ActionState, fd: FormData): Promise<Actio
     assertFound(m);
     const t = todayIso();
     if (m!.endsOn && m!.endsOn <= t) throw new UserError("العضوية منتهية مسبقًا.");
-    await c.tx.update(bodyMemberships).set({ endsOn: t, updatedBy: c.auth.user.id }).where(eq(bodyMemberships.id, m!.id));
+    await c.tx.update(bodyMemberships).set({ endsOn: t, status: "ended", updatedBy: c.auth.user.id }).where(eq(bodyMemberships.id, m!.id));
     await audit(c.tx, { actorUserId: c.auth.user.id, action: "waqf.body_member_ended", entityType: "body_membership", entityId: m!.id, waqfId: w.id, ...meta(c), before: { endsOn: m!.endsOn }, after: { endsOn: t } });
     const [b] = await c.tx.select({ kind: bodies.kind }).from(bodies).where(eq(bodies.id, m!.bodyId)).limit(1);
     if (b?.kind === "board" && w.nazirMode === "board") await materialChange(c.tx, w, "nazara", c.auth.user.id, { action: "board_member_ended" });

@@ -6,7 +6,7 @@ import { Checkbox, Field, FormMessage, Input, Select, SubmitButton, Textarea } f
 import { cn, initialState, type ActionState } from "@/lib/utils";
 import {
   addAgendaItem, addPerformanceReview, castVote, closeVote, createMeeting, declareConflict, openVote, recordAttendance, requestMinutesOtp,
-  saveMinutes, savePolicy, signMinutes, taskFromResolution,
+  saveGovernanceRules, saveMinutes, savePolicy, signMinutes, taskFromResolution,
 } from "@/server/modules/governance/actions";
 
 type Act = (s: ActionState, fd: FormData) => Promise<ActionState>;
@@ -73,10 +73,10 @@ export function MeetingForm({ waqfId }: { waqfId: string }) {
   );
 }
 
-export function AgendaItemForm({ waqfId, meetingId }: Required<Ids>) {
+export function AgendaItemForm({ waqfId, meetingId, docs = [] }: Required<Ids> & { docs?: { id: string; title: string }[] }) {
   const [state, run] = useActionState(addAgendaItem, initialState);
   return (
-    <form action={run} className="grid gap-3 md:grid-cols-[minmax(0,1fr)_10rem_auto] md:items-end">
+    <form action={run} className="grid gap-3 md:grid-cols-[minmax(0,1fr)_10rem_auto] md:items-end" data-testid="agenda-form">
       <Hidden v={{ waqfId, meetingId }} />
       <Field label="بند جديد" name="title" error={state.fieldErrors?.title}>
         <Input name="title" maxLength={300} required placeholder="عنوان البند" />
@@ -85,6 +85,17 @@ export function AgendaItemForm({ waqfId, meetingId }: Required<Ids>) {
         <Select name="kind" defaultValue="decision" options={[{ value: "decision", label: "للقرار" }, { value: "discussion", label: "للنقاش" }, { value: "info", label: "للعلم" }]} />
       </Field>
       <SubmitButton variant="secondary" pendingText="جارٍ الإضافة…">أضف البند</SubmitButton>
+      <Field label="مقدّم البند (اختياري)" name="presenterName" className="md:col-span-1">
+        <Input name="presenterName" maxLength={120} />
+      </Field>
+      {docs.length ? (
+        <fieldset className="md:col-span-2">
+          <legend className="mb-1 text-[14px] font-medium">مرفقات البند من وثائق الوقف (اختياري)</legend>
+          <div className="flex max-h-32 flex-col gap-1 overflow-y-auto rounded-md border border-line p-2 text-[14px]">
+            {docs.map((d) => <label key={d.id} className="flex items-center gap-2"><input type="checkbox" name="docIds" value={d.id} className="size-4 accent-[var(--ink)]" />{d.title}</label>)}
+          </div>
+        </fieldset>
+      ) : null}
       <div className="md:col-span-3"><FormMessage state={state} /></div>
     </form>
   );
@@ -381,6 +392,41 @@ export function ReviewForm({ waqfId }: { waqfId: string }) {
         <FormMessage state={state} />
         <SubmitButton size="sm" pendingText="جارٍ الحفظ…">سجّل التقييم</SubmitButton>
       </div>
+    </form>
+  );
+}
+
+type Rules = { quorumRule: string; majorityRule: string; meetingsPerYear: number; requireIndependentForQuorum: boolean; executiveSpendLimit: string | null; reservedDecisions: string[]; competencies: string | null; chairPowers: string | null; delegationLimits: string | null; taskAllocation: string | null; signingRules: string | null; coiProcedure: string | null; recordsRule: string | null; source: string | null };
+const RULE_TEXT: [keyof Rules, string, string][] = [
+  ["competencies", "اختصاصات المجلس (أو الناظر)", "ما يختص به ويقرره، كما في الوثيقة أو اللائحة"],
+  ["chairPowers", "صلاحيات الرئيس والأعضاء", "مثل: الدعوة للاجتماع، تمثيل الوقف، الرئاسة عند الغياب"],
+  ["delegationLimits", "حدود التفويض", "ما يُفوَّض للعضو التنفيذي أو الإدارة، وما لا يُفوَّض"],
+  ["taskAllocation", "توزيع المهام والمسؤوليات", ""],
+  ["signingRules", "صلاحيات التوقيع", "من يوقّع عن الوقف، ومنفردًا أو مجتمعين، وحدودها"],
+  ["coiProcedure", "معالجة تعارض المصالح", "الإفصاح، والامتناع عن التصويت، وتوثيقه"],
+  ["recordsRule", "حفظ المحاضر والقرارات", "التوقيع، ومدة الحفظ، والاطلاع"],
+];
+
+/** How the board (or the nazir) is run: decision rules that drive the meetings, and the rules of the governing documents. */
+export function GovernanceRulesForm({ waqfId, rules }: { waqfId: string; rules: Rules | null }) {
+  const [state, run] = useActionState(saveGovernanceRules, initialState);
+  return (
+    <form action={run} className="space-y-4" data-testid="rules-form">
+      <Hidden v={{ waqfId }} />
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Field label="النصاب" name="quorumRule"><Select name="quorumRule" defaultValue={rules?.quorumRule ?? "majority"} options={[{ value: "majority", label: "الأغلبية" }, { value: "two_thirds", label: "الثلثان" }, { value: "all", label: "جميع الأعضاء" }]} /></Field>
+        <Field label="آلية التصويت" name="majorityRule"><Select name="majorityRule" defaultValue={rules?.majorityRule ?? "simple"} options={[{ value: "simple", label: "أغلبية بسيطة للحاضرين" }, { value: "absolute", label: "أغلبية مطلقة" }, { value: "two_thirds", label: "أغلبية الثلثين" }]} /></Field>
+        <Field label="اجتماعات في السنة" name="meetingsPerYear"><Input name="meetingsPerYear" inputMode="numeric" dir="ltr" defaultValue={String(rules?.meetingsPerYear ?? 4)} /></Field>
+        <Field label="حد صرف التنفيذي (ريال)" name="executiveSpendLimit"><Input name="executiveSpendLimit" inputMode="decimal" dir="ltr" defaultValue={rules?.executiveSpendLimit ?? ""} /></Field>
+      </div>
+      <Checkbox name="requireIndependentForQuorum" defaultChecked={rules?.requireIndependentForQuorum ?? false} label="يشترط النصاب حضور عضو مستقل" />
+      <Field label="قرارات محجوزة للمجلس (سطر لكل قرار)" name="reservedDecisions"><Textarea name="reservedDecisions" id="reservedDecisions" defaultValue={(rules?.reservedDecisions ?? []).join("\n")} className="min-h-20" /></Field>
+      {RULE_TEXT.map(([k, l, h]) => (
+        <Field key={k} label={l} name={k} hint={h || undefined}><Textarea name={k} id={k} defaultValue={(rules?.[k] as string | null) ?? ""} className="min-h-16" /></Field>
+      ))}
+      <Field label="مصدر هذه القواعد" name="source" hint="مثال: صك الوقف البند السادس، أو لائحة مجلس النظارة المعتمدة بالقرار 1/2026" error={state.fieldErrors?.source}><Input name="source" id="source" required defaultValue={rules?.source ?? ""} /></Field>
+      <FormMessage state={state} />
+      <SubmitButton pendingText="جارٍ الحفظ…">احفظ القواعد</SubmitButton>
     </form>
   );
 }

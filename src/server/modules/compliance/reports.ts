@@ -8,7 +8,7 @@ import "server-only";
 import { and, asc, eq, gte, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import type { Tx } from "../../db";
 import {
-  beneficialOwners, bodies, bodyMemberships, documents, meetings, resolutions, trustees, violations, waqfKeys, waqfs, penaltySchedule,
+  beneficialOwners, bodies, bodyMemberships, documents, meetings, minutes, resolutions, trustees, violations, waqfKeys, waqfs, penaltySchedule,
 } from "../../db/schema";
 import { addDays, gregorian, hijri, lastFiscalYearEnd, todayISO } from "../../engines/dates";
 import { decryptString, unwrapDataKey } from "../../lib/crypto";
@@ -69,6 +69,11 @@ export async function buildAnnualSnapshot(tx: Tx, waqfId: string, perms: Set<str
       .leftJoin(penaltySchedule, eq(penaltySchedule.code, violations.penaltyCode))
       .where(and(eq(violations.waqfId, waqfId), gte(violations.noticedOn, fy.start), lte(violations.noticedOn, fy.end)));
 
+  const [{ lockedMinutes }] = await tx
+      .select({ lockedMinutes: sql<number>`count(*)::int` })
+      .from(minutes)
+      .innerJoin(meetings, eq(meetings.id, minutes.meetingId))
+      .where(and(eq(meetings.waqfId, waqfId), eq(minutes.status, "locked"), gte(meetings.scheduledAt, new Date(`${fy.start}T00:00:00+03:00`)), lte(meetings.scheduledAt, new Date(`${fy.end}T23:59:59+03:00`))));
   const instances = await listWaqfInstances(tx, waqfId);
   const inFy = instances.filter((i) => i.periodKey === `FY${fy.year}` || (i.dueOn && i.dueOn >= fy.start && i.dueOn <= addDays(fy.end, 120)) || i.periodKey === "standing");
   const sum = summarize(inFy);
@@ -89,7 +94,7 @@ export async function buildAnnualSnapshot(tx: Tx, waqfId: string, perms: Set<str
     ...(sizeLarge ? [{ label: "الموازنة التقديرية المعتمدة", ok: instDone(["OB-FIN-01"]), note: "الالتزام OB-FIN-01" }] : []),
     { label: "كشف صرف الغلة للمستحقين", ok: instDone(["OB-DIS-01"]) || has("bank_statement", true), note: "الالتزام OB-DIS-01 أو كشف بنكي" },
     { label: "التحقق السنوي من المستفيد الحقيقي", ok: instDone(["OB-BO-02"]) || (!!verifiedDates.at(-1) && verifiedDates.at(-1)! >= fy.start), note: "معايير المستفيد الحقيقي" },
-    { label: "قرارات ومحاضر النظارة خلال السنة", ok: has("resolution", true) || has("minutes", true), note: "قرار أو محضر صادر خلال السنة" },
+    { label: "قرارات ومحاضر النظارة خلال السنة", ok: has("resolution", true) || has("minutes", true) || lockedMinutes > 0 || res.some((r) => (r.status === "approved" || r.status === "executed") && r.n > 0), note: "قرار معتمد أو محضر مقفل بالتوقيع في المنصة، أو وثيقة قرار/محضر صادرة خلال السنة" },
   ];
   const count = (rows: { status: string; n: number }[], ss: string[]) => rows.filter((r) => ss.includes(r.status)).reduce((a, r) => a + r.n, 0);
 

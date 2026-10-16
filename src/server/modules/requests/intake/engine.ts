@@ -28,7 +28,15 @@ export type Column = {
   max?: number;
   /** Shown only when another cell of the same row has a value (e.g. amount when kind = fixed). */
   showIf?: { col: string; in: string[] };
+  /** Options that do not apply when a condition on the form holds (hidden in the form and refused on the server). */
+  hideOptions?: { when: Cond; values: string[] };
 };
+
+/** The options of a table column that apply to the current answers. */
+export function columnOptions(c: Column, a: Answers) {
+  const hidden = c.hideOptions && evalCond(c.hideOptions.when, a) ? new Set(c.hideOptions.values) : null;
+  return (c.options ?? []).filter(([k]) => !hidden?.has(k));
+}
 
 export type PrefillKey =
   | "user.fullName" | "user.phone" | "user.email" | "waqf.name" | "waqf.sizeClass" | "waqf.deedNo" | "waqf.registrationCertNo"
@@ -84,7 +92,9 @@ function cleanTable(f: Field, v: unknown): string | undefined {
   return rows.length ? JSON.stringify(rows) : undefined;
 }
 
-export type Step = { key: string; title: string; intro?: string; fields: Field[]; showIf?: Cond };
+/** A row a table must contain when a condition holds (e.g. a will that includes a waqf has a «waqf» bequest row). */
+export type RowRule = { field: string; col: string; value: string; when: Cond; message: string };
+export type Step = { key: string; title: string; intro?: string; fields: Field[]; showIf?: Cond; requireRows?: RowRule[] };
 
 export type DocSlot = {
   key: string;
@@ -179,7 +189,7 @@ export function validateField(f: Field, v: AnswerValue | undefined, a: Answers):
       if (rows.length < (f.minRows ?? (fieldRequired(f, a) ? 1 : 0))) return `«${f.label}»: أضف ${f.minRows ?? 1} صفًا على الأقل.`;
       for (const [i, r] of rows.entries())
         for (const c of (f.columns ?? []).filter((c) => cellVisible(c, r))) {
-          const cellField: Field = { key: c.key, label: `${f.label} — الصف ${i + 1}: ${c.label}`, type: c.type, required: c.required, options: c.options, min: c.min, max: c.max };
+          const cellField: Field = { key: c.key, label: `${f.label} — الصف ${i + 1}: ${c.label}`, type: c.type, required: c.required, options: columnOptions(c, a), min: c.min, max: c.max };
           const e = validateField(cellField, r[c.key], a);
           if (e) return e;
         }
@@ -197,6 +207,8 @@ export function validateField(f: Field, v: AnswerValue | undefined, a: Answers):
 
 export function validateStep(step: Step, a: Answers): Record<string, string> {
   const errors: Record<string, string> = {};
+  for (const r of step.requireRows ?? [])
+    if (evalCond(r.when, a) && !tableRows(a[r.field]).some((row) => row[r.col] === r.value)) errors[r.field] = r.message;
   for (const f of visibleFields(step, a)) {
     const e = validateField(f, a[f.key], a);
     if (e) errors[f.key] = e;

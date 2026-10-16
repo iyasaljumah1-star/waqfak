@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNull, or } from "drizzle-orm";
 import type { Tx } from "../../db";
 import {
   agendaItems, attendance, bodies, bodyMemberships, conflictDeclarations, meetings, minutes, minuteSignatures, notificationTemplates,
@@ -19,6 +19,10 @@ export async function boardBody(tx: Tx, waqfId: string) {
   const [b] = await tx.select().from(bodies).where(and(eq(bodies.waqfId, waqfId), eq(bodies.kind, "board"))).orderBy(asc(bodies.createdAt)).limit(1);
   return b ?? null;
 }
+
+const today = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Riyadh" }).format(new Date());
+/** A seat counts while its membership is active and its term has not ended (an end date in the future still sits). */
+const liveSeat = () => and(eq(bodyMemberships.status, "active"), or(isNull(bodyMemberships.endsOn), gte(bodyMemberships.endsOn, today())));
 
 /** Board members derived from waqf memberships (used before a board body exists). */
 async function derivedSeats(tx: Tx, waqfId: string) {
@@ -42,9 +46,15 @@ export async function ensureBoard(tx: Tx, waqfId: string, actorId: string) {
   if (!body) {
     [body] = await tx.insert(bodies).values({ waqfId, kind: "board", name: "مجلس النظارة", createdBy: actorId }).returning();
   }
-  const existing = await tx.select({ userId: bodyMemberships.userId }).from(bodyMemberships).where(and(eq(bodyMemberships.bodyId, body.id), isNull(bodyMemberships.endsOn)));
+  const existing = await tx.select({ id: bodyMemberships.id, userId: bodyMemberships.userId, personName: bodyMemberships.personName }).from(bodyMemberships).where(and(eq(bodyMemberships.bodyId, body.id), liveSeat()));
   const have = new Set(existing.map((e) => e.userId));
   const want = await derivedSeats(tx, waqfId);
+  // a board role given to an account that matches a named seat (entered without an account) links that seat
+  const norm = (x: string | null | undefined) => (x ?? "").replace(/\s+/g, " ").trim();
+  for (const w of want.filter((x) => !have.has(x.userId))) {
+    const named = existing.find((e) => !e.userId && norm(e.personName) === norm(w.name));
+    if (named) { await tx.update(bodyMemberships).set({ userId: w.userId, updatedBy: actorId }).where(eq(bodyMemberships.id, named.id)); named.userId = w.userId; have.add(w.userId); }
+  }
   const add = want.filter((w) => !have.has(w.userId));
   if (add.length) {
     await tx.insert(bodyMemberships).values(
@@ -63,7 +73,7 @@ export async function loadSeats(tx: Tx, waqfId: string): Promise<{ seats: BoardS
     const d = await derivedSeats(tx, waqfId);
     return { bodyId: null, seats: d.map((r) => ({ membershipId: r.id, userId: r.userId, name: r.name ?? "عضو", role: r.seat.role, isIndependent: r.isIndependent, hasVote: r.seat.hasVote })) };
   }
-  const rows = await tx.select().from(bodyMemberships).where(and(eq(bodyMemberships.bodyId, body.id), isNull(bodyMemberships.endsOn))).orderBy(asc(bodyMemberships.createdAt));
+  const rows = await tx.select().from(bodyMemberships).where(and(eq(bodyMemberships.bodyId, body.id), liveSeat())).orderBy(asc(bodyMemberships.createdAt));
   const order: Record<string, number> = { chair: 0, vice_chair: 1, member: 2, secretary: 3, observer: 4 };
   return {
     bodyId: body.id,

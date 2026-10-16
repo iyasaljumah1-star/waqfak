@@ -112,6 +112,8 @@ test.describe.serial("execution engine: next step, drafted documents, verificati
     test.skip(info.project.name === "mobile", "shared state; desktop only");
     const client = await as(browser, "waqif");
     willReq = await startIntake(client, "W01", W().B, "الواقف أو من يريد إنشاء الوقف");
+    await client.getByRole("radio", { name: "وصية تتضمن وقفًا بعد الوفاة" }).check(); // W01 v3: the type first
+    await client.getByRole("button", { name: "التالي" }).click();
     await client.getByLabel("رقم هوية الموصي").fill("1000000001");
     await client.getByRole("button", { name: "التالي" }).click();
     await yesNo(client, /هل لك وصية سابقة/, "لا");
@@ -131,7 +133,6 @@ test.describe.serial("execution engine: next step, drafted documents, verificati
     await client.locator("#q-bequests-1-amount").fill("50000");
     await client.getByLabel(/تقدير إجمالي التركة/).fill("1000000");
     await client.getByRole("button", { name: "التالي" }).click();
-    await yesNo(client, /هل في وصاياك وقف بعد الوفاة/, "نعم");
     await client.getByLabel("الاسم المقترح للوقف").fill("وقف الاختبار الآلي للوصية");
     await client.getByTestId("table-waqfMasarif").getByRole("button", { name: /أضف صفًا/ }).click();
     await client.locator("#q-waqfMasarif-0-beneficiary").fill("الفقراء والمساكين");

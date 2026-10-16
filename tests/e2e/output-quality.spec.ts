@@ -64,6 +64,8 @@ const go = (page: Page, url: string) => {
 const reqStatus = async (id: string) => (await sql<{ status: string }>("select status from service_requests where id = $1", [id]))[0].status;
 const out = async (id: string) => (await sql<{ status: string; current_version: number }>("select status, current_version from outputs where id = $1", [id]))[0];
 const yesNo = (p: Page, label: RegExp, v: "نعم" | "لا") => p.getByRole("group", { name: label }).getByRole("radio", { name: v }).check();
+const PURE = "وصية خالصة لا تتضمن وقفًا بعد الوفاة";
+const WITH_WAQF = "وصية تتضمن وقفًا بعد الوفاة";
 
 async function nextStep(page: Page, reqId: string, label: RegExp) {
   await go(page, `/admin/requests/${reqId}`);
@@ -86,6 +88,14 @@ async function correct(page: Page, reqId: string, field: string, fill: (ed: Retu
   await ed.getByRole("button", { name: "احفظ التصحيح" }).click();
   const msg = ed.locator('[role="status"], [role="alert"]').first();
   await ex(msg).toBeVisible();
+  // a correction that makes other answers inapplicable is confirmed, naming them
+  if (await ed.getByTestId("confirm-drop").isVisible()) {
+    const asked = await msg.innerText();
+    await ed.getByTestId("confirm-drop").locator("input").check();
+    await ed.getByRole("button", { name: "احفظ التصحيح" }).click();
+    await ex(ed.locator('[role="status"]').first()).toBeVisible();
+    return `${asked}\n${await ed.locator('[role="status"]').first().innerText()}`;
+  }
   return msg.innerText();
 }
 
@@ -150,13 +160,15 @@ test.describe.serial("output quality: conflicts, checks, deficiency list, stages
   test("W01 from the conflicting answers to an approved, corrected will", async ({ browser }, info) => {
     test.skip(info.project.name === "mobile", "shared state; desktop only");
 
-    // ── the client's answers reproduce OUT-000004: «no waqf» + a waqf row of 10% ──
+    // ── the client asks for a will that includes a waqf of 10% of the estate after death ──
     const client = await as(browser, "waqif");
     await client.goto(`/app/requests/new?service=W01&waqf=${W().B}`);
     await client.getByRole("button", { name: "ابدأ نموذج الطلب" }).click();
     await client.waitForURL(/\/app\/requests\/[0-9a-f-]{36}\/intake$/);
     reqId = client.url().match(/requests\/([0-9a-f-]{36})/)![1];
     await client.getByRole("radio", { name: "الواقف أو من يريد إنشاء الوقف" }).check();
+    await client.getByRole("button", { name: "التالي" }).click();
+    await client.getByRole("radio", { name: WITH_WAQF }).check();
     await client.getByRole("button", { name: "التالي" }).click();
     await client.getByLabel("رقم هوية الموصي").fill("1000000001");
     await client.getByRole("button", { name: "التالي" }).click();
@@ -169,7 +181,11 @@ test.describe.serial("output quality: conflicts, checks, deficiency list, stages
     await client.locator("#q-bequests-0-basis").selectOption("share");
     await client.locator("#q-bequests-0-percent").fill("10");
     await client.getByRole("button", { name: "التالي" }).click();
-    await yesNo(client, /هل في وصاياك وقف بعد الوفاة/, "لا");
+    await client.getByTestId("table-waqfMasarif").getByRole("button", { name: /أضف صفًا/ }).click();
+    await client.locator("#q-waqfMasarif-0-beneficiary").fill("الفقراء والمساكين");
+    await client.locator("#q-waqfMasarif-0-share").fill("100");
+    await client.getByLabel("ناظر الوقف بعد الوفاة").fill("ناظر تجريبي");
+    await client.getByRole("radio", { name: "الأصلح فالأصلح من الموقوف عليهم" }).check();
     await client.getByRole("button", { name: "التالي" }).click();
     await client.getByLabel("الوصي (منفذ الوصية)").fill("منفذ تجريبي");
     await client.getByLabel("صفة الوصي").selectOption("heir");
@@ -200,14 +216,18 @@ test.describe.serial("output quality: conflicts, checks, deficiency list, stages
     await ex.poll(() => reqStatus(reqId)).toBe("in_progress");
     await sql("update service_requests set assigned_to_user_id = $2 where id = $1", [reqId, U().emp1.id]);
     const emp = await as(browser, "emp1");
+    // the case of OUT-000004: the type recorded as «pure will» while the table holds a waqf of 10% (a wrong entry)
+    const m0 = await correct(emp, reqId, "willType", (ed) => ed.getByRole("radio", { name: PURE }).check(), "إدخال يطابق حالة المخرج OUT-000004 لاختبار التعارض (اختبار آلي).");
+    expect(m0).toContain("هذا التصحيح يجعل إجابات أخرى غير منطبقة");
+    expect(m0).toContain("ظهر 1 تعارض جديد");
     await nextStep(emp, reqId, /أنشئ مسودة «نص الوصية»/);
     [{ id: outputId }] = await sql<{ id: string }>("select id from outputs where request_id = $1", [reqId]);
     const page = `/admin/requests/${reqId}/outputs/${outputId}`;
 
     // ── 2 · the conflict: both values with their source; the clause is not written either way ──
     await go(emp, page);
-    const conflict = emp.getByTestId("conflict-will:waqf_answer_vs_bequests");
-    await ex(conflict).toContainText("«لا»");
+    const conflict = emp.getByTestId("conflict-will:type_vs_bequests");
+    await ex(conflict).toContainText(`«${PURE}»`);
     await ex(conflict).toContainText("وقف بعد الوفاة بنسبة 10٪ من التركة");
     await ex(conflict).toContainText("إجابة العميل في نموذج الطلب");
     await ex(conflict).toContainText("لا تُختار قيمة نيابة عنه");
@@ -217,7 +237,7 @@ test.describe.serial("output quality: conflicts, checks, deficiency list, stages
     await ex(emp.getByTestId("output-stage")).toHaveAttribute("data-stage", "generated");
     await ex(emp.getByTestId("check-waqf_consistency")).toHaveAttribute("data-status", "failed");
     await ex(emp.getByTestId("req-waqf_consistency")).toHaveAttribute("data-status", "conflict");
-    const [reg] = await sql<{ status: string; detected_by: string; sides: unknown }>("select status, detected_by, sides from data_conflicts where request_id = $1 and conflict_key = 'will:waqf_answer_vs_bequests'", [reqId]);
+    const [reg] = await sql<{ status: string; detected_by: string; sides: unknown }>("select status, detected_by, sides from data_conflicts where request_id = $1 and conflict_key = 'will:type_vs_bequests'", [reqId]);
     expect(reg.status).toBe("open");
     expect(reg.detected_by).toBe(U().emp1.id);
     // ── 5 · witness names are not proof of attestation ──
@@ -245,19 +265,19 @@ test.describe.serial("output quality: conflicts, checks, deficiency list, stages
     expect(await sql("select string_agg(kind || ':' || status, ',' order by kind) s from tasks where request_id = $1", [reqId])).toEqual(tasksBefore);
 
     // the client is asked which value is meant (a required data item); the conflict stays open until corrected
-    await emp.getByTestId("conflict-will:waqf_answer_vs_bequests").getByRole("button", { name: "اطلب من العميل تحديد القيمة المقصودة" }).click();
-    await ex(emp.getByTestId("conflict-will:waqf_answer_vs_bequests")).toContainText("طُلب من العميل تصحيحه في سجل النواقص");
+    await emp.getByTestId("conflict-will:type_vs_bequests").getByRole("button", { name: "اطلب من العميل تحديد القيمة المقصودة" }).click();
+    await ex(emp.getByTestId("conflict-will:type_vs_bequests")).toContainText("طُلب من العميل تصحيحه في سجل النواقص");
     const [item] = await sql<{ kind: string; required: boolean; field_key: string }>("select i.kind, i.required, i.field_key from request_items i join data_conflicts c on c.item_id = i.id where c.request_id = $1", [reqId]);
-    expect(item).toMatchObject({ kind: "data", required: true, field_key: "includesWaqf" });
+    expect(item).toMatchObject({ kind: "data", required: true, field_key: "willType" });
 
     // ── correction at the source: the client confirmed the waqf is intended ──
-    const m1 = await correct(emp, reqId, "includesWaqf", (ed) => ed.getByRole("radio", { name: "نعم" }).check(), "أكد العميل أن الوقف بعد الوفاة مقصود (اختبار آلي).");
+    const m1 = await correct(emp, reqId, "willType", (ed) => ed.getByRole("radio", { name: WITH_WAQF }).check(), "أكد العميل أن الوقف بعد الوفاة مقصود (اختبار آلي).");
     expect(m1).toContain("زال 1 تعارض");
-    const [res] = await sql<{ status: string; resolved_by: string; resolution: string }>("select status, resolved_by, resolution from data_conflicts where request_id = $1 and conflict_key = 'will:waqf_answer_vs_bequests' order by detected_at limit 1", [reqId]);
+    const [res] = await sql<{ status: string; resolved_by: string; resolution: string }>("select status, resolved_by, resolution from data_conflicts where request_id = $1 and conflict_key = 'will:type_vs_bequests' order by detected_at limit 1", [reqId]);
     expect(res).toMatchObject({ status: "resolved", resolved_by: U().emp1.id });
-    expect(res.resolution).toContain("تصحيح «هل في وصاياك وقف بعد الوفاة؟»");
-    const [rev] = await sql<{ before: Record<string, string>; after: Record<string, string>; reason: string }>("select before, after, reason from request_revisions where request_id = $1 and target = 'includesWaqf' order by at desc limit 1", [reqId]);
-    expect(rev).toMatchObject({ before: { includesWaqf: "no" }, after: { includesWaqf: "yes" } });
+    expect(res.resolution).toContain("تصحيح «ما نوع الوصية المطلوبة؟»");
+    const [rev] = await sql<{ before: Record<string, string>; after: Record<string, string>; reason: string }>("select before, after, reason from request_revisions where request_id = $1 and target = 'willType' order by at desc limit 1", [reqId]);
+    expect(rev).toMatchObject({ before: { willType: "pure" }, after: { willType: "with_waqf" } });
 
     // ── 6 · regeneration says what changed; 3 · the waqf terms are now a mandatory gap ──
     await go(emp, page);
@@ -306,15 +326,15 @@ test.describe.serial("output quality: conflicts, checks, deficiency list, stages
     expect(submitForm).toBeTruthy();
 
     // ── the wrong value is entered again: the conflict comes back as a new record ──
-    const m2 = await correct(emp, reqId, "includesWaqf", (ed) => ed.getByRole("radio", { name: "لا" }).check(), "إدخال خاطئ مقصود لاختبار عودة التعارض (اختبار آلي).");
+    const m2 = await correct(emp, reqId, "willType", (ed) => ed.getByRole("radio", { name: PURE }).check(), "إدخال خاطئ مقصود لاختبار عودة التعارض (اختبار آلي).");
     expect(m2).toContain("ظهر 1 تعارض جديد");
     expect(m2).toContain("أُسقطت 3 من الإجابات المرتبطة"); // dependants cleared by the form rules, kept in the revision
-    const [rv2] = await sql<{ before: Record<string, unknown> }>("select before from request_revisions where request_id = $1 and target = 'includesWaqf' order by at desc limit 1", [reqId]);
-    expect(rv2.before).toMatchObject({ includesWaqf: "yes", waqfNazir: "ناظر تجريبي" });
-    expect((await sql("select 1 from data_conflicts where request_id = $1 and conflict_key = 'will:waqf_answer_vs_bequests' and status = 'open'", [reqId])).length).toBe(1);
-    expect((await sql("select 1 from data_conflicts where request_id = $1 and conflict_key = 'will:waqf_answer_vs_bequests'", [reqId])).length).toBe(2);
+    const [rv2] = await sql<{ before: Record<string, unknown> }>("select before from request_revisions where request_id = $1 and target = 'willType' order by at desc limit 1", [reqId]);
+    expect(rv2.before).toMatchObject({ willType: "with_waqf", waqfNazir: "ناظر تجريبي" });
+    expect((await sql("select 1 from data_conflicts where request_id = $1 and conflict_key = 'will:type_vs_bequests' and status = 'open'", [reqId])).length).toBe(1);
+    expect((await sql("select 1 from data_conflicts where request_id = $1 and conflict_key = 'will:type_vs_bequests'", [reqId])).length).toBe(2);
     await go(emp, page);
-    await ex(emp.getByTestId("conflict-will:waqf_answer_vs_bequests")).toBeVisible();
+    await ex(emp.getByTestId("conflict-will:type_vs_bequests")).toBeVisible();
     await ex(emp.getByTestId("submit-blocked")).toContainText("تعارض قائم");
     // ── 11 · the captured form posted natively is refused on the server, and audited ──
     await nativePost(emp, submitForm!);
@@ -326,7 +346,7 @@ test.describe.serial("output quality: conflicts, checks, deficiency list, stages
     expect((await out(outputId)).status).toBe("draft");
 
     // corrected again
-    await correct(emp, reqId, "includesWaqf", (ed) => ed.getByRole("radio", { name: "نعم" }).check(), "أعيدت القيمة التي أكدها العميل (اختبار آلي).");
+    await correct(emp, reqId, "willType", (ed) => ed.getByRole("radio", { name: WITH_WAQF }).check(), "أعيدت القيمة التي أكدها العميل (اختبار آلي).");
     await fillTerms(emp, reqId);
 
     // ── 7 · regeneration over a manual edit asks for confirmation and keeps the human text ──
@@ -381,7 +401,7 @@ test.describe.serial("output quality: conflicts, checks, deficiency list, stages
     expect((await sql("select 1 from audit_logs where action = 'outputs.approve' and entity_id = $1", [outputId])).length).toBe(0);
 
     // ── 10 · approval with an open conflict (the data changed after the reviewer opened the page) ──
-    await correct(emp, reqId, "includesWaqf", (ed) => ed.getByRole("radio", { name: "لا" }).check(), "تغيير أثناء المراجعة لاختبار منع الاعتماد (اختبار آلي).");
+    await correct(emp, reqId, "willType", (ed) => ed.getByRole("radio", { name: PURE }).check(), "تغيير أثناء المراجعة لاختبار منع الاعتماد (اختبار آلي).");
     await go(ops, page);
     await nativePost(ops, approveForm!, { signedBy: "مستشار تجريبي — مستشار شرعي" });
     expect((await out(outputId)).status).toBe("in_review");
@@ -389,7 +409,7 @@ test.describe.serial("output quality: conflicts, checks, deficiency list, stages
     expect(ab.after.reasons.join(" ")).toContain("تعارض قائم");
     expect(ab.after.reasons.join(" ")).toContain("تغيّرت بيانات الطلب بعد إعداد هذه النسخة");
     await expect(sql("update outputs set status = 'approved' where id = $1", [outputId])).rejects.toThrow(/output_guard/);
-    await correct(emp, reqId, "includesWaqf", (ed) => ed.getByRole("radio", { name: "نعم" }).check(), "أعيدت القيمة المؤكدة (اختبار آلي).");
+    await correct(emp, reqId, "willType", (ed) => ed.getByRole("radio", { name: WITH_WAQF }).check(), "أعيدت القيمة المؤكدة (اختبار آلي).");
     await fillTerms(emp, reqId);
 
     // ── 1 · consistent and complete: approved by the reviewer, with the advisor's signature ──

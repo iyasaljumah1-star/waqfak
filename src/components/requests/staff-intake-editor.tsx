@@ -30,6 +30,12 @@ export function StaffIntakeEditor({ action, requestId, fields }: { action: Act; 
       <Field label="سبب التصحيح ومصدره" name="edit-reason" hint="مثال: أكده العميل هاتفيًا، أو من صك الملكية المرفق. يُحفظ مع القيمة السابقة.">
         <Textarea name="reason" id="edit-reason" required minLength={10} className="min-h-16" />
       </Field>
+      {s.data?.needConfirm ? (
+        <label className="flex items-start gap-2 rounded-md bg-warn-soft px-3 py-2 text-[14px]" data-testid="confirm-drop">
+          <input type="checkbox" name="confirmDrop" className="mt-1 size-4 accent-[var(--ink)]" />
+          أؤكد التصحيح، مع حفظ الإجابات غير المنطبقة في سجل التعديلات
+        </label>
+      ) : null}
       <FormMessage state={s} />
       <SubmitButton size="sm" disabled={!key}>احفظ التصحيح</SubmitButton>
     </form>

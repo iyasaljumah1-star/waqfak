@@ -120,8 +120,13 @@ export async function saveIntake(_: ActionState, fd: FormData): Promise<ActionSt
     const rc = await editableDraft(c, id);
     const form = serviceForm(rc.service);
     const answers = sanitizeAnswers(form, raw);
-    const intake = intakeOf(rc.req);
-    await c.tx.update(serviceRequests).set({ intake: { ...intake, answers, formVersion: form.version }, intakeFormVersion: form.version, updatedBy: c.auth.user.id }).where(eq(serviceRequests.id, id));
+    const intake = intakeOf(rc.req) as ReturnType<typeof intakeOf> & { dropped?: { at: string; by: string; values: Record<string, unknown> }[] };
+    // answers that no longer apply after a change (hidden by the form rules) are kept with their values, not lost
+    const rawObj = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+    const prev = intake.answers ?? {};
+    const droppedNow = Object.fromEntries(Object.entries(prev).filter(([k, v]) => v !== undefined && v !== "" && answers[k] === undefined && rawObj[k] !== undefined && rawObj[k] !== ""));
+    const dropped = Object.keys(droppedNow).length ? [...(intake.dropped ?? []), { at: new Date().toISOString(), by: c.auth.user.id, values: droppedNow }].slice(-20) : intake.dropped;
+    await c.tx.update(serviceRequests).set({ intake: { ...intake, answers, formVersion: form.version, ...(dropped ? { dropped } : {}) }, intakeFormVersion: form.version, updatedBy: c.auth.user.id }).where(eq(serviceRequests.id, id));
     const step = stepKey ? visibleSteps(form, answers).find((s) => s.key === stepKey) : null;
     const fieldErrors = step ? validateStep(step, answers) : {};
     if (Object.keys(fieldErrors).length) return { error: "حُفظت المسودة. أكمل الحقول المظللة للمتابعة.", fieldErrors };

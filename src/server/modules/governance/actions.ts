@@ -4,7 +4,8 @@ import { and, eq, inArray, max } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import {
-  agendaItems, attendance, conflictDeclarations, meetings, minutes, minuteSignatures, performanceReviews, policies, resolutions, tasks, users, votes,
+  agendaItems, attendance, conflictDeclarations, documents, waqfGovernanceProfiles, meetings, minutes, minuteSignatures, performanceReviews, policies, resolutions, tasks, users, votes,
+ bodyMemberships,
 } from "@/server/db/schema";
 import { issueOtp, maskPhone, otpErrorText, verifyOtp } from "@/server/auth/otp";
 import { audit, nextNumber } from "@/server/lib/audit";
@@ -12,6 +13,8 @@ import { sha256 } from "@/server/lib/crypto";
 import { todayISO } from "@/server/engines/dates";
 import { emitWaqfEvent } from "@/server/modules/compliance/events";
 import { notify } from "@/server/modules/notify";
+import { sendEmail } from "@/server/adapters/messaging";
+import { env } from "@/server/env";
 import { parseForm, UserError, waqfAction, type WaqfCtx } from "@/server/modules/_shared";
 import { fmtDateTime, type ActionState } from "@/lib/utils";
 import {
@@ -105,8 +108,12 @@ export async function addAgendaItem(_: ActionState, fd: FormData): Promise<Actio
     const mn = await latestMinutes(c.tx, m.id);
     if (mn && mn.status !== "draft") throw new UserError("لا تُضاف بنود بعد تعميم المحضر.");
     const [{ pos }] = await c.tx.select({ pos: max(agendaItems.position) }).from(agendaItems).where(eq(agendaItems.meetingId, m.id));
-    const [it] = await c.tx.insert(agendaItems).values({ meetingId: m.id, waqfId, position: (pos ?? 0) + 1, title: r.data.title, kind: r.data.kind, presenterName: r.data.presenterName || null, createdBy: c.auth.user.id }).returning({ id: agendaItems.id });
-    await audit(c.tx, { actorUserId: c.auth.user.id, action: "governance.agenda_add", entityType: "agenda_item", entityId: it.id, waqfId, ip: c.ip, userAgent: c.userAgent, after: r.data });
+    // attachments: documents of this waqf only (the vault keeps the file; the item keeps the reference)
+    const asked = fd.getAll("docIds").map(String).filter((x) => uuid.safeParse(x).success).slice(0, 10);
+    const docs = asked.length ? await c.tx.select({ id: documents.id }).from(documents).where(and(eq(documents.waqfId, waqfId), inArray(documents.id, asked))) : [];
+    if (docs.length !== asked.length) throw new UserError("أحد المرفقات ليس من وثائق هذا الوقف.");
+    const [it] = await c.tx.insert(agendaItems).values({ meetingId: m.id, waqfId, position: (pos ?? 0) + 1, title: r.data.title, kind: r.data.kind, presenterName: r.data.presenterName || null, documentIds: docs.map((d) => d.id), createdBy: c.auth.user.id }).returning({ id: agendaItems.id });
+    await audit(c.tx, { actorUserId: c.auth.user.id, action: "governance.agenda_add", entityType: "agenda_item", entityId: it.id, waqfId, ip: c.ip, userAgent: c.userAgent, after: { ...r.data, documents: docs.length } });
     return { ok: true, message: "أُضيف البند إلى جدول الأعمال." };
   }, mtg(waqfId, meetingId));
 }
@@ -151,8 +158,24 @@ export async function sendInvitations(_: ActionState, fd: FormData): Promise<Act
       await notify(s.userId, "meeting.invite", { title, when: fmtDateTime(m.scheduledAt), waqf: c.access.waqf.name }, { waqfId, link: mtg(waqfId, m.id), tx: c.tx });
       n++;
     }
-    await audit(c.tx, { actorUserId: c.auth.user.id, action: "governance.invite", entityType: "meeting", entityId: m.id, waqfId, ip: c.ip, userAgent: c.userAgent, after: { invited: n, resend: !!m.invitationsSentAt } });
-    return { ok: true, message: `أُرسلت الدعوة إلى ${n} من الأعضاء مع جدول الأعمال.` };
+    // members without an account: an email with the agenda when an address is recorded; otherwise invited outside the
+    // platform (their attendance and vote are recorded by the secretary). The result says exactly what happened.
+    const agenda = await c.tx.select({ title: agendaItems.title, position: agendaItems.position }).from(agendaItems).where(eq(agendaItems.meetingId, m.id)).orderBy(agendaItems.position);
+    const contacts = seats.filter((x) => !x.userId).length ? await c.tx.select({ id: bodyMemberships.id, email: bodyMemberships.contactEmail }).from(bodyMemberships).where(inArray(bodyMemberships.id, seats.filter((x) => !x.userId).map((x) => x.membershipId))) : [];
+    let mailed = 0;
+    for (const ct of contacts.filter((x) => x.email)) {
+      await sendEmail(ct.email!, `دعوة لاجتماع: ${title} — ${c.access.waqf.name}`, `${title}\n${fmtDateTime(m.scheduledAt)}${m.location ? `\nالمكان: ${m.location}` : ""}${m.link ? `\nالرابط: ${m.link}` : ""}\n\nجدول الأعمال:\n${agenda.map((a, i) => `${i + 1}. ${a.title}`).join("\n")}`);
+      mailed++;
+    }
+    const offline = seats.filter((x) => !x.userId).length - mailed;
+    const live = env.EMAIL_PROVIDER === "smtp";
+    await audit(c.tx, { actorUserId: c.auth.user.id, action: "governance.invite", entityType: "meeting", entityId: m.id, waqfId, ip: c.ip, userAgent: c.userAgent, after: { invited: n, mailed, offline, emailProvider: env.EMAIL_PROVIDER, resend: !!m.invitationsSentAt } });
+    const parts = [
+      `أُرسل إشعار الدعوة داخل المنصة إلى ${n} من الأعضاء ذوي الحسابات${live ? " وإلى بريدهم" : ""}`,
+      mailed ? `${live ? "وأُرسلت" : "وقُيّدت في صندوق البريد الصادر (مزود البريد غير مفعّل)"} دعوة بجدول الأعمال إلى ${mailed} من الأعضاء بلا حساب` : "",
+      offline ? `و${offline} عضوًا بلا حساب ولا بريد: تُبلَّغ دعوتهم خارج المنصة ويُسجَّل حضورهم يدويًا` : "",
+    ].filter(Boolean);
+    return { ok: true, message: `${parts.join("، ")}.` };
   }, mtg(waqfId, meetingId));
 }
 
@@ -667,3 +690,49 @@ export async function addPerformanceReview(_: ActionState, fd: FormData): Promis
 }
 
 
+
+// ───────────── How the board (or the nazir) is run ─────────────
+const rulesSchema = z.object({
+  quorumRule: z.enum(["majority", "two_thirds", "all"]),
+  majorityRule: z.enum(["simple", "absolute", "two_thirds"]),
+  meetingsPerYear: z.coerce.number().int().min(0).max(52),
+  requireIndependentForQuorum: z.string().optional().transform((v) => v === "on"),
+  executiveSpendLimit: z.string().trim().optional().transform((v) => (v ? v.replace(/,/g, "") : "")).refine((v) => !v || Number(v) >= 0, "حد غير صحيح."),
+  reservedDecisions: z.string().trim().max(3000).optional().default(""),
+  competencies: z.string().trim().max(4000).optional().default(""),
+  chairPowers: z.string().trim().max(3000).optional().default(""),
+  delegationLimits: z.string().trim().max(3000).optional().default(""),
+  taskAllocation: z.string().trim().max(3000).optional().default(""),
+  signingRules: z.string().trim().max(3000).optional().default(""),
+  coiProcedure: z.string().trim().max(3000).optional().default(""),
+  recordsRule: z.string().trim().max(3000).optional().default(""),
+  source: z.string().trim().min(5, "اذكر مصدر هذه القواعد (صك الوقف، لائحة المجلس، قرار…).").max(300),
+});
+
+/**
+ * Records how the waqf is run — competencies, powers, delegation limits, decision rules, signing, conflicts of interest,
+ * records — as its governing documents say, with their source. These are the file's rules as entered and reviewed by
+ * its managers, not generated legal text. The quorum and majority rules drive the meetings engine.
+ */
+export async function saveGovernanceRules(_: ActionState, fd: FormData): Promise<ActionState> {
+  const waqfId = String(fd.get("waqfId") ?? "");
+  if (!uuid.safeParse(waqfId).success) return bad();
+  const r = parseForm(rulesSchema, fd);
+  if ("state" in r) return r.state;
+  const d = r.data;
+  return waqfAction(waqfId, "governance.manage", async (c) => {
+    const values = {
+      quorumRule: d.quorumRule, majorityRule: d.majorityRule, meetingsPerYear: d.meetingsPerYear, requireIndependentForQuorum: d.requireIndependentForQuorum,
+      executiveSpendLimit: d.executiveSpendLimit ? Number(d.executiveSpendLimit).toFixed(2) : null,
+      reservedDecisions: d.reservedDecisions.split("\n").map((x) => x.trim()).filter(Boolean).slice(0, 30),
+      competencies: d.competencies || null, chairPowers: d.chairPowers || null, delegationLimits: d.delegationLimits || null, taskAllocation: d.taskAllocation || null,
+      signingRules: d.signingRules || null, coiProcedure: d.coiProcedure || null, recordsRule: d.recordsRule || null, source: d.source,
+    };
+    const [cur] = await c.tx.select().from(waqfGovernanceProfiles).where(eq(waqfGovernanceProfiles.waqfId, waqfId)).limit(1);
+    if (cur) await c.tx.update(waqfGovernanceProfiles).set({ ...values, updatedBy: c.auth.user.id }).where(eq(waqfGovernanceProfiles.waqfId, waqfId));
+    else await c.tx.insert(waqfGovernanceProfiles).values({ waqfId, ...values, createdBy: c.auth.user.id });
+    const changed = cur ? (Object.keys(values) as (keyof typeof values)[]).filter((k) => JSON.stringify(values[k] ?? null) !== JSON.stringify((cur as Record<string, unknown>)[k] ?? null)) : Object.keys(values);
+    await audit(c.tx, { actorUserId: c.auth.user.id, action: "governance.rules_saved", entityType: "waqf", entityId: waqfId, waqfId, ip: c.ip, userAgent: c.userAgent, after: { changed, source: d.source } });
+    return { ok: true, message: "حُفظت قواعد الإدارة والصلاحيات." };
+  }, [`/app/w/${waqfId}/governance`]);
+}

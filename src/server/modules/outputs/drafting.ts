@@ -117,6 +117,11 @@ export function draftWill(x: DraftInput): Drafted {
   const d = new Doc(k);
   const today = x.today ?? new Date().toISOString().slice(0, 10);
   const conflict = (key: string) => (x.conflicts ?? []).find((c) => c.key === key);
+  // the chosen type of will (v3), or the v2 answer «includesWaqf» for requests made before the type question
+  const willType = k.willType === "pure" || k.willType === "with_waqf" ? k.willType : k.includesWaqf === "yes" ? "with_waqf" : k.includesWaqf === "no" ? "pure" : "";
+  const typeField = k.willType ? "willType" : "includesWaqf";
+  d.use(typeField, k[typeField]);
+  if (!willType) d.gap("field:willType", "لم يُحدد نوع الوصية (خالصة أو متضمنة وقفًا بعد الوفاة)", { field: "willType" });
   const name = d.need("testatorName", "اسم الموصي");
   const id = d.need("testatorId", "رقم هوية الموصي");
   d.add("preamble", "الديباجة", `أنا ${name}، صاحب الهوية الوطنية رقم ${id}، أوصي وأنا بكامل أهليتي واختياري بما يلي:`, ["draft1"], "client");
@@ -146,7 +151,8 @@ export function draftWill(x: DraftInput): Drafted {
 
   // Bequests
   const rows = x.tables.bequests ?? [];
-  const waqfConflict = conflict("will:waqf_answer_vs_bequests");
+  const waqfConflict = conflict("will:waqf_answer_vs_bequests") ?? conflict("will:type_vs_bequests");
+  const rowlessConflict = conflict("will:waqf_answer_without_row") ?? conflict("will:type_without_row");
   if (!rows.length) d.gap("field:bequests", "لا وصايا في جدول «ما توصي به»", { field: "bequests" });
   let sharePct = 0;
   let amounts = 0;
@@ -172,10 +178,10 @@ export function draftWill(x: DraftInput): Drafted {
     // A waqf row that conflicts with the answer «no waqf» is not written as a waqf, nor as anything else.
     const inConflict = !!waqfConflict && r.kind === "waqf";
     const verb = inConflict
-      ? conflictMark(`نوع الوصية في الصف ${i + 1} «وقف بعد الوفاة» والإجابة أن الوصايا لا تتضمن وقفًا`)
+      ? conflictMark(`نوع الوصية في الصف ${i + 1} «وقف بعد الوفاة» والوصية ${k.willType ? "اختيرت خالصة لا تتضمن وقفًا" : "أُجيب بأنها لا تتضمن وقفًا"}`)
       : (KIND_VERB[r.kind] ?? KIND_VERB.other)(recipient);
     d.use("bequests", `الصف ${i + 1}: ${r.kind ?? "—"} / ${r.recipient ?? "—"} / ${r.basis === "share" ? `${r.percent ?? "—"}٪` : r.basis === "amount" ? `${r.amount ?? "—"} ر.س` : r.asset ?? "—"}`, inConflict ? "conflict" : "provided");
-    if (inConflict) d.use("includesWaqf", k.includesWaqf, "conflict");
+    if (inConflict) d.use(typeField, k[typeField], "conflict");
     d.add(`bequest:${i + 1}`, `الوصية ${ordinal(i + 1)}`, `أوصي ${what} ${verb}.`, ["q16"], "client");
     if (r.relation === "yes") heirs.push(recipient);
     if (!r.relation) unknownRel++;
@@ -217,11 +223,10 @@ export function draftWill(x: DraftInput): Drafted {
   });
   if (heirs.length) d.gap("heir_bequest", `وصية لوارث: ${heirs.join("، ")}`, { severity: "warning", owner: "specialist", hint: "يراجع المستشار الشرعي حكمها ونفاذها ويكتب ملاحظته قبل الاعتماد." });
 
-  // Waqf after death
+  // Waqf after death — only in a will that includes one; a pure will never gets a waqf clause it did not ask for
   const waqfRows = rows.filter((r) => r.kind === "waqf");
-  if (k.includesWaqf === "yes") {
-    d.use("includesWaqf", k.includesWaqf);
-    if (!waqfRows.length) d.gap("waqf_missing_row", "اختار الموصي الوقف بعد الوفاة ولا صف «وقف بعد الوفاة» في جدول الوصايا", { field: "bequests", kind: "conflict" });
+  if (willType === "with_waqf") {
+    if (!waqfRows.length && !rowlessConflict) d.gap("waqf_missing_row", "الوصية تتضمن وقفًا بعد الوفاة ولا صف «وقف بعد الوفاة» في جدول الوصايا", { field: "bequests", kind: "conflict" });
     const masarif = x.tables.waqfMasarif ?? [];
     if (!masarif.length) d.gap("field:waqfMasarif", "مصارف الوقف بعد الوفاة غير محددة", { field: "waqfMasarif" });
     const shares = masarif.map((m) => num(m.share)).filter((n): n is number => n !== null);
@@ -237,12 +242,21 @@ export function draftWill(x: DraftInput): Drafted {
     const nazir = d.need("waqfNazir", "ناظر الوقف بعد الوفاة");
     d.use("waqfSuccession", k.waqfSuccession);
     const succ = SUCCESSION_WILL[k.waqfSuccession] ?? d.need("waqfSuccession", "طريقة استخلاف الناظر");
-    d.add("waqf", "الوقف بعد الوفاة", `ويكون ما أوصيت بوقفه وقفًا${wname ? ` ${wname}` : ""}، تُصرف غلته على: ${list || fill("المصارف")}. ويتولى نظارته ${nazir}، فإن خلت النظارة تولاها ${succ}.`, ["q16", "waqifsDeed"], "client");
+    const final = k.waqfFinal?.trim();
+    if (final) d.use("waqfFinal", final);
+    d.add("waqf", "الوقف بعد الوفاة", `ويكون ما أوصيت بوقفه وقفًا${wname ? ` ${wname}` : ""}، تُصرف غلته على: ${list || fill("المصارف")}${final ? `، فإن انقطعت صُرفت على ${final}` : ""}. ويتولى نظارته ${nazir}، فإن خلت النظارة تولاها ${succ}.`, ["q16", "waqifsDeed"], "client");
+    const conds = k.waqfConditions?.trim();
+    if (conds) {
+      d.use("waqfConditions", conds);
+      d.add("waqf_conditions", "شروط الوقف", `ويشترط الموصي في الوقف: ${conds}`, ["draft1"], "client");
+      d.gap("waqf_conditions_review", "شروط الوقف المقترحة تحتاج مراجعة المختص لصياغتها", { severity: "warning", owner: "specialist", need: "review", clause: "waqf_conditions", why: "الشروط نص حر من العميل؛ تُصاغ بعبارة محكمة قبل الاعتماد." });
+    }
   }
   d.check({
-    key: "waqf_consistency", label: "اتساق الوقف بعد الوفاة بين الإجابة وجدول الوصايا", status: waqfConflict || conflict("will:waqf_answer_without_row") ? "failed" : k.includesWaqf ? "verified" : "incomplete",
-    reason: waqfConflict ? waqfConflict.label : conflict("will:waqf_answer_without_row") ? conflict("will:waqf_answer_without_row")!.label : k.includesWaqf === "yes" ? "الإجابة «نعم» وفي الجدول صف وقف." : k.includesWaqf === "no" ? "الإجابة «لا» ولا صف وقف في الجدول." : "لم يُجب عن سؤال الوقف بعد الوفاة.",
-    source: "إجابة «هل في وصاياك وقف بعد الوفاة؟» وعمود «نوع الوصية» في جدول الوصايا", rule: "تطابق إجابتين من النموذج (فحص آلي).", mode: "auto",
+    key: "waqf_consistency", label: "اتساق نوع الوصية مع جدول الوصايا",
+    status: waqfConflict || rowlessConflict ? "failed" : !willType ? "incomplete" : willType === "pure" ? (waqfRows.length ? "failed" : "verified") : waqfRows.length ? "verified" : "incomplete",
+    reason: waqfConflict ? waqfConflict.label : rowlessConflict ? rowlessConflict.label : !willType ? "لم يُحدد نوع الوصية." : willType === "pure" ? "وصية خالصة: لا صف وقف في الجدول، ولا بند وقف في النص." : waqfRows.length ? `وصية تتضمن وقفًا: ${waqfRows.length} صف وقف في الجدول.` : "لا صف وقف في الجدول بعد.",
+    source: `${k.willType ? "إجابة «نوع الوصية»" : "إجابة «هل في وصاياك وقف بعد الوفاة؟»"} وعمود «نوع الوصية» في جدول الوصايا`, rule: "تطابق إجابتين من النموذج (فحص آلي).", mode: "auto",
   });
 
   // Executor
@@ -279,7 +293,7 @@ export function draftWill(x: DraftInput): Drafted {
     : "حُررت هذه الوصية بتاريخ (يُكتب عند التوقيع)، وهي وصيتي الوحيدة النافذة.";
   d.add("closing", "الختام", closing, ["draft2"]);
   const signatures = [{ role: "الموصي", name: k.testatorName?.trim() || x.requesterName }, ...witnesses.map((w, i) => ({ role: `الشاهد ${i + 1}`, name: w.name.trim() }))];
-  return { title: "نص الوصية", clauses: d.clauses, signatures, checks: d.checks, gaps: d.gaps };
+  return { title: willType === "with_waqf" ? "نص الوصية المتضمنة وقفًا بعد الوفاة" : "نص الوصية", clauses: d.clauses, signatures, checks: d.checks, gaps: d.gaps };
 }
 
 // ───────────────────────── Waqf deed (T03) ─────────────────────────

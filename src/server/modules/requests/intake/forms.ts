@@ -340,7 +340,9 @@ const FORMS: Record<string, Omit<ServiceForm, "steps"> & { steps: Step[] }> = {
 
   // ── W الوصايا
   W01: {
-    code: "W01", version: 2,
+    // v3: the type of will is chosen first — a pure will (no waqf after death) or a will that includes a waqf after
+    // death — and decides the questions, the checks and the document (replaces the v2 «includesWaqf» question).
+    code: "W01", version: 3,
     sources: [
       "الدليل الإرشادي لصياغة وثيقة الوقف (المبدأ الثاني): بيان حال ما قبلها من وصايا، والأفضل وصية واحدة، والنص على تاريخ المعدّلة أو إلغاء ما سبقها",
       "100 سؤال وجواب س16 وس75: الوقف المعلق على الموت يأخذ حكم الوصية؛ يجوز الرجوع عنه قبل الموت، ولا يلزم إلا في حدود ثلث التركة إلا بإجازة الورثة",
@@ -352,6 +354,13 @@ const FORMS: Record<string, Omit<ServiceForm, "steps"> & { steps: Step[] }> = {
       doc("assetDocs", "ownership_deed", "مستندات ملكية الأعيان الموصى بها (إن وُجدت)"),
     ],
     steps: [
+      {
+        key: "type", title: "نوع الوصية",
+        intro: "الوصية الخالصة لا تتضمن وقفًا بعد الوفاة. والوصية المتضمنة وقفًا تُجمع فيها بيانات الوقف (المال الموقوف، والمصارف، والناظر، والشروط)، ولا يُعد الوقف قائمًا أو موثقًا بمجرد إعداد الوصية.",
+        fields: [
+          radio("willType", "ما نوع الوصية المطلوبة؟", [["pure", "وصية خالصة لا تتضمن وقفًا بعد الوفاة"], ["with_waqf", "وصية تتضمن وقفًا بعد الوفاة"]], R),
+        ],
+      },
       {
         key: "testator", title: "الموصي",
         fields: [
@@ -369,9 +378,10 @@ const FORMS: Record<string, Omit<ServiceForm, "steps"> & { steps: Step[] }> = {
       },
       {
         key: "bequests", title: "الوصايا",
+        requireRows: [{ field: "bequests", col: "kind", value: "waqf", when: when("willType", "with_waqf"), message: "اخترت وصية تتضمن وقفًا بعد الوفاة: أضف في الجدول صف «وقف بعد الوفاة» بمقداره." }],
         fields: [
           table("bequests", "ما توصي به", [
-            { key: "kind", label: "نوع الوصية", type: "select", required: true, options: [["waqf", "وقف بعد الوفاة"], ["charity", "صدقة أو تبرع لجهة"], ["person", "لشخص معيّن"], ["other", "أخرى"]] },
+            { key: "kind", label: "نوع الوصية", type: "select", required: true, options: [["waqf", "وقف بعد الوفاة"], ["charity", "صدقة أو تبرع لجهة"], ["person", "لشخص معيّن"], ["other", "أخرى"]], hideOptions: { when: when("willType", "pure"), values: ["waqf"] } },
             { key: "recipient", label: "الموصى له (الجهة أو الشخص أو المصرف)", type: "text", required: true },
             { key: "relation", label: "صفة الموصى له", type: "select", required: true, options: RELATION },
             { key: "basis", label: "مقدار الوصية", type: "select", required: true, options: [["share", "نسبة من التركة"], ["amount", "مبلغ محدد"], ["asset", "عين محددة"]] },
@@ -384,16 +394,18 @@ const FORMS: Record<string, Omit<ServiceForm, "steps"> & { steps: Step[] }> = {
       },
       {
         key: "waqf", title: "الوقف بعد الوفاة",
-        showIf: { field: "bequests", notEmpty: true },
+        showIf: when("willType", "with_waqf"),
+        intro: "حدّد في جدول الوصايا صف «وقف بعد الوفاة» بمقداره (نسبة أو مبلغ أو عين)، ثم بيّن هنا على من تُصرف غلته ومن يتولاه وشروطه. لا يُنشأ ملف وقف من الوصية؛ يُنشأ عند تنفيذها بعد الوفاة.",
         fields: [
-          yn("includesWaqf", "هل في وصاياك وقف بعد الوفاة؟", R),
-          text("waqfName", "الاسم المقترح للوقف", { showIf: yes("includesWaqf") }),
+          text("waqfName", "الاسم المقترح للوقف"),
           table("waqfMasarif", "مصارف الوقف", [
             { key: "beneficiary", label: "المصرف", type: "text", required: true },
             { key: "share", label: "النصيب من الريع", type: "percent" },
-          ], { showIf: yes("includesWaqf"), requiredIf: yes("includesWaqf"), minRows: 1 }),
-          text("waqfNazir", "ناظر الوقف بعد الوفاة", { showIf: yes("includesWaqf"), requiredIf: yes("includesWaqf") }),
-          radio("waqfSuccession", "استخلاف الناظر", [["eldest", "الأصلح فالأصلح من الموقوف عليهم"], ["named", "من يسميه الناظر قبله كتابةً"], ["authority", "تعيّنه الجهة المختصة"]], { showIf: yes("includesWaqf"), requiredIf: yes("includesWaqf") }),
+          ], { ...R, minRows: 1 }),
+          text("waqfNazir", "ناظر الوقف بعد الوفاة", R),
+          radio("waqfSuccession", "استخلاف الناظر", [["eldest", "الأصلح فالأصلح من الموقوف عليهم"], ["named", "من يسميه الناظر قبله كتابةً"], ["authority", "تعيّنه الجهة المختصة"]], R),
+          area("waqfConditions", "شروط الوقف المقترحة (اختياري)", { hint: "مثال: تقديم عمارة الأصل على الصرف، أو استثمار جزء من الغلة. يراجعها المختص قبل اعتمادها في النص." }),
+          text("waqfFinal", "المآل إذا انقطعت المصارف (اختياري)"),
         ],
       },
       {
