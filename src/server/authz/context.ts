@@ -8,7 +8,7 @@ import {
   delegations, permissions, rolePermissions, roles, serviceRequests, userRoles, waqfMemberships, waqfs,
 } from "../db/schema";
 import { readSession, type SessionRow, type UserRow } from "../auth/session";
-import { ROLES, STAFF_ASSIGNED_WAQF_PERMS, type Permission } from "./catalog";
+import { ESTABLISHING_FOUNDER_PERMS, ESTABLISHING_STATUSES, ROLES, STAFF_ASSIGNED_WAQF_PERMS, type Permission } from "./catalog";
 
 const BREAK_GLASS_PERMS: Permission[] = ["waqf.view", "deed.view", "assets.view", "finance.view", "finance.summary", "statements.view", "beneficiaries.view", "governance.view", "documents.view", "compliance.view", "assessment.view", "requests.view", "audit.view_waqf"];
 
@@ -105,6 +105,8 @@ export type WaqfAccess = {
   viaGlobal: boolean;
   delegation: { validTo: string; scope: string[] } | null;
   isBeneficiaryOnly: boolean;
+  /** The founder holds the establishment permissions (ESTABLISHING_FOUNDER_PERMS) for this waqf right now. */
+  establishingFounder?: boolean;
 };
 
 export async function loadWaqfAccess(tx: Tx, auth: Auth, waqfId: string): Promise<WaqfAccess | null> {
@@ -136,6 +138,19 @@ export async function loadWaqfAccess(tx: Tx, auth: Auth, waqfId: string): Promis
       for (const p of d.scope) if (allowed.has(p)) perms.add(p); // intersection of role ceiling and POA scope
     }
   }
+  // The founder completes the file of a waqf still being established, until a nazir or chair holds it (see catalog).
+  let establishingFounder = false;
+  if (activeRoles.includes("founder") && (ESTABLISHING_STATUSES as readonly string[]).includes(waqf.status)) {
+    const [held] = await tx
+      .select({ id: waqfMemberships.id })
+      .from(waqfMemberships)
+      .where(and(eq(waqfMemberships.waqfId, waqfId), eq(waqfMemberships.status, "active"), inArray(waqfMemberships.roleKey, ["nazir", "board_chair"])))
+      .limit(1);
+    if (!held) {
+      establishingFounder = true;
+      for (const p of ESTABLISHING_FOUNDER_PERMS) perms.add(p);
+    }
+  }
   let isStaffAssigned = false;
   if (auth.isStaff) {
     const [assigned] = await tx
@@ -165,7 +180,7 @@ export async function loadWaqfAccess(tx: Tx, auth: Auth, waqfId: string): Promis
   if (auth.globalAccess) for (const p of STAFF_ASSIGNED_WAQF_PERMS) perms.add(p);
   if (perms.size === 0) return null;
   const isBeneficiaryOnly = activeRoles.length > 0 && activeRoles.every((r) => r === "beneficiary") && !isStaffAssigned && !auth.globalAccess;
-  return { waqf, roles: activeRoles, perms, isStaffAssigned, viaGlobal, delegation, isBeneficiaryOnly };
+  return { waqf, roles: activeRoles, perms, isStaffAssigned, viaGlobal, delegation, isBeneficiaryOnly, establishingFounder };
 }
 
 /** Loads access inside its own transaction; redirects/throws when the user has no access. */

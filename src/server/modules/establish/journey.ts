@@ -221,7 +221,7 @@ export function journey(f: JourneyFacts) {
   const resume = open
     ? { href: W(id, firstIncompleteWizardStep(wz!)), label: "استكمال تأسيس الوقف" }
     : firstOpen && firstOpen.state !== "done" ? { href: firstOpen.gaps[0]?.href ?? firstOpen.href, label: firstOpen.key === "documentation" || firstOpen.key === "registration" ? "تابع التوثيق والتسجيل" : "استكمال تأسيس الوقف" } : null;
-  const reason = status === "awaiting_client" ? `بانتظار: ${gaps.filter((g) => g.owner === "client").slice(0, 2).map((g) => g.text).join("؛ ") || firstOpen?.title}`
+  const reason = status === "awaiting_client" ? `بانتظار: ${gaps.filter((g) => g.owner === "client").slice(0, 2).map((g) => g.text.replace(/[.。]+$/, "")).join("؛ ") || firstOpen?.title}`
     : status === "in_review" ? `طلب الصياغة ${t03?.number} لدى فريق «وقفك»`
     : status === "returned" ? `أعاد الفريق طلب ${t03?.number} لاستكمال نواقص`
     : status === "documenting" || status === "ready_next" ? "التوثيق والتسجيل يتمّان لدى الجهة المختصة، ثم يُرفع ما يثبتهما"

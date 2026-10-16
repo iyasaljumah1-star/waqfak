@@ -206,6 +206,17 @@ export const ROLES: Record<string, { nameAr: string; scope: "global" | "waqf"; p
 };
 
 /** Permissions a staff member gets on a waqf where they hold an active assignment (request). */
+/**
+ * While a waqf is being established (idea, draft or documenting) and no nazir or board chair holds it on the platform,
+ * the founder establishing it completes its file: data, deed text, assets, masarif, the board's composition and who is
+ * invited to the file. These lapse by themselves once the waqf is documented or a nazir/chair is on the platform; from
+ * then on the nazara manages the file. Operations (finance, beneficial owners, distributions) are never included.
+ */
+export const ESTABLISHING_FOUNDER_PERMS: Permission[] = [
+  "waqf.edit", "deed.edit", "assets.edit", "beneficiaries.view", "beneficiaries.edit", "governance.manage", "waqf.members.manage",
+];
+export const ESTABLISHING_STATUSES = ["idea", "draft", "documenting"] as const;
+
 export const STAFF_ASSIGNED_WAQF_PERMS: Permission[] = [
   "waqf.view", "deed.view", "assets.view", "finance.view", "finance.summary", "statements.view", "beneficiaries.view",
   "governance.view", "documents.view", "documents.view_confidential", "documents.upload", "assessment.view", "requests.view",

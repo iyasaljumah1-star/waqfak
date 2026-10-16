@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useMemo, useState } from "react";
+import { useActionState, useEffect, useMemo, useState } from "react";
 import { FormMessage } from "@/components/ui/form";
 import { buttonClass } from "@/components/ui";
 import { initialState, type ActionState } from "@/lib/utils";
@@ -143,6 +143,10 @@ export function AssetForm({ action, waqfId, asset, submitLabel, testId }: { acti
     ? { category: asset.category, title: asset.title, value: asset.marketValue ?? "", ownershipDocNo: asset.ownershipDocNo ?? "", sharePct: asset.sharePct ?? "", held: "off", details: asset.details ?? {} }
     : blankAsset());
   const fin = FIN.includes(v.category);
+  // An added asset is saved even when incomplete (its gaps are listed): the add form clears so that submitting again
+  // never creates a second copy, and the saved asset is completed from its own page.
+  const added = !asset && state.ok && typeof state.data?.assetId === "string" ? state.data.assetId : null;
+  useEffect(() => { if (added) setV(blankAsset()); }, [added, state]);
   return (
     <form action={dispatch} className="space-y-4" data-testid={testId} noValidate>
       <input type="hidden" name="waqfId" value={waqfId} />
@@ -170,6 +174,7 @@ export function AssetForm({ action, waqfId, asset, submitLabel, testId }: { acti
         </div>
       ) : null}
       <FormMessage state={state} />
+      {added && /ينقصه/.test(state.message ?? "") ? <a href={`/app/w/${waqfId}/assets/${added}?edit=1#edit`} className="text-[14px] text-ink underline" data-testid="complete-added-asset">أكمل بيانات الأصل المضاف</a> : null}
       <button type="submit" disabled={pending || !v.category} className={buttonClass("primary", "md")}>{pending ? "جارٍ الحفظ…" : submitLabel}</button>
     </form>
   );

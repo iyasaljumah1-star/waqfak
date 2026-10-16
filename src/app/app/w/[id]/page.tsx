@@ -73,6 +73,11 @@ export default async function WaqfOverview({ params, searchParams }: { params: P
         </Alert>
       ) : null}
       {j && establishing ? <JourneyPanel j={j} updatedAt={w.updatedAt} /> : null}
+      {access.establishingFounder ? (
+        <div data-testid="establishing-founder"><Alert tone="info" title="تستكمل ملف الوقف بصفتك الواقف">
+          إلى أن يُوثَّق الوقف أو يتولاه ناظر أو رئيس مجلس في المنصة، يمكنك تعديل بياناته وأصوله ومصارفه وتشكيل مجلس النظارة ودعوة أعضائه. بعد التوثيق تنتقل إدارة الملف إلى النظارة.
+        </Alert></div>
+      ) : null}
       {nazara ? (
         <Alert tone={nazara.status === "active" ? "ok" : nazara.status === "suspended" ? "warn" : "info"} title={`نظارة «وقفك» على الوقف: ${NAZARA_STATUS_AR[nazara.status as keyof typeof NAZARA_STATUS_AR] ?? nazara.status}${nazara.isPractice ? " (تجريبية)" : ""}`}>
           {nazara.status === "active"
