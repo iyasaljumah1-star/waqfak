@@ -374,6 +374,9 @@ test("14: documented only with the deed in the vault; the founder's establishmen
   await shot(page, "journey-documented");
   // the nazara manages the file from here on: no more editing by the founder
   await expect(page.getByTestId("establishing-founder")).toHaveCount(0);
+  // what is left for the file is now the nazara's (the founder may still upload the registration certificate)
+  await expect(page.getByTestId("journey-gaps").locator('a[data-gap="reg:data"]')).toContainText("على النظارة");
+  await expect(page.getByTestId("journey-gaps").locator('a[data-gap="doc:reg"]')).toContainText("لدى الجهة");
   await page.goto(`/app/w/${waqfId}/assets`);
   await expect(page.getByTestId("add-asset-form")).toHaveCount(0);
 });

@@ -15,19 +15,21 @@ const STATUS_TONE: Record<string, "neutral" | "warn" | "info" | "ok" | "seal" | 
 };
 const OWNER_ICON: Record<Owner, typeof UserRound> = { client: UserRound, team: Users, authority: Landmark };
 
-function OwnerChip({ owner }: { owner: Owner }) {
+/** «مطلوب منك» only when the viewer can act on it; otherwise the client-side work belongs to the waqf's nazara. */
+function OwnerChip({ owner, nazara = false }: { owner: Owner; nazara?: boolean }) {
   const Icon = OWNER_ICON[owner];
-  return <span className="inline-flex items-center gap-1 text-[13px] text-muted"><Icon aria-hidden className="size-3.5" />{OWNER_AR[owner]}</span>;
+  return <span className="inline-flex items-center gap-1 text-[13px] text-muted"><Icon aria-hidden className="size-3.5" />{owner === "client" && nazara ? "على النظارة" : OWNER_AR[owner]}</span>;
 }
 
-export function JourneyPanel({ j, updatedAt, compact = false }: { j: Journey; updatedAt: string | Date; compact?: boolean }) {
+export function JourneyPanel({ j, updatedAt, compact = false, viewer = { manages: true, uploads: true } }: { j: Journey; updatedAt: string | Date; compact?: boolean; viewer?: { manages: boolean; uploads: boolean } }) {
   const current = j.current;
+  const byNazara = (href?: string) => !viewer.manages && !(viewer.uploads && !!href && href.includes("/documents?upload="));
   return (
     <Panel id="journey" title="مسار تأسيس الوقف" description="يُقرأ من البيانات المحفوظة: لا تُعد خطوة مكتملة إلا بما يثبتها.">
       <div className="space-y-5" data-testid="journey" data-status={j.status} data-stage={j.stage}>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <Badge tone={STATUS_TONE[j.status] ?? "neutral"} icon={false}><span data-testid="journey-status">{j.statusLabel}</span></Badge>
-          {j.owner ? <OwnerChip owner={j.owner} /> : null}
+          {j.owner ? <OwnerChip owner={j.owner} nazara={byNazara()} /> : null}
           <span className="text-[13px] text-muted">آخر تحديث {fmtDateTime(updatedAt)}</span>
         </div>
         {j.reason ? <p className="text-[15px]" data-testid="journey-reason">{j.reason}</p> : null}
@@ -51,7 +53,7 @@ export function JourneyPanel({ j, updatedAt, compact = false }: { j: Journey; up
                 <li key={g.key}>
                   <Link href={g.href} className="flex items-center gap-3 px-3 py-2.5 hover:bg-surface-2" data-gap={g.key}>
                     <span className="min-w-0 flex-1 text-[15px]">{g.text}</span>
-                    <OwnerChip owner={g.owner} />
+                    <OwnerChip owner={g.owner} nazara={byNazara(g.href)} />
                     <ArrowLeft aria-hidden className="size-4 shrink-0 text-muted" />
                   </Link>
                 </li>
@@ -72,7 +74,7 @@ export function JourneyPanel({ j, updatedAt, compact = false }: { j: Journey; up
                       <Link href={s.href} className="hover:underline">{s.title}</Link>
                       <span className="sr-only"> — {s.state === "done" ? "مكتملة" : s.state === "current" ? "جارية" : "قادمة"}</span>
                     </p>
-                    <p className="text-[13px] text-muted">{s.detail}{s.state !== "done" ? <> · <OwnerChip owner={s.owner} /></> : null}</p>
+                    <p className="text-[13px] text-muted">{s.detail}{s.state !== "done" ? <> · <OwnerChip owner={s.owner} nazara={byNazara(s.href)} /></> : null}</p>
                   </div>
                 </li>
               );

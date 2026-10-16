@@ -72,7 +72,7 @@ export default async function WaqfOverview({ params, searchParams }: { params: P
           <div className="mt-1"><SectionLink href={`${base}/documents?upload=${sp.evidence === "deed" ? "waqf_deed" : "registration_certificate"}#upload`}>ارفع المستند</SectionLink></div>
         </Alert>
       ) : null}
-      {j && establishing ? <JourneyPanel j={j} updatedAt={w.updatedAt} /> : null}
+      {j && establishing ? <JourneyPanel j={j} updatedAt={w.updatedAt} viewer={{ manages: waqfCan(access, "waqf.edit"), uploads: waqfCan(access, "documents.upload") }} /> : null}
       {access.establishingFounder ? (
         <div data-testid="establishing-founder"><Alert tone="info" title="تستكمل ملف الوقف بصفتك الواقف">
           إلى أن يُوثَّق الوقف أو يتولاه ناظر أو رئيس مجلس في المنصة، يمكنك تعديل بياناته وأصوله ومصارفه وتشكيل مجلس النظارة ودعوة أعضائه. بعد التوثيق تنتقل إدارة الملف إلى النظارة.
