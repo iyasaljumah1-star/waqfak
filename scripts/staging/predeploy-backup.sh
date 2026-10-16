@@ -8,6 +8,7 @@
 #      nothing is migrated.
 # Prints no connection strings or keys. Disable with PREDEPLOY_BACKUP=false. Keeps the newest $BACKUP_KEEP dumps (5).
 set -eu
+umask 077   # dumps hold the whole database (encrypted fields, hashes): readable by the container user only
 [ "${PREDEPLOY_BACKUP:-true}" = "false" ] && { echo "[predeploy] backup gate disabled (PREDEPLOY_BACKUP=false)"; exit 0; }
 
 DATA_DIR="${DATA_DIR:-/data}"
@@ -22,7 +23,12 @@ ADMIN=$(url_for "postgres")
 q() { psql "$1" -v ON_ERROR_STOP=1 -XAtqc "$2"; }
 
 journal=$(node -e 'process.stdout.write(String(require("./drizzle/meta/_journal.json").entries.length))')
-applied=$(q "$SRC" "select count(*) from drizzle.__drizzle_migrations" 2>/dev/null || echo 0)
+# an unreachable database is a failure, never "nothing to back up"
+q "$SRC" "select 1" >/dev/null || { echo "[predeploy] FAIL: cannot connect to the application database — deployment stopped"; exit 1; }
+if [ "$(q "$SRC" "select to_regclass('drizzle.__drizzle_migrations') is null")" = "t" ]; then
+  echo "[predeploy] new database (no migrations table yet): nothing to back up"; exit 0
+fi
+applied=$(q "$SRC" "select count(*) from drizzle.__drizzle_migrations")
 if [ "$applied" = "0" ]; then echo "[predeploy] new database (no migrations applied): nothing to back up"; exit 0; fi
 if [ "$applied" -ge "$journal" ]; then echo "[predeploy] no pending migrations ($applied/$journal): backup not needed"; exit 0; fi
 echo "[predeploy] pending migrations: $applied applied, $journal in this release → backup + restore check"
