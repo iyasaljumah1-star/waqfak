@@ -6,6 +6,8 @@ node scripts/staging/bootstrap.mjs /tmp/runtime.env
 set -a; . /tmp/runtime.env; set +a
 export DEMO_SHOW_OTP="${DEMO_SHOW_OTP:-true}" NODE_ENV=production PORT="${PORT:-3000}" HOSTNAME=0.0.0.0
 mkdir -p "$STORAGE_DIR"
+# backup + restore check before any pending migration; stops the deployment if it fails (previous one keeps serving)
+DATA_DIR="${DATA_DIR:-/data}" sh scripts/staging/predeploy-backup.sh
 npm run -s db:migrate
 npm run -s db:seed
 if [ "${SEED_DEMO:-true}" = "true" ] && [ ! -f "$DATA_DIR/.demo-seeded" ] && [ ! -f /data/.demo-seeded ]; then

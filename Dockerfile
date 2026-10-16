@@ -46,8 +46,15 @@ CMD ["node", "server.js"]
 # ── staging: all-in-one preview (default target, used by Railway/Render) ──
 FROM tools AS staging
 USER root
+# PostgreSQL client tools from the PostgreSQL project's repository (current major), so pg_dump/pg_restore are never
+# older than the server for the pre-migration backup gate (scripts/staging/predeploy-backup.sh).
 RUN apt-get update \
  && apt-get install -y --no-install-recommends chromium fonts-noto-core ca-certificates curl \
+ && install -d /usr/share/postgresql-common/pgdg \
+ && curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+ && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" > /etc/apt/sources.list.d/pgdg.list \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends postgresql-client \
  && rm -rf /var/lib/apt/lists/* \
  && cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/ \
  && mkdir -p /data
