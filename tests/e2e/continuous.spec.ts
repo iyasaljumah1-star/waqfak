@@ -408,7 +408,7 @@ test.describe.serial("continuous services", () => {
     await admin.getByTestId("cycle-1").getByRole("button", { name: /أقفل الدورة/ }).click();
     await ex(admin.getByTestId("cycle-1").getByRole("alert")).toContainText("اجتماع المجلس المرتبط");
     expect((await cycles(id))[0].status).toBe("open");
-    const [m] = await sql<{ id: string }>("select id from meetings where waqf_id = $1 order by scheduled_at limit 1", [demo().waqfs.C]);
+    const [m] = await sql<{ id: string }>("select id from meetings where waqf_id = $1 order by scheduled_at desc limit 1", [demo().waqfs.C]);
     await go(admin, `/admin/requests/${id}#service`);
     await admin.getByTestId("cycle-1").locator('select[name="meetingId"]').selectOption(m.id);
     await admin.getByTestId("cycle-1").getByRole("button", { name: "اربط الاجتماع" }).click();
