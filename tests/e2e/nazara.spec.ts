@@ -2,7 +2,7 @@ import "dotenv/config";
 import { mkdirSync } from "node:fs";
 import { Client } from "pg";
 import { expect, test, type Browser, type Page } from "@playwright/test";
-import { demo, loginAs, signup } from "./helpers";
+import { demo, loginAs, signup, passWaqfData } from "./helpers";
 
 /**
  * Corporate nazara (Waqfak as legal-entity nazir) and account administration, end to end:
@@ -96,6 +96,7 @@ test.describe.serial("corporate nazara", () => {
     await page.waitForURL(/\/intake$/, { timeout: 30_000 });
     await page.getByRole("radio", { name: "عضو مجلس النظارة" }).check();
     await page.getByRole("button", { name: "التالي" }).click();
+    await passWaqfData(page);
     await page.getByRole("radio", { name: "الواقف يريد تعيين «وقفك»" }).check();
     await page.getByRole("checkbox", { name: "اختيار الواقف" }).check();
     await page.getByRole("button", { name: "التالي" }).click();

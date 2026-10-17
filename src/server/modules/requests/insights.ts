@@ -103,7 +103,9 @@ export function analyzeRequest(i: InsightInput): RequestAnalysis {
       } else if (origin === "file_changed") {
         insights.push({ kind: "conflict", text: `يخالف ما في ملف الوقف (${String(fileV)}). يُتحقق من المستند ثم تُصحَّح الإجابة أو يُحدَّث الملف بإجرائه.`, evidence: ["ملف الوقف", "إجابة العميل"], task: `التحقق من «${f.label}» مقابل ملف الوقف` });
       } else if (origin === "staff" && lastRev) {
-        insights.push({ kind: "fact", text: `صحّحه الفريق${lastRev.reason ? ` — السبب: ${lastRev.reason}` : ""}. القيمة السابقة محفوظة في سجل التصحيحات.`, evidence: [`سجل التصحيحات ${lastRev.at.slice(0, 10)}`] });
+        const prev = lastRev.before && typeof lastRev.before === "object" ? (lastRev.before as Record<string, unknown>)[f.key] : undefined;
+        const prevText = prev === undefined || prev === null || prev === "" ? "فارغة" : typeof prev === "string" || Array.isArray(prev) ? displayValue(f, prev as string | string[]) : String(prev);
+        insights.push({ kind: "fact", text: `صحّحه ${lastRev.actor}${lastRev.reason ? ` — السبب: ${lastRev.reason}` : ""}. القيمة الأصلية: ${prevText}.`, evidence: [`سجل التصحيحات ${lastRev.at.slice(0, 10)}`] });
       } else if (origin === "client_completion" && lastRev) {
         insights.push({ kind: "client", text: "استكمله العميل ردًا على طلب استكمال، ولم يُراجع بعد." });
       } else if (st8?.status !== "approved") {

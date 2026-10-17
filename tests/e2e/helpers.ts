@@ -73,3 +73,20 @@ async function freshLogin(page: Page, u: DemoUser) {
     await login(page, u.phone);
   }
 }
+
+/**
+ * Services that read the waqf file show its records in a «بيانات الوقف المسجلة» step right after the applicant step:
+ * the client confirms them instead of re-entering them. No-op for services without that step.
+ */
+export async function passWaqfData(page: Page, review: "confirmed" | "needs_update" = "confirmed") {
+  const heading = page.getByRole("heading", { name: "بيانات الوقف المسجلة" });
+  await page.getByRole("button", { name: "التالي" }).first().waitFor({ state: "visible" });
+  if (!(await heading.isVisible().catch(() => false))) {
+    await page.waitForTimeout(300);
+    if (!(await heading.isVisible().catch(() => false))) return false;
+  }
+  await page.getByRole("radio", { name: review === "confirmed" ? "نعم، صحيحة ومحدّثة" : "بعضها يحتاج تحديثًا أو تصحيحًا" }).check();
+  await page.getByRole("button", { name: "التالي" }).click();
+  await expect(heading).toBeHidden();
+  return true;
+}

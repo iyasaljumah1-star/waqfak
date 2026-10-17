@@ -27,7 +27,7 @@ export async function ensureGapTasks(tx: Tx, req: Req, serviceCode: string, answ
   const fresh = planned.filter((p) => !existing.has(p.fieldKey));
   if (!fresh.length) return 0;
   const rows = await tx.insert(tasks).values(fresh.map((p) => ({
-    waqfId: req.waqfId, requestId: req.id, sourceType: "request", sourceId: req.id, kind: "field", fieldKey: p.fieldKey,
+    waqfId: req.waqfId, requestId: req.id, sourceType: "request", sourceId: req.id, fieldKey: p.fieldKey, // identified by the field, not an exec kind (one exec task per kind)
     title: p.title, description: `${req.number}\n${p.description}`, assigneeUserId: req.assignedToUserId, priority: req.priority,
     status: "todo" as const, visibility: "internal" as const, createdBy: actorId, updatedBy: actorId,
   }))).returning();

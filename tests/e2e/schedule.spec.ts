@@ -2,7 +2,7 @@ import { execSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import pg from "pg";
-import { demo, loginAs } from "./helpers";
+import { demo, loginAs, passWaqfData } from "./helpers";
 
 /**
  * Payment schedule and cadence (owner's order on the open items, 15 Oct 2026), synthetic data only:
@@ -117,6 +117,7 @@ test.describe.serial("payment schedule and contract cadence", () => {
     reqId = client.url().match(/requests\/([0-9a-f-]{36})/)![1];
     await client.getByRole("radio", { name: "ناظر الوقف" }).check();
     await client.getByRole("button", { name: "التالي" }).click();
+    await passWaqfData(client);
     await client.getByLabel("عدد المستفيدين").fill("12");
     await client.getByLabel("الدورية").selectOption("semiannual");
     const confirm = client.getByLabel(/أقر بأن البيانات والمستندات/);
@@ -270,6 +271,7 @@ test.describe.serial("payment schedule and contract cadence", () => {
     const id = client.url().match(/requests\/([0-9a-f-]{36})/)![1];
     await client.getByRole("radio", { name: "ناظر الوقف" }).check();
     await client.getByRole("button", { name: "التالي" }).click();
+    await passWaqfData(client);
     await client.getByRole("radio", { name: "ناظر فرد" }).check();
     await client.getByRole("checkbox", { name: "المالية" }).check();
     await client.getByLabel("دورية اللقاءات").selectOption("monthly");

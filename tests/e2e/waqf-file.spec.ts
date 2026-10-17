@@ -1,6 +1,6 @@
 import { expect as baseExpect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
-import { demo, loginAs, uniquePhone } from "./helpers";
+import { demo, loginAs, uniquePhone, passWaqfData } from "./helpers";
 
 /** Same flow as helpers.signup, with waits sized for a busy dev server (the shared helper uses 5s URL waits). */
 async function signupSlow(page: Page, name: string) {
@@ -115,6 +115,7 @@ test.describe("waqf file & establish wizard", () => {
     await page.waitForURL(/\/intake$/);
     await page.getByRole("radio", { name: "الواقف أو من يريد إنشاء الوقف" }).check();
     await page.getByRole("button", { name: "التالي" }).click();
+    await passWaqfData(page);
     // T03 v2: the ten clauses of the drafting guide as structured questions
     await page.getByLabel(/رقم هوية الواقف/).fill("1000000004");
     await page.getByLabel(/الاسم المقترح للوقف/).fill("وقف اختبار المعالج (تجريبي)");

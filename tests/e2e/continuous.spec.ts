@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import pg from "pg";
-import { demo, loginAs } from "./helpers";
+import { demo, loginAs, passWaqfData } from "./helpers";
 
 /**
  * Continuous services (decision of 15 Oct 2026), synthetic data only:
@@ -126,6 +126,7 @@ test.describe.serial("continuous services", () => {
     reqId = client.url().match(/requests\/([0-9a-f-]{36})/)![1];
     await client.getByRole("radio", { name: "ناظر الوقف" }).check();
     await client.getByRole("button", { name: "التالي" }).click();
+    await passWaqfData(client);
     await client.getByLabel("الدورية").selectOption("quarterly");
     await client.getByLabel("من يستلم التقرير؟").fill("الناظر (اختبار آلي)");
     const confirm = client.getByLabel(/أقر بأن البيانات والمستندات/);
@@ -367,6 +368,7 @@ test.describe.serial("continuous services", () => {
     const id = chair.url().match(/requests\/([0-9a-f-]{36})/)![1];
     await chair.getByRole("radio", { name: "عضو مجلس النظارة" }).check();
     await chair.getByRole("button", { name: "التالي" }).click();
+    await passWaqfData(chair);
     await chair.getByLabel(/عدد أعضاء المجلس الحالي/).fill("5");
     await chair.getByLabel(/مدة العضوية المطلوبة/).fill("12");
     const confirm = chair.getByLabel(/أقر بأن البيانات والمستندات/);

@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import pg from "pg";
-import { demo, loginAs } from "./helpers";
+import { demo, loginAs, passWaqfData } from "./helpers";
 
 /**
  * Execution engine (phase 3), synthetic data only:
@@ -67,6 +67,7 @@ async function startIntake(page: Page, service: string, waqf: string, capacity: 
   const id = page.url().match(/requests\/([0-9a-f-]{36})/)![1];
   await page.getByRole("radio", { name: capacity }).check();
   await page.getByRole("button", { name: "التالي" }).click();
+  await passWaqfData(page);
   return id;
 }
 async function finishIntake(page: Page) {

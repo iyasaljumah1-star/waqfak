@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import pg from "pg";
-import { demo, loginAs } from "./helpers";
+import { demo, loginAs, passWaqfData } from "./helpers";
 
 /**
  * Scenario 6 of the owner's order (15 Oct 2026): the periodic nazir report (N01) and the delivery record, generated
@@ -119,6 +119,7 @@ test.describe.serial("nazir periodic report and delivery record", () => {
     reqId = client.url().match(/requests\/([0-9a-f-]{36})/)![1];
     await client.getByRole("radio", { name: "ناظر الوقف" }).check();
     await client.getByRole("button", { name: "التالي" }).click();
+    await passWaqfData(client);
     await client.getByRole("radio", { name: "الواقف يريد تعيين «وقفك»" }).check();
     await client.getByRole("checkbox", { name: "اختيار الواقف" }).check();
     await client.getByRole("button", { name: "التالي" }).click();

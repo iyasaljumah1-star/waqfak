@@ -275,7 +275,7 @@ export default async function RequestPage({ params, searchParams }: { params: Pr
 
           {cws && r.status !== "draft" ? (
             <Panel id="request-data" title="بيانات طلبك" description="القيم المعتمدة في طلبك كما يعمل عليها الفريق، مع أي تعديل أُجري عليها وسببه، وبيانات وقفك التي تعتمد عليها الخدمة.">
-              <ClientFieldsView analysis={cws.analysis} revisions={cws.revisions} notes={cws.notes} requestId={r.id} waqfId={r.waqfId} canReport={canAct && !terminal} postNote={postClientNote} docs={docOpts} />
+              <ClientFieldsView analysis={cws.analysis} form={cws.form} revisions={cws.revisions} notes={cws.notes} requestId={r.id} waqfId={r.waqfId} canReport={canAct && !terminal} postNote={postClientNote} docs={docOpts} />
             </Panel>
           ) : d.intakeSummary ? (
             <Panel title="بيانات طلبك">

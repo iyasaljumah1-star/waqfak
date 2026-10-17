@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import pg from "pg";
-import { demo, loginAs } from "./helpers";
+import { demo, loginAs, passWaqfData } from "./helpers";
 
 /**
  * Output quality order — W01 (case of OUT-000004: the client answered «no waqf after death» while the bequests table
@@ -79,20 +79,20 @@ async function nextStep(page: Page, reqId: string, label: RegExp) {
 
 /** The team corrects one answer from the request page (reason kept with the previous value); returns the message. */
 async function correct(page: Page, reqId: string, field: string, fill: (ed: ReturnType<Page["getByTestId"]>) => Promise<void>, reason: string) {
+  // the unified request page: the edit sits beside the field itself
   await go(page, `/admin/requests/${reqId}#intake`);
-  await page.getByText("صحّح بيانات العميل أو أكملها").click();
-  const ed = page.getByTestId("staff-intake-editor");
-  await ed.locator("#edit-field").selectOption(field);
+  await page.getByTestId(`fa-${field}-edit`).click();
+  const ed = page.getByTestId(`edit-${field}`);
   await fill(ed);
-  await ed.locator("#edit-reason").fill(reason);
-  await ed.getByRole("button", { name: "احفظ التصحيح" }).click();
+  await ed.getByLabel("سبب التعديل ومصدره").fill(reason);
+  await ed.getByRole("button", { name: "احفظ التعديل" }).click();
   const msg = ed.locator('[role="status"], [role="alert"]').first();
   await ex(msg).toBeVisible();
   // a correction that makes other answers inapplicable is confirmed, naming them
   if (await ed.getByTestId("confirm-drop").isVisible()) {
     const asked = await msg.innerText();
     await ed.getByTestId("confirm-drop").locator("input").check();
-    await ed.getByRole("button", { name: "احفظ التصحيح" }).click();
+    await ed.getByRole("button", { name: "احفظ التعديل" }).click();
     await ex(ed.locator('[role="status"]').first()).toBeVisible();
     return `${asked}\n${await ed.locator('[role="status"]').first().innerText()}`;
   }
@@ -168,6 +168,7 @@ test.describe.serial("output quality: conflicts, checks, deficiency list, stages
     reqId = client.url().match(/requests\/([0-9a-f-]{36})/)![1];
     await client.getByRole("radio", { name: "الواقف أو من يريد إنشاء الوقف" }).check();
     await client.getByRole("button", { name: "التالي" }).click();
+    await passWaqfData(client);
     await client.getByRole("radio", { name: WITH_WAQF }).check();
     await client.getByRole("button", { name: "التالي" }).click();
     await client.getByLabel("رقم هوية الموصي").fill("1000000001");

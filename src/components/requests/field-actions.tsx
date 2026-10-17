@@ -89,7 +89,7 @@ function EditForm({ action, requestId, field, value: initial, answers }: { actio
         <Textarea name="reason" id={`reason-${field.key}`} required minLength={10} className="min-h-16" value={reason} onChange={(e) => setReason(e.target.value)} />
       </Field>
       {s.data?.needConfirm ? (
-        <label className="flex items-start gap-2 rounded-md bg-warn-soft px-3 py-2 text-[14px]">
+        <label className="flex items-start gap-2 rounded-md bg-warn-soft px-3 py-2 text-[14px]" data-testid="confirm-drop">
           <input type="checkbox" name="confirmDrop" className="mt-1 size-4 accent-[var(--ink)]" />
           أؤكد التعديل، مع حفظ الإجابات غير المنطبقة في سجل التعديلات
         </label>

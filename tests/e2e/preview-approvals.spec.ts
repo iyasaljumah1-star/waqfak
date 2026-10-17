@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { deflateRawSync } from "node:zlib";
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import pg from "pg";
-import { demo, loginAs } from "./helpers";
+import { demo, loginAs, passWaqfData } from "./helpers";
 
 /**
  * Owner's corrective order (15 Oct 2026): previews of every output at every stage, and direct approval by the system
@@ -162,6 +162,7 @@ test.describe.serial("previews of every output, and direct approval by the syste
     const reqId = client.url().match(/requests\/([0-9a-f-]{36})/)![1];
     await client.getByRole("radio", { name: "ناظر الوقف" }).check();
     await client.getByRole("button", { name: "التالي" }).click();
+    await passWaqfData(client);
     await client.getByLabel("المسألة أو السؤال").fill("هل يجوز تحميل مصروفات صيانة الأصل على غلة السنة الحالية كاملة؟ (اختبار آلي)");
     const confirm = client.getByLabel(/أقر بأن البيانات والمستندات/);
     await advance(client, () => confirm.isVisible());
@@ -313,6 +314,7 @@ test.describe.serial("previews of every output, and direct approval by the syste
     const reqId = client.url().match(/requests\/([0-9a-f-]{36})/)![1];
     await client.getByRole("radio", { name: "ناظر الوقف" }).check();
     await client.getByRole("button", { name: "التالي" }).click();
+    await passWaqfData(client);
     await client.getByLabel("عدد المستفيدين").fill("8");
     await client.getByLabel("الدورية").selectOption("annual");
     const confirm = client.getByLabel(/أقر بأن البيانات والمستندات/);

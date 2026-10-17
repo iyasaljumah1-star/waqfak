@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { expect, test, type Browser, type Locator, type Page } from "@playwright/test";
 import pg from "pg";
-import { demo, loginAs } from "./helpers";
+import { demo, loginAs, passWaqfData } from "./helpers";
 
 /**
  * The full request lifecycle on the new chain:
@@ -169,9 +169,14 @@ test.describe.serial("service request lifecycle", () => {
     await ex(page.getByLabel(/رقم الوكالة/)).toHaveCount(0);
     await page.getByRole("button", { name: "التالي" }).click();
 
-    // Step 2: service questions
+    // Step 2: the waqf's records as held in its file (source, date, status) — confirmed, not re-entered
+    await ex(page.getByTestId("context-blocks")).toBeVisible();
+    await passWaqfData(page);
+
+    // Step 3: service questions
     await ex(page.getByRole("heading", { name: "التقييم المعمّق" })).toBeVisible();
     await page.getByRole("radio", { name: "نعم" }).check();
+    await page.getByRole("checkbox", { name: "الحوكمة والنظارة" }).check(); // C02 v2: focus areas are required
     await page.getByLabel(/طريقة المقابلة/).selectOption("online");
     await page.getByLabel(/من نقابل من جهة الوقف/).fill("الناظر (اختبار آلي)");
     await page.getByRole("button", { name: "التالي" }).click();
@@ -179,9 +184,9 @@ test.describe.serial("service request lifecycle", () => {
 
     // The draft survives a reload (answers saved on the server)
     await page.reload();
-    await page.getByRole("button", { name: /^2\. / }).click();
-    await ex(page.getByLabel(/من نقابل من جهة الوقف/)).toHaveValue("الناظر (اختبار آلي)");
     await page.getByRole("button", { name: /^3\. / }).click();
+    await ex(page.getByLabel(/من نقابل من جهة الوقف/)).toHaveValue("الناظر (اختبار آلي)");
+    await page.getByRole("button", { name: /^4\. / }).click();
     await page.getByRole("button", { name: "التالي" }).click();
 
     // Documents: only one of two required slots, then try to submit → refused server-side
@@ -222,6 +227,7 @@ test.describe.serial("service request lifecycle", () => {
     noWaqfReqId = page.url().match(/requests\/([0-9a-f-]{36})/)![1];
     await page.getByRole("radio", { name: "الواقف أو من يريد إنشاء الوقف" }).check();
     await page.getByRole("button", { name: "التالي" }).click();
+    await passWaqfData(page);
     await page.getByRole("checkbox", { name: "الحوكمة والنظارة" }).check(); // C01 v2: focus areas are required
     await page.getByRole("button", { name: /المراجعة والإرسال/ }).click();
     await page.getByLabel(/أقر بأن البيانات والمستندات/).check();

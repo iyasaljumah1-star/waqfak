@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import pg from "pg";
-import { demo, loginAs } from "./helpers";
+import { demo, loginAs, passWaqfData } from "./helpers";
 
 /**
  * Service flows as one operating system (docs/SERVICE-FLOWS-AUDIT.md):
@@ -85,6 +85,7 @@ async function submitRequest(page: Page, service: string, waqf: string, answers:
   const id = page.url().match(/requests\/([0-9a-f-]{36})/)![1];
   await page.getByRole("radio", { name: "ناظر الوقف" }).check();
   await page.getByRole("button", { name: "التالي" }).click();
+  await passWaqfData(page);
   await answers(page);
   const confirm = page.getByLabel(/أقر بأن البيانات والمستندات/);
   for (let i = 0; i < 5 && !(await confirm.isVisible()); i++) await page.getByRole("button", { name: "التالي" }).click();
@@ -127,7 +128,9 @@ test.describe.serial("service flows as one operating system", () => {
     test.skip(info.project.name === "mobile", "shared state; desktop only");
     const nazir = await as(browser, "nazir", viewport);
     reqId = await submitRequest(nazir, "G01", A(), async (p) => {
-      await p.getByRole("group", { name: /هل للوقف مجلس نظارة/ }).getByRole("radio", { name: "نعم" }).check();
+      // G01 v2: the board and the existing policies are read from the waqf file; the form asks for the priorities
+      await p.getByRole("checkbox", { name: "لائحة الحوكمة الداخلية" }).check();
+      await p.getByRole("radio", { name: "الإبقاء على التشكيل الحالي" }).check();
     });
     const [intake] = await sql<{ status: string; assignee_user_id: string | null }>("select status, assignee_user_id from tasks where request_id = $1 and kind = 'intake'", [reqId]);
     expect(intake).toMatchObject({ status: "todo", assignee_user_id: null });

@@ -103,7 +103,7 @@ export async function createFieldTask(_: ActionState, fd: FormData): Promise<Act
     const [t] = await c.tx.insert(tasks).values({
       waqfId: rc.req.waqfId, requestId: rc.req.id, sourceType: "request", sourceId: rc.req.id, title: d.title,
       description: `مرتبطة بـ«${cur.label}» في الطلب ${rc.req.number}.`, assigneeUserId: assignee ?? rc.req.assignedToUserId, dueOn: d.dueOn || null,
-      priority: "normal", status: "todo", visibility: "internal", kind: "field", fieldKey: d.field, createdBy: c.auth.user.id, updatedBy: c.auth.user.id,
+      priority: "normal", status: "todo", visibility: "internal", fieldKey: d.field, createdBy: c.auth.user.id, updatedBy: c.auth.user.id, // no exec kind: a request may have many field tasks
     }).returning({ id: tasks.id });
     await audit(c.tx, { actorUserId: c.auth.user.id, action: "requests.field_task", entityType: "task", entityId: t.id, waqfId: rc.req.waqfId, ip: c.ip, userAgent: c.userAgent, after: { request: rc.req.id, field: d.field, title: d.title, assignee, dueOn: d.dueOn || null } });
     const to = assignee ?? rc.req.assignedToUserId;

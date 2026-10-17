@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import pg from "pg";
-import { demo, loginAs } from "./helpers";
+import { demo, loginAs, passWaqfData } from "./helpers";
 
 /**
  * Unified request workspace (phase 4), synthetic data only:
@@ -105,8 +105,13 @@ test.describe.serial("unified request workspace", () => {
     reqId = client.url().match(/requests\/([0-9a-f-]{36})/)![1];
     await client.getByRole("radio", { name: "ناظر الوقف" }).check();
     await client.getByRole("button", { name: "التالي" }).click();
+    await passWaqfData(client);
     await client.getByLabel(/السنة المالية المعنية/).fill("2026");
-    await client.getByLabel("مصادر الإيراد").fill("إيجارات تجريبية (اختبار آلي).");
+    // F05 v2: structured questions instead of a free-text description
+    await client.getByLabel(/عدد الحسابات البنكية للوقف/).fill("1");
+    await client.getByRole("checkbox", { name: "إيجارات" }).check();
+    await client.getByRole("group", { name: /هل صُرف للمستحقين/ }).getByRole("radio", { name: "لا" }).check();
+    await client.getByRole("group", { name: /هل تتوفر مستندات المصروفات/ }).getByRole("radio", { name: "نعم" }).check();
     await advance(client, () => client.getByTestId("slot-bank").isVisible());
     await client.getByTestId("slot-bank").getByTestId("document-file-input").setInputFiles(pdf);
     await ex(client.getByTestId("slot-bank").getByText("أُرفق")).toBeVisible({ timeout: 30_000 });
@@ -154,22 +159,28 @@ test.describe.serial("unified request workspace", () => {
     await ex(admin.getByTestId("review-decisions")).toContainText("أضف بيان المصروفات");
 
     // 5) the team corrects an answer (reason + source): recorded with before/after; the draft becomes stale
-    await admin.locator("details", { has: admin.locator("summary", { hasText: "صحّح بيانات العميل أو أكملها" }) }).locator("summary").click();
-    await admin.locator("#edit-field").selectOption("revenueSources");
-    await admin.locator("#q-revenueSources").fill("إيجارات ووديعة استثمارية (صُححت بعد اتصال بالناظر — اختبار آلي).");
-    await admin.locator("#edit-reason").fill("أكده الناظر هاتفيًا، ومطابق لكشف الحساب المرفق.");
-    await admin.getByRole("button", { name: "احفظ التصحيح" }).click();
+    // (on the unified request page: the edit sits beside the field; the original value, reason and editor are kept)
+    await go(admin, `/admin/requests/${reqId}#intake`);
+    await admin.getByTestId("fa-bankAccounts-edit").click();
+    const ed = admin.getByTestId("edit-bankAccounts");
+    await ed.locator("#q-bankAccounts").fill("2");
+    await ed.getByLabel("سبب التعديل ومصدره").fill("أكده الناظر هاتفيًا، ومطابق لكشف الحساب المرفق.");
+    await ed.getByRole("button", { name: "احفظ التعديل" }).click();
     await ex.poll(async () => (await sql("select 1 from request_revisions where request_id = $1 and kind = 'intake_edit'", [reqId])).length).toBe(1);
     const [rev] = await sql<{ before: Record<string, string>; after: Record<string, string>; impact: { kind: string }[] }>("select before, after, impact from request_revisions where request_id = $1", [reqId]);
-    expect(rev.before.revenueSources).toContain("إيجارات تجريبية");
-    expect(rev.after.revenueSources).toContain("وديعة استثمارية");
+    expect(String(rev.before.bankAccounts)).toBe("1");
+    expect(String(rev.after.bankAccounts)).toBe("2");
     expect(rev.impact.some((x) => x.kind === "output")).toBe(true);
+    await ex(admin.getByTestId("field-bankAccounts").getByTestId("field-state")).toHaveAttribute("data-state", "needs_review");
+    // the output page lists exactly what changed since the draft (the draft text itself is not rewritten)
+    await go(admin, `/admin/requests/${reqId}/outputs/${outputId}`);
+    await ex(admin.getByTestId("data-change").filter({ hasText: "عدد الحسابات البنكية للوقف" })).toContainText("1 ← 2");
     // regenerate from the corrected data; the specialist's text is kept
     await nextStep(admin, reqId, /أعد توليد المسودة من البيانات المصححة/);
-    const [v] = await sql<{ origin: string; sections: unknown }>("select origin, sections from output_versions where output_id = $1 order by version desc limit 1", [outputId]);
+    const [v] = await sql<{ origin: string; sections: unknown; data_snapshot: Record<string, string> }>("select origin, sections, data_snapshot from output_versions where output_id = $1 order by version desc limit 1", [outputId]);
     expect(v.origin).toBe("regenerated");
     expect(JSON.stringify(v.sections)).toContain("ملاحظة المختص المالي");
-    expect(JSON.stringify(v.sections)).toContain("وديعة استثمارية");
+    expect(v.data_snapshot["answer:bankAccounts"]).toBe("2");
     await nextStep(admin, reqId, /أرسل المسودة للمراجعة/);
     await nextStep(admin, reqId, /اعتمد «/); // self_allowed: authorized manager, recorded
 
@@ -211,7 +222,7 @@ test.describe.serial("unified request workspace", () => {
     await admin.getByTestId("next-step").click();
     await ex.poll(() => status(reqId)).toBe("closed");
     const revs = await sql<{ kind: string; target: string }>("select kind, target from request_revisions where request_id = $1 order by at", [reqId]);
-    expect(revs.map((r) => `${r.kind}:${r.target}`)).toEqual(["intake_edit:revenueSources", "rollback:stage:analysis", "rollback:execution"]);
+    expect(revs.map((r) => `${r.kind}:${r.target}`)).toEqual(["intake_edit:bankAccounts", "rollback:stage:analysis", "rollback:execution"]);
     await go(admin, `/admin/requests/${reqId}#history`);
     await ex(admin.getByTestId("revisions")).toContainText("نقص في تحليل المصروفات");
     await admin.screenshot({ path: `${shots}/workspace-closed-desktop.png`, fullPage: false });
@@ -283,6 +294,7 @@ test.describe.serial("unified request workspace", () => {
     const r = { id: chair.url().match(/requests\/([0-9a-f-]{36})/)![1] };
     await chair.getByRole("radio", { name: "عضو مجلس النظارة" }).check();
     await chair.getByRole("button", { name: "التالي" }).click();
+    await passWaqfData(chair);
     await chair.getByLabel(/عدد أعضاء المجلس الحالي/).fill("5");
     const confirm = chair.getByLabel(/أقر بأن البيانات والمستندات/);
     await advance(chair, () => confirm.isVisible());
