@@ -149,8 +149,11 @@ test.describe.serial("service flows as one operating system", () => {
     await go(admin, `/admin/requests/${reqId}`);
     await act(admin, "بدء التنفيذ");
     await ex(admin.getByTestId("task-stage-analysis")).toBeVisible();
-    const kinds = await sql<{ kind: string; n: number }>("select kind, count(*)::int n from tasks where request_id = $1 group by kind order by kind", [reqId]);
+    const kinds = await sql<{ kind: string; n: number }>("select kind, count(*)::int n from tasks where request_id = $1 and kind is not null group by kind order by kind", [reqId]);
     expect(kinds).toEqual([{ kind: "intake", n: 1 }, { kind: "prepare_output", n: 1 }, { kind: "review_output", n: 1 }, { kind: "stage", n: 2 }]);
+    // the other tasks are the gaps found in the waqf file at submission, each tied to its record
+    const gapTasks = await sql<{ field_key: string | null }>("select field_key from tasks where request_id = $1 and kind is null", [reqId]);
+    for (const t of gapTasks) expect(t.field_key).toMatch(/^ctx:/);
 
     // the manager completes the stage task himself → the workflow moves to the next stage; executor ≠ responsible recorded
     await admin.getByTestId("task-stage-analysis").getByRole("button", { name: "أكملها بنفسي" }).click();
