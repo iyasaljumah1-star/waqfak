@@ -13,6 +13,7 @@ import { applyStagePlan, recomputeSla, transition, type ActCtx } from "@/server/
 import { findField, sanitizeAnswers, tableRows, validateField, visibleFields, visibleSteps, type Answers } from "@/server/modules/requests/intake/engine";
 import { intakeOf, serviceForm } from "@/server/modules/requests/intake/server";
 import { syncStageTasks, syncTask } from "./exec";
+import { recordFieldState } from "@/server/modules/requests/field-state";
 import { workStages } from "./exec-pure";
 import { reopenStagePlan, revisionImpact, rollbackOptions, type RollbackTarget } from "./revisions-pure";
 import type { ActionState } from "@/lib/utils";
@@ -138,7 +139,11 @@ export async function staffEditIntake(_: ActionState, fd: FormData): Promise<Act
       before: { [f.key]: before, ...Object.fromEntries(dropped.map((k) => [k, answers[k]])) }, after: { [f.key]: next[f.key] ?? null, ...Object.fromEntries(dropped.map((k) => [k, null])) },
       impact, actorUserId: c.auth.user.id,
     });
-    await audit(c.tx, { actorUserId: c.auth.user.id, action: "requests.intake_edit", entityType: "service_request", entityId: d.id, waqfId: rc.req.waqfId, ip: c.ip, userAgent: c.userAgent, before: { field: f.key }, after: { field: f.key, reason: d.reason } });
+    // the audit keeps the values too (identity and phone numbers masked; the full values stay in the revision record)
+    const shown = (v: unknown) => (["idnumber", "phone"].includes(f.type) && typeof v === "string" ? `••••${v.slice(-4)}` : v);
+    await audit(c.tx, { actorUserId: c.auth.user.id, action: "requests.intake_edit", entityType: "service_request", entityId: d.id, waqfId: rc.req.waqfId, ip: c.ip, userAgent: c.userAgent, before: { field: f.key, value: shown(before) }, after: { field: f.key, value: shown(next[f.key] ?? null), reason: d.reason } });
+    // an edit is not an approval: the field goes back to review (and an earlier approval no longer covers it)
+    await recordFieldState(c.tx, rc, f.key, { at: new Date().toISOString(), by: c.auth.user.id, action: "changed", note: d.reason, value: next[f.key] ?? null }, "needs_review");
     // validation runs again on the corrected data: conflicts it removed are resolved (by this correction), new ones open
     const fresh = { ...rc, req: { ...rc.req, intake: { ...intake, answers: next } } };
     const ctx = await collectContext(c.tx, fresh);

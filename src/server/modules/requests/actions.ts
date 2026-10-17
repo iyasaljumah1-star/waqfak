@@ -1,5 +1,9 @@
 "use server";
 
+import { contextFor } from "./context/map";
+import { findField } from "./intake/engine";
+import { serviceForm } from "./intake/server";
+
 import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { deliverables, documents, requestNotes, serviceRequests, userRoles, roles, users } from "@/server/db/schema";
@@ -70,7 +74,15 @@ const noteSchema = z.object({
   body: z.string().trim().min(2, "اكتب نص الرسالة.").max(4000, "النص طويل جدًا."),
   visibility: z.enum(["client", "internal"]).optional().default("client"),
   documentId: z.string().optional().default(""),
+  /** The field (or "ctx:<block>") the note or evidence is about. */
+  fieldKey: z.string().trim().max(80).regex(/^(ctx:[a-z.]+|[A-Za-z][A-Za-z0-9_]*)?$/, "حقل غير صالح.").optional().default(""),
 });
+
+/** A note may concern a field of the service's form or a waqf-file block the service reads. */
+function fieldExists(rc: { service: { code: string; audiences: string[]; requiredDocuments: unknown } }, key: string) {
+  if (key.startsWith("ctx:")) return (contextFor(rc.service.code) as string[]).includes(key.slice(4));
+  return !!findField(serviceForm(rc.service as Parameters<typeof serviceForm>[0]), key);
+}
 
 async function addNote(side: "client" | "staff", fd: FormData): Promise<ActionState> {
   const r = parseForm(noteSchema, fd);
@@ -88,8 +100,10 @@ async function addNote(side: "client" | "staff", fd: FormData): Promise<ActionSt
       if (!doc) throw new UserError("المرفق ليس من وثائق هذا الطلب.");
       documentId = doc.id;
     }
-    await c.tx.insert(requestNotes).values({ requestId: rc.req.id, waqfId: rc.req.waqfId, authorId: c.auth.user.id, visibility, body: d.body, documentId });
-    await audit(c.tx, { actorUserId: c.auth.user.id, action: "requests.note", entityType: "service_request", entityId: rc.req.id, waqfId: rc.req.waqfId, ip: c.ip, userAgent: c.userAgent, after: { visibility, documentId } });
+    if (d.fieldKey && !fieldExists(rc, d.fieldKey)) throw new UserError("الحقل غير موجود في نموذج هذه الخدمة.");
+    const fieldKey = d.fieldKey || null;
+    await c.tx.insert(requestNotes).values({ requestId: rc.req.id, waqfId: rc.req.waqfId, authorId: c.auth.user.id, visibility, body: d.body, documentId, fieldKey });
+    await audit(c.tx, { actorUserId: c.auth.user.id, action: "requests.note", entityType: "service_request", entityId: rc.req.id, waqfId: rc.req.waqfId, ip: c.ip, userAgent: c.userAgent, after: { visibility, documentId, fieldKey } });
     const vars = { number: rc.req.number, status: STATUS_LABEL[rc.req.status as RequestStatus], note: "رسالة جديدة على الطلب" };
     if (side === "client" && rc.req.assignedToUserId) await notify(rc.req.assignedToUserId, "request.status", { ...vars, status: "رسالة جديدة من العميل" }, { waqfId: rc.req.waqfId, link: `/admin/requests/${rc.req.id}`, tx: c.tx });
     if (side === "staff" && visibility === "client" && rc.req.requesterUserId !== c.auth.user.id) await notify(rc.req.requesterUserId, "request.status", { ...vars, status: "رسالة جديدة من فريق وقفك" }, { waqfId: rc.req.waqfId, link: `/app/requests/${rc.req.id}`, tx: c.tx });

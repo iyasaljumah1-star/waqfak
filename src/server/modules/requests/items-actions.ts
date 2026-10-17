@@ -2,7 +2,10 @@
 
 import { and, desc, eq, max } from "drizzle-orm";
 import { z } from "zod";
-import { documents, requestEvents, requestItemEvents, requestItems, serviceRequests } from "@/server/db/schema";
+import { documents, requestEvents, requestItemEvents, requestItems, requestRevisions, serviceRequests } from "@/server/db/schema";
+import { asSystem } from "@/server/db/as-system";
+import { intakeOf, serviceForm } from "./intake/server";
+import { recordFieldState } from "./field-state";
 import type { RequestItemKind } from "@/server/db/schema/commerce";
 import { ForbiddenError } from "@/server/authz/context";
 import { audit } from "@/server/lib/audit";
@@ -15,7 +18,7 @@ import { awaitingClient, blocking, ITEM_KIND_LABEL } from "./items-pure";
 import type { RequestStatus } from "./workflow";
 
 export type { DocReviewEntry as DocReview } from "./intake/engine";
-import type { DocReviewEntry as DocReview } from "./intake/engine";
+import { findField, sanitizeAnswers, validateField, type Answers, type DocReviewEntry as DocReview } from "./intake/engine";
 
 import { syncTask } from "@/server/modules/operations/exec";
 import { linksOfRequest } from "@/server/modules/operations/links";
@@ -135,14 +138,50 @@ export async function answerItem(_: ActionState, fd: FormData): Promise<ActionSt
     await logEvent(c.tx, rc.req, c.auth.user.id, `أجاب العميل على البند ${item.seq}: ${item.title}`);
     await audit(c.tx, { actorUserId: c.auth.user.id, action: "requests.item_answer", entityType: "request_item", entityId: item.id, waqfId: item.waqfId, ip: c.ip, userAgent: c.userAgent, after: { documentId } });
     if (rc.req.assignedToUserId) await notify(rc.req.assignedToUserId, "request.status", { number: rc.req.number, status: `أجاب العميل على البند ${item.seq}` }, { waqfId: rc.req.waqfId, link: `/admin/requests/${rc.req.id}#items`, tx: c.tx });
+    // a data item about a form field: a valid answer becomes the field's value (recorded as the client's completion, to
+    // be reviewed by the team); anything else stays a reply for the team to apply
+    const applied = item.kind === "data" && item.fieldKey && d.response ? await applyCompletion(c, rc, item.fieldKey, d.response, item.seq) : null;
     const released = await releaseIfAnswered(c, item.requestId);
-    return { ok: true, message: released ? "أُرسل ردك. اكتملت النواقص المطلوبة وعاد الطلب إلى الفريق." : "أُرسل ردك إلى الفريق للمراجعة." };
+    const appliedLine = applied === true ? " حُدّث الحقل في طلبك بردك، ويراجعه الفريق." : applied ? ` ${applied}` : "";
+    return { ok: true, message: (released ? "أُرسل ردك. اكتملت النواقص المطلوبة وعاد الطلب إلى الفريق." : "أُرسل ردك إلى الفريق للمراجعة.") + appliedLine };
   });
   if (reqId) {
     const { revalidatePath } = await import("next/cache");
     for (const p of reval(reqId)) revalidatePath(p);
   }
   return res;
+}
+
+
+/**
+ * Applies a client's reply to the form field the item is about, when it is a valid value for that field: the previous
+ * value is kept in a revision («client_completion»), and the field goes to the team's review. Returns true when
+ * applied, a message when the reply could not be used as the value, null when the field does not take replies.
+ */
+async function applyCompletion(c: ActCtx, rc: RequestCtx, fieldKey: string, response: string, seq: number): Promise<true | string | null> {
+  const form = serviceForm(rc.service);
+  const intake = intakeOf(rc.req);
+  if (!intake.formVersion) return null;
+  const found = findField(form, fieldKey);
+  if (!found || ["table", "checkboxes", "ack", "hidden"].includes(found.field.type)) return null;
+  const f = found.field;
+  const answers: Answers = { ...(intake.answers ?? {}) };
+  let v = response.trim();
+  if (f.options) v = f.options.find(([k, l]) => k === v || l === v)?.[0] ?? v;
+  if (f.type === "yesno") v = ({ "نعم": "yes", "لا": "no" } as Record<string, string>)[v] ?? v;
+  if (["number", "money", "percent"].includes(f.type)) v = v.replace(/[٠-٩]/g, (x) => String("٠١٢٣٤٥٦٧٨٩".indexOf(x))).replace(/[,٬\s]/g, "");
+  const next = sanitizeAnswers(form, { ...answers, [f.key]: v });
+  const err = validateField(f, next[f.key], next);
+  if (err) return `لم يُحدَّث الحقل تلقائيًا (${err})؛ يطبّق الفريق ردك.`;
+  if (JSON.stringify(answers[f.key] ?? null) === JSON.stringify(next[f.key] ?? null)) return null;
+  // the client may answer; the bookkeeping rows are team records, written after this check with the system context
+  await asSystem(c.tx, async () => {
+    await c.tx.update(serviceRequests).set({ intake: { ...intake, answers: next }, updatedBy: c.auth.user.id }).where(eq(serviceRequests.id, rc.req.id));
+    await c.tx.insert(requestRevisions).values({ requestId: rc.req.id, waqfId: rc.req.waqfId, kind: "client_completion", target: f.key, reason: `رد العميل على طلب الاستكمال #${seq}`, before: { [f.key]: answers[f.key] ?? null }, after: { [f.key]: next[f.key] ?? null }, impact: [], actorUserId: c.auth.user.id });
+    await recordFieldState(c.tx, rc, f.key, { at: new Date().toISOString(), by: c.auth.user.id, action: "changed", note: `استكمال العميل (#${seq})`, value: next[f.key] ?? null }, "needs_review");
+  });
+  await audit(c.tx, { actorUserId: c.auth.user.id, action: "requests.client_completion", entityType: "service_request", entityId: rc.req.id, waqfId: rc.req.waqfId, ip: c.ip, userAgent: c.userAgent, after: { field: f.key, item: seq } });
+  return true;
 }
 
 // ───────────────────────── Staff: review ─────────────────────────
