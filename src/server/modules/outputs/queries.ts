@@ -6,7 +6,7 @@ import { read } from "@/server/modules/_shared";
 import { loadRequestCtx } from "@/server/modules/requests/access";
 import { outputsFor, PROFILE_FORMAT, REVIEW_LABEL, SPECIALTY_LABEL } from "./catalog";
 import { diffVersions, readiness, wordDiff } from "./pure";
-import { dataHash } from "./build";
+import { dataHash, dataSnapshot, snapshotChanges } from "./build";
 import { checkBlockers } from "./checks";
 import { draftInputs } from "./live";
 import { checksOf, conflictRegister, officialRecordsOf, reviewsOf } from "./quality";
@@ -42,6 +42,7 @@ export async function outputPageData(auth: Auth, requestId: string, outputId: st
     const inp = await draftInputs(tx, rc, o.outputKey);
     const liveConflicts = inp?.ctx.conflicts ?? [];
     const stale = !!(head?.dataHash && inp && head.dataHash !== dataHash(inp.ctx));
+    const dataChanges = stale && inp ? snapshotChanges(head?.dataSnapshot, dataSnapshot(inp.ctx)) : [];
     const reviews = await reviewsOf(tx, o.id, head?.version);
     const checks = head ? checksOf(head.sections) : [];
     const cb = checkBlockers(checks, [...reviews.checks.values()]);
@@ -69,7 +70,7 @@ export async function outputPageData(auth: Auth, requestId: string, outputId: st
       ready: current ? readiness(current.sections, current.gaps) : null,
       diff: a && b ? { a: a.version, b: b.version, rows: diffRows! } : null,
       quality: {
-        liveConflicts, stale, register: await conflictRegister(tx, rc.req.id), reviews, checks, checkState: cb, requirements, blockers: rb,
+        liveConflicts, stale, dataChanges, register: await conflictRegister(tx, rc.req.id), reviews, checks, checkState: cb, requirements, blockers: rb,
         submitReasons, approveReasons, official, stage, next: nextAction(stage, { submitBlockers: submitReasons.length, approveBlockers: cb.pendingSpecialist.length }),
         refs: new Map(refs.map((r) => [r.code, r])), reqDocs,
       },

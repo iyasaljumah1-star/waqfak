@@ -3,6 +3,7 @@ import { and, eq, inArray, isNull, notInArray, or } from "drizzle-orm";
 import type { Tx } from "@/server/db";
 import { documents, nazaraEvents, recommendations, serviceRequests, services, users, waqfs, workflowTemplates } from "@/server/db/schema";
 import { ensureIntakeTask } from "@/server/modules/operations/exec";
+import { ensureGapTasks } from "../gap-tasks";
 import { linkRequest } from "@/server/modules/operations/links";
 import { audit } from "@/server/lib/audit";
 import { notify } from "@/server/modules/notify";
@@ -118,6 +119,7 @@ export async function submitDraft(c: ActCtx, rc: RequestCtx, answersRaw: unknown
   if (rc.req.source === "recommendation" && rc.req.sourceRef)
     await tx.update(recommendations).set({ status: "converted", serviceRequestId: rc.req.id }).where(eq(recommendations.id, rc.req.sourceRef));
   await ensureIntakeTask(tx, rc.req, auth.user.id);
+  await ensureGapTasks(tx, rc.req, svc.code, answers, auth.user.id);
   if (svc.code === "N01" && rc.waqf) {
     // One open nazara file per waqf: the request opens it, or is linked to the file already open (never a duplicate).
     const eng = await openEngagementTx(tx, { waqfId: rc.waqf.id, requestId: rc.req.id, actorId: auth.user.id, ip: c.ip, userAgent: c.userAgent });

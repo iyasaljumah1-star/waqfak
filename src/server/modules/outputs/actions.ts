@@ -73,7 +73,7 @@ export async function generateOutput(_: ActionState, fd: FormData): Promise<Acti
     const sync = await syncConflicts(c.tx, rc, inp.ctx.conflicts ?? [], { actorId: c.auth.user.id, ip: c.ip, userAgent: c.userAgent, outputId: o.id, reason: "عند توليد المسودة" });
     let summary = "";
     if (!o.currentVersion) {
-      version = await addVersion(c.tx, o, { origin: "generated", sections: fresh.sections, gaps: fresh.gaps, sources: fresh.sources, inputsHash: fresh.inputsHash, dataHash: fresh.dataHash, basedOn: null, actorId: c.auth.user.id, note: "مسودة أولى من بيانات الطلب والوقف" });
+      version = await addVersion(c.tx, o, { origin: "generated", sections: fresh.sections, gaps: fresh.gaps, sources: fresh.sources, inputsHash: fresh.inputsHash, dataHash: fresh.dataHash, dataSnapshot: fresh.dataSnapshot, basedOn: null, actorId: c.auth.user.id, note: "مسودة أولى من بيانات الطلب والوقف" });
     } else {
       const cur = await versionOf(c.tx, o.id, o.currentVersion);
       if (cur?.inputsHash === fresh.inputsHash && cur.origin !== "edited") return { ok: true, message: "لم تتغير البيانات منذ آخر توليد؛ المسودة الحالية مطابقة." };
@@ -82,7 +82,7 @@ export async function generateOutput(_: ActionState, fd: FormData): Promise<Acti
       const merged = cur ? mergeRegenerated(cur.sections, fresh.sections, fresh.gaps) : { sections: fresh.sections, gaps: fresh.gaps, kept: 0 };
       kept = merged.kept;
       summary = regenNote(regenSummary(cur?.sections ?? [], merged.sections, cur?.gaps ?? [], merged.gaps), kept);
-      version = await addVersion(c.tx, { ...o, status: o.status === "returned" ? "draft" : o.status }, { origin: "regenerated", sections: merged.sections, gaps: merged.gaps, sources: fresh.sources, inputsHash: fresh.inputsHash, dataHash: fresh.dataHash, basedOn: o.currentVersion, actorId: c.auth.user.id, note: `أُعيد التوليد من البيانات الحالية: ${summary}` });
+      version = await addVersion(c.tx, { ...o, status: o.status === "returned" ? "draft" : o.status }, { origin: "regenerated", sections: merged.sections, gaps: merged.gaps, sources: fresh.sources, inputsHash: fresh.inputsHash, dataHash: fresh.dataHash, dataSnapshot: fresh.dataSnapshot, basedOn: o.currentVersion, actorId: c.auth.user.id, note: `أُعيد التوليد من البيانات الحالية: ${summary}` });
     }
     if (prepTask && prepTask.status === "todo") await syncTask(c.tx, rc.req.id, "prepare_output", { outputKey: def.key }, "in_progress", c.auth.user.id, "بدأ إعداد المسودة");
     if (prepTask) await taskEvent(c.tx, prepTask, { action: "output", actorId: c.auth.user.id, note: `${version === 1 ? "وُلّدت المسودة" : "أُعيد توليد المسودة"} (نسخة ${version})`, outputId: o.id });
@@ -112,7 +112,7 @@ export async function saveOutputEdits(_: ActionState, fd: FormData): Promise<Act
     // every version says why it exists: the editor's reason, or a description of what was edited
     const touched = Object.keys(fields).filter((k) => fields[k] !== "" || k.startsWith("drop:")).map((k) => k.split(":")[0]);
     const auto = `تعديل يدوي: ${[...new Set(touched)].map((k) => ({ clause: "نص بند", spec: "نص المختص", fact: "قيمة", note: "ملاحظة", drop: "حذف قسم", new_title: "قسم مضاف", new_body: "قسم مضاف" })[k] ?? k).join("، ")}`;
-    const version = await addVersion(c.tx, o, { origin: "edited", sections: edited.sections, gaps: settleGaps(edited.sections, cur.gaps.filter((g) => !(g.key.startsWith("conflict:") && !g.sides))), sources: cur.sources, inputsHash: cur.inputsHash, dataHash: cur.dataHash, basedOn: cur.version, actorId: c.auth.user.id, note: String(fd.get("note") ?? "").trim().slice(0, 500) || auto });
+    const version = await addVersion(c.tx, o, { origin: "edited", sections: edited.sections, gaps: settleGaps(edited.sections, cur.gaps.filter((g) => !(g.key.startsWith("conflict:") && !g.sides))), sources: cur.sources, inputsHash: cur.inputsHash, dataHash: cur.dataHash, dataSnapshot: cur.dataSnapshot, basedOn: cur.version, actorId: c.auth.user.id, note: String(fd.get("note") ?? "").trim().slice(0, 500) || auto });
     await audit(c.tx, { actorUserId: c.auth.user.id, action: "outputs.edit", entityType: "output", entityId: o.id, waqfId: o.waqfId, ip: c.ip, userAgent: c.userAgent, after: { number: o.number, version } });
     return { ok: true, message: `حُفظت التعديلات في نسخة جديدة (${version}).` };
   }, { revalidate: reval(requestId) });

@@ -44,13 +44,13 @@ export async function ensureOutput(tx: Tx, rc: RequestCtx, def: OutputDef, actor
 }
 
 /** Appends a version (history is never rewritten) and points the output at it. */
-export async function addVersion(tx: Tx, o: OutputRow, v: { origin: "generated" | "regenerated" | "edited"; sections: OutputSection[]; gaps: OutputGap[]; sources: OutputSource[]; inputsHash: string | null; dataHash?: string | null; basedOn: number | null; note?: string | null; actorId: string }) {
+export async function addVersion(tx: Tx, o: OutputRow, v: { origin: "generated" | "regenerated" | "edited"; sections: OutputSection[]; gaps: OutputGap[]; sources: OutputSource[]; inputsHash: string | null; dataHash?: string | null; dataSnapshot?: Record<string, unknown> | null; basedOn: number | null; note?: string | null; actorId: string }) {
   if (o.status === "approved") throw new UserError("المخرج معتمد؛ لا تُضاف إليه نسخ. افتح مراجعة جديدة إن لزم.");
   if (o.status === "in_review") throw new UserError("المخرج بانتظار المراجعة؛ يعدّله المراجع بإعادته للتعديل أولًا.");
   const version = o.currentVersion + 1;
   await tx.insert(outputVersions).values({
     outputId: o.id, requestId: o.requestId, waqfId: o.waqfId, version, origin: v.origin, basedOn: v.basedOn, sections: v.sections, gaps: v.gaps, sources: v.sources,
-    inputsHash: v.inputsHash, dataHash: v.dataHash ?? null, note: v.note ?? null, createdBy: v.actorId,
+    inputsHash: v.inputsHash, dataHash: v.dataHash ?? null, dataSnapshot: v.dataSnapshot ?? null, note: v.note ?? null, createdBy: v.actorId,
   });
   await tx.update(outputs).set({ currentVersion: version, status: "draft", updatedBy: v.actorId }).where(eq(outputs.id, o.id));
   return version;

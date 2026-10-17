@@ -475,7 +475,7 @@ export function buildDraft(c: OutputContext, def: OutputDef) {
     const i = gaps.findIndex((x) => x.key === g.key);
     if (i >= 0) gaps[i] = g; else gaps.unshift(g);
   }
-  return { sections, gaps, sources, inputsHash: hashInputs(c), dataHash: dataHash(c) };
+  return { sections, gaps, sources, inputsHash: hashInputs(c), dataHash: dataHash(c), dataSnapshot: dataSnapshot(c) };
 }
 
 /**
@@ -491,6 +491,31 @@ export function dataHash(c: OutputContext) {
     formDocs: c.formDocs.map((f) => [f.key, f.attached]), verified: c.verifiedDocs ?? {},
     waqf: w ? [w.name, w.deedNo, w.registrationCertNo, w.fiscalYearEnd, w.nationalUnifiedNumber, w.sizeClass] : null,
   })).digest("hex").slice(0, 32);
+}
+
+/**
+ * The same data as {@link dataHash}, kept readable and flat (one entry per value) and stored with each version, so that
+ * when the request's data changes after a version was drafted the team sees exactly which values changed — the approved
+ * text itself is never rewritten.
+ */
+export function dataSnapshot(c: OutputContext): Record<string, string> {
+  const out: Record<string, string> = {};
+  const put = (k: string, v: unknown) => { if (v !== undefined && v !== null && v !== "") out[k] = typeof v === "string" ? v : JSON.stringify(v); };
+  for (const [k, v] of Object.entries(c.keys ?? {})) put(`answer:${k}`, v);
+  for (const [k, v] of Object.entries(c.tables ?? {})) put(`table:${k}`, v);
+  for (const d of c.documents.filter((x) => x.scope === "request")) put(`doc:${d.slot ?? d.id}`, [d.number, d.issuedOn, d.expiresOn].filter(Boolean).join(" | ") || "مرفق");
+  for (const f of c.formDocs) put(`formDoc:${f.key}`, f.attached ? "مرفق" : "غير مرفق");
+  for (const [k, v] of Object.entries(c.verifiedDocs ?? {})) put(`verified:${k}`, v);
+  const w = c.waqf;
+  if (w) { put("waqf:name", w.name); put("waqf:deedNo", w.deedNo); put("waqf:registrationCertNo", w.registrationCertNo); put("waqf:fiscalYearEnd", w.fiscalYearEnd); put("waqf:nationalUnifiedNumber", w.nationalUnifiedNumber); put("waqf:sizeClass", w.sizeClass); }
+  return out;
+}
+
+/** Values that differ between the snapshot a version was drafted from and the data now (PURE). */
+export function snapshotChanges(then: Record<string, unknown> | null | undefined, now: Record<string, string>) {
+  if (!then) return [];
+  const keys = [...new Set([...Object.keys(then), ...Object.keys(now)])].sort();
+  return keys.filter((k) => String(then[k] ?? "") !== (now[k] ?? "")).map((k) => ({ key: k, before: then[k] === undefined ? null : String(then[k]), after: now[k] ?? null }));
 }
 
 export function hashInputs(c: OutputContext) {

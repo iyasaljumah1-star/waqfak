@@ -12,10 +12,13 @@ import { approvalCheck, ORIGIN_LABEL, OUTPUT_STATUS_LABEL, OUTPUT_STATUS_TONE } 
 import { separationFor } from "@/server/modules/approvals/policy";
 import { SectionView } from "@/components/outputs/section-view";
 import { outputPageData } from "@/server/modules/outputs/queries";
+import { serviceForm } from "@/server/modules/requests/intake/server";
 import { ChecksPanel, ConflictsPanel, OfficialPanel, ReferencesPanel, RequirementsPanel, StagePanel, SummaryPanel, WordDiff } from "@/components/outputs/quality-panels";
 
 export const metadata: Metadata = { title: "مسودة مخرج" };
 
+const WAQF_KEY_AR: Record<string, string> = { name: "اسم الوقف", deedNo: "رقم الصك", registrationCertNo: "رقم شهادة التسجيل", fiscalYearEnd: "نهاية السنة المالية", nationalUnifiedNumber: "الرقم الوطني الموحد", sizeClass: "فئة الحجم" };
+const short = (v: string | null) => (v === null ? "—" : v.length > 120 ? `${v.slice(0, 120)}…` : v);
 const fid = (s: string) => s.replace(/[^a-zA-Z0-9_-]/g, "_");
 
 export default async function OutputPage({ params, searchParams }: { params: Promise<{ id: string; outputId: string }>; searchParams: Promise<{ v?: string; a?: string; b?: string }> }) {
@@ -27,6 +30,15 @@ export default async function OutputPage({ params, searchParams }: { params: Pro
   const { rc, o, current, ready } = d;
   const canDeliver = auth.perms.has("staff.deliver") && (rc.isAssignee || rc.isOps);
   const canReview = auth.perms.has("staff.quality_review") || rc.isOps;
+  const labels = new Map(serviceForm(rc.service).steps.flatMap((s) => s.fields).map((f) => [f.key, f.label]));
+  const changeLabel = (k: string) => {
+    const [kind, ...rest] = k.split(":"); const key = rest.join(":");
+    if (kind === "answer" || kind === "table") return labels.get(key) ?? key;
+    if (kind === "waqf") return `ملف الوقف — ${WAQF_KEY_AR[key] ?? key}`;
+    if (kind === "doc" || kind === "formDoc") return `مستند ${labels.get(key) ?? key}`;
+    if (kind === "verified") return `تحقق الفريق من مستند ${key}`;
+    return k;
+  };
   const editable = canDeliver && d.isCurrent && (o.status === "draft" || o.status === "returned");
   const opinion = rc.workflowCode === "opinion" || o.specialty === "sharia";
   const separation = await separationFor(auth);
@@ -57,6 +69,18 @@ export default async function OutputPage({ params, searchParams }: { params: Pro
 
       <StagePanel stage={q.stage} next={q.next} />
       {current ? <SummaryPanel conflicts={q.liveConflicts.length} mandatory={mandatoryOpen} specialist={q.checkState.pendingSpecialist.length} failed={q.checkState.failed.length} stale={q.stale} /> : null}
+      {q.stale && q.dataChanges.length ? (
+        <div data-testid="data-changes">
+          <Alert tone="fine" title={o.status === "approved" ? "تغيّرت بيانات الطلب بعد اعتماد هذا المخرج" : "تغيّرت بيانات الطلب بعد إعداد هذه النسخة"}>
+            <p>{o.status === "approved" ? "النص المعتمد باقٍ كما اعتُمد ولا يُعدّل تلقائيًا. إن لزم تحديثه فافتح مراجعة جديدة تُبنى على البيانات الحالية." : "أعد التوليد لتُبنى النسخة على البيانات الحالية."}</p>
+            <ul className="mt-2 space-y-1 text-[14px]">
+              {q.dataChanges.slice(0, 30).map((c) => (
+                <li key={c.key} data-testid="data-change"><span className="font-medium">{changeLabel(c.key)}</span>: {short(c.before)} ← {short(c.after)}</li>
+              ))}
+            </ul>
+          </Alert>
+        </div>
+      ) : null}
       {incomplete ? <div data-testid="draft-incomplete"><Alert tone="fine" title="مسودة غير مكتملة — بانتظار استكمال البيانات">تُعرض المسودة كما هي الآن. ما ينقص مبيّن أدناه في «ما يلزم قبل الاعتماد»، ولا يُملأ بقيمة افتراضية.</Alert></div> : null}
       {o.status === "returned" && o.reviewNote ? <Alert tone="fine" title="أعاده المراجع للتعديل">{o.reviewNote}</Alert> : null}
       {o.status === "approved" ? <Alert tone="ok" title={`معتمد — النسخة ${o.approvedVersion}`}>اعتمده {name(o.approvedBy)} {o.approvedAt ? fmtDateTime(o.approvedAt) : ""}{o.selfApproved ? " (اعتماد ذاتي من مدير مخوّل وفق سياسة المخرج)" : ""}. يظهر للعميل بعد مراجعة الجودة وإرسال الطلب له.</Alert> : null}
