@@ -238,8 +238,10 @@ test.describe.serial("service request lifecycle", () => {
   test("ops assigns the request to emp1; emp1 is isolated from other requests", async ({ browser, viewport }) => {
     const page = await as(browser, "ops", viewport);
     await page.goto(`/admin/requests/${reqId}?t=${Date.now()}`);
-    await ex(page.getByText("بيانات الطلب كما قدّمها العميل")).toBeVisible();
-    await ex(page.getByText("الناظر (اختبار آلي)")).toBeVisible();
+    // the unified panel: each answer with its origin (client / waqf file / team correction), not only "as submitted"
+    await ex(page.getByRole("heading", { name: "بيانات الطلب", exact: true })).toBeVisible();
+    await ex(page.getByTestId("field-contactPerson").getByTestId("field-value")).toHaveText("الناظر (اختبار آلي)");
+    await ex(page.getByTestId("field-contactPerson").getByTestId("field-origin")).toHaveText("أدخله العميل");
     const select = page.getByLabel("الموظف");
     const value = await select.locator("option", { hasText: "موظف أول" }).first().getAttribute("value");
     await select.selectOption(value!);
