@@ -184,6 +184,8 @@ export const requestNotes = pgTable("request_notes", {
   body: text().notNull(),
   /** Optional attachment (a document of the same request). */
   documentId: uuid(),
+  /** The field (or "ctx:<block>") the note or evidence is about; null for the request as a whole. */
+  fieldKey: text(),
   createdAt: createdAt(),
 });
 
@@ -240,6 +242,8 @@ export const tasks = pgTable("tasks", {
   completedAt: timestamp({ withTimezone: true }),
   /** Request execution tasks: stage = one workflow stage; prepare_output / review_output = one service output. */
   kind: text(),
+  /** Request field (or "ctx:<block>") the task was created for: why the task exists and what closes it. */
+  fieldKey: text(),
   stageKey: text(),
   outputKey: text(),
   /** Who executed (may differ from the assignee: an authorized manager can execute directly). */

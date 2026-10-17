@@ -333,3 +333,15 @@ END $$;
 DROP TRIGGER IF EXISTS outputs_transition_guard ON outputs;
 CREATE TRIGGER outputs_transition_guard BEFORE UPDATE OF status, current_version ON outputs
   FOR EACH ROW EXECUTE FUNCTION guard_output_transition();
+
+-- ───────────── Field-level review of requests ─────────────
+-- Clients read the review state of their request's fields (e.g. «approved by the team»); only staff write it.
+DROP POLICY IF EXISTS nullwaqf_owner ON request_field_states;
+CREATE POLICY nullwaqf_owner ON request_field_states AS RESTRICTIVE FOR ALL TO waqfak_app
+  USING (waqf_id IS NOT NULL OR app_current_user() IS NULL OR app_has_global_access() OR EXISTS (SELECT 1 FROM service_requests r WHERE r.id = request_field_states.request_id AND (r.requester_user_id = app_current_user() OR r.assigned_to_user_id = app_current_user())))
+  WITH CHECK (waqf_id IS NOT NULL OR app_current_user() IS NULL OR app_has_global_access() OR EXISTS (SELECT 1 FROM service_requests r WHERE r.id = request_field_states.request_id AND (r.requester_user_id = app_current_user() OR r.assigned_to_user_id = app_current_user())));
+DROP POLICY IF EXISTS staff_insert ON request_field_states;
+CREATE POLICY staff_insert ON request_field_states AS RESTRICTIVE FOR INSERT TO waqfak_app WITH CHECK (app_current_user() IS NULL OR app_is_staff());
+DROP POLICY IF EXISTS staff_update ON request_field_states;
+CREATE POLICY staff_update ON request_field_states AS RESTRICTIVE FOR UPDATE TO waqfak_app USING (app_current_user() IS NULL OR app_is_staff()) WITH CHECK (app_current_user() IS NULL OR app_is_staff());
+REVOKE DELETE, TRUNCATE ON request_field_states FROM waqfak_app;

@@ -157,6 +157,9 @@ export const outputVersions = pgTable("output_versions", {
   /** Hash of the request's own data (answers, documents, waqf file values) the version was drafted from: approval is
    *  refused when the data changed after the version (regenerate first). */
   dataHash: text(),
+  /** The data itself the version was drafted from (answers, attached documents, waqf-file context with its source and
+   *  date): later changes to the waqf file never rewrite an approved version silently; they show as differences. */
+  dataSnapshot: jsonb().$type<Record<string, unknown>>(),
   note: text(),
   createdBy: uuid(),
   createdAt: createdAt(),
@@ -243,7 +246,7 @@ export const outputOfficialRecords = pgTable("output_official_records", {
  * reopened for correction; reopen_output = an approved output was reopened. Append-only, staff-only: the history of who
  * changed what, why, and what it affected (outputs to regenerate, quotes/contracts/invoices needing a correction path).
  */
-export type RevisionKind = "intake_edit" | "rollback" | "reopen_output";
+export type RevisionKind = "intake_edit" | "rollback" | "reopen_output" | "client_completion";
 export type RevisionImpact = { kind: "output" | "quote" | "contract" | "invoice" | "verification" | "acceptance" | "stage"; id?: string; label: string; action: string }[];
 
 export const requestRevisions = pgTable("request_revisions", {
@@ -388,3 +391,28 @@ export const paymentSchedule = pgTable("payment_schedule", {
   alerts: jsonb().$type<string[]>().default([]).notNull(),
   ...tracking(),
 }, (t) => [uniqueIndex("payment_schedule_quote_term_uq").on(t.quoteId, t.termKey), index("payment_schedule_due_idx").on(t.dueOn)]);
+
+// ───────────────────────── Field-level review of a request ─────────────────────────
+
+/** pending: not reviewed yet · approved: reviewed and approved by the team · needs_review: changed or reopened since. */
+export type FieldReviewStatus = "pending" | "approved" | "needs_review";
+export type FieldReviewEvent = { at: string; by: string; action: "approve" | "reopen" | "changed"; note?: string | null; value?: unknown };
+
+/**
+ * Review state of one field (or one waqf-file context block, key "ctx:<block>") of a request. Approving a field never
+ * approves another field or the request; an edit or a client completion puts the field back to needs_review.
+ */
+export const requestFieldStates = pgTable("request_field_states", {
+  id: id(),
+  requestId: uuid().notNull().references(() => serviceRequests.id, { onDelete: "cascade" }),
+  waqfId: uuid(),
+  fieldKey: text().notNull(),
+  status: text().$type<FieldReviewStatus>().default("pending").notNull(),
+  /** The value (or block fingerprint) that was approved: a later change shows the approval as outdated. */
+  approvedValue: jsonb(),
+  decidedBy: uuid(),
+  decidedAt: timestamp({ withTimezone: true }),
+  note: text(),
+  history: jsonb().$type<FieldReviewEvent[]>().default([]).notNull(),
+  updatedAt: timestamp({ withTimezone: true }).defaultNow().notNull(),
+}, (t) => [uniqueIndex("request_field_states_uq").on(t.requestId, t.fieldKey)]);
