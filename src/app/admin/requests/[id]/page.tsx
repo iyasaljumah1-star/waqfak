@@ -41,6 +41,12 @@ import { InvoiceCycle } from "@/components/billing/invoice-cycle";
 import { CommsOverview, ImpactList, RequestSummary, RevisionList, RollbackPanel, Section, SectionNav } from "@/components/requests/workspace";
 import { ReviewDecisions, type Decision } from "@/components/requests/review-decisions";
 import { StaffIntakeEditor } from "@/components/requests/staff-intake-editor";
+import { FieldWorkspaceView } from "@/components/requests/field-workspace";
+import { fieldWorkspace } from "@/server/modules/requests/field-workspace";
+import { processingPhase } from "@/server/modules/requests/phase";
+
+const PHASE_OWNER_AR = { client: "على العميل", team: "على الفريق", manager: "على مدير التشغيل", none: "—" } as const;
+import { createFieldTask, setFieldState } from "@/server/modules/requests/field-actions";
 import { workspaceExtras } from "@/server/modules/operations/workspace-server";
 import { rollbackRequest, staffEditIntake } from "@/server/modules/operations/revisions-actions";
 import { commsChannels, commsHeadline, COMMS_STATE_TONE } from "@/server/modules/operations/comms";
@@ -82,6 +88,8 @@ export default async function StaffRequest({ params }: { params: Promise<{ id: s
   const maker = await viewerMakerRules(auth);
   const ops2 = await read(auth, (tx) => requestOperations(tx, auth, rc));
   const plan = await read(auth, (tx) => requestPlan(tx, auth, rc));
+  // the request's fields, the waqf-file records the service reads, their review states, analysis, notes and tasks
+  const fws = r.intakeFormVersion ? await read(auth, (tx) => fieldWorkspace(tx, rc, "staff")) : null;
   const sched = paid ? await read(auth, async (tx) => { await materializeSchedule(tx, r.id, null); return scheduleOf(tx, r.id); }) : null;
   const cont = continuousSpec(rc.service.code) ? await read(auth, (tx) => continuousView(tx, auth, rc)) : null;
   const contStart = cont?.contract?.executedAt ? toISO(cont.contract.executedAt) : r.startApprovedAt ? toISO(r.startApprovedAt) : today;
@@ -167,7 +175,13 @@ export default async function StaffRequest({ params }: { params: Promise<{ id: s
   const invSummary = openInv.length ? openInv.map((i, n) => <span key={i.id}>{n ? "، " : ""}<bdi dir="ltr" className="tabular">{i.number}</bdi> {INV_SHORT[i.status] ?? i.status}</span>) : "لا فواتير";
   const blockersCount = (plan.current?.blockers.length ?? 0) + (plan.held ? 1 : 0);
   const waiting = plan.terminal ? "—" : plan.held ? WHO_AR[plan.held.who] : plan.current ? WHO_AR[plan.current.owner] : "—";
+  const phase = processingPhase({
+    status: r.status, assigned: !!r.assignedToUserId,
+    data: fws ? { requiredMissing: fws.analysis.summary.required - fws.analysis.summary.requiredValid, gaps: fws.analysis.summary.gaps, conflicts: fws.analysis.summary.conflicts } : null,
+    openClientItems: d.counts.clientOpen, outputs: wx.outputsLite.map((o) => ({ status: o.status, delivered: !!o.deliverableId })),
+  });
   const summaryItems = [
+    { label: "مرحلة المعالجة", value: <span data-testid="summary-phase" data-phase={phase.phase}>{phase.label} — التالي: {phase.next} ({PHASE_OWNER_AR[phase.owner]})</span> },
     { label: "العميل", value: requesterName },
     { label: "الحالة", value: REQ_STATUS_LABEL[r.status as keyof typeof REQ_STATUS_LABEL] ?? r.status },
     { label: "المرحلة الحالية", value: activeStage?.name ?? "—" },
@@ -183,6 +197,11 @@ export default async function StaffRequest({ params }: { params: Promise<{ id: s
       { label: "الفواتير", value: <>{invSummary}</>, testId: "summary-invoices" },
     ] : [{ label: "الرسوم", value: "خدمة مجانية — بلا عرض ولا فاتورة" }, { label: "الوقف", value: rc.waqf?.name ?? "بلا وقف" }]),
     { label: "المختص", value: assigneeName ?? "غير مسند — ينفّذ المدير المخوّل مباشرة" },
+    ...(paid ? [{ label: "الوقف", value: rc.waqf?.name ?? "بلا وقف" }] : []),
+    { label: "تاريخ التقديم", value: r.submittedAt ? fmtDate(r.submittedAt) : "لم يُقدَّم بعد" },
+    ...(fws ? [{ label: "اكتمال البيانات", value: <a className="underline-offset-4 hover:underline" href="#intake">{fws.analysis.summary.completeness}% · {fws.analysis.summary.approved} معتمدة · {fws.analysis.summary.gaps} نقص</a>, tone: (fws.analysis.summary.gaps || fws.analysis.summary.conflicts ? "warn" : "ok") as "warn" | "ok", testId: "summary-completeness" }] : []),
+    ...(fws ? [{ label: "مهام الحقول المفتوحة", value: String(Object.values(fws.tasks).flat().filter((t) => t.status === "todo" || t.status === "in_progress").length) }] : []),
+    { label: "مواعيد مهمة", value: [r.slaDueAt ? `الاستحقاق ${fmtDate(r.slaDueAt)}` : null, typeof d.answers.deadline === "string" ? `موعد العميل ${fmtDate(d.answers.deadline)}` : null].filter(Boolean).join(" · ") || "—" },
   ];
   const channelsRaw = commsChannels({
     items: d.items, notes: notes.map((n) => ({ id: n.id, visibility: n.visibility, authorIsStaff: !!names.get(n.authorId)?.isStaff, createdAt: n.createdAt })),
@@ -290,12 +309,16 @@ export default async function StaffRequest({ params }: { params: Promise<{ id: s
           </Section>
 
           <Section id="data" title="البيانات والمستندات">
-          <Panel id="intake" title="بيانات الطلب كما قدّمها العميل" description={r.intakeFormVersion ? `نموذج الخدمة — الإصدار ${r.intakeFormVersion}` : "طلب سابق لنماذج الخدمات: التفاصيل نص حر."}>
-            {d.intakeSummary ? (
+          <Panel id="intake" title="بيانات الطلب" description={r.intakeFormVersion ? `نموذج الخدمة — الإصدار ${r.intakeFormVersion}. كل حقل بقيمته ومصدره وحالة مراجعته، وتحليل النظام تحته، والإجراءات بجانبه.` : "طلب سابق لنماذج الخدمات: التفاصيل نص حر."}>
+            {fws ? (
+              <FieldWorkspaceView ws={fws} requestId={r.id} waqfId={r.waqfId} canAct={worker && !terminal && r.status !== "draft"}
+                actions={{ staffEditIntake, raiseItem, setFieldState, postStaffNote, createFieldTask }} docs={docOpts} staff={staff.map((x) => ({ value: x.id, label: x.name }))} />
+            ) : d.intakeSummary ? (
               <IntakeSummaryView sections={d.intakeSummary} docTitles={docTitle}
                 docs={d.form.docs.filter((s) => d.intakeDocs[s.key]?.length || s.required).map((s) => ({ label: s.label, ids: d.intakeDocs[s.key] ?? [] }))} />
             ) : <p className="whitespace-pre-line text-[15px]">{r.details}</p>}
-            {worker && !terminal && wx.editable.length ? (
+            {fws && worker && !terminal && wx.editImpact.length ? <div className="mt-4 border-t border-line pt-3"><p className="mb-1 text-[13px] font-medium">ما قد يتأثر بأي تعديل في البيانات</p><ImpactList impact={wx.editImpact} /></div> : null}
+            {!fws && worker && !terminal && wx.editable.length ? (
               <details className="mt-4 border-t border-line pt-4">
                 <summary className="cursor-pointer font-medium text-ink">صحّح بيانات العميل أو أكملها</summary>
                 <div className="mt-3 space-y-3">

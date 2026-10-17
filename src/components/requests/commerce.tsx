@@ -46,7 +46,7 @@ export function AttachmentPicker({ requestId, waqfId, docs, name = "documentId",
   );
 }
 
-export function NoteFormWithAttachment({ action, id, staff, requestId, waqfId, docs, fixedVisibility }: { action: Act; id: string; staff?: boolean; requestId: string; waqfId: string | null; docs: { id: string; title: string }[]; fixedVisibility?: "client" | "internal" }) {
+export function NoteFormWithAttachment({ action, id, staff, requestId, waqfId, docs, fixedVisibility, fieldKey, label, attachmentLabel }: { action: Act; id: string; staff?: boolean; requestId: string; waqfId: string | null; docs: { id: string; title: string }[]; fixedVisibility?: "client" | "internal"; fieldKey?: string; label?: string; attachmentLabel?: string }) {
   const [k, setK] = useState(0);
   // A successful send remounts the form (clears the text and the attachment).
   const [s, a] = useActionState(async (prev: ActionState, fd: FormData) => {
@@ -57,8 +57,9 @@ export function NoteFormWithAttachment({ action, id, staff, requestId, waqfId, d
   return (
     <form action={a} className="space-y-3" key={k}>
       <input type="hidden" name="id" value={id} />
-      <Field label={fixedVisibility === "client" ? "رسالة إلى العميل" : fixedVisibility === "internal" ? "ملاحظة داخلية" : staff ? "رسالة أو ملاحظة" : "رسالتك إلى فريق وقفك"} name={`note-body-${fixedVisibility ?? "any"}`}>
-        <Textarea name="body" id={`note-body-${fixedVisibility ?? "any"}`} required minLength={2} className="min-h-24" />
+      {fieldKey ? <input type="hidden" name="fieldKey" value={fieldKey} /> : null}
+      <Field label={label ?? (fixedVisibility === "client" ? "رسالة إلى العميل" : fixedVisibility === "internal" ? "ملاحظة داخلية" : staff ? "رسالة أو ملاحظة" : "رسالتك إلى فريق وقفك")} name={`note-body-${fixedVisibility ?? "any"}${fieldKey ? `-${fieldKey}` : ""}`}>
+        <Textarea name="body" id={`note-body-${fixedVisibility ?? "any"}${fieldKey ? `-${fieldKey}` : ""}`} required minLength={2} className="min-h-24" />
       </Field>
       {fixedVisibility ? <input type="hidden" name="visibility" value={fixedVisibility} /> : staff ? (
         <fieldset className="flex flex-wrap gap-4 text-[15px]">
@@ -67,7 +68,7 @@ export function NoteFormWithAttachment({ action, id, staff, requestId, waqfId, d
           <label className="flex items-center gap-2"><input type="radio" name="visibility" value="client" className="accent-[var(--ink)]" /> رسالة للعميل</label>
         </fieldset>
       ) : null}
-      <AttachmentPicker requestId={requestId} waqfId={waqfId} docs={docs} />
+      <AttachmentPicker requestId={requestId} waqfId={waqfId} docs={docs} label={attachmentLabel} />
       <FormMessage state={s} />
       <SubmitButton pendingText="جارٍ الإرسال…">أرسل</SubmitButton>
     </form>

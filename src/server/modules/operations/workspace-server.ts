@@ -15,7 +15,7 @@ export async function workspaceExtras(tx: Tx, _auth: Auth, rc: RequestCtx) {
   const [revs, stageRows, o, q, k, i] = await Promise.all([
     tx.select().from(requestRevisions).where(eq(requestRevisions.requestId, id)).orderBy(desc(requestRevisions.at)),
     tx.select().from(requestStages).where(eq(requestStages.requestId, id)).orderBy(asc(requestStages.position)),
-    tx.select({ id: outputs.id, title: outputs.title, status: outputs.status, reviewNote: outputs.reviewNote }).from(outputs).where(eq(outputs.requestId, id)),
+    tx.select({ id: outputs.id, title: outputs.title, status: outputs.status, reviewNote: outputs.reviewNote, deliverableId: outputs.deliverableId }).from(outputs).where(eq(outputs.requestId, id)),
     tx.select({ id: quotes.id, number: quotes.number, status: quotes.status, kind: quotes.kind }).from(quotes).where(eq(quotes.requestId, id)),
     tx.select({ id: contracts.id, number: contracts.number, status: contracts.status }).from(contracts).where(eq(contracts.requestId, id)),
     tx.select({ id: invoices.id, number: invoices.number, status: invoices.status, kind: invoices.kind }).from(invoices).where(eq(invoices.requestId, id)),

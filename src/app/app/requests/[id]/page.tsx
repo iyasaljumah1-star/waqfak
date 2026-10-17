@@ -29,6 +29,9 @@ import { ClientDeliveries } from "@/components/operations/client-deliveries";
 import { approveDelivery, requestDeliveryRevision } from "@/server/modules/operations/continuous-client-actions";
 import { scheduleOf } from "@/server/modules/billing/schedule";
 import { PaymentScheduleTable } from "@/components/billing/payment-schedule";
+import { ClientFieldsView } from "@/components/requests/client-fields";
+import { processingPhase } from "@/server/modules/requests/phase";
+import { fieldWorkspace } from "@/server/modules/requests/field-workspace";
 
 export const metadata: Metadata = { title: "تفاصيل الطلب" };
 
@@ -53,6 +56,14 @@ export default async function RequestPage({ params, searchParams }: { params: Pr
   const contracts = d.contracts.filter((k) => k.status !== "void" || k.signatures.length);
   const cont = await read(auth, (tx) => clientContinuous(tx, rc));
   const sched = await read(auth, (tx) => scheduleOf(tx, r.id));
+  // the values in force on the request, corrections and approvals, and the waqf-file records the service reads
+  const cws = r.intakeFormVersion && r.status !== "draft" ? await read(auth, (tx) => fieldWorkspace(tx, rc, "client")) : null;
+  // the same phase the team sees; the client is not shown internal output reviews, so those read as «قيد التنفيذ»
+  const phase = r.status !== "draft" ? processingPhase({
+    status: r.status, assigned: !!r.assignedToUserId,
+    data: cws ? { requiredMissing: cws.analysis.summary.required - cws.analysis.summary.requiredValid, gaps: cws.analysis.summary.gaps, conflicts: 0 } : null,
+    openClientItems: openItems.length, outputs: [],
+  }) : null;
 
   return (
     <div className="space-y-6">
@@ -88,6 +99,11 @@ export default async function RequestPage({ params, searchParams }: { params: Pr
       {r.status === "cancelled" ? <Alert tone="neutral" title="أُلغي الطلب">{r.cancelReason}</Alert> : null}
 
       {r.status !== "draft" ? <NextActionBanner next={d.next} viewer="client" /> : null}
+      {phase ? (
+        <p className="rounded-lg border border-line bg-surface-2/50 px-4 py-2 text-[14px]" data-testid="client-phase" data-phase={phase.phase}>
+          <span className="font-semibold">مرحلة الطلب: {phase.label}</span> — الخطوة التالية: {phase.next} ({phase.owner === "client" ? "عليك" : phase.owner === "none" ? "لا إجراء" : "على فريق وقفك"})
+        </p>
+      ) : null}
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
         <div className="min-w-0 space-y-4">
@@ -257,7 +273,11 @@ export default async function RequestPage({ params, searchParams }: { params: Pr
             </Panel>
           ) : null}
 
-          {d.intakeSummary ? (
+          {cws && r.status !== "draft" ? (
+            <Panel id="request-data" title="بيانات طلبك" description="القيم المعتمدة في طلبك كما يعمل عليها الفريق، مع أي تعديل أُجري عليها وسببه، وبيانات وقفك التي تعتمد عليها الخدمة.">
+              <ClientFieldsView analysis={cws.analysis} revisions={cws.revisions} notes={cws.notes} requestId={r.id} waqfId={r.waqfId} canReport={canAct && !terminal} postNote={postClientNote} docs={docOpts} />
+            </Panel>
+          ) : d.intakeSummary ? (
             <Panel title="بيانات طلبك">
               <details>
                 <summary className="cursor-pointer text-[15px] text-ink">اعرض ما قدّمته في النموذج</summary>
