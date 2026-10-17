@@ -128,6 +128,7 @@ test.describe.serial("continuous services", () => {
     await client.getByRole("button", { name: "التالي" }).click();
     await passWaqfData(client);
     await client.getByLabel("الدورية").selectOption("quarterly");
+    await client.getByRole("checkbox", { name: "نمو الإيرادات" }).check(); // F08 v2: the indicators are required
     await client.getByLabel("من يستلم التقرير؟").fill("الناظر (اختبار آلي)");
     const confirm = client.getByLabel(/أقر بأن البيانات والمستندات/);
     await advance(client, () => confirm.isVisible());
@@ -369,7 +370,9 @@ test.describe.serial("continuous services", () => {
     await chair.getByRole("radio", { name: "عضو مجلس النظارة" }).check();
     await chair.getByRole("button", { name: "التالي" }).click();
     await passWaqfData(chair);
-    await chair.getByLabel(/عدد أعضاء المجلس الحالي/).fill("5");
+    // N02 v2: the board's size and meetings come from the waqf file; the form asks for the member sought
+    await ex(chair.getByLabel(/عدد أعضاء المجلس الحالي/)).toHaveCount(0);
+    await chair.getByRole("checkbox", { name: "حوكمة" }).check();
     await chair.getByLabel(/مدة العضوية المطلوبة/).fill("12");
     const confirm = chair.getByLabel(/أقر بأن البيانات والمستندات/);
     await advance(chair, () => confirm.isVisible());

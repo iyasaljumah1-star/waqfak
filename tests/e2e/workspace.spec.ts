@@ -295,7 +295,8 @@ test.describe.serial("unified request workspace", () => {
     await chair.getByRole("radio", { name: "عضو مجلس النظارة" }).check();
     await chair.getByRole("button", { name: "التالي" }).click();
     await passWaqfData(chair);
-    await chair.getByLabel(/عدد أعضاء المجلس الحالي/).fill("5");
+    await chair.getByRole("checkbox", { name: "حوكمة" }).check(); // N02 v2: board size comes from the waqf file
+    await chair.getByLabel(/مدة العضوية المطلوبة/).fill("12");
     const confirm = chair.getByLabel(/أقر بأن البيانات والمستندات/);
     await advance(chair, () => confirm.isVisible());
     await confirm.check();

@@ -120,6 +120,8 @@ test.describe.serial("payment schedule and contract cadence", () => {
     await passWaqfData(client);
     await client.getByLabel("عدد المستفيدين").fill("12");
     await client.getByLabel("الدورية").selectOption("semiannual");
+    await client.getByRole("checkbox", { name: "ما صُرف لكل فئة" }).check(); // C06 v2: contents and channels are required
+    await client.getByRole("checkbox", { name: "حساب المستفيد في المنصة" }).check();
     const confirm = client.getByLabel(/أقر بأن البيانات والمستندات/);
     await advance(client, () => confirm.isVisible());
     await confirm.check();
