@@ -24,6 +24,25 @@ export const PHASE_AR: Record<Phase, string> = {
   ended: "مغلقة",
 };
 
+/**
+ * The same phases in the client's words where the team's wording names an internal step: the client learns that the
+ * outputs are under review, not who reviews them or what was noted.
+ */
+export const PHASE_CLIENT_AR: Partial<Record<Phase, { label: string; next: string }>> = {
+  specialist_review: { label: "المخرجات قيد المراجعة لدى فريق وقفك", next: "إتمام المراجعة الداخلية للمخرجات" },
+  authorized_approval: { label: "المخرجات قيد المراجعة والاعتماد لدى فريق وقفك", next: "اعتماد المخرجات داخليًا ثم إرسالها إليك" },
+  ready_to_deliver: { label: "المخرجات معتمدة وتُجهَّز لتسليمها إليك", next: "تسليم المخرجات إليك للاطلاع والاعتماد" },
+  completeness: { label: "قيد فحص اكتمال البيانات لدى الفريق", next: "فحص البيانات، وقد يطلب الفريق منك استكمال شيء" },
+  ready_to_assign: { label: "قيد الإسناد والبدء لدى الفريق", next: "إسناد الطلب إلى مختص وبدء العمل" },
+};
+
+/** The phase as shown to the client (PURE). */
+export function clientPhase(p: PhaseInput) {
+  const x = processingPhase(p);
+  const c = PHASE_CLIENT_AR[x.phase];
+  return c ? { ...x, ...c } : x;
+}
+
 export type PhaseInput = {
   status: string;
   assigned: boolean;
@@ -31,6 +50,8 @@ export type PhaseInput = {
   data: { requiredMissing: number; gaps: number; conflicts: number } | null;
   openClientItems: number;
   outputs: { status: string; delivered: boolean }[];
+  /** Name of the active stage of the service's own workflow template (configured per service by the admin). */
+  activeStage?: string | null;
 };
 
 export function processingPhase(p: PhaseInput): { phase: Phase; label: string; owner: "client" | "team" | "manager" | "none"; next: string } {
@@ -52,6 +73,7 @@ export function processingPhase(p: PhaseInput): { phase: Phase; label: string; o
     default: {
       if (p.outputs.some((o) => o.status === "in_review")) return out("authorized_approval", "manager", "اعتماد المخرجات من المسؤول المخول");
       if (p.outputs.length && p.outputs.every((o) => o.status === "approved") && p.outputs.some((o) => !o.delivered)) return out("ready_to_deliver", "team", "تسليم المخرجات المعتمدة للعميل");
+      if (p.activeStage) return { ...out("in_progress", "team", `إنجاز مرحلة «${p.activeStage}»`), label: `${PHASE_AR.in_progress} — مرحلة «${p.activeStage}»` };
       return out("in_progress", "team", "تنفيذ مهام الخدمة");
     }
   }

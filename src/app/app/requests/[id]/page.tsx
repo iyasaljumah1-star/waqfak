@@ -30,7 +30,8 @@ import { approveDelivery, requestDeliveryRevision } from "@/server/modules/opera
 import { scheduleOf } from "@/server/modules/billing/schedule";
 import { PaymentScheduleTable } from "@/components/billing/payment-schedule";
 import { ClientFieldsView } from "@/components/requests/client-fields";
-import { processingPhase } from "@/server/modules/requests/phase";
+import { clientPhase } from "@/server/modules/requests/phase";
+import { outputStatesForPhase } from "@/server/modules/requests/phase-server";
 import { fieldWorkspace } from "@/server/modules/requests/field-workspace";
 
 export const metadata: Metadata = { title: "تفاصيل الطلب" };
@@ -58,11 +59,12 @@ export default async function RequestPage({ params, searchParams }: { params: Pr
   const sched = await read(auth, (tx) => scheduleOf(tx, r.id));
   // the values in force on the request, corrections and approvals, and the waqf-file records the service reads
   const cws = r.intakeFormVersion && r.status !== "draft" ? await read(auth, (tx) => fieldWorkspace(tx, rc, "client")) : null;
-  // the same phase the team sees; the client is not shown internal output reviews, so those read as «قيد التنفيذ»
-  const phase = r.status !== "draft" ? processingPhase({
+  // the same phase the team sees, in the client's words; output reviews show as a phase, never their notes
+  const outStates = r.status !== "draft" ? await read(auth, (tx) => outputStatesForPhase(tx, rc)) : [];
+  const phase = r.status !== "draft" ? clientPhase({
     status: r.status, assigned: !!r.assignedToUserId,
     data: cws ? { requiredMissing: cws.analysis.summary.required - cws.analysis.summary.requiredValid, gaps: cws.analysis.summary.gaps, conflicts: 0 } : null,
-    openClientItems: openItems.length, outputs: [],
+    openClientItems: openItems.length, outputs: outStates, activeStage: stages.find((s) => s.status === "active")?.name ?? null,
   }) : null;
 
   return (

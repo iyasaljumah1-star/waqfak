@@ -5,7 +5,7 @@ import { checkIntake, visibleSteps, type Answers } from "@/server/modules/reques
 import { contextFor, SERVICE_CONTEXT } from "@/server/modules/requests/context/map";
 import { ctxField, periodFor, type ContextBlock } from "@/server/modules/requests/context/types";
 import { analyzeRequest, type InsightInput } from "@/server/modules/requests/insights";
-import { processingPhase } from "@/server/modules/requests/phase";
+import { clientPhase, processingPhase } from "@/server/modules/requests/phase";
 import { gapTasksFor } from "@/server/modules/requests/gap-tasks-pure";
 import { snapshotChanges } from "@/server/modules/outputs/build";
 
@@ -126,6 +126,18 @@ describe("processingPhase", () => {
   it("complete data and no assignee goes to the manager", () => expect(processingPhase({ ...base, status: "submitted" })).toMatchObject({ phase: "ready_to_assign", owner: "manager" }));
   it("an output in review waits for the authorized approver", () => expect(processingPhase({ ...base, status: "in_progress", outputs: [{ status: "in_review", delivered: false }] })).toMatchObject({ phase: "authorized_approval" }));
   it("approved outputs not yet delivered are ready to deliver", () => expect(processingPhase({ ...base, status: "in_progress", outputs: [{ status: "approved", delivered: false }] })).toMatchObject({ phase: "ready_to_deliver" }));
+  it("the client sees output review as its own phase, in plain words, not «in progress»", () => {
+    const p = clientPhase({ ...base, status: "in_progress", outputs: [{ status: "in_review", delivered: false }] });
+    expect(p.phase).toBe("authorized_approval");
+    expect(p.label).toContain("قيد المراجعة");
+    expect(p.label).not.toContain("المسؤول المخول");
+    expect(clientPhase({ ...base, status: "in_progress", outputs: [{ status: "draft", delivered: false }] }).label).toBe("قيد التنفيذ");
+  });
+  it("during execution the phase names the service's own active stage (from its workflow template)", () => {
+    const p = processingPhase({ ...base, status: "in_progress", activeStage: "الدراسة والتحليل" });
+    expect(p.label).toBe("قيد التنفيذ — مرحلة «الدراسة والتحليل»");
+    expect(p.next).toContain("الدراسة والتحليل");
+  });
   it("closed requests need no action", () => expect(processingPhase({ ...base, status: "closed" })).toMatchObject({ phase: "ended", owner: "none" }));
 });
 

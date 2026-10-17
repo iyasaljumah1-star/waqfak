@@ -146,6 +146,10 @@ test.describe.serial("unified request workspace", () => {
     await admin.getByRole("button", { name: "احفظ نسخة جديدة" }).click();
     await ex(admin.getByTestId("output-versions").locator("li")).toHaveCount(2);
     await nextStep(admin, reqId, /أرسل المسودة للمراجعة/);
+    // the client sees the review as the request's phase (not «in progress»), and nothing of the review itself
+    await client.goto(`/app/requests/${reqId}`);
+    await ex(client.getByTestId("client-phase")).toHaveAttribute("data-phase", "authorized_approval");
+    await ex(client.getByTestId("client-phase")).toContainText("قيد المراجعة والاعتماد لدى فريق وقفك");
 
     // 4) a reviewer returns it: the panel and the communications show what must be fixed and by whom
     const ops = await as(browser, "ops");
@@ -157,6 +161,9 @@ test.describe.serial("unified request workspace", () => {
     await ex(admin.getByTestId("blockers")).toContainText("أعاده المراجع");
     await ex(admin.getByTestId("comms-review")).toContainText("مفتوح لدى الفريق");
     await ex(admin.getByTestId("review-decisions")).toContainText("أضف بيان المصروفات");
+    await client.goto(`/app/requests/${reqId}`);
+    await ex(client.getByTestId("client-phase")).toHaveAttribute("data-phase", "in_progress"); // back with the team
+    await ex(client.getByText("أضف بيان المصروفات")).toHaveCount(0); // the reviewer's note stays internal
 
     // 5) the team corrects an answer (reason + source): recorded with before/after; the draft becomes stale
     // (on the unified request page: the edit sits beside the field; the original value, reason and editor are kept)

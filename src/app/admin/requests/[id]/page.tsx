@@ -178,7 +178,7 @@ export default async function StaffRequest({ params }: { params: Promise<{ id: s
   const phase = processingPhase({
     status: r.status, assigned: !!r.assignedToUserId,
     data: fws ? { requiredMissing: fws.analysis.summary.required - fws.analysis.summary.requiredValid, gaps: fws.analysis.summary.gaps, conflicts: fws.analysis.summary.conflicts } : null,
-    openClientItems: d.counts.clientOpen, outputs: wx.outputsLite.map((o) => ({ status: o.status, delivered: !!o.deliverableId })),
+    openClientItems: d.counts.clientOpen, outputs: wx.outputsLite.map((o) => ({ status: o.status, delivered: !!o.deliverableId })), activeStage: activeStage?.name ?? null,
   });
   const summaryItems = [
     { label: "مرحلة المعالجة", value: <span data-testid="summary-phase" data-phase={phase.phase}>{phase.label} — التالي: {phase.next} ({PHASE_OWNER_AR[phase.owner]})</span> },
