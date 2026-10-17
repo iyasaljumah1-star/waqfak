@@ -7,6 +7,7 @@
  * Bump `version` of a form when its questions change; stored answers keep the version they were given under.
  */
 import type { Cond, DocSlot, Field, ServiceForm, Step } from "./engine";
+import { contextFor } from "../context/map";
 
 // ───────────────────────── Field helpers ─────────────────────────
 
@@ -31,6 +32,13 @@ const when = (field: string, eq: string): Cond => ({ field, eq });
 const yes = (field: string): Cond => ({ field, eq: "yes" });
 
 const doc = (key: string, docType: string, label: string, o: Partial<DocSlot> = {}): DocSlot => ({ key, docType, label, ...o });
+/** A question an earlier version asked that the waqf file now answers: kept only on requests that already hold it. */
+const legacy = (x: Field): Field => ({ ...x, required: false, requiredIf: undefined, showIf: { field: x.key, notEmpty: true } });
+const hidden = (key: string): Field => ({ key, label: key, type: "hidden" });
+const period = (o: { required?: boolean } = { required: true }): Field[] => [
+  date("periodFrom", "بداية الفترة محل الخدمة", { ...o }),
+  date("periodTo", "نهاية الفترة", { ...o, hint: "تُقرأ سجلات الوقف (الاجتماعات، القرارات، المالية) لهذه الفترة." }),
+];
 
 // ───────────────────────── Shared option lists ─────────────────────────
 
@@ -108,6 +116,26 @@ const NOTES: Step = {
   fields: [area("notes", "ما الذي تريد أن يعرفه الفريق أيضًا؟ (اختياري)", { hint: "سياق أو تفضيلات أو أسئلة لم تشملها الخطوات السابقة." })],
 };
 
+/**
+ * Shared step for services that read the waqf file: the records are shown above (source, date, status), and the
+ * client only confirms them or says what needs updating — never re-enters them. The update scope says whether a
+ * correction is for this request only or should be made in the waqf file (by whoever may edit it, after review).
+ */
+const NEEDS_UPDATE = when("dataReview", "needs_update");
+const WAQF_DATA: Step = {
+  key: "waqfData",
+  title: "بيانات الوقف المسجلة",
+  intro: "هذه بيانات وقفك كما هي مسجلة في المنصة، مع مصدر كل منها وتاريخ آخر تحديث. لا حاجة لإعادة إدخالها؛ أكّدها أو أخبرنا بما يحتاج تحديثًا.",
+  contextBlocks: true,
+  showIf: when("waqfContext", "yes"),
+  fields: [
+    hidden("waqfContext"),
+    radio("dataReview", "هل البيانات المسجلة صحيحة ومحدّثة؟", [["confirmed", "نعم، صحيحة ومحدّثة"], ["needs_update", "بعضها يحتاج تحديثًا أو تصحيحًا"]], R),
+    area("dataCorrections", "ما الذي يحتاج تحديثًا؟", { showIf: NEEDS_UPDATE, requiredIf: NEEDS_UPDATE, minLength: 10, hint: "اذكر البيان والقيمة الصحيحة ومصدرها (مستند أو قرار)." }),
+    radio("dataUpdateScope", "أين يُطبَّق التحديث؟", [["request", "لهذا الطلب فقط"], ["file", "في ملف الوقف أيضًا (بعد مراجعة الفريق ووفق الصلاحيات)"]], { showIf: NEEDS_UPDATE, requiredIf: NEEDS_UPDATE }),
+  ],
+};
+
 // ───────────────────────── Reusable service blocks ─────────────────────────
 
 const deedBlock = (required = true): Field[] => [
@@ -116,13 +144,13 @@ const deedBlock = (required = true): Field[] => [
   text("deedDate", "تاريخ الوثيقة (هجري أو ميلادي)"),
 ];
 
-const consultation = (code: string, topic: string, extra: Field[] = [], sources: string[] = []): ServiceForm => ({
-  code, version: 1, sources: ["تعريف الخدمة في كتالوج «وقفك» (رأي مكتوب موقّع)", ...sources], docs: [doc("related", "other", "مستندات تتعلق بالمسألة")],
+const consultation = (code: string, topic: string, extra: Field[] = [], sources: string[] = [], review?: Field["review"]): ServiceForm => ({
+  code, version: extra.length || review ? 2 : 1, sources: ["تعريف الخدمة في كتالوج «وقفك» (رأي مكتوب موقّع)", ...sources], docs: [doc("related", "other", "مستندات تتعلق بالمسألة")],
   steps: [{
     key: "question", title: `مسألتك (${topic})`,
     intro: "اكتب المسألة كما هي. يصدر الرأي مكتوبًا موقّعًا من المستشار المختص بعد دراستها.",
     fields: [
-      area("question", "المسألة أو السؤال", { ...R, minLength: 30 }),
+      area("question", "المسألة أو السؤال", { ...R, minLength: 30, review }),
       area("background", "الوقائع والخلفية", { hint: "التواريخ والأطراف والمستندات ذات الصلة." }),
       yn("relatedToWaqf", "هل تتعلق المسألة بوقف محدد؟"),
       sel("urgency", "متى تحتاج الرأي؟", [["normal", "في المدة المعتادة"], ["soon", "خلال أسبوع"], ["urgent", "خلال أيام (موعد نظامي)"]]),
@@ -508,8 +536,17 @@ const FORMS: Record<string, Omit<ServiceForm, "steps"> & { steps: Step[] }> = {
     }],
   },
   N02: {
-    code: "N02", version: 1, sources: ["تعريف الخدمة في الكتالوج"], docs: [doc("charter", "regulation", "ميثاق المجلس أو لائحته إن وجدت")],
-    steps: [{ key: "board", title: "المجلس", fields: [num("boardSize", "عدد أعضاء المجلس الحالي", { ...R, min: 1 }), num("meetings", "عدد الاجتماعات في السنة", { min: 0 }), text("committees", "اللجان القائمة"), num("termMonths", "مدة العضوية المطلوبة (بالأشهر)", { min: 1 })] }],
+    code: "N02", version: 2, sources: ["تعريف الخدمة في الكتالوج", "مبادئ حوكمة الأوقاف (مسودة): الأعضاء المستقلون"], docs: [doc("charter", "regulation", "ميثاق المجلس أو لائحته (إن لم تكن في ملف الوقف)")],
+    steps: [{
+      key: "board", title: "العضوية المطلوبة",
+      intro: "تشكيل المجلس وقواعده واجتماعاته مقروءة من ملف الوقف أعلاه.",
+      fields: [
+        legacy(num("boardSize", "عدد أعضاء المجلس الحالي", { min: 1 })), legacy(num("meetings", "عدد الاجتماعات في السنة", { min: 0 })), legacy(text("committees", "اللجان القائمة")),
+        checks("expertise", "الخبرة المطلوبة في العضو المستقل", [["sharia", "شرعية"], ["legal", "قانونية"], ["finance", "مالية"], ["investment", "استثمارية"], ["real_estate", "عقارية"], ["governance", "حوكمة"]], R),
+        checks("committeeRoles", "عضوية اللجان المطلوبة", [["audit", "لجنة المراجعة"], ["investment", "لجنة الاستثمار"], ["nominations", "الترشيحات والمكافآت"]]),
+        num("termMonths", "مدة العضوية المطلوبة (بالأشهر)", { ...R, min: 1 }),
+      ],
+    }],
   },
   N03: {
     code: "N03", version: 1, sources: ["تعريف الخدمة في الكتالوج: القرار للناظر"], docs: [],
@@ -536,8 +573,16 @@ const FORMS: Record<string, Omit<ServiceForm, "steps"> & { steps: Step[] }> = {
     }],
   },
   N05: {
-    code: "N05", version: 1, sources: ["تعريف الخدمة في الكتالوج"], docs: [doc("charter", "regulation", "ميثاق المجلس إن وجد")],
-    steps: [{ key: "board", title: "المجلس", fields: [num("boardSize", "عدد الأعضاء", { ...R, min: 1 }), num("meetings", "الاجتماعات المتوقعة في السنة", { ...R, min: 1 }), yn("hasCharter", "هل للمجلس ميثاق معتمد؟")] }],
+    code: "N05", version: 2, sources: ["تعريف الخدمة في الكتالوج"], docs: [doc("charter", "regulation", "ميثاق المجلس (إن لم يكن في ملف الوقف)")],
+    steps: [{
+      key: "board", title: "الأمانة المطلوبة",
+      intro: "تشكيل المجلس وقواعده واجتماعاته وقراراته مقروءة من ملف الوقف أعلاه.",
+      fields: [
+        legacy(num("boardSize", "عدد الأعضاء", { min: 1 })), legacy(num("meetings", "الاجتماعات المتوقعة في السنة", { min: 1 })), legacy(yn("hasCharter", "هل للمجلس ميثاق معتمد؟")),
+        checks("services", "أعمال الأمانة المطلوبة", [["agenda", "إعداد جداول الأعمال"], ["invitations", "الدعوات"], ["minutes", "المحاضر وتوقيعها"], ["followUp", "متابعة تنفيذ القرارات"], ["archive", "حفظ السجلات"]], R),
+        sel("meetingMode", "طريقة انعقاد الاجتماعات", MEETING, R),
+      ],
+    }],
   },
   N06: {
     code: "N06", version: 1, sources: ["تعريف الخدمة في الكتالوج"], docs: [],
@@ -584,79 +629,347 @@ const FORMS: Record<string, Omit<ServiceForm, "steps"> & { steps: Step[] }> = {
   },
 
   // ── G الحوكمة
+  // Every governance service reads the board, rules, meetings, resolutions and policies from the waqf file (see
+  // context/map.ts); the forms ask only what the file cannot know: the client's choices, plans and known issues.
   G01: {
-    code: "G01", version: 1, sources: ["لائحة تنظيم أعمال النظارة م9/4، م14/1: اللوائح الداخلية للأوقاف الكبيرة والمتوسطة"], docs: [doc("policies", "policy", "اللوائح والسياسات القائمة")],
-    steps: [{ key: "gov", title: "وضع الحوكمة الحالي", fields: [sel("size", "حجم الوقف", SIZE, { ...R, prefill: "waqf.sizeClass" }), yn("hasBoard", "هل للوقف مجلس نظارة؟", R), checks("existing", "ما الموجود من لوائح وسياسات؟", [["bylaws", "نظام أساسي"], ["delegation", "مصفوفة صلاحيات"], ["coi", "تعارض المصالح"], ["investment", "سياسة الاستثمار"], ["masarif", "دليل المصارف"], ["none", "لا شيء"]])] }],
+    code: "G01", version: 2, sources: ["لائحة تنظيم أعمال النظارة م9/4، م14/1: اللوائح الداخلية للأوقاف الكبيرة والمتوسطة", "مبادئ حوكمة الأوقاف (مسودة)"],
+    docs: [doc("policies", "policy", "لوائح وسياسات قائمة غير مرفوعة في ملف الوقف")],
+    steps: [{
+      key: "gov", title: "أولويات الحوكمة",
+      intro: "حجم الوقف وتشكيل المجلس واللوائح المعتمدة مقروءة من ملف الوقف أعلاه.",
+      fields: [
+        legacy(sel("size", "حجم الوقف", SIZE)), legacy(yn("hasBoard", "هل للوقف مجلس نظارة؟")),
+        legacy(checks("existing", "ما الموجود من لوائح وسياسات؟", [["bylaws", "نظام أساسي"], ["delegation", "مصفوفة صلاحيات"], ["coi", "تعارض المصالح"]])),
+        checks("priorities", "ما الذي تريد إعداده أو تحديثه؟", [["bylaw", "لائحة الحوكمة الداخلية"], ["authority", "مصفوفة الصلاحيات"], ["coi", "سياسة تعارض المصالح"], ["distribution", "سياسة الصرف"], ["investment", "سياسة الاستثمار"], ["financial", "اللائحة المالية"], ["complaints", "آلية الشكاوى"], ["records", "حفظ الوثائق والأرشفة"], ["risk", "سجل المخاطر"]], R),
+        radio("boardPlan", "ما خطتك لمجلس النظارة؟", [["keep", "الإبقاء على التشكيل الحالي"], ["form", "تشكيل مجلس جديد"], ["restructure", "إعادة هيكلة المجلس ولجانه"], ["none", "لا مجلس (ناظر فرد)"]], R),
+        yn("adoptionSupport", "هل تحتاج مساندة في اعتماد اللوائح وتطبيقها بعد إعدادها؟"),
+        area("deedConstraints", "ما ورد في وثيقة الوقف ويقيّد الحوكمة (إن وجد)", { review: "legal", hint: "مثل: من يعيّن الناظر، أو حدود صلاحياته." }),
+      ],
+    }],
   },
   G02: {
-    code: "G02", version: 1, sources: ["تعريف الخدمة في الكتالوج"], docs: [doc("deed", "waqf_deed", "وثيقة الوقف", { required: true })],
-    steps: [{ key: "bylaws", title: "عناصر النظام الأساسي", fields: [yn("hasBoard", "هل للوقف مجلس؟", R), yn("hasExecutive", "هل للوقف إدارة تنفيذية؟", R), text("domicile", "مقر الوقف")] }],
+    code: "G02", version: 2, sources: ["تعريف الخدمة في الكتالوج", "الدليل الإرشادي لصياغة وثيقة الوقف (البند السادس: النظارة وأحكامها)"],
+    docs: [doc("deed", "waqf_deed", "وثيقة الوقف", { required: true })],
+    steps: [{
+      key: "bylaws", title: "عناصر النظام الأساسي",
+      fields: [
+        legacy(yn("hasBoard", "هل للوقف مجلس؟")),
+        yn("hasExecutive", "هل للوقف إدارة تنفيذية؟", R),
+        checks("executiveRoles", "المناصب التنفيذية", [["ceo", "مدير تنفيذي"], ["finance", "مسؤول مالي"], ["assets", "مدير أملاك"], ["programs", "مسؤول المصارف والبرامج"]], { showIf: yes("hasExecutive"), requiredIf: yes("hasExecutive") }),
+        text("domicile", "مقر الوقف", { prefill: "waqf.domicile" }),
+        radio("amendmentRule", "من يعدّل النظام الأساسي؟", [["board", "مجلس النظارة بأغلبية خاصة"], ["nazir", "الناظر"], ["not_set", "لم يُحدد بعد"]], R),
+        area("deedConstraints", "نصوص وثيقة الوقف التي يجب أن يلتزم بها النظام", { review: "legal" }),
+      ],
+    }],
   },
   G03: {
-    code: "G03", version: 1, sources: ["مبادئ حوكمة الأوقاف (مسودة): مجلس النظارة", "تعريف الخدمة في الكتالوج: المواثيق ومعايير الاستقلال"], docs: [],
-    steps: [{ key: "board", title: "المجلس واللجان", fields: [num("boardSize", "عدد الأعضاء المقترح", { ...R, min: 3, max: 25 }), checks("committees", "اللجان المطلوبة", [["audit", "المراجعة"], ["investment", "الاستثمار"], ["nominations", "الترشيحات والمكافآت"], ["other", "أخرى"]]), num("independent", "عدد الأعضاء المستقلين المستهدف", { min: 0 })] }],
+    code: "G03", version: 2, sources: ["مبادئ حوكمة الأوقاف (مسودة): مجلس النظارة والأعضاء المستقلون", "تعريف الخدمة في الكتالوج: المواثيق ومعايير الاستقلال"], docs: [],
+    steps: [{
+      key: "board", title: "المجلس واللجان",
+      intro: "التشكيل الحالي للمجلس مقروء من ملف الوقف أعلاه.",
+      fields: [
+        radio("formationType", "المطلوب", [["new", "تشكيل مجلس جديد"], ["restructure", "إعادة تشكيل مجلس قائم"]], R),
+        num("boardSize", "عدد الأعضاء المقترح", { ...R, min: 3, max: 25 }),
+        num("independent", "عدد الأعضاء المستقلين المقترح", { min: 0, max: 25, hint: "يُراعى أن يشكل المستقلون نسبة مؤثرة، ولا سيما في الأوقاف الكبيرة والأهلية." }),
+        checks("committees", "اللجان المطلوبة", [["audit", "المراجعة"], ["investment", "الاستثمار"], ["nominations", "الترشيحات والمكافآت"], ["other", "أخرى"]]),
+        checks("competencies", "الخبرات المطلوبة في المجلس", [["sharia", "شرعية"], ["legal", "قانونية"], ["finance", "مالية ومحاسبية"], ["investment", "استثمارية"], ["real_estate", "عقارية"], ["family", "تمثيل ذرية الواقف"]], R),
+        num("termYears", "مدة العضوية (بالسنوات)", { min: 1, max: 10 }),
+        yn("remuneration", "هل تُصرف مكافآت لأعضاء المجلس؟"),
+        area("deedRequirements", "ما تشترطه وثيقة الوقف في المجلس أو أعضائه", { review: "legal" }),
+      ],
+    }],
   },
   G04: {
-    code: "G04", version: 1, sources: ["تعريف الخدمة في الكتالوج"], docs: [doc("plan", "policy", "الخطة الحالية إن وجدت")],
-    steps: [{ key: "plan", title: "الخطة", fields: [sel("horizon", "أفق الخطة", [["3", "3 سنوات"], ["5", "5 سنوات"]], R), area("priorities", "أولوياتك للوقف", R), yn("existingPlan", "هل للوقف خطة سابقة؟")] }],
+    code: "G04", version: 2, sources: ["تعريف الخدمة في الكتالوج", "الدليل الإرشادي للواقفين (الرقابة والتقييم): مقاييس أداء مالية وتشغيلية وللمصارف والالتزام"],
+    docs: [doc("plan", "policy", "الخطة الحالية", { requiredIf: yes("existingPlan"), showIf: yes("existingPlan") })],
+    steps: [{
+      key: "plan", title: "الخطة",
+      fields: [
+        sel("horizon", "أفق الخطة", [["3", "3 سنوات"], ["5", "5 سنوات"]], R),
+        yn("existingPlan", "هل للوقف خطة سابقة؟", R),
+        area("priorities", "أولوياتك للوقف", R),
+        table("goals", "أهداف تريدها في الخطة (اختياري)", [
+          { key: "goal", label: "الهدف", type: "text", required: true },
+          { key: "indicator", label: "مؤشر قياسه", type: "text" },
+          { key: "target", label: "المستهدف", type: "text" },
+        ], { maxRows: 12 }),
+        checks("indicatorTypes", "أنواع المؤشرات المطلوبة", [["financial", "مالية"], ["operational", "تشغيلية"], ["masarif", "تحقيق المصارف"], ["compliance", "الالتزام"], ["quality", "الجودة"]], R),
+      ],
+    }],
   },
   G05: {
-    code: "G05", version: 1, sources: ["لائحة تنظيم أعمال النظارة م13: صرف العوائد وفق المصارف المحددة وتوثيقه"], docs: [doc("deed", "waqf_deed", "وثيقة الوقف", { required: true })],
-    steps: [{ key: "masarif", title: "المصارف", fields: [area("masarif", "المصارف كما في وثيقة الوقف", R), num("beneficiaries", "عدد المستفيدين التقريبي", { min: 0 }), yn("criteria", "هل توجد معايير مفاضلة معمول بها؟")] }],
+    code: "G05", version: 2, sources: ["لائحة تنظيم أعمال النظارة م13: صرف العوائد وفق المصارف المحددة وتوثيقه"], docs: [doc("deed", "waqf_deed", "وثيقة الوقف", { required: true })],
+    steps: [{
+      key: "masarif", title: "المصارف والصرف",
+      intro: "المصارف وفئات المستحقين المسجلة في ملف الوقف معروضة أعلاه؛ لا حاجة لإعادة كتابتها.",
+      fields: [
+        area("masarif", "المصارف كما وردت في الوثيقة (إن لم تكن مسجلة في ملف الوقف)", { review: "sharia" }),
+        num("beneficiaries", "عدد المستفيدين التقريبي", { min: 0 }),
+        sel("frequency", "دورية الصرف المعمول بها", [...FREQ, ["irregular", "غير منتظم"]], R),
+        radio("selection", "كيف يُحدد المستحقون؟", [["deed", "بالأسماء أو الصفات في الوثيقة"], ["application", "بطلب يتقدم به المستحق"], ["survey", "بدراسة يجريها الناظر"]], R),
+        yn("criteria", "هل توجد معايير مفاضلة معمول بها؟", R),
+        area("criteriaText", "معايير المفاضلة الحالية", { showIf: yes("criteria"), requiredIf: yes("criteria"), review: "sharia" }),
+        yn("disputes", "هل وقعت خلافات بين المستحقين حول الصرف؟"),
+      ],
+    }],
   },
   G06: {
-    code: "G06", version: 1, sources: ["تعريف الخدمة في الكتالوج"], docs: [],
-    steps: [{ key: "coi", title: "النطاق", fields: [num("people", "عدد المشمولين (المجلس والإدارة)", { ...R, min: 1 }), yn("existingPolicy", "هل توجد سياسة قائمة؟")] }],
+    code: "G06", version: 2, sources: ["تعريف الخدمة في الكتالوج", "لائحة تنظيم أعمال النظارة م18: تعارض المصالح"], docs: [],
+    steps: [{
+      key: "coi", title: "النطاق",
+      fields: [
+        legacy(num("people", "عدد المشمولين (المجلس والإدارة)", { min: 1 })),
+        checks("scope", "من تشملهم السياسة؟", [["board", "أعضاء المجلس"], ["executives", "الإدارة التنفيذية"], ["committees", "أعضاء اللجان"], ["staff", "الموظفون"], ["contractors", "المتعاقدون ومقدمو الخدمات"]], R),
+        yn("existingPolicy", "هل توجد سياسة قائمة؟", R),
+        yn("knownConflicts", "هل توجد حالات تعارض معروفة الآن؟", R),
+        table("conflicts", "حالات التعارض المعروفة", [
+          { key: "person", label: "الشخص أو الجهة", type: "text", required: true },
+          { key: "nature", label: "طبيعة التعارض", type: "text", required: true },
+        ], { showIf: yes("knownConflicts"), requiredIf: yes("knownConflicts"), minRows: 1 }),
+        sel("disclosureFrequency", "دورية الإفصاح المطلوبة", [["annual", "سنوية"], ["per_meeting", "قبل كل اجتماع"], ["on_change", "عند كل تغيير"]], R),
+      ],
+    }],
   },
   G07: {
-    code: "G07", version: 1, sources: ["الدليل الإرشادي لصياغة وثيقة الوقف (البند السادس: النظارة وأحكامها)"], docs: [doc("deed", "waqf_deed", "وثيقة الوقف")],
-    steps: [{ key: "succession", title: "النظارة الحالية", fields: [radio("form", "شكل النظارة", [["individual", "ناظر فرد"], ["board", "مجلس"], ["entity", "جهة اعتبارية"]], R), yn("deedCovers", "هل تنص وثيقة الوقف على آلية الاستخلاف؟", R)] }],
+    code: "G07", version: 2, sources: ["الدليل الإرشادي لصياغة وثيقة الوقف (البند السادس: النظارة وأحكامها)", "لائحة تنظيم أعمال النظارة م7: انتهاء النظارة"],
+    docs: [doc("deed", "waqf_deed", "وثيقة الوقف")],
+    steps: [{
+      key: "succession", title: "الاستخلاف",
+      intro: "صيغة النظارة الحالية ونظّار الوقف مقروءة من ملف الوقف أعلاه.",
+      fields: [
+        legacy(radio("form", "شكل النظارة", [["individual", "ناظر فرد"], ["board", "مجلس"], ["entity", "جهة اعتبارية"]])),
+        yn("deedCovers", "هل تنص وثيقة الوقف على آلية الاستخلاف؟", R),
+        area("deedText", "نص الوثيقة في الاستخلاف", { showIf: yes("deedCovers"), requiredIf: yes("deedCovers"), review: "sharia" }),
+        radio("preferredModel", "الآلية التي تفضّلها (فيما لم تنص عليه الوثيقة)", [["eldest", "الأرشد فالأرشد من الذرية"], ["board_elects", "يختار المجلس من يخلف"], ["nominated", "ترشيح مسبق من الناظر"], ["entity", "جهة اعتبارية"]]),
+        yn("candidatesKnown", "هل يوجد مرشحون معروفون للخلافة؟"),
+        area("interim", "من يتولى الأعمال مؤقتًا عند شغور النظارة؟"),
+      ],
+    }],
   },
   G08: {
-    code: "G08", version: 1, sources: ["تعريف الخدمة وقاعدة الاستقلال في الكتالوج"], docs: [doc("fin", "financial_statement", "آخر قوائم أو بيان مالي"), doc("bank", "bank_statement", "كشوف الحساب البنكي")],
-    steps: [{ key: "audit", title: "نطاق المراجعة", fields: [YEAR("period", "السنة محل المراجعة"), checks("scope", "مجالات المراجعة", [["financial", "مالية"], ["operational", "تشغيلية"], ["compliance", "امتثال"], ["it", "تقنية المعلومات"]], R), date("lastAudit", "تاريخ آخر مراجعة")] }],
+    code: "G08", version: 2, sources: ["تعريف الخدمة وقاعدة الاستقلال في الكتالوج", "الدليل الإرشادي للواقفين (الرقابة والتقييم)"],
+    docs: [doc("fin", "financial_statement", "آخر قوائم أو بيان مالي (إن لم يكن في ملف الوقف)"), doc("bank", "bank_statement", "كشوف الحساب البنكي للفترة"), doc("prev", "other", "تقرير المراجعة السابقة", { showIf: yes("previousFindings") })],
+    steps: [{
+      key: "audit", title: "نطاق المراجعة",
+      intro: "القيود والموازنة والقرارات والالتزامات والمخاطر المسجلة في ملف الوقف تُقرأ للفترة المحددة.",
+      fields: [
+        legacy(YEAR("period", "السنة محل المراجعة")),
+        ...period(),
+        checks("scope", "مجالات المراجعة", [["financial", "مالية"], ["operational", "تشغيلية"], ["compliance", "امتثال"], ["distribution", "الصرف للمستحقين"], ["it", "تقنية المعلومات"]], R),
+        radio("auditFunction", "وظيفة المراجعة الحالية", [["none", "لا توجد"], ["internal", "موظف أو لجنة داخلية"], ["outsourced", "جهة خارجية"]], R),
+        date("lastAudit", "تاريخ آخر مراجعة"),
+        yn("previousFindings", "هل توجد ملاحظات سابقة لم تُعالج؟"),
+        area("focusRisks", "مخاطر أو مواضع تريد التركيز عليها", { review: "financial" }),
+      ],
+    }],
   },
   G09: {
-    code: "G09", version: 1, sources: ["تعريف الخدمة وقاعدة الاستقلال في الكتالوج"], docs: [],
-    steps: [{ key: "eval", title: "التقييم", fields: [num("boardSize", "عدد أعضاء المجلس", { ...R, min: 1 }), YEAR("period", "سنة التقييم")] }],
+    code: "G09", version: 2,
+    sources: [
+      "مبادئ حوكمة الأوقاف (مسودة)، المبدأ الرابع «فاعلية النظارة»: الأهلية والكفاءة، أداء المهام بعناية، رشد القرارات، آليات تنفيذ القرارات وقياس أثرها، تكامل المجلس",
+      "مبادئ حوكمة الأوقاف: «تبني الوسائل التي تكفل إجراء تقييم دوري لفاعلية الناظر أو أعضاء مجلس النظارة… على أن تشمل عملية التقييم الإجراءات اللازمة لمعالجة أوجه القصور»",
+      "الدليل الإرشادي للواقفين (الرقابة والتقييم، ص59): مؤشرات مالية وتشغيلية وجودة ومصارف والتزام",
+      "تعريف الخدمة وقاعدة الاستقلال في الكتالوج",
+    ],
+    docs: [
+      doc("plan", "policy", "الخطة الاستراتيجية أو التشغيلية للفترة", { requiredIf: yes("hasPlan"), showIf: yes("hasPlan") }),
+      doc("kpi", "other", "تقرير مؤشرات الأداء للفترة", { requiredIf: when("kpisRecorded", "document"), showIf: when("kpisRecorded", "document") }),
+      doc("selfEval", "other", "نماذج التقييم الذاتي المعبأة (إن وجدت)", { showIf: { field: "method", in: ["self", "peer"] } }),
+      doc("minutes", "minutes", "محاضر اجتماعات غير مرفوعة في ملف الوقف"),
+    ],
+    steps: [
+      {
+        key: "scope", title: "نطاق التقييم",
+        intro: "أعضاء المجلس وصفاتهم ومدد عضويتهم، والاجتماعات والقرارات وتنفيذها، والسياسات والالتزامات والمخاطر مقروءة من ملف الوقف للفترة التي تحددها.",
+        fields: [
+          legacy(num("boardSize", "عدد أعضاء المجلس", { min: 1 })), legacy(YEAR("period", "سنة التقييم")),
+          checks("evaluatee", "من يشمله التقييم؟", [["board", "مجلس النظارة مجتمعًا"], ["members", "أعضاء المجلس فرادى"], ["nazir", "الناظر"], ["committees", "لجان المجلس"]], R),
+          ...period(),
+        ],
+      },
+      {
+        key: "objectives", title: "الأهداف والمؤشرات",
+        fields: [
+          yn("hasPlan", "هل للوقف خطة معتمدة تغطي الفترة؟", R),
+          radio("kpisRecorded", "هل تُقاس مؤشرات أداء للوقف؟", [["document", "نعم، في تقرير أرفقه"], ["partial", "بعضها، دون تقرير منتظم"], ["none", "لا تُقاس مؤشرات"]], R),
+          table("objectives", "أهداف الفترة ومؤشراتها (إن وجدت)", [
+            { key: "objective", label: "الهدف", type: "text", required: true },
+            { key: "indicator", label: "المؤشر", type: "text" },
+            { key: "target", label: "المستهدف", type: "text" },
+            { key: "actual", label: "المتحقق", type: "text" },
+          ], { maxRows: 15 }),
+        ],
+      },
+      {
+        key: "criteria", title: "معايير التقييم",
+        fields: [
+          checks("criteria", "محاور التقييم", [
+            ["competence", "الأهلية والقدرة والكفاءة"], ["diligence", "أداء المهام بعناية وحرص"], ["decisions", "رشد القرارات واستنادها إلى المعلومات"],
+            ["execution", "تنفيذ القرارات وقياس أثرها"], ["cohesion", "تكامل المجلس وفاعلية اجتماعاته"], ["compliance", "الالتزام بشرط الواقف والأنظمة"],
+            ["financial", "الأداء المالي وحماية الأصول"], ["masarif", "تحقيق المصارف"],
+          ], R),
+          radio("weighting", "أوزان المحاور", [["equal", "أوزان متساوية"], ["custom", "أوزان أحددها"]], R),
+          table("weights", "الأوزان (مجموعها 100٪)", [
+            { key: "criterion", label: "المحور", type: "select", required: true, options: [["competence", "الأهلية والكفاءة"], ["diligence", "العناية والحرص"], ["decisions", "رشد القرارات"], ["execution", "تنفيذ القرارات"], ["cohesion", "تكامل المجلس"], ["compliance", "الالتزام"], ["financial", "الأداء المالي"], ["masarif", "تحقيق المصارف"]] },
+            { key: "weight", label: "الوزن", type: "percent", required: true, min: 1 },
+          ], { showIf: when("weighting", "custom"), requiredIf: when("weighting", "custom"), minRows: 2, maxRows: 8 }),
+          checks("method", "طريقة جمع الأدلة", [["documents", "مراجعة السجلات والمستندات"], ["self", "تقييم ذاتي للأعضاء"], ["peer", "تقييم متبادل بين الأعضاء"], ["interviews", "مقابلات"], ["beneficiaries", "استطلاع المستفيدين"]], R),
+        ],
+      },
+      {
+        key: "deliverable", title: "الملاحظات والمخرجات",
+        fields: [
+          area("knownIssues", "تحديات أو ملاحظات معروفة تريد أن يتناولها التقييم"),
+          checks("outputs", "المخرجات المطلوبة", [["report", "تقرير التقييم"], ["scorecard", "بطاقة أداء بالدرجات"], ["plan", "خطة معالجة أوجه القصور"], ["members", "ملاحظات فردية لكل عضو"]], R),
+        ],
+      },
+    ],
   },
   G10: {
-    code: "G10", version: 1, sources: ["معايير المستفيد الحقيقي: بيانات المستفيد الحقيقي وتحديثها خلال 15 يومًا من التغيير (م6/1)"], docs: [doc("bo", "bo_register", "سجل المستفيد الحقيقي الحالي إن وجد")],
-    steps: [{ key: "aml", title: "الوضع الحالي", fields: [yn("boKnown", "هل بيانات المستفيدين الحقيقيين مكتملة؟", R), yn("foreignParty", "هل في الوقف طرف أجنبي؟", R), yn("beneficiariesAbroad", "هل يوجد مستفيدون خارج المملكة؟", R)] }],
+    code: "G10", version: 2, sources: ["معايير المستفيد الحقيقي: بيانات المستفيد الحقيقي وتحديثها خلال 15 يومًا من التغيير (م6/1)"],
+    docs: [doc("bo", "bo_register", "سجل المستفيد الحقيقي (إن لم يكن في ملف الوقف)")],
+    steps: [{
+      key: "aml", title: "الوضع الحالي",
+      intro: "سجل المستفيد الحقيقي وتواريخ التحقق منه مقروءة من ملف الوقف أعلاه.",
+      fields: [
+        legacy(yn("boKnown", "هل بيانات المستفيدين الحقيقيين مكتملة؟")),
+        yn("foreignParty", "هل في الوقف طرف أجنبي؟", { ...R, prefill: "waqf.hasForeignParty" }),
+        yn("beneficiariesAbroad", "هل يوجد مستفيدون خارج المملكة؟", { ...R, prefill: "waqf.hasBeneficiariesAbroad" }),
+        yn("collectsDonations", "هل يجمع الوقف تبرعات من الغير؟", { ...R, prefill: "waqf.collectsDonations" }),
+        yn("cashTransactions", "هل يتعامل الوقف بالنقد خارج الحساب البنكي؟", R),
+        yn("existingProgram", "هل توجد إجراءات معتمدة لمكافحة غسل الأموال؟", R),
+      ],
+    }],
   },
 
   // ── F المالية
+  // Budgets, statements, ledger entries, distributions and bank statements are read from the waqf file for the year or
+  // period asked; the forms ask for what is specific to the task.
   F01: {
-    code: "F01", version: 1, sources: ["لائحة تنظيم أعمال النظارة م12/2: استقطاع ما يلزم للصيانة والتشغيل قبل الصرف"], docs: [doc("deed", "waqf_deed", "وثيقة الوقف", { required: true })],
-    steps: [{ key: "fin", title: "البيانات المالية", fields: [money("revenue", "الإيراد السنوي التقريبي (ر.س)", R), area("termsSummary", "ما ورد في الشرط عن الريع والصيانة والمصارف")] }],
+    code: "F01", version: 2, sources: ["لائحة تنظيم أعمال النظارة م12/2: استقطاع ما يلزم للصيانة والتشغيل قبل الصرف"], docs: [doc("deed", "waqf_deed", "وثيقة الوقف", { required: true })],
+    steps: [{
+      key: "fin", title: "موضوع التحليل",
+      intro: "شروط الواقف والمصارف والأصول ودخلها والسجلات المالية مقروءة من ملف الوقف أعلاه.",
+      fields: [
+        YEAR("fiscalYear", "السنة المالية محل التحليل"),
+        checks("questions", "ما الذي تريد تحليله؟", [["maintenance", "استقطاع الصيانة والتشغيل قبل الصرف"], ["nazirFee", "أجرة الناظر"], ["split", "قسمة الريع بين المصارف"], ["reinvest", "إعادة استثمار جزء من الريع"], ["reserve", "الاحتياطي"], ["debt", "الديون والالتزامات على الوقف"]], R),
+        money("revenue", "الإيراد السنوي (إن لم يكن مسجلًا في ملف الوقف)"),
+        area("issue", "المسألة أو الإشكال المالي", { ...R, minLength: 15, review: "financial" }),
+        legacy(area("termsSummary", "ما ورد في الشرط عن الريع والصيانة والمصارف")),
+      ],
+    }],
   },
   F02: {
-    code: "F02", version: 1, sources: ["تعريف الخدمة في الكتالوج"], docs: [doc("bank", "bank_statement", "كشوف الحساب البنكي")],
-    steps: [{ key: "acc", title: "الوضع المحاسبي", fields: [sel("system", "النظام الحالي", [["none", "لا يوجد"], ["spreadsheet", "جداول"], ["software", "برنامج محاسبي"]], R), num("monthlyTx", "عدد العمليات الشهرية التقريبي", { ...R, min: 0 }), text("fiscalYearEnd", "نهاية السنة المالية (شهر-يوم)", { prefill: "waqf.fiscalYearEnd" })] }],
+    code: "F02", version: 2, sources: ["تعريف الخدمة في الكتالوج", "لائحة تنظيم أعمال النظارة م15: الإدارة المالية"], docs: [doc("bank", "bank_statement", "كشوف الحساب البنكي (آخر 3 أشهر)")],
+    steps: [{
+      key: "acc", title: "الوضع المحاسبي",
+      fields: [
+        sel("system", "النظام الحالي", [["none", "لا يوجد"], ["spreadsheet", "جداول"], ["software", "برنامج محاسبي"]], R),
+        text("software", "اسم البرنامج المحاسبي", { showIf: when("system", "software") }),
+        num("monthlyTx", "عدد العمليات الشهرية التقريبي", { ...R, min: 0 }),
+        num("bankAccounts", "عدد الحسابات البنكية باسم الوقف", { ...R, min: 0 }),
+        text("fiscalYearEnd", "نهاية السنة المالية (شهر-يوم)", { prefill: "waqf.fiscalYearEnd" }),
+        yn("costCenters", "هل تحتاج مراكز تكلفة (لكل أصل أو مشروع أو مصرف)؟", R),
+        checks("reporting", "التقارير التي يجب أن يخدمها النظام", [["gaa", "متطلبات الهيئة العامة للأوقاف"], ["board", "تقارير المجلس"], ["beneficiaries", "تقارير المستفيدين"], ["audit", "متطلبات المراجع الخارجي"]], R),
+        radio("vat", "التسجيل في ضريبة القيمة المضافة", [["registered", "مسجل"], ["not_registered", "غير مسجل"], ["unknown", "لا أعرف"]], { ...R, review: "financial" }),
+      ],
+    }],
   },
   F03: {
-    code: "F03", version: 1, sources: ["تعريف الخدمة وقاعدة الاستقلال في الكتالوج"], docs: [],
-    steps: [{ key: "books", title: "الدفاتر", fields: [num("monthlyTx", "عدد العمليات الشهرية", { ...R, min: 0 }), num("accounts", "عدد الحسابات البنكية", { ...R, min: 1 }), date("startOn", "تاريخ بدء مسك الدفاتر المطلوب")] }],
+    code: "F03", version: 2, sources: ["تعريف الخدمة وقاعدة الاستقلال في الكتالوج"], docs: [doc("bank", "bank_statement", "كشوف الحساب البنكي للفترة غير المقيدة")],
+    steps: [{
+      key: "books", title: "الدفاتر",
+      intro: "القيود المسجلة في ملف الوقف وآخر تاريخ قيد معروضة أعلاه.",
+      fields: [
+        num("monthlyTx", "عدد العمليات الشهرية", { ...R, min: 0 }),
+        num("accounts", "عدد الحسابات البنكية", { ...R, min: 1 }),
+        date("startOn", "تاريخ بدء مسك الدفاتر المطلوب", R),
+        date("backlogFrom", "إن وُجدت فترة غير مقيدة: من تاريخ"),
+        checks("documents", "المستندات المتاحة للقيد", [["invoices", "فواتير"], ["receipts", "سندات قبض وصرف"], ["bank", "كشوف بنكية"], ["contracts", "عقود الإيجار والخدمات"]], R),
+      ],
+    }],
   },
   F04: {
-    code: "F04", version: 1, sources: ["تعريف الخدمة: الموازنة متطلب للأوقاف الكبيرة والمتوسطة"], docs: [doc("fin", "financial_statement", "قوائم السنة السابقة")],
-    steps: [{ key: "budget", title: "الموازنة", fields: [YEAR("fiscalYear", "سنة الموازنة"), money("revenue", "الإيراد المتوقع (ر.س)"), area("plans", "المصروفات والمشاريع المخطط لها")] }],
+    code: "F04", version: 2, sources: ["تعريف الخدمة: الموازنة متطلب للأوقاف الكبيرة والمتوسطة", "لائحة تنظيم أعمال النظارة م12/2، م15"],
+    docs: [doc("fin", "financial_statement", "قوائم السنة السابقة (إن لم تكن في ملف الوقف)")],
+    steps: [
+      {
+        key: "budget", title: "سنة الموازنة",
+        intro: "موازنات السنوات السابقة وقوائمها والأصول ودخلها المسجل مقروءة من ملف الوقف أعلاه.",
+        fields: [
+          YEAR("fiscalYear", "سنة الموازنة"),
+          radio("approvalBy", "من يعتمد الموازنة؟", [["board", "مجلس النظارة"], ["nazir", "الناظر"]], R),
+          legacy(money("revenue", "الإيراد المتوقع (ر.س)")),
+        ],
+      },
+      {
+        key: "lines", title: "الإيرادات والمصروفات المتوقعة",
+        fields: [
+          table("revenues", "الإيرادات المتوقعة", [
+            { key: "source", label: "المصدر", type: "select", required: true, options: [["rent", "إيجارات"], ["investment", "عوائد استثمار"], ["donations", "تبرعات"], ["other", "أخرى"]] },
+            { key: "description", label: "البيان", type: "text" },
+            { key: "amount", label: "المبلغ", type: "money", required: true },
+          ], { ...R, minRows: 1 }),
+          table("expenses", "المصروفات المخطط لها", [
+            { key: "category", label: "البند", type: "select", required: true, options: [["maintenance", "صيانة وتشغيل"], ["distribution", "صرف على المستحقين"], ["nazirFee", "أجرة الناظر"], ["admin", "مصاريف إدارية"], ["development", "تنمية وإعادة استثمار"], ["reserve", "احتياطي"], ["other", "أخرى"]] },
+            { key: "description", label: "البيان", type: "text" },
+            { key: "amount", label: "المبلغ", type: "money", required: true },
+          ], { ...R, minRows: 1 }),
+          legacy(area("plans", "المصروفات والمشاريع المخطط لها")),
+          area("assumptions", "افتراضات الموازنة (نسب الإشغال، زيادات الإيجار…)", { review: "financial" }),
+        ],
+      },
+    ],
   },
   F05: {
-    code: "F05", version: 1, sources: ["لائحة تنظيم أعمال النظارة م15: البيان المالي للأوقاف الصغيرة وذات الانتفاع المباشر"], docs: [doc("bank", "bank_statement", "كشوف الحساب البنكي للسنة", { required: true })],
-    steps: [{ key: "year", title: "السنة", fields: [YEAR(), area("revenueSources", "مصادر الإيراد")] }],
+    code: "F05", version: 2, sources: ["لائحة تنظيم أعمال النظارة م15: البيان المالي للأوقاف الصغيرة وذات الانتفاع المباشر"], docs: [doc("bank", "bank_statement", "كشوف الحساب البنكي للسنة", { required: true })],
+    steps: [{
+      key: "year", title: "السنة",
+      fields: [
+        YEAR(),
+        num("bankAccounts", "عدد الحسابات البنكية للوقف", { ...R, min: 0 }),
+        checks("revenueTypes", "أنواع الإيراد في السنة", [["rent", "إيجارات"], ["investment", "عوائد استثمار"], ["donations", "تبرعات"], ["other", "أخرى"]], R),
+        yn("distributed", "هل صُرف للمستحقين خلال السنة؟", R),
+        yn("receiptsKept", "هل تتوفر مستندات المصروفات (فواتير وسندات)؟", R),
+        legacy(area("revenueSources", "مصادر الإيراد")),
+      ],
+    }],
   },
   F06: {
-    code: "F06", version: 1, sources: ["تعريف الخدمة وقاعدة الاستقلال في الكتالوج"], docs: [doc("fin", "financial_statement", "القوائم المالية", { required: true }), doc("bank", "bank_statement", "كشوف الحساب البنكي", { required: true })],
-    steps: [{ key: "audit", title: "المراجعة", fields: [YEAR(), yn("statementsReady", "هل القوائم المالية جاهزة؟", R), yn("previousAuditor", "هل رُوجعت قوائم سابقة؟")] }],
+    code: "F06", version: 2, sources: ["تعريف الخدمة وقاعدة الاستقلال في الكتالوج"], docs: [doc("fin", "financial_statement", "القوائم المالية", { required: true }), doc("bank", "bank_statement", "كشوف الحساب البنكي", { required: true })],
+    steps: [{
+      key: "audit", title: "المراجعة",
+      fields: [
+        YEAR(),
+        yn("statementsReady", "هل القوائم المالية جاهزة؟", R),
+        radio("basis", "أساس إعداد القوائم", [["accrual", "أساس الاستحقاق"], ["cash", "أساس نقدي"], ["unknown", "لا أعرف"]], { ...R, review: "financial" }),
+        yn("previousAuditor", "هل رُوجعت قوائم سابقة؟"),
+        date("gaaDeadline", "الموعد النظامي لرفع القوائم (إن عُرف)"),
+      ],
+    }],
   },
   F07: {
-    code: "F07", version: 1, sources: ["تعريف الخدمة: الرفع بيد الناظر عبر خدمة الهيئة"], docs: [doc("fin", "financial_statement", "القوائم أو البيان المالي", { required: true })],
-    steps: [{ key: "year", title: "البيانات", fields: [YEAR(), sel("type", "نوع البيانات", [["audited", "قوائم مدققة"], ["simplified", "بيان مالي مبسط"]], R)] }],
+    code: "F07", version: 2, sources: ["تعريف الخدمة: الرفع بيد الناظر عبر خدمة الهيئة"], docs: [doc("fin", "financial_statement", "القوائم أو البيان المالي", { required: true })],
+    steps: [{
+      key: "year", title: "البيانات",
+      fields: [
+        YEAR(),
+        sel("type", "نوع البيانات", [["audited", "قوائم مدققة"], ["simplified", "بيان مالي مبسط"]], R),
+        yn("portalAccess", "هل للناظر صلاحية الدخول إلى خدمة الهيئة؟", R),
+        yn("submittedBefore", "هل رُفعت بيانات سنوات سابقة؟"),
+      ],
+    }],
   },
   F08: {
-    code: "F08", version: 1, sources: ["تعريف الخدمة في الكتالوج"], docs: [],
-    steps: [{ key: "rep", title: "التقرير", fields: [sel("frequency", "الدورية", FREQ, R), text("recipients", "من يستلم التقرير؟")] }],
+    code: "F08", version: 2, sources: ["تعريف الخدمة في الكتالوج", "الدليل الإرشادي للواقفين (الرقابة والتقييم): مؤشرات مالية وتشغيلية"], docs: [],
+    steps: [{
+      key: "rep", title: "التقرير",
+      fields: [
+        sel("frequency", "الدورية", FREQ, R),
+        checks("indicators", "المؤشرات المطلوبة", [["revenue", "نمو الإيرادات"], ["occupancy", "نسب الإشغال"], ["expenseRatio", "نسبة المصروفات إلى الإيرادات"], ["distributionRatio", "نسبة الصرف إلى صافي الريع"], ["returnOnAssets", "العائد على الأصول"], ["budgetVariance", "الانحراف عن الموازنة"]], R),
+        text("recipients", "من يستلم التقرير؟"),
+      ],
+    }],
   },
   F09: {
     code: "F09", version: 1, sources: ["لائحة تنظيم أعمال النظارة م15/1: حساب بنكي مستقل باسم الوقف"],
@@ -666,13 +979,36 @@ const FORMS: Record<string, Omit<ServiceForm, "steps"> & { steps: Step[] }> = {
 
   // ── I الاستثمار والأصول
   I01: {
-    code: "I01", version: 1, sources: ["الدليل الإرشادي لاستثمار الأوقاف ودليل قواعد وضوابط الاستثمار", "تعريف الخدمة: على مستوى السياسات والفئات دون تسمية أوراق مالية"],
+    code: "I01", version: 2, sources: ["الدليل الإرشادي لاستثمار الأوقاف ودليل قواعد وضوابط الاستثمار", "تعريف الخدمة: على مستوى السياسات والفئات دون تسمية أوراق مالية"],
     docs: [doc("deed", "waqf_deed", "وثيقة الوقف")],
-    steps: [{ key: "inv", title: "الاستثمار", fields: [money("investable", "المبلغ القابل للاستثمار (ر.س)", R), area("current", "الأصول والاستثمارات الحالية"), sel("risk", "تحمل المخاطر", [["low", "منخفض"], ["medium", "متوسط"], ["high", "مرتفع"]], R), yn("deedAllows", "هل تجيز وثيقة الوقف الاستثمار؟", R), ack("scopeAck", "أفهم أن السياسة على مستوى الفئات ولا تسمي أوراقًا مالية بعينها.")] }],
+    steps: [{
+      key: "inv", title: "الاستثمار",
+      intro: "الأصول وقيمها ودخلها والسياسات المعتمدة مقروءة من ملف الوقف أعلاه.",
+      fields: [
+        money("investable", "المبلغ القابل للاستثمار (ر.س)", R),
+        legacy(area("current", "الأصول والاستثمارات الحالية")),
+        money("annualNeeds", "احتياج الصرف السنوي من العوائد (ر.س)", { hint: "ما يلزم للمصارف والصيانة سنويًا." }),
+        sel("risk", "تحمل المخاطر", [["low", "منخفض"], ["medium", "متوسط"], ["high", "مرتفع"]], R),
+        sel("horizon", "الأفق الاستثماري", [["short", "أقل من 3 سنوات"], ["medium", "3–7 سنوات"], ["long", "أكثر من 7 سنوات"]], R),
+        yn("deedAllows", "هل تجيز وثيقة الوقف الاستثمار؟", { ...R, review: "sharia" }),
+        area("exclusions", "استثناءات أو قيود تريدها (قطاعات، أدوات)", { review: "sharia" }),
+        yn("existingPolicy", "هل توجد سياسة استثمار سابقة؟"),
+      ],
+    }],
   },
   I02: {
-    code: "I02", version: 1, sources: ["تعريف الخدمة في الكتالوج"], docs: [],
-    steps: [{ key: "ret", title: "المعطيات", fields: [money("spending", "ميزانية المصارف السنوية (ر.س)", R), pct("reinvest", "نسبة إعادة الاستثمار", R), pct("currentReturn", "العائد الحالي إن عُرف")] }],
+    code: "I02", version: 2, sources: ["تعريف الخدمة في الكتالوج", "الدليل الإرشادي لاستثمار الأوقاف"], docs: [],
+    steps: [{
+      key: "ret", title: "المعطيات",
+      intro: "الأصول ودخلها المسجل والسجلات المالية مقروءة من ملف الوقف أعلاه.",
+      fields: [
+        money("spending", "ميزانية المصارف السنوية (ر.س)", R),
+        pct("reinvest", "نسبة إعادة الاستثمار", R),
+        pct("currentReturn", "العائد الحالي إن عُرف"),
+        num("horizonYears", "أفق المحافظة على القيمة الحقيقية (بالسنوات)", { min: 1, max: 50 }),
+        pct("inflation", "افتراض التضخم السنوي (إن رغبت)", { review: "financial" }),
+      ],
+    }],
   },
   I03: {
     code: "I03", version: 1, sources: ["دليل قواعد وضوابط الاستثمار: عناصر دراسة الجدوى"], docs: [doc("studies", "other", "عروض أو دراسات سابقة")],
@@ -684,8 +1020,17 @@ const FORMS: Record<string, Omit<ServiceForm, "steps"> & { steps: Step[] }> = {
     steps: [{ key: "swap", title: "الأصل والاستبدال", fields: [sel("assetType", "نوع الأصل المراد استبداله", ASSET_TYPES, R), area("asset", "وصف الأصل وموقعه", { ...R, minLength: 10 }), text("assetDeedNo", "رقم صك الأصل", R), money("assetValue", "القيمة التقديرية الحالية (ر.س)"), sel("reason", "سبب الاستبدال", [["ruin", "خراب الأصل أو تعطله"], ["benefit", "الغبطة والمصلحة"], ["expropriation", "نزع ملكية"], ["other", "سبب آخر"]], R), area("replacement", "البديل المقترح"), yn("valuations", "هل لديك تقييمات للأصل؟", R)] }],
   },
   I05: {
-    code: "I05", version: 1, sources: ["لائحة المنتجات الاستثمارية الوقفية م24/2: محتوى اتفاقية الإدارة مع مؤسسة السوق المالية"], docs: [doc("draft", "contract", "مسودة اتفاقية الإدارة", { showIf: yes("hasDraft") })],
-    steps: [{ key: "mgr", title: "التفويض", fields: [money("amount", "المبلغ المراد إسناد إدارته (ر.س)", R), sel("mandate", "نوع التفويض", [["discretionary", "إدارة تقديرية"], ["advisory", "استشاري"]], R), area("shortlist", "مديرون مرشحون إن وجدوا"), yn("hasDraft", "هل لديك مسودة اتفاقية؟", R)] }],
+    code: "I05", version: 2, sources: ["لائحة المنتجات الاستثمارية الوقفية م24/2: محتوى اتفاقية الإدارة مع مؤسسة السوق المالية"], docs: [doc("draft", "contract", "مسودة اتفاقية الإدارة", { showIf: yes("hasDraft") })],
+    steps: [{
+      key: "mgr", title: "التفويض",
+      fields: [
+        money("amount", "المبلغ المراد إسناد إدارته (ر.س)", R),
+        sel("mandate", "نوع التفويض", [["discretionary", "إدارة تقديرية"], ["advisory", "استشاري"]], R),
+        checks("criteria", "معايير المفاضلة بين المديرين", [["track", "سجل الأداء"], ["fees", "الرسوم"], ["sharia", "الرقابة الشرعية"], ["reporting", "التقارير والإفصاح"], ["waqfExperience", "الخبرة مع الأوقاف"]], R),
+        area("shortlist", "مديرون مرشحون إن وجدوا"),
+        yn("hasDraft", "هل لديك مسودة اتفاقية؟", R),
+      ],
+    }],
   },
   I06: {
     code: "I06", version: 1, sources: ["لائحة المنتجات الاستثمارية الوقفية م21–م23: تسجيل الوقف، وفتح الحساب الاستثماري، وقيده لدى الهيئة خلال 5 أيام عمل لكل مرحلة", "لائحة إنشاء المحافظ الاستثمارية الوقفية م5"],
@@ -693,18 +1038,51 @@ const FORMS: Record<string, Omit<ServiceForm, "steps"> & { steps: Step[] }> = {
     steps: [{ key: "pf", title: "المحفظة", fields: [radio("stage", "المرحلة", [["register", "تسجيل محفظة جديدة"], ["record", "قيد حساب ومحفظة قائمين"]], R), text("custodian", "مؤسسة السوق المالية", R), yn("delegated", "هل أُسندت الإدارة لمؤسسة مرخصة؟", R), date("accountOpenedOn", "تاريخ فتح الحساب", { showIf: when("stage", "record") })] }],
   },
   I07: {
-    code: "I07", version: 1, sources: ["تعريف الخدمة في الكتالوج"], docs: [doc("policy", "policy", "سياسة الاستثمار المعتمدة")],
-    steps: [{ key: "perf", title: "المتابعة", fields: [yn("policyExists", "هل للوقف سياسة استثمار معتمدة؟", R), sel("frequency", "الدورية", FREQ, R)] }],
+    code: "I07", version: 2, sources: ["تعريف الخدمة في الكتالوج", "الدليل الإرشادي لاستثمار الأوقاف (حوكمة الاستثمار ومتابعة الأداء)"], docs: [doc("policy", "policy", "سياسة الاستثمار المعتمدة (إن لم تكن في ملف الوقف)")],
+    steps: [{
+      key: "perf", title: "المتابعة",
+      fields: [
+        yn("policyExists", "هل للوقف سياسة استثمار معتمدة؟", R),
+        sel("frequency", "الدورية", FREQ, R),
+        checks("scope", "الأصول المشمولة بالمتابعة", ASSET_TYPES, R),
+        area("benchmarks", "المؤشرات المرجعية للمقارنة (إن وجدت)"),
+      ],
+    }],
   },
   I08: {
-    code: "I08", version: 1, sources: ["تعريف الخدمة: التقييم لمقيّم معتمد"], docs: [doc("ownership", "ownership_deed", "صكوك الأصول")],
-    steps: [{ key: "assets", title: "الأصول", fields: [num("count", "عدد الأصول", { ...R, min: 1 }), checks("types", "أنواع الأصول", ASSET_TYPES, R), yn("valuation", "هل تحتاج تقييمًا من مقيّم معتمد؟", R)] }],
+    code: "I08", version: 2, sources: ["تعريف الخدمة: التقييم لمقيّم معتمد", "الدليل الإرشادي لاختيار الأصول الوقفية"], docs: [doc("ownership", "ownership_deed", "صكوك أصول غير مرفوعة في ملف الوقف")],
+    steps: [{
+      key: "assets", title: "الأصول",
+      intro: "الأصول المسجلة وقيمها وتواريخ تقييمها مقروءة من ملف الوقف أعلاه.",
+      fields: [
+        legacy(num("count", "عدد الأصول", { min: 1 })),
+        checks("types", "أنواع الأصول", ASSET_TYPES, R),
+        yn("valuation", "هل تحتاج تقييمًا من مقيّم معتمد؟", R),
+        yn("unregistered", "هل للوقف أصول غير مسجلة في ملف الوقف؟", R),
+        table("newAssets", "الأصول غير المسجلة", [
+          { key: "title", label: "الأصل", type: "text", required: true },
+          { key: "type", label: "النوع", type: "select", options: ASSET_TYPES },
+          { key: "deedNo", label: "رقم الصك أو المستند", type: "text" },
+          { key: "value", label: "القيمة التقديرية", type: "money" },
+        ], { showIf: yes("unregistered"), requiredIf: yes("unregistered"), minRows: 1 }),
+      ],
+    }],
   },
   I09: {
-    code: "I09", version: 1, sources: ["تعريف الخدمة في الكتالوج"], docs: [doc("leases", "lease", "عقود الإيجار القائمة")],
-    steps: [{ key: "props", title: "العقارات", fields: [num("count", "عدد العقارات", { ...R, min: 1 }), text("types", "أنواعها (سكني، تجاري…)"), num("leases", "عدد عقود الإيجار القائمة", { min: 0 }), yn("ejar", "هل العقود موثقة في «إيجار»؟")] }],
+    code: "I09", version: 2, sources: ["تعريف الخدمة في الكتالوج", "لائحة تنظيم أعمال النظارة م12/2: الصيانة والتشغيل"], docs: [doc("leases", "lease", "عقود الإيجار القائمة")],
+    steps: [{
+      key: "props", title: "العقارات",
+      intro: "العقارات المسجلة وحالتها ودخلها مقروءة من ملف الوقف أعلاه.",
+      fields: [
+        legacy(num("count", "عدد العقارات", { min: 1 })), legacy(text("types", "أنواعها (سكني، تجاري…)")),
+        num("leases", "عدد عقود الإيجار القائمة", { min: 0 }),
+        yn("ejar", "هل العقود موثقة في «إيجار»؟"),
+        date("lastMaintenance", "تاريخ آخر صيانة شاملة"),
+        area("knownIssues", "أعطال أو ملاحظات معروفة"),
+        money("budget", "الميزانية المتاحة للصيانة سنويًا (ر.س)"),
+      ],
+    }],
   },
-
   // ── C الامتثال والتقارير والاستشارات
   C01: {
     code: "C01", version: 2, sources: ["تعريف الخدمة في الكتالوج"], docs: [],
@@ -714,8 +1092,17 @@ const FORMS: Record<string, Omit<ServiceForm, "steps"> & { steps: Step[] }> = {
     ] }],
   },
   C02: {
-    code: "C02", version: 1, sources: ["تعريف الخدمة في الكتالوج"], docs: [],
-    steps: [{ key: "deep", title: "التقييم المعمّق", fields: [yn("basicDone", "هل أجريت التقييم الأساسي في المنصة؟", R), sel("interviewMode", "طريقة المقابلة", MEETING, R), text("contactPerson", "من نقابل من جهة الوقف؟")] }],
+    code: "C02", version: 2, sources: ["تعريف الخدمة في الكتالوج"], docs: [],
+    steps: [{
+      key: "deep", title: "التقييم المعمّق",
+      intro: "سجلات الوقف (الحوكمة والمالية والأصول والالتزامات) مقروءة من ملف الوقف أعلاه.",
+      fields: [
+        yn("basicDone", "هل أجريت التقييم الأساسي في المنصة؟", R),
+        checks("focus", "محاور التركيز", [["governance", "الحوكمة والنظارة"], ["finance", "المالية والصرف"], ["compliance", "الالتزامات النظامية"], ["assets", "الأصول والاستثمار"], ["beneficiaries", "المستفيدون"], ["documents", "الوثائق والتسجيل"]], R),
+        sel("interviewMode", "طريقة المقابلة", MEETING, R),
+        text("contactPerson", "من نقابل من جهة الوقف؟"),
+      ],
+    }],
   },
   C03: {
     code: "C03", version: 1, sources: ["جدول المخالفات: المخالفات والجزاءات بحسب حجم الوقف"], docs: [doc("notice", "official_letter", "خطاب الإشعار بالفحص", { showIf: yes("notified") })],
@@ -726,16 +1113,42 @@ const FORMS: Record<string, Omit<ServiceForm, "steps"> & { steps: Step[] }> = {
     steps: [{ key: "violation", title: "المخالفة", fields: [yn("hasNotice", "هل وصلك إشعار مخالفة؟", R), text("noticeNo", "رقم الإشعار", { showIf: yes("hasNotice") }), date("noticeDate", "تاريخ الإشعار", { showIf: yes("hasNotice"), requiredIf: yes("hasNotice") }), area("description", "وصف المخالفة", { ...R, minLength: 15 }), date("hearing", "موعد جلسة اللجنة إن حُدد")] }],
   },
   C05: {
-    code: "C05", version: 1, sources: ["مبادئ حوكمة الأوقاف (مسودة): مكونات التقرير السنوي"], docs: [doc("fin", "financial_statement", "القوائم المالية للسنة")],
-    steps: [{ key: "report", title: "التقرير", fields: [YEAR(), checks("audience", "الجمهور", [["beneficiaries", "المستفيدون"], ["board", "المجلس"], ["public", "العموم"]], R), yn("financials", "هل يتضمن القوائم المالية؟", R)] }],
+    code: "C05", version: 2, sources: ["مبادئ حوكمة الأوقاف (مسودة): مكونات التقرير السنوي"], docs: [doc("fin", "financial_statement", "القوائم المالية للسنة (إن لم تكن في ملف الوقف)")],
+    steps: [{
+      key: "report", title: "التقرير",
+      fields: [
+        YEAR(),
+        checks("audience", "الجمهور", [["beneficiaries", "المستفيدون"], ["board", "المجلس"], ["public", "العموم"]], R),
+        yn("financials", "هل يتضمن القوائم المالية؟", R),
+        area("highlights", "أبرز ما تحقق في السنة (برامج، مشاريع، أثر)"),
+      ],
+    }],
   },
   C06: {
-    code: "C06", version: 1, sources: ["لائحة تنظيم أعمال النظارة م10/3: إتاحة المعلومات للموقوف عليهم"], docs: [],
-    steps: [{ key: "rep", title: "التقارير", fields: [num("count", "عدد المستفيدين", { ...R, min: 1 }), sel("frequency", "الدورية", FREQ, R)] }],
+    code: "C06", version: 2, sources: ["لائحة تنظيم أعمال النظارة م10/3: إتاحة المعلومات للموقوف عليهم"], docs: [],
+    steps: [{
+      key: "rep", title: "التقارير",
+      fields: [
+        num("count", "عدد المستفيدين", { ...R, min: 1 }),
+        sel("frequency", "الدورية", FREQ, R),
+        checks("contents", "ما يتضمنه التقرير", [["distributions", "ما صُرف لكل فئة"], ["revenue", "ملخص الإيرادات"], ["assets", "حالة الأصول"], ["decisions", "القرارات المؤثرة في المستحقين"]], R),
+        checks("channels", "طريقة الإتاحة", [["platform", "حساب المستفيد في المنصة"], ["email", "البريد"], ["print", "نسخة مطبوعة"]], R),
+      ],
+    }],
   },
-  C07: consultation("C07", "شرعية"),
-  C08: consultation("C08", "قانونية"),
-  C09: consultation("C09", "مالية"),
+  C07: consultation("C07", "شرعية", [], [], "sharia"),
+  C08: consultation("C08", "قانونية", [
+    sel("legalArea", "مجال المسألة", [["nazara", "النظارة وصلاحيات الناظر"], ["contracts", "العقود (إيجار، استثمار، خدمات)"], ["disputes", "نزاع أو مطالبة"], ["regulatory", "التزامات نظامية لدى الهيئة"], ["real_estate", "العقارات والصكوك"], ["labor", "العمل والتوظيف"], ["other", "أخرى"]], R),
+    table("parties", "أطراف المسألة (إن وجدوا)", [
+      { key: "name", label: "الاسم أو الجهة", type: "text", required: true },
+      { key: "role", label: "الصفة", type: "text" },
+    ], { maxRows: 10 }),
+    yn("priorProceedings", "هل اتُّخذ إجراء نظامي أو قضائي في المسألة؟"),
+    yn("hasDeadline", "هل توجد مهلة نظامية أو موعد جلسة؟"),
+    date("legalDeadline", "تاريخ المهلة أو الجلسة", { showIf: yes("hasDeadline"), requiredIf: yes("hasDeadline") }),
+    area("desiredOutcome", "النتيجة التي تسعى إليها"),
+  ], ["نظام المعاملات المدنية (عند المسائل التعاقدية)"], "legal"),
+  C09: consultation("C09", "مالية", [], [], "financial"),
   C10: consultation("C10", "استثمارية", [ack("scopeAck", "أفهم أن الرأي على مستوى السياسات وفئات الأصول، ولا يتضمن مشورة في أوراق مالية بعينها.")]),
   C11: {
     code: "C11", version: 1, sources: ["لائحة تنظيم أعمال النظارة م9/2: يتقدم الناظر بطلب التفسير محررًا إلى الواقف حال حياته أو الجهة المختصة"],
@@ -778,5 +1191,6 @@ export function formFor(svc: { code: string; audiences: string[]; requiredDocume
       if (d.required && !same.required && !same.requiredIf && !same.showIf) same.required = true;
     } else docs.push(doc(`svc_${d.docType}`, d.docType, d.label, { required: d.required }));
   }
-  return { code: svc.code, version: base.version, sources: base.sources, steps: [ap.step, ...base.steps, NOTES], docs: [...docs, ...ap.docs] };
+  const ctx = contextFor(svc.code).length ? [WAQF_DATA] : [];
+  return { code: svc.code, version: base.version, sources: base.sources, steps: [ap.step, ...ctx, ...base.steps, NOTES], docs: [...docs, ...ap.docs] };
 }

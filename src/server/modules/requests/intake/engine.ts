@@ -14,6 +14,8 @@ export type Cond =
 export type FieldType =
   | "text" | "textarea" | "number" | "money" | "percent" | "date" | "select" | "radio" | "checkboxes" | "yesno"
   | "phone" | "email" | "idnumber" | "ack"
+  /** Set by the server (e.g. whether the request has waqf-file data to show); never rendered as an input. */
+  | "hidden"
   /** Repeating rows (e.g. bequests, beneficiary classes, parties). Stored as a JSON string of row objects. */
   | "table";
 
@@ -40,7 +42,11 @@ export function columnOptions(c: Column, a: Answers) {
 
 export type PrefillKey =
   | "user.fullName" | "user.phone" | "user.email" | "waqf.name" | "waqf.sizeClass" | "waqf.deedNo" | "waqf.registrationCertNo"
-  | "waqf.fiscalYearEnd" | "waqf.nationalUnifiedNumber";
+  | "waqf.fiscalYearEnd" | "waqf.nationalUnifiedNumber" | "waqf.domicile" | "waqf.hasForeignParty" | "waqf.hasBeneficiariesAbroad"
+  | "waqf.collectsDonations";
+
+/** Specialist whose opinion an answer needs before it is relied on (shown to the team, never decided by the system). */
+export type ReviewKind = "sharia" | "legal" | "financial" | "technical";
 
 export type Field = {
   key: string;
@@ -57,6 +63,8 @@ export type Field = {
   minLength?: number;
   maxLength?: number;
   prefill?: PrefillKey;
+  /** The answer needs a specialist's review (sharia, legal, financial or technical) before it is relied on. */
+  review?: ReviewKind;
   /** Spans the full width in the two-column layout. */
   wide?: boolean;
   /** Table fields: columns and row limits. */
@@ -94,7 +102,11 @@ function cleanTable(f: Field, v: unknown): string | undefined {
 
 /** A row a table must contain when a condition holds (e.g. a will that includes a waqf has a «waqf» bequest row). */
 export type RowRule = { field: string; col: string; value: string; when: Cond; message: string };
-export type Step = { key: string; title: string; intro?: string; fields: Field[]; showIf?: Cond; requireRows?: RowRule[] };
+export type Step = {
+  key: string; title: string; intro?: string; fields: Field[]; showIf?: Cond; requireRows?: RowRule[];
+  /** The step shows the waqf-file records the service reads (with source, date and status) above its fields. */
+  contextBlocks?: boolean;
+};
 
 export type DocSlot = {
   key: string;
@@ -180,6 +192,8 @@ export function validateField(f: Field, v: AnswerValue | undefined, a: Answers):
       return s === "yes" || s === "no" ? null : `«${f.label}»: اختر نعم أو لا.`;
     case "ack":
       return s === "yes" ? null : "يلزم الإقرار للمتابعة.";
+    case "hidden":
+      return null;
     case "checkboxes": {
       const arr = Array.isArray(v) ? v : [s];
       return arr.every((x) => f.options?.some(([k]) => k === x)) ? null : `«${f.label}»: اختيار غير صالح.`;
@@ -308,7 +322,7 @@ export function summarize(form: ServiceForm, a: Answers): SummarySection[] {
   return visibleSteps(form, a).map((st) => ({
     key: st.key,
     title: st.title,
-    rows: visibleFields(st, a).filter((f) => f.type !== "ack").map((f) => ({ key: f.key, label: f.label, value: displayValue(f, a[f.key]) })),
+    rows: visibleFields(st, a).filter((f) => f.type !== "ack" && f.type !== "hidden").map((f) => ({ key: f.key, label: f.label, value: displayValue(f, a[f.key]) })),
   }));
 }
 

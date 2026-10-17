@@ -15,6 +15,7 @@ import { createStages, logEvent, opsManagerIds, type ActCtx } from "../engine";
 import { evaluateConflict } from "../workflow";
 import { checkIntake, sanitizeAnswers, summaryText, type Answers, type DocMap, type PrefillKey, type ServiceForm } from "./engine";
 import { formFor } from "./forms";
+import { contextFor } from "../context/map";
 
 export type IntakeData = { preferredContact?: string; formVersion?: number; answers?: Answers; docs?: DocMap };
 
@@ -24,19 +25,41 @@ export function serviceForm(svc: Pick<typeof services.$inferSelect, "code" | "au
   return formFor({ code: svc.code, audiences: svc.audiences, requiredDocuments: svc.requiredDocuments });
 }
 
-/** Answers prefilled from the account and the waqf file (only where the form asks for them). */
-export async function prefillAnswers(tx: Tx, form: ServiceForm, userId: string, waqfId: string | null): Promise<Answers> {
-  const [u] = await tx.select({ fullName: users.fullName, phone: users.phone, email: users.email }).from(users).where(eq(users.id, userId)).limit(1);
+/** Values the waqf file and the account hold for the prefill keys (read live; also used to show where an answer came from). */
+export async function prefillSources(tx: Tx, userId: string | null, waqfId: string | null): Promise<Record<PrefillKey, string | null | undefined>> {
+  const [u] = userId ? await tx.select({ fullName: users.fullName, phone: users.phone, email: users.email }).from(users).where(eq(users.id, userId)).limit(1) : [];
   const [w] = waqfId
-    ? await tx.select({ name: waqfs.name, sizeClass: waqfs.sizeClass, deedNo: waqfs.deedNo, registrationCertNo: waqfs.registrationCertNo, fiscalYearEnd: waqfs.fiscalYearEnd, nationalUnifiedNumber: waqfs.nationalUnifiedNumber }).from(waqfs).where(eq(waqfs.id, waqfId)).limit(1)
+    ? await tx.select({ name: waqfs.name, sizeClass: waqfs.sizeClass, deedNo: waqfs.deedNo, registrationCertNo: waqfs.registrationCertNo, fiscalYearEnd: waqfs.fiscalYearEnd, nationalUnifiedNumber: waqfs.nationalUnifiedNumber, domicile: waqfs.domicile, hasForeignParty: waqfs.hasForeignParty, hasBeneficiariesAbroad: waqfs.hasBeneficiariesAbroad, collectsDonations: waqfs.collectsDonations }).from(waqfs).where(eq(waqfs.id, waqfId)).limit(1)
     : [];
-  const src: Record<PrefillKey, string | null | undefined> = {
+  const yn = (b: boolean | null | undefined) => (b === null || b === undefined ? undefined : b ? "yes" : "no");
+  return {
     "user.fullName": u?.fullName, "user.phone": u?.phone?.replace(/^\+966/, "0"), "user.email": u?.email,
     "waqf.name": w?.name, "waqf.sizeClass": w?.sizeClass, "waqf.deedNo": w?.deedNo, "waqf.registrationCertNo": w?.registrationCertNo,
-    "waqf.fiscalYearEnd": w?.fiscalYearEnd, "waqf.nationalUnifiedNumber": w?.nationalUnifiedNumber,
+    "waqf.fiscalYearEnd": w?.fiscalYearEnd, "waqf.nationalUnifiedNumber": w?.nationalUnifiedNumber, "waqf.domicile": w?.domicile,
+    "waqf.hasForeignParty": yn(w?.hasForeignParty), "waqf.hasBeneficiariesAbroad": yn(w?.hasBeneficiariesAbroad), "waqf.collectsDonations": yn(w?.collectsDonations),
   };
+}
+
+/**
+ * Answers prefilled from the account and the waqf file (only where the form asks for them), and whether the request has
+ * waqf-file records to show (the «بيانات الوقف المسجلة» step appears only then).
+ */
+export async function prefillAnswers(tx: Tx, form: ServiceForm, userId: string, waqfId: string | null): Promise<Answers> {
+  const src = await prefillSources(tx, userId, waqfId);
   const a: Answers = { preferredContact: "platform", priority: "normal" };
+  if (waqfId && contextFor(form.code).length) a.waqfContext = "yes";
   for (const st of form.steps) for (const f of st.fields) if (f.prefill && src[f.prefill]) a[f.key] = String(src[f.prefill]);
+  return sanitizeAnswers(form, a);
+}
+
+/**
+ * Answers the server owns are set by the server on every save and submission (never trusted from the client): whether
+ * the request has waqf-file records to confirm.
+ */
+export function withServerAnswers(form: ServiceForm, waqfId: string | null, raw: unknown): Answers {
+  const a = { ...((raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>) };
+  if (waqfId && contextFor(form.code).length) a.waqfContext = "yes";
+  else delete a.waqfContext;
   return sanitizeAnswers(form, a);
 }
 
@@ -66,7 +89,7 @@ export async function submitDraft(c: ActCtx, rc: RequestCtx, answersRaw: unknown
   const avail = serviceAvailability(svc, await flagMap(tx), await readSetting<License[]>(tx, "company.licenses", []));
   if (!avail.available) throw new UserError(`الخدمة غير متاحة حاليًا: ${avail.reason}`);
   const form = serviceForm(svc);
-  const answers = sanitizeAnswers(form, answersRaw);
+  const answers = withServerAnswers(form, rc.req.waqfId, answersRaw);
   const docs = await validDocMap(tx, rc.req.id, rc.req.waqfId, intakeOf(rc.req).docs);
   const check = checkIntake(form, answers, docs);
   if (!check.fieldsComplete || !check.docsComplete) return { ok: false as const, check, answers };

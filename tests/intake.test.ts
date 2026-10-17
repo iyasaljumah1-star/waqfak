@@ -95,7 +95,7 @@ describe("intake engine", () => {
     expect(a.unknown).toBeUndefined();
     expect(a.mortgageNote).toBeUndefined();
     expect(a.assetType).toBe("nope"); // select value kept for display; validation rejects it
-    expect(validateStep(form.steps[2], a).assetType).toBeTruthy();
+    expect(validateStep(form.steps.find((s) => s.fields.some((f) => f.key === "assetType"))!, a).assetType).toBeTruthy();
   });
 
   it("cascades: hiding a field also hides fields that depend on it", () => {

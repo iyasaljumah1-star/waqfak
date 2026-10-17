@@ -37,6 +37,7 @@ export default async function IntakePage({ params }: { params: Promise<{ id: str
             attach={attachIntakeDoc}
             submit={submitIntake}
             discard={discardDraft}
+            contextBlocks={d.blocks}
           />
         </Panel>
       )}

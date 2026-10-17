@@ -12,6 +12,7 @@ import { loadRequestCtx, memberCan } from "../access";
 import { flagMap, readSetting, serviceAvailability, type License } from "../catalog";
 import { logEvent, type ActCtx } from "../engine";
 import { sanitizeAnswers, validateStep, visibleSteps } from "./engine";
+import { withServerAnswers } from "./server";
 import { intakeOf, prefillAnswers, serviceForm, submitDraft, validDocMap } from "./server";
 
 const uuid = z.string().uuid("قيمة غير صالحة.");
@@ -119,7 +120,7 @@ export async function saveIntake(_: ActionState, fd: FormData): Promise<ActionSt
   return userAction(async (c) => {
     const rc = await editableDraft(c, id);
     const form = serviceForm(rc.service);
-    const answers = sanitizeAnswers(form, raw);
+    const answers = withServerAnswers(form, rc.req.waqfId, raw);
     const intake = intakeOf(rc.req) as ReturnType<typeof intakeOf> & { dropped?: { at: string; by: string; values: Record<string, unknown> }[] };
     // answers that no longer apply after a change (hidden by the form rules) are kept with their values, not lost
     const rawObj = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;

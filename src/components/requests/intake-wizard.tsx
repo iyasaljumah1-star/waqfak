@@ -1,6 +1,8 @@
 "use client";
 
 import { useActionState, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { ContextBlocksView } from "@/components/requests/context-blocks";
+import type { ContextBlock } from "@/server/modules/requests/context/types";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, ChevronLeft, ChevronRight, FileText, Paperclip, Save, X } from "lucide-react";
 import { Badge, Button, ProgressBar } from "@/components/ui";
@@ -31,6 +33,7 @@ export function FieldInput({ f, value, onChange, error, required, answers }: { f
       {required ? <span aria-hidden className="text-critical"> *</span> : null}
     </>
   );
+  if (f.type === "hidden") return null;
   let control;
   switch (f.type) {
     case "textarea":
@@ -170,8 +173,10 @@ function TableInput({ f, value, onChange, answers }: { f: Field; value: AnswerVa
   );
 }
 
-export function IntakeWizard({ requestId, form, initialAnswers, docMap, docOptions, waqfId, save, attach, submit, discard }: {
+export function IntakeWizard({ requestId, form, initialAnswers, docMap, docOptions, waqfId, save, attach, submit, discard, contextBlocks = [] }: {
   requestId: string;
+  /** Waqf-file records the service reads, shown in the «بيانات الوقف المسجلة» step for confirmation. */
+  contextBlocks?: ContextBlock[];
   form: ServiceForm;
   initialAnswers: Answers;
   docMap: DocMap;
@@ -346,6 +351,7 @@ export function IntakeWizard({ requestId, form, initialAnswers, docMap, docOptio
         <section aria-labelledby="step-title" className="space-y-4">
           <h2 id="step-title" className="text-lg font-semibold">{step.title}</h2>
           {step.intro ? <p className="text-[15px] text-muted">{step.intro}</p> : null}
+          {step.contextBlocks ? <ContextBlocksView blocks={contextBlocks} waqfId={waqfId} /> : null}
           <div className="grid gap-4 sm:grid-cols-2">
             {pending ? (
               <div role="alertdialog" aria-labelledby="change-title" className="rounded-lg border border-warn/50 bg-warn-soft p-4 sm:col-span-2" data-testid="confirm-change">

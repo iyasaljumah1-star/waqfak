@@ -1,4 +1,8 @@
 import "server-only";
+import { contextFor } from "./context/map";
+import { resolveContext } from "./context/resolve";
+import { periodFor } from "./context/types";
+import { withServerAnswers } from "./intake/server";
 import { and, asc, desc, eq, gte, inArray, isNull, lt, lte, notInArray, type SQL } from "drizzle-orm";
 import {
   deliverables, documents, recommendations, requestEvents, requestItemEvents, requestItems, requestNotes, requestStages, roles, serviceRequests, services, userRoles, users,
@@ -339,6 +343,10 @@ export async function intakePageData(auth: Auth, id: string) {
       ...reqDocs.map((d) => ({ ...d, source: "request" as const })),
       ...waqfDocs.map((d) => ({ ...d, source: "waqf" as const })),
     ];
-    return { rc, form, answers: sanitizeAnswers(form, intake.answers ?? {}), docMap, options, canEdit: rc.isRequester || rc.memberCreate };
+    const answers = withServerAnswers(form, rc.req.waqfId, intake.answers ?? {});
+    // the waqf-file records this service reads, shown for confirmation (read live, within the viewer's permissions)
+    const keys = rc.req.waqfId ? contextFor(rc.service.code) : [];
+    const blocks = keys.length ? await resolveContext(tx, rc.req.waqfId!, keys, periodFor(answers, todayISO()), { serviceCode: rc.service.code, requestId: id }) : [];
+    return { rc, form, answers, docMap, options, blocks, canEdit: rc.isRequester || rc.memberCreate };
   });
 }
