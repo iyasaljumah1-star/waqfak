@@ -154,7 +154,8 @@ test.describe.serial("service request lifecycle", () => {
     const page = await as(browser, "nazir", viewport);
     await sql("update service_requests set status = 'cancelled' where requester_user_id = $1 and status = 'draft'", [demo().users.nazir.id]);
     await page.goto(`/app/requests/new?service=C02&waqf=${demo().waqfs.A}`);
-    await ex(page.getByLabel("الوقف المعني بالطلب")).toHaveValue(demo().waqfs.A);
+    await ex(page.getByRole("radio", { name: /وقف مسجل في منصة/ })).toBeChecked();
+    await ex(page.getByLabel("اختر الوقف المسجل")).toHaveValue(demo().waqfs.A);
     await page.getByRole("button", { name: "ابدأ نموذج الطلب" }).click();
     await page.waitForURL(/\/app\/requests\/[0-9a-f-]{36}\/intake$/);
     reqId = page.url().match(/requests\/([0-9a-f-]{36})/)![1];
@@ -221,7 +222,7 @@ test.describe.serial("service request lifecycle", () => {
 
     // A waqf-less request (isolation check later)
     await page.goto("/app/requests/new?service=C01");
-    await page.getByLabel("الوقف المعني بالطلب").selectOption("none");
+    await page.getByRole("radio", { name: /لا يوجد لدي وقف قائم/ }).check();
     await page.getByRole("button", { name: "ابدأ نموذج الطلب" }).click();
     await page.waitForURL(/\/intake$/);
     noWaqfReqId = page.url().match(/requests\/([0-9a-f-]{36})/)![1];

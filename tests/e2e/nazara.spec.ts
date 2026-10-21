@@ -91,7 +91,9 @@ test.describe.serial("corporate nazara", () => {
     const page = await as(browser, "chair", viewport);
     await page.goto("/app/requests/new?service=N01");
     await expect(page.getByText("كيف تسير خدمة تولي النظارة")).toBeVisible();
-    await page.getByLabel("الوقف المعني بالطلب").selectOption(C());
+    // N01 runs on the waqf's file: only a registered waqf is offered
+    await expect(page.getByRole("radio", { name: /غير مسجل/ })).toHaveCount(0);
+    await page.getByLabel("اختر الوقف المسجل").selectOption(C());
     await page.getByRole("button", { name: "ابدأ نموذج الطلب" }).click();
     await page.waitForURL(/\/intake$/, { timeout: 30_000 });
     await page.getByRole("radio", { name: "عضو مجلس النظارة" }).check();

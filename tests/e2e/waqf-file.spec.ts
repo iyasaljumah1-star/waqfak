@@ -110,7 +110,7 @@ test.describe("waqf file & establish wizard", () => {
     await page.goto(`/app/establish/${draftId}?step=7`);
     await page.getByTestId("request-documentation").click();
     await page.waitForURL(/\/app\/requests\/new\?service=T03/);
-    await expect(page.getByLabel("الوقف المعني بالطلب")).toHaveValue(draftId);
+    await expect(page.getByLabel("اختر الوقف المسجل")).toHaveValue(draftId);
     await page.getByRole("button", { name: "ابدأ نموذج الطلب" }).click();
     await page.waitForURL(/\/intake$/);
     await page.getByRole("radio", { name: "الواقف أو من يريد إنشاء الوقف" }).check();
