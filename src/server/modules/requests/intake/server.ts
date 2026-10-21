@@ -17,8 +17,9 @@ import { evaluateConflict } from "../workflow";
 import { checkIntake, sanitizeAnswers, summaryText, type Answers, type DocMap, type PrefillKey, type ServiceForm } from "./engine";
 import { formFor } from "./forms";
 import { contextFor } from "../context/map";
+import { waqfModeOf, type WaqfMode } from "../waqf-mode";
 
-export type IntakeData = { preferredContact?: string; formVersion?: number; answers?: Answers; docs?: DocMap };
+export type IntakeData = { preferredContact?: string; formVersion?: number; waqfMode?: WaqfMode; answers?: Answers; docs?: DocMap };
 
 export const intakeOf = (req: { intake: unknown }): IntakeData => ((req.intake ?? {}) as IntakeData);
 
@@ -45,21 +46,22 @@ export async function prefillSources(tx: Tx, userId: string | null, waqfId: stri
  * Answers prefilled from the account and the waqf file (only where the form asks for them), and whether the request has
  * waqf-file records to show (the «بيانات الوقف المسجلة» step appears only then).
  */
-export async function prefillAnswers(tx: Tx, form: ServiceForm, userId: string, waqfId: string | null): Promise<Answers> {
+export async function prefillAnswers(tx: Tx, form: ServiceForm, userId: string, waqfId: string | null, mode: WaqfMode = waqfId ? "registered" : "none"): Promise<Answers> {
   const src = await prefillSources(tx, userId, waqfId);
-  const a: Answers = { preferredContact: "platform", priority: "normal" };
+  const a: Answers = { preferredContact: "platform", priority: "normal", waqfMode: mode };
   if (waqfId && contextFor(form.code).length) a.waqfContext = "yes";
   for (const st of form.steps) for (const f of st.fields) if (f.prefill && src[f.prefill]) a[f.key] = String(src[f.prefill]);
   return sanitizeAnswers(form, a);
 }
 
 /**
- * Answers the server owns are set by the server on every save and submission (never trusted from the client): whether
- * the request has waqf-file records to confirm.
+ * Answers the server owns are set by the server on every save and submission (never trusted from the client): which
+ * waqf the request concerns (registered / unregistered / none) and whether it has waqf-file records to confirm.
  */
-export function withServerAnswers(form: ServiceForm, waqfId: string | null, raw: unknown): Answers {
+export function withServerAnswers(form: ServiceForm, req: { waqfId: string | null; intake: unknown }, raw: unknown): Answers {
   const a = { ...((raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>) };
-  if (waqfId && contextFor(form.code).length) a.waqfContext = "yes";
+  a.waqfMode = waqfModeOf(req);
+  if (req.waqfId && contextFor(form.code).length) a.waqfContext = "yes";
   else delete a.waqfContext;
   return sanitizeAnswers(form, a);
 }
@@ -90,7 +92,7 @@ export async function submitDraft(c: ActCtx, rc: RequestCtx, answersRaw: unknown
   const avail = serviceAvailability(svc, await flagMap(tx), await readSetting<License[]>(tx, "company.licenses", []));
   if (!avail.available) throw new UserError(`الخدمة غير متاحة حاليًا: ${avail.reason}`);
   const form = serviceForm(svc);
-  const answers = withServerAnswers(form, rc.req.waqfId, answersRaw);
+  const answers = withServerAnswers(form, rc.req, answersRaw);
   const docs = await validDocMap(tx, rc.req.id, rc.req.waqfId, intakeOf(rc.req).docs);
   const check = checkIntake(form, answers, docs);
   if (!check.fieldsComplete || !check.docsComplete) return { ok: false as const, check, answers };

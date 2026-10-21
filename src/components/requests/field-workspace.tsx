@@ -6,7 +6,8 @@ import { cn, fmtDate, fmtDateTime } from "@/lib/utils";
 import { ctxField } from "@/server/modules/requests/context/types";
 import { INSIGHT_KIND_AR, type FieldView, type Insight, type InsightKind, type RequestAnalysis } from "@/server/modules/requests/insights";
 import type { FieldNote, FieldTask } from "@/server/modules/requests/field-workspace";
-import type { Answers, Field } from "@/server/modules/requests/intake/engine";
+import type { Answers, Field, IntakeNeeds } from "@/server/modules/requests/intake/engine";
+import { WAQF_MODE_AR, type WaqfMode } from "@/server/modules/requests/waqf-mode";
 
 /**
  * The request's data in one place for the team: every answer in the order the client saw it, the waqf-file records the
@@ -63,7 +64,10 @@ const flags = (f: { state: string; insights: Insight[] }, system: boolean) =>
   [f.state, ...(f.insights.some((x) => x.kind === "gap") ? ["gap"] : []), ...(f.insights.some((x) => x.kind === "conflict") ? ["conflict"] : []), ...(system ? ["system"] : [])].join(" ");
 
 export function FieldWorkspaceView({ ws, requestId, waqfId, canAct, actions, docs, staff }: {
-  ws: { analysis: RequestAnalysis; answers: Answers; form: { steps: { key: string; fields: Field[] }[] }; notes: Record<string, FieldNote[]>; tasks: Record<string, FieldTask[]> };
+  ws: {
+    analysis: RequestAnalysis; answers: Answers; form: { steps: { key: string; fields: Field[] }[] }; notes: Record<string, FieldNote[]>; tasks: Record<string, FieldTask[]>;
+    waqfMode?: WaqfMode; needs?: IntakeNeeds;
+  };
   requestId: string;
   waqfId: string | null;
   canAct: boolean;
@@ -87,6 +91,21 @@ export function FieldWorkspaceView({ ws, requestId, waqfId, canAct, actions, doc
   const openTasks = Object.values(ws.tasks).flat().filter((t) => t.status === "todo" || t.status === "in_progress").length;
   return (
     <div className="space-y-5" data-fieldws>
+      {ws.waqfMode ? (
+        <p className={cn("rounded-lg border px-4 py-2 text-[14px]", ws.waqfMode === "unregistered" ? "border-seal/40 bg-seal-soft/40" : "border-line bg-surface-2/50")} data-testid="ws-waqf-mode" data-mode={ws.waqfMode}>
+          <span className="font-semibold">مسار الطلب: {WAQF_MODE_AR[ws.waqfMode]}.</span>{" "}
+          {ws.waqfMode === "registered" ? "بيانات الوقف مستدعاة من ملفه في المنصة بمصدرها وتاريخها." : ws.waqfMode === "unregistered" ? "بيانات الوقف قدّمها العميل ضمن هذا الطلب، ولم يُنشأ لها ملف وقف؛ تُراجع وتُعتمد حقلًا حقلًا." : "لا وقف قائم؛ البيانات كلها من إجابات العميل."}
+        </p>
+      ) : null}
+      {ws.needs?.start.length ? (
+        <div className="rounded-lg border border-fine/40 bg-fine-soft/30 px-4 py-3 text-[14px]" data-testid="ws-start-needs">
+          <p className="font-semibold">لا يبدأ التنفيذ قبل استكمال ({ws.needs.start.length}):</p>
+          <ul className="mt-1 list-disc space-y-0.5 ps-5">
+            {ws.needs.start.map((x) => <li key={x.key}>{x.kind === "doc" ? <>مستند: {x.label}</> : <a href={`#f-${x.key}`} className="text-ink underline">{x.label}</a>}{x.why ? <span className="text-muted"> — {x.why}</span> : null}</li>)}
+          </ul>
+          <p className="mt-1 text-[13px] text-muted">اطلب استكمالها من العميل بزر «طلب استكمال» بجانب الحقل، أو من سجل النواقص للمستندات.</p>
+        </div>
+      ) : null}
       <div className="grid gap-3 rounded-lg border border-line bg-surface-2/50 p-4 sm:grid-cols-2 lg:grid-cols-4" data-testid="field-summary">
         <div className="space-y-1 sm:col-span-2 lg:col-span-1">
           <div className="flex items-baseline justify-between text-[14px]"><span>اكتمال البيانات</span><span className="tabular font-semibold" data-testid="field-completeness">{s.completeness}%</span></div>

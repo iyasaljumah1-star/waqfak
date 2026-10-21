@@ -9,7 +9,9 @@ import { contextFor } from "./context/map";
 import { resolveContext } from "./context/resolve";
 import { periodFor } from "./context/types";
 import { analyzeRequest, type FieldState } from "./insights";
-import { intakeOf, prefillSources, serviceForm, withServerAnswers } from "./intake/server";
+import { intakeOf, prefillSources, serviceForm, validDocMap, withServerAnswers } from "./intake/server";
+import { intakeNeeds } from "./intake/engine";
+import { waqfModeOf } from "./waqf-mode";
 
 export type FieldNote = { id: string; visibility: string; body: string; author: string; at: string; documentId: string | null; documentTitle: string | null };
 export type FieldTask = { id: string; title: string; status: string; dueOn: string | null; assignee: string | null };
@@ -22,7 +24,7 @@ export type FieldTask = { id: string; title: string; status: string; dueOn: stri
 export async function fieldWorkspace(tx: Tx, rc: RequestCtx, audience: "staff" | "client" = "staff") {
   const form = serviceForm(rc.service);
   const intake = intakeOf(rc.req);
-  const answers = withServerAnswers(form, rc.req.waqfId, intake.answers ?? {});
+  const answers = withServerAnswers(form, rc.req, intake.answers ?? {});
   const keys = rc.req.waqfId ? contextFor(rc.service.code) : [];
   const [blocks, src, states, revs, items, conflicts, notes, ftasks] = await Promise.all([
     keys.length ? resolveContext(tx, rc.req.waqfId!, keys, periodFor(answers, todayISO()), { serviceCode: rc.service.code, requestId: rc.req.id }) : Promise.resolve([]),
@@ -60,8 +62,12 @@ export async function fieldWorkspace(tx: Tx, rc: RequestCtx, audience: "staff" |
   });
   const byField = <T extends { fieldKey: string | null }>(xs: T[]) => xs.reduce<Record<string, T[]>>((m, x) => ((m[x.fieldKey!] ??= []).push(x), m), {});
   const visibleNotes = audience === "client" ? notes.filter((n) => n.visibility === "client") : notes;
+  const docMap = await validDocMap(tx, rc.req.id, rc.req.waqfId, intake.docs);
   return {
     form, answers, analysis,
+    /** Which waqf the request concerns, and what the service still needs (before sending / starting / to help). */
+    waqfMode: waqfModeOf(rc.req),
+    needs: intakeNeeds(form, answers, docMap),
     revisions: revs.map((r) => ({ kind: r.kind, target: r.target, at: r.at.toISOString(), actor: r.actor ?? "—", reason: r.reason, before: r.before, after: r.after })),
     notes: Object.fromEntries(Object.entries(byField(visibleNotes)).map(([k, xs]) => [k, xs.map((n): FieldNote => ({ id: n.id, visibility: n.visibility, body: n.body, author: n.author ?? "—", at: n.at.toISOString(), documentId: n.documentId, documentTitle: n.documentId ? docTitles.get(n.documentId) ?? "مستند" : null }))])) as Record<string, FieldNote[]>,
     tasks: Object.fromEntries(Object.entries(byField(ftasks)).map(([k, xs]) => [k, xs.map((t): FieldTask => ({ id: t.id, title: t.title, status: t.status, dueOn: t.dueOn, assignee: t.assignee }))])) as Record<string, FieldTask[]>,

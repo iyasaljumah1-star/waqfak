@@ -6,6 +6,8 @@ import type { Tx } from "@/server/db";
 import { deliverables, documents, holidays, quotes, requestEvents, requestItems, requestStages, roles, serviceRequests, services, userRoles, users, workflowTemplates } from "@/server/db/schema";
 import { prestartUnpaid } from "@/server/modules/commerce/state";
 import { blocking } from "./items-pure";
+import { formFor } from "./intake/forms";
+import { intakeNeeds, type Answers, type DocMap } from "./intake/engine";
 import { addBusinessDays, todayISO } from "@/server/engines/dates";
 import { audit } from "@/server/lib/audit";
 import { notify } from "@/server/modules/notify";
@@ -182,7 +184,15 @@ export async function transition(c: ActCtx, rc: RequestCtx, input: TransitionInp
   const cs = await contractState(tx, rc.req.id);
   const items = await tx.select({ kind: requestItems.kind, status: requestItems.status, visibility: requestItems.visibility, required: requestItems.required }).from(requestItems).where(eq(requestItems.requestId, rc.req.id));
   const qs = await tx.select({ status: quotes.status }).from(quotes).where(and(eq(quotes.requestId, rc.req.id), eq(quotes.kind, "initial")));
+  // what the service needs before work starts (start-level answers and documents not given yet)
+  const startingWork = to === "in_progress" && (from === "triage" || from === "awaiting_contract");
+  const startMissing = startingWork && rc.req.intakeFormVersion ? (() => {
+    const intake = (rc.req.intake ?? {}) as { answers?: Answers; docs?: DocMap };
+    const form = formFor({ code: rc.service.code, audiences: rc.service.audiences, requiredDocuments: rc.service.requiredDocuments });
+    return intakeNeeds(form, intake.answers ?? {}, intake.docs ?? {}).start.map((x) => (x.kind === "doc" ? `مستند ${x.label}` : x.label));
+  })() : [];
   const err = guardTransition({
+    startMissing,
     from, to, actorUserId: auth.user.id, conflictCheck: rc.req.conflictCheck, workflowCode: rc.workflowCode, deliverers: rc.deliverers,
     submittedDeliverables: submitted.length, unsignedOpinionDeliverables: submitted.filter((d) => !d.signedBy?.trim()).length,
     contractSignedByClient: cs.clientSigned, hasContract: !!cs.contract, quoteAmount: rc.req.quoteAmount ? Number(rc.req.quoteAmount) : null,

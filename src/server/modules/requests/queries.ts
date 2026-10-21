@@ -343,7 +343,7 @@ export async function intakePageData(auth: Auth, id: string) {
       ...reqDocs.map((d) => ({ ...d, source: "request" as const })),
       ...waqfDocs.map((d) => ({ ...d, source: "waqf" as const })),
     ];
-    const answers = withServerAnswers(form, rc.req.waqfId, intake.answers ?? {});
+    const answers = withServerAnswers(form, rc.req, intake.answers ?? {});
     // the waqf-file records this service reads, shown for confirmation (read live, within the viewer's permissions)
     const keys = rc.req.waqfId ? contextFor(rc.service.code) : [];
     const blocks = keys.length ? await resolveContext(tx, rc.req.waqfId!, keys, periodFor(answers, todayISO()), { serviceCode: rc.service.code, requestId: id }) : [];

@@ -44,6 +44,7 @@ import { StaffIntakeEditor } from "@/components/requests/staff-intake-editor";
 import { FieldWorkspaceView } from "@/components/requests/field-workspace";
 import { fieldWorkspace } from "@/server/modules/requests/field-workspace";
 import { processingPhase } from "@/server/modules/requests/phase";
+import { WAQF_MODE_AR, waqfModeOf } from "@/server/modules/requests/waqf-mode";
 
 const PHASE_OWNER_AR = { client: "على العميل", team: "على الفريق", manager: "على مدير التشغيل", none: "—" } as const;
 import { createFieldTask, setFieldState } from "@/server/modules/requests/field-actions";
@@ -177,10 +178,15 @@ export default async function StaffRequest({ params }: { params: Promise<{ id: s
   const waiting = plan.terminal ? "—" : plan.held ? WHO_AR[plan.held.who] : plan.current ? WHO_AR[plan.current.owner] : "—";
   const phase = processingPhase({
     status: r.status, assigned: !!r.assignedToUserId,
-    data: fws ? { requiredMissing: fws.analysis.summary.required - fws.analysis.summary.requiredValid, gaps: fws.analysis.summary.gaps, conflicts: fws.analysis.summary.conflicts } : null,
+    data: fws ? { requiredMissing: fws.analysis.summary.required - fws.analysis.summary.requiredValid + fws.needs.start.length, gaps: fws.analysis.summary.gaps, conflicts: fws.analysis.summary.conflicts } : null,
     openClientItems: d.counts.clientOpen, outputs: wx.outputsLite.map((o) => ({ status: o.status, delivered: !!o.deliverableId })), activeStage: activeStage?.name ?? null,
   });
+  // the waqf the request concerns: its file in the platform, or the data the client gave about an unregistered one
+  const mode = waqfModeOf(r);
+  const uwName = mode === "unregistered" ? String((fws?.answers.uwName as string | undefined) ?? "") : "";
+  const waqfLabel = rc.waqf?.name ?? (mode === "unregistered" ? `${uwName || "وقف"} (غير مسجل في المنصة)` : "بلا وقف");
   const summaryItems = [
+    { label: "مسار الوقف", value: <span data-testid="summary-waqf-mode" data-mode={mode}>{WAQF_MODE_AR[mode]}</span> },
     { label: "مرحلة المعالجة", value: <span data-testid="summary-phase" data-phase={phase.phase}>{phase.label} — التالي: {phase.next} ({PHASE_OWNER_AR[phase.owner]})</span> },
     { label: "العميل", value: requesterName },
     { label: "الحالة", value: REQ_STATUS_LABEL[r.status as keyof typeof REQ_STATUS_LABEL] ?? r.status },
@@ -195,9 +201,9 @@ export default async function StaffRequest({ params }: { params: Promise<{ id: s
     ...(paid ? [
       { label: "العرض المالي", value: lastQuote ? <><bdi dir="ltr" className="tabular">{lastQuote.number}</bdi> {QUOTE_STATUS_LABEL[lastQuote.status as keyof typeof QUOTE_STATUS_LABEL] ?? lastQuote.status}</> : "لا عرض بعد" },
       { label: "الفواتير", value: <>{invSummary}</>, testId: "summary-invoices" },
-    ] : [{ label: "الرسوم", value: "خدمة مجانية — بلا عرض ولا فاتورة" }, { label: "الوقف", value: rc.waqf?.name ?? "بلا وقف" }]),
+    ] : [{ label: "الرسوم", value: "خدمة مجانية — بلا عرض ولا فاتورة" }, { label: "الوقف", value: waqfLabel }]),
     { label: "المختص", value: assigneeName ?? "غير مسند — ينفّذ المدير المخوّل مباشرة" },
-    ...(paid ? [{ label: "الوقف", value: rc.waqf?.name ?? "بلا وقف" }] : []),
+    ...(paid ? [{ label: "الوقف", value: waqfLabel }] : []),
     { label: "تاريخ التقديم", value: r.submittedAt ? fmtDate(r.submittedAt) : "لم يُقدَّم بعد" },
     ...(fws ? [{ label: "اكتمال البيانات", value: <a className="underline-offset-4 hover:underline" href="#intake">{fws.analysis.summary.completeness}% · {fws.analysis.summary.approved} معتمدة · {fws.analysis.summary.gaps} نقص</a>, tone: (fws.analysis.summary.gaps || fws.analysis.summary.conflicts ? "warn" : "ok") as "warn" | "ok", testId: "summary-completeness" }] : []),
     ...(fws ? [{ label: "مهام الحقول المفتوحة", value: String(Object.values(fws.tasks).flat().filter((t) => t.status === "todo" || t.status === "in_progress").length) }] : []),
@@ -643,7 +649,7 @@ export default async function StaffRequest({ params }: { params: Promise<{ id: s
           <Panel title="بيانات أساسية">
             <DefinitionList cols={1} items={[
               { label: "العميل", value: <>{requesterName}{d.requesterPhone ? <span dir="ltr" className="ms-2 text-[13px] text-muted">{staffPhone(auth, d.requesterPhone)}</span> : null}</> },
-              { label: "الوقف", value: rc.waqf ? <Link className="text-ink hover:underline" href={auth.perms.has("admin.waqfs.all") ? `/admin/waqfs/${rc.waqf.id}` : `/app/w/${rc.waqf.id}`}>{rc.waqf.name}</Link> : "بلا وقف" },
+              { label: "الوقف", value: rc.waqf ? <Link className="text-ink hover:underline" href={auth.perms.has("admin.waqfs.all") ? `/admin/waqfs/${rc.waqf.id}` : `/app/w/${rc.waqf.id}`}>{rc.waqf.name}</Link> : waqfLabel },
               { label: "دور وقفك في الوقف", value: rc.waqf ? WAQFAK_ROLE_LABEL[rc.waqf.waqfakRole] ?? rc.waqf.waqfakRole : "—" },
               { label: "المختص", value: assigneeName ?? "غير مسند" },
               { label: "الأولوية", value: PRIORITY_LABEL[r.priority] ?? r.priority },

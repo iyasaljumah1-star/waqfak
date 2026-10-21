@@ -1,10 +1,11 @@
 "use server";
 
-import { and, count, eq, gt, isNull, ne, or } from "drizzle-orm";
+import { and, count, eq, gt, isNull, ne, or, sql } from "drizzle-orm";
+import { asSystem as withSystemCheck } from "../../db/as-system";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { withSystem, type Tx } from "../../db";
-import { delegations, invitations, users, waqfKeys, waqfMemberships, waqfs, waqfTimelineEvents } from "../../db/schema";
+import { delegations, invitations, requestEvents, serviceRequests, users, waqfKeys, waqfMemberships, waqfs, waqfTimelineEvents } from "../../db/schema";
 import { normalizeSaudiMobile, maskPhone } from "../../auth/otp";
 import { requireAuth } from "../../authz/context";
 import { roleName } from "../../authz/catalog";
@@ -96,6 +97,8 @@ const registerSchema = z
     hasForeignParty: flag,
     hasBeneficiariesAbroad: flag,
     hasActiveLitigation: flag,
+    /** Registration started from a request about an unregistered waqf (separate procedure; the request is not changed). */
+    fromRequest: z.string().uuid().optional().or(z.literal("")).transform((v) => v || null),
   })
   .superRefine((d, ctx) => {
     const t = todayIso();
@@ -113,6 +116,26 @@ export async function registerWaqf(_: ActionState, fd: FormData): Promise<Action
   const d = r.data;
   const res = await userAction(
     async ({ auth, tx, ip, userAgent }) => {
+      // no second file for the same waqf: the deed number or national number already on record anywhere in the
+      // platform is refused without revealing whose file it is (the user asks its nazir for an invitation instead)
+      const norm = (v: string | null | undefined) => (v ? v.replace(/[\s\-/]/g, "").toLowerCase() : null);
+      if (d.deedNo || d.nationalUnifiedNumber) {
+        const deed = norm(d.deedNo);
+        const dup = await withSystemCheck(tx, async () => {
+          const rows = await tx.select({ deedNo: waqfs.deedNo, nun: waqfs.nationalUnifiedNumber }).from(waqfs)
+            .where(or(d.nationalUnifiedNumber ? eq(waqfs.nationalUnifiedNumber, d.nationalUnifiedNumber) : sql`false`, deed ? sql`regexp_replace(lower(coalesce(${waqfs.deedNo}, '')), '[[:space:]/-]', '', 'g') = ${deed}` : sql`false`)).limit(1);
+          return rows.length > 0;
+        });
+        if (dup) throw new UserError("يوجد في المنصة ملف وقف بهذا الرقم. لا يُنشأ ملف مكرر: اطلب من ناظر الوقف دعوتك إلى ملفه.");
+      }
+      // started from a request about an unregistered waqf: only the requester, and only that kind of request
+      let fromReq: { id: string; number: string; waqfId: string | null } | null = null;
+      if (d.fromRequest) {
+        const [rq] = await tx.select({ id: serviceRequests.id, number: serviceRequests.number, waqfId: serviceRequests.waqfId, requester: serviceRequests.requesterUserId, intake: serviceRequests.intake }).from(serviceRequests).where(eq(serviceRequests.id, d.fromRequest)).limit(1);
+        if (!rq || rq.requester !== auth.user.id) throw new UserError("الطلب غير موجود أو لا يخصك.");
+        if (rq.waqfId || (rq.intake as { waqfMode?: string } | null)?.waqfMode !== "unregistered") throw new UserError("هذا الطلب لا يتعلق بوقف غير مسجل.");
+        fromReq = { id: rq.id, number: rq.number, waqfId: rq.waqfId };
+      }
       const sizeClass = deriveSizeClass({ asset_band: d.assetBand });
       const internalNumber = await nextNumber(tx, "WQF");
       const status = d.registeredOn ? "registered" : d.documentedOn || d.deedNo ? "documented" : "documenting";
@@ -144,6 +167,11 @@ export async function registerWaqf(_: ActionState, fd: FormData): Promise<Action
         actorUserId: auth.user.id, action: "waqf.register", entityType: "waqf", entityId: w.id, waqfId: w.id, ip, userAgent,
         after: { internalNumber, name: d.name, legalType: d.legalType, nazirMode: d.nazirMode, sizeClass, status, roles, fiscalYearEnd: d.fiscalYearEnd },
       });
+      if (fromReq) {
+        // the request keeps its own data and stays as it was: recorded, not re-linked silently
+        await tx.insert(requestEvents).values({ requestId: fromReq.id, waqfId: null, actorUserId: auth.user.id, note: `سجّل مقدم الطلب الوقف في المنصة بملف مستقل (${internalNumber}). لم يُربط هذا الطلب بالملف، وبياناته باقية كما قُدّمت.` });
+        await audit(tx, { actorUserId: auth.user.id, action: "waqf.register_from_request", entityType: "service_request", entityId: fromReq.id, waqfId: w.id, ip, userAgent, after: { waqf: internalNumber, request: fromReq.number } });
+      }
       if (d.documentedOn) await emitWaqfEvent(tx, { waqfId: w.id, event: "documentation", date: d.documentedOn, actorUserId: auth.user.id });
       if (d.registeredOn) await emitWaqfEvent(tx, { waqfId: w.id, event: "registration", date: d.registeredOn, actorUserId: auth.user.id });
       await syncWaqfObligations(tx, w.id);

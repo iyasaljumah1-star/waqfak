@@ -150,6 +150,8 @@ export type GuardInput = {
   /** Every delivery comes from an output approved under a self-approval policy and the actor is an authorized manager:
    *  the four-eyes rule of quality review is satisfied by the output policy (recorded). */
   selfApprovalCoversQA?: boolean;
+  /** Answers and documents the service needs before work starts that are not given yet (labels). */
+  startMissing?: string[];
   /** Continuous service (workflow «subscription»): reasons the service may not end yet (empty = it may). */
   continuous?: { endBlockers: string[] } | null;
 };
@@ -159,6 +161,8 @@ export function guardTransition(g: GuardInput): string | null {
   const starting = (g.to === "quote" || g.to === "in_progress") && (g.from === "triage" || g.from === "awaiting_client" || g.from === "awaiting_contract");
   if (starting && g.conflictCheck === "blocked")
     return "تعارض في الاستقلال: يبدأ العمل بعد اعتماد مدير التشغيل استثناءً مسببًا.";
+  if (g.to === "in_progress" && (g.from === "triage" || g.from === "awaiting_contract") && g.startMissing?.length)
+    return `لا يبدأ التنفيذ قبل استكمال ما تحتاجه الخدمة: ${g.startMissing.slice(0, 6).join("، ")}${g.startMissing.length > 6 ? "، وغيرها" : ""}. اطلب استكماله من العميل من صفحة الطلب.`;
   if ((g.to === "quote" || (g.from === "triage" && g.to === "in_progress")) && g.verified === false) return "تحقق من بيانات الطلب ومستنداته أولًا (لا نواقص مطلوبة مفتوحة).";
   if ((g.to === "quote" || (g.from === "triage" && g.to === "in_progress")) && g.accepted === false) return "اقبل الطلب للخدمة أولًا.";
   if (g.to === "quote" && !(g.quoteAmount && g.quoteAmount > 0)) return "حدّد مبلغ عرض السعر أولًا.";

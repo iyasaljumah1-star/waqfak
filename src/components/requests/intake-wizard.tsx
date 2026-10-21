@@ -10,7 +10,7 @@ import { FormMessage, SubmitButton } from "@/components/ui/form";
 import { DocumentUploader } from "@/components/documents/uploader";
 import { cn, initialState, type ActionState } from "@/lib/utils";
 import {
-  cellVisible, checkIntake, columnOptions, docRequired, fieldRequired, intakeProgress, summarize, tableRows, validateStep, visibleDocs, visibleFields, visibleSteps,
+  cellVisible, checkIntake, columnOptions, docRequired, fieldRequired, intakeNeeds, intakeProgress, summarize, tableRows, validateStep, visibleDocs, visibleFields, visibleSteps,
   type Answers, type AnswerValue, type Column, type DocMap, type Field, type ServiceForm, type TableRow,
 } from "@/server/modules/requests/intake/engine";
 
@@ -217,6 +217,7 @@ export function IntakeWizard({ requestId, form, initialAnswers, docMap, docOptio
   const step = steps.find((s) => s.key === current.key);
   const progress = intakeProgress(form, answers, docMap);
   const check = useMemo(() => checkIntake(form, answers, docMap), [form, answers, docMap]);
+  const needs = useMemo(() => intakeNeeds(form, answers, docMap), [form, answers, docMap]);
   // A completeness error from the last submit is stale once the gaps are filled.
   const staleSubmit = !!sub.data?.formSteps && check.fieldsComplete && check.docsComplete;
 
@@ -432,6 +433,7 @@ export function IntakeWizard({ requestId, form, initialAnswers, docMap, docOptio
               ) : null}
             </div>
           )}
+          <NeedsSummary needs={needs} go={go} />
           {summarize(form, answers).map((sec) => (
             <div key={sec.key} className="rounded-lg border border-line bg-surface">
               <div className="flex items-center justify-between border-b border-line px-3 py-2">
@@ -515,6 +517,41 @@ function ExistingPicker({ options, onPick, label }: { options: DocOption[]; onPi
         </select>
       </label>
       <Button type="button" variant="secondary" size="sm" disabled={!v} onClick={() => (onPick(v), setV(""))}>أرفق</Button>
+    </div>
+  );
+}
+
+const REVIEW_AR = { sharia: "شرعية", legal: "قانونية", financial: "مالية", technical: "فنية" } as const;
+
+/**
+ * Completeness against the service's requirements: what work cannot start without (the request can still be sent and
+ * completed later), what only helps, and what a specialist will review before it is relied on.
+ */
+function NeedsSummary({ needs, go }: { needs: ReturnType<typeof intakeNeeds>; go: (k: string) => void }) {
+  const item = (x: { key: string; label: string; kind: string; step: string | null; why: string | null }) => (
+    <li key={x.key}>
+      <button type="button" onClick={() => go(x.step ?? "documents")} className="text-start text-ink underline-offset-4 hover:underline">{x.kind === "doc" ? `مستند: ${x.label}` : x.label}</button>
+      {x.why ? <span className="text-[13px] text-muted"> — {x.why}</span> : null}
+    </li>
+  );
+  return (
+    <div className="space-y-3 rounded-lg border border-line p-3 text-[15px]" data-testid="needs-summary">
+      <p className="flex items-baseline justify-between gap-2"><span className="font-medium">اكتمال بيانات الطلب</span><span className="tabular font-semibold" data-testid="needs-percent">{needs.percent}%</span></p>
+      {needs.start.length ? (
+        <div data-testid="needs-start">
+          <p className="font-medium text-fine">يمكنك الإرسال الآن، لكن لا يبدأ العمل قبل استكمال:</p>
+          <ul className="mt-1 list-disc space-y-0.5 ps-5">{needs.start.map(item)}</ul>
+        </div>
+      ) : null}
+      {needs.support.length ? (
+        <details data-testid="needs-support">
+          <summary className="cursor-pointer text-muted">بيانات تساعد على جودة النتيجة ولا تمنع الإرسال ({needs.support.length})</summary>
+          <ul className="mt-1 list-disc space-y-0.5 ps-5">{needs.support.map(item)}</ul>
+        </details>
+      ) : null}
+      {needs.specialist.length ? (
+        <p className="text-[14px] text-muted" data-testid="needs-specialist">يراجع مختص قبل الاعتماد عليها: {needs.specialist.map((x) => `${x.label} (${REVIEW_AR[x.review]})`).join("، ")}.</p>
+      ) : null}
     </div>
   );
 }

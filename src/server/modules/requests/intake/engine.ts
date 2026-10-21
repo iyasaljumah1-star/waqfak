@@ -65,6 +65,15 @@ export type Field = {
   prefill?: PrefillKey;
   /** The answer needs a specialist's review (sharia, legal, financial or technical) before it is relied on. */
   review?: ReviewKind;
+  /**
+   * Completeness level of an optional field: «start» — the request may be sent without it, but work does not start
+   * until it is given (an answer «unknown» counts as missing); «support» — improves the result, never blocks.
+   * Required fields (required / requiredIf) block sending; a required field marked «start» may be answered «لا أعرف»
+   * to send the request, and work then waits for the real answer.
+   */
+  need?: Need;
+  /** Why the answer is needed (shown to the client in the completeness summary). */
+  why?: string;
   /** Spans the full width in the two-column layout. */
   wide?: boolean;
   /** Table fields: columns and row limits. */
@@ -116,7 +125,12 @@ export type DocSlot = {
   requiredIf?: Cond;
   showIf?: Cond;
   hint?: string;
+  /** As for fields: «start» needed before work starts, «support» helpful only. */
+  need?: Need;
+  why?: string;
 };
+
+export type Need = "start" | "support";
 
 export type ServiceForm = {
   code: string;
@@ -356,6 +370,69 @@ export function intakeProgress(form: ServiceForm, a: Answers, docs: DocMap) {
       if (docs[d.key]?.length) done++;
     }
   return total ? Math.round((done / total) * 100) : 100;
+}
+
+export type NeedItem = { key: string; label: string; kind: "field" | "doc"; step: string | null; why: string | null };
+export type IntakeNeeds = {
+  /** Blocks sending the request. */
+  submit: NeedItem[];
+  /** The request may be sent; work does not start until these are given. */
+  start: NeedItem[];
+  /** Helpful, never blocking. */
+  support: NeedItem[];
+  /** Given, but not relied on before a specialist reviews them. */
+  specialist: (NeedItem & { review: ReviewKind })[];
+  /** Share of the required and start-level items given (support items are listed, not counted). */
+  percent: number;
+};
+
+/** Values that mean «I do not know» in option lists: they answer the question but do not supply the information. */
+export const UNKNOWN_VALUES = new Set(["unknown", "dont_know"]);
+const unknownAnswer = (v: AnswerValue | undefined) => (Array.isArray(v) ? v.length > 0 && v.every((x) => UNKNOWN_VALUES.has(x)) : UNKNOWN_VALUES.has(String(v ?? "")));
+
+/**
+ * Completeness of a request against its service's requirements (PURE): what blocks sending, what must be given before
+ * work starts, what only helps, and what a specialist must review. Fields and documents that do not apply (hidden by
+ * the answers) are left out entirely.
+ */
+export function intakeNeeds(form: ServiceForm, a: Answers, docs: DocMap): IntakeNeeds {
+  const out: IntakeNeeds = { submit: [], start: [], support: [], specialist: [], percent: 100 };
+  let total = 0;
+  let done = 0;
+  for (const st of visibleSteps(form, a))
+    for (const f of visibleFields(st, a)) {
+      if (f.type === "hidden" || f.type === "ack") continue;
+      const v = a[f.key];
+      const item: NeedItem = { key: f.key, label: f.label, kind: "field", step: st.key, why: f.why ?? null };
+      if (fieldRequired(f, a)) {
+        total++;
+        if (validateField(f, v, a)) out.submit.push(item);
+        // «لا أعرف» answers a required question (the request can be sent) but, for a start-level one, not the
+        // information work needs
+        else if (f.need === "start" && unknownAnswer(v)) out.start.push({ ...item, why: item.why ?? "أجبت «لا أعرف»: يلزم بيانها قبل بدء العمل." });
+        else done++;
+      } else if (f.need === "start") {
+        total++;
+        if (isEmpty(v) || unknownAnswer(v) || validateField(f, v, a)) out.start.push(item);
+        else done++;
+      } else if (f.need === "support" && (isEmpty(v) || unknownAnswer(v))) out.support.push(item);
+      if (f.review && !isEmpty(v)) out.specialist.push({ ...item, review: f.review });
+    }
+  for (const d of visibleDocs(form, a)) {
+    const has = !!docs[d.key]?.length;
+    const item: NeedItem = { key: d.key, label: d.label, kind: "doc", step: null, why: d.why ?? null };
+    if (docRequired(d, a)) {
+      total++;
+      if (has) done++;
+      else out.submit.push(item);
+    } else if (d.need === "start") {
+      total++;
+      if (has) done++;
+      else out.start.push(item);
+    } else if (d.need === "support" && !has) out.support.push(item);
+  }
+  out.percent = total ? Math.round((done / total) * 100) : 100;
+  return out;
 }
 
 /** Team review of a form document («uploaded» is not «verified»). */

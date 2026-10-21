@@ -13,6 +13,7 @@ import { flagMap, readSetting, serviceAvailability, type License } from "../cata
 import { logEvent, type ActCtx } from "../engine";
 import { sanitizeAnswers, validateStep, visibleSteps } from "./engine";
 import { withServerAnswers } from "./server";
+import { waqfModeOf, waqfModesFor, type WaqfMode } from "../waqf-mode";
 import { intakeOf, prefillAnswers, serviceForm, submitDraft, validDocMap } from "./server";
 
 const uuid = z.string().uuid("قيمة غير صالحة.");
@@ -20,7 +21,13 @@ const reval = (id: string) => [`/app/requests/${id}`, `/app/requests/${id}/intak
 
 // ───────────────────────── Start (creates the draft) ─────────────────────────
 
-const startSchema = z.object({ service: z.string().min(2, "اختر الخدمة."), waqf: z.string().optional().default(""), rec: z.string().optional().default("") });
+const startSchema = z.object({
+  service: z.string().min(2, "اختر الخدمة."),
+  /** registered | unregistered | none (older forms sent only `waqf`, with «none» for no waqf). */
+  waqfMode: z.enum(["registered", "unregistered", "none", ""]).optional().default(""),
+  waqf: z.string().optional().default(""),
+  rec: z.string().optional().default(""),
+});
 
 /** Opens (or resumes) a draft request for a service. The draft carries the answers and the uploaded documents. */
 export async function startRequest(_: ActionState, fd: FormData): Promise<ActionState> {
@@ -35,22 +42,26 @@ export async function startRequest(_: ActionState, fd: FormData): Promise<Action
     const avail = serviceAvailability(svc, await flagMap(tx), await readSetting<License[]>(tx, "company.licenses", []));
     if (!avail.available) throw new UserError(`الخدمة غير متاحة حاليًا: ${avail.reason}`);
     let waqfId: string | null = null;
-    if (svc.code === "N01" && (!d.waqf || d.waqf === "none")) throw new UserError("اختر الوقف المطلوب تولي نظارته. إن لم يكن له ملف بعد، أنشئه من «أوقافي» ثم قدّم الطلب.");
-    if (d.waqf && d.waqf !== "none") {
-      if (!uuid.safeParse(d.waqf).success) throw new UserError("اختر وقفًا صحيحًا.");
+    // the waqf the request concerns: one of the choices this service accepts (checked here, not only in the page)
+    const mode: WaqfMode = d.waqfMode || (d.waqf === "none" ? "none" : d.waqf ? "registered" : ("" as WaqfMode));
+    if (!mode) throw new UserError("حدّد الوقف المعني بالطلب.");
+    const modes = waqfModesFor(svc.code);
+    if (!modes[mode]) throw new UserError(modes.reasons[mode] ?? "هذا الخيار لا يناسب هذه الخدمة.");
+    if (mode === "registered") {
+      if (!d.waqf || !uuid.safeParse(d.waqf).success) throw new UserError("اختر الوقف المسجل من القائمة.");
       if (!(await memberCan(tx, auth, d.waqf, "requests.create"))) throw new ForbiddenError("لا تملك صلاحية طلب خدمات لهذا الوقف.");
       const [w] = await tx.select({ id: waqfs.id }).from(waqfs).where(eq(waqfs.id, d.waqf)).limit(1);
       if (!w) throw new ForbiddenError("لا يمكنك الوصول إلى هذا الوقف.");
       waqfId = w.id;
-    } else if (!d.waqf) throw new UserError("اختر الوقف، أو «لا يوجد وقف بعد» إن كانت الخدمة قبل إنشائه.");
+    }
 
     // Resume an open draft for the same service and waqf instead of piling up drafts.
     const [existing] = await tx
-      .select({ id: serviceRequests.id, waqfId: serviceRequests.waqfId })
+      .select({ id: serviceRequests.id, waqfId: serviceRequests.waqfId, intake: serviceRequests.intake })
       .from(serviceRequests)
       .where(and(eq(serviceRequests.requesterUserId, auth.user.id), eq(serviceRequests.serviceId, svc.id), eq(serviceRequests.status, "draft")))
       .orderBy(desc(serviceRequests.updatedAt));
-    if (existing && existing.waqfId === waqfId) {
+    if (existing && existing.waqfId === waqfId && waqfModeOf(existing) === mode) {
       id = existing.id;
       return;
     }
@@ -74,17 +85,17 @@ export async function startRequest(_: ActionState, fd: FormData): Promise<Action
       recId = rec.id;
     }
     const form = serviceForm(svc);
-    const answers = await prefillAnswers(tx, form, auth.user.id, waqfId);
+    const answers = await prefillAnswers(tx, form, auth.user.id, waqfId, mode);
     const number = await nextNumber(tx, "REQ");
     const [req] = await tx.insert(serviceRequests).values({
       number, serviceId: svc.id, waqfId, requesterUserId: auth.user.id, status: "draft", priority: "normal",
       source: recId ? "recommendation" : "manual", sourceRef: recId, details: null,
-      intake: { preferredContact: "platform", formVersion: form.version, answers, docs: {} }, intakeFormVersion: form.version,
+      intake: { preferredContact: "platform", formVersion: form.version, waqfMode: mode, answers, docs: {} }, intakeFormVersion: form.version,
       departmentKey: svc.departmentKey, createdBy: auth.user.id,
     }).returning();
     id = req.id;
     await logEvent(tx, req, auth.user.id, "أُنشئت مسودة الطلب");
-    await audit(tx, { actorUserId: auth.user.id, action: "requests.draft", entityType: "service_request", entityId: req.id, waqfId, ip, userAgent, after: { number, service: svc.code, source: recId ? "recommendation" : "manual" } });
+    await audit(tx, { actorUserId: auth.user.id, action: "requests.draft", entityType: "service_request", entityId: req.id, waqfId, ip, userAgent, after: { number, service: svc.code, waqfMode: mode, source: recId ? "recommendation" : "manual" } });
   });
   if (res.error) return res;
   if (existingOpen) redirect(`/app/requests/${existingOpen}?existing=1`);
@@ -120,7 +131,7 @@ export async function saveIntake(_: ActionState, fd: FormData): Promise<ActionSt
   return userAction(async (c) => {
     const rc = await editableDraft(c, id);
     const form = serviceForm(rc.service);
-    const answers = withServerAnswers(form, rc.req.waqfId, raw);
+    const answers = withServerAnswers(form, rc.req, raw);
     const intake = intakeOf(rc.req) as ReturnType<typeof intakeOf> & { dropped?: { at: string; by: string; values: Record<string, unknown> }[] };
     // answers that no longer apply after a change (hidden by the form rules) are kept with their values, not lost
     const rawObj = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;

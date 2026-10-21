@@ -13,6 +13,7 @@ import { clientJourney } from "@/server/modules/requests/journey";
 import { myDraftFor } from "@/server/modules/requests/queries";
 import { loadServiceByCode, PRICE_UNKNOWN } from "@/server/modules/requests/catalog";
 import { recommendationForPrefill, requestableWaqfs } from "@/server/modules/requests/queries";
+import { waqfModesFor } from "@/server/modules/requests/waqf-mode";
 
 export const metadata: Metadata = { title: "طلب خدمة" };
 
@@ -53,7 +54,10 @@ export default async function NewRequestPage({ searchParams }: { searchParams: P
   const journey = clientJourney(s, svc.workflow?.stages ?? []);
   const draft = await myDraftFor(auth, s.id);
   const waqfs = await requestableWaqfs(auth);
-  const allowNoWaqf = s.audiences.some((a) => a === "waqif" || a === "entity" || a === "beneficiary") || ["T", "W"].includes(svc.category?.code ?? "");
+  // which waqf choices this service accepts (registered / unregistered / none), and why one is not offered
+  const modes = waqfModesFor(s.code);
+  const modeKeys = (["registered", "unregistered", "none"] as const).filter((m) => modes[m]);
+  const unavailableNote = [modes.reasons.none, modes.reasons.unregistered].filter(Boolean).join(" ") || null;
   const defaultWaqf = rec?.waqfId ?? (sp.waqf && waqfs.some((w) => w.id === sp.waqf) ? sp.waqf : undefined);
 
   return (
@@ -68,9 +72,9 @@ export default async function NewRequestPage({ searchParams }: { searchParams: P
           ) : null}
           {!availability.available ? (
             <Alert tone="warn" title="الخدمة غير متاحة حاليًا">{availability.reason}</Alert>
-          ) : !waqfs.length && !allowNoWaqf ? (
-            <EmptyState icon={Landmark} title="هذه الخدمة تحتاج ملف وقف" action={<ButtonLink href="/app/waqfs/new">سجّل وقفًا قائمًا</ButtonLink>}>
-              لا يوجد وقف تملك فيه صلاحية طلب الخدمات. سجّل الوقف أولًا، أو اطلب من ناظره دعوتك.
+          ) : !waqfs.length && !modes.unregistered && !modes.none ? (
+            <EmptyState icon={Landmark} title="هذه الخدمة تحتاج وقفًا مسجلًا في المنصة" action={<ButtonLink href="/app/waqfs/new">سجّل وقفًا قائمًا</ButtonLink>}>
+              {modes.reasons.unregistered ?? "لا يوجد وقف تملك فيه صلاحية طلب الخدمات."} أو اطلب من ناظر الوقف دعوتك إلى ملفه.
             </EmptyState>
           ) : (
             <div className="space-y-4">
@@ -83,7 +87,7 @@ export default async function NewRequestPage({ searchParams }: { searchParams: P
               <p className="text-[15px] leading-7 text-muted">
                 نموذج هذه الخدمة من {form.steps.length + (form.docs.length ? 2 : 1)} خطوات: صفتك وبيانات التواصل، ثم أسئلة الخدمة{form.docs.length ? "، ثم المستندات" : ""}، ثم مراجعة قبل الإرسال. تُحفظ إجاباتك مسودةً في كل خطوة.
               </p>
-              <StartRequestForm action={startRequest} service={s.code} rec={rec?.id} waqfs={waqfs.map((w) => ({ id: w.id, name: w.name }))} defaultWaqf={defaultWaqf} allowNoWaqf={allowNoWaqf} />
+              <StartRequestForm action={startRequest} service={s.code} rec={rec?.id} waqfs={waqfs.map((w) => ({ id: w.id, name: w.name }))} defaultWaqf={defaultWaqf} modes={[...modeKeys]} unavailable={unavailableNote} />
             </div>
           )}
         </Panel>

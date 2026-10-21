@@ -63,7 +63,7 @@ export default async function RequestPage({ params, searchParams }: { params: Pr
   const outStates = r.status !== "draft" ? await read(auth, (tx) => outputStatesForPhase(tx, rc)) : [];
   const phase = r.status !== "draft" ? clientPhase({
     status: r.status, assigned: !!r.assignedToUserId,
-    data: cws ? { requiredMissing: cws.analysis.summary.required - cws.analysis.summary.requiredValid, gaps: cws.analysis.summary.gaps, conflicts: 0 } : null,
+    data: cws ? { requiredMissing: cws.analysis.summary.required - cws.analysis.summary.requiredValid + cws.needs.start.length, gaps: cws.analysis.summary.gaps, conflicts: 0 } : null,
     openClientItems: openItems.length, outputs: outStates, activeStage: stages.find((s) => s.status === "active")?.name ?? null,
   }) : null;
 
@@ -277,6 +277,19 @@ export default async function RequestPage({ params, searchParams }: { params: Pr
 
           {cws && r.status !== "draft" ? (
             <Panel id="request-data" title="بيانات طلبك" description="القيم المعتمدة في طلبك كما يعمل عليها الفريق، مع أي تعديل أُجري عليها وسببه، وبيانات وقفك التي تعتمد عليها الخدمة.">
+              <p className="mb-3 text-[14px] text-muted" data-testid="client-waqf-mode" data-mode={cws.waqfMode}>
+                {cws.waqfMode === "registered" ? "بيانات وقفك مستدعاة من ملفه في المنصة." : cws.waqfMode === "unregistered" ? "وقفك غير مسجل في المنصة: بياناته التي قدّمتها محفوظة ضمن هذا الطلب فقط، ويتحقق منها الفريق." : "طلب قبل وجود وقف قائم."}
+              </p>
+              {cws.needs.start.length ? (
+                <div className="mb-3 rounded-md border border-fine/40 bg-fine-soft/30 px-3 py-2 text-[14px]" data-testid="client-start-needs">
+                  <p className="font-medium">لا يبدأ العمل قبل استكمال:</p>
+                  <ul className="mt-1 list-disc space-y-0.5 ps-5">{cws.needs.start.map((x) => <li key={x.key}>{x.kind === "doc" ? `مستند: ${x.label}` : x.label}{x.why ? <span className="text-muted"> — {x.why}</span> : null}</li>)}</ul>
+                  <p className="mt-1 text-[13px] text-muted">سيطلبها منك الفريق في «النواقص والاستفسارات»، وتُستكمل من الطلب نفسه.</p>
+                </div>
+              ) : null}
+              {cws.waqfMode === "unregistered" && canAct ? (
+                <p className="mb-3 text-[14px]" data-testid="register-from-request">تريد ملفًا دائمًا لوقفك في المنصة؟ <Link href={`/app/waqfs/new?fromRequest=${r.id}`} className="text-ink underline">سجّل الوقف</Link> بإجراء مستقل؛ لا يتغير هذا الطلب.</p>
+              ) : null}
               <ClientFieldsView analysis={cws.analysis} form={cws.form} revisions={cws.revisions} notes={cws.notes} requestId={r.id} waqfId={r.waqfId} canReport={canAct && !terminal} postNote={postClientNote} docs={docOpts} />
             </Panel>
           ) : d.intakeSummary ? (

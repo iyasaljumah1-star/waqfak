@@ -8,7 +8,7 @@
  * verified, and never decides a specialist matter.
  */
 import { CONTEXT_STATUS_AR, ctxField, type ContextBlock } from "./context/types";
-import { displayValue, fieldRequired, tableRows, validateField, visibleFields, visibleSteps, type Answers, type DocMap, type Field, type ReviewKind, type ServiceForm } from "./intake/engine";
+import { displayValue, fieldRequired, UNKNOWN_VALUES, tableRows, validateField, visibleFields, visibleSteps, type Answers, type DocMap, type Field, type ReviewKind, type ServiceForm } from "./intake/engine";
 import type { FieldReviewStatus } from "@/server/db/schema/operations";
 
 export type InsightKind = "client" | "fact" | "inference" | "recommendation" | "specialist" | "gap" | "conflict";
@@ -109,8 +109,12 @@ export function analyzeRequest(i: InsightInput): RequestAnalysis {
       } else if (origin === "client_completion" && lastRev) {
         insights.push({ kind: "client", text: "استكمله العميل ردًا على طلب استكمال، ولم يُراجع بعد." });
       } else if (st8?.status !== "approved") {
-        insights.push({ kind: "client", text: "أدخله العميل، ولم يُتحقق منه بعد." });
+        insights.push({ kind: "client", text: st.key === "unregisteredWaqf" ? "قدّمه العميل عن وقف غير مسجل في المنصة، ولم يُتحقق منه بعد." : "أدخله العميل، ولم يُتحقق منه بعد." });
       }
+      // needed before work starts (the request could be sent without it, or with «لا أعرف»)
+      const unknown = Array.isArray(v) ? v.length > 0 && v.every((x) => UNKNOWN_VALUES.has(x)) : UNKNOWN_VALUES.has(String(v ?? ""));
+      if (f.need === "start" && (v === undefined || unknown))
+        insights.push({ kind: "gap", text: `لازم قبل بدء التنفيذ${unknown ? " (أجاب العميل «لا أعرف»)" : ""}${f.why ? `: ${f.why}` : "."}`, task: `استكمال «${f.label}» من العميل` });
       if (error && v !== undefined) insights.push({ kind: "gap", text: error });
       if (f.review && v !== undefined) insights.push({ kind: "specialist", text: `يحتاج رأيًا ${REVIEW_AR[f.review]} قبل الاعتماد عليه.`, task: `مراجعة ${REVIEW_AR[f.review]}: «${f.label}»` });
       for (const c of i.conflicts.filter((x) => x.status === "open" && x.fields.includes(f.key))) insights.push({ kind: "conflict", text: `${c.label}. ${c.action}` });

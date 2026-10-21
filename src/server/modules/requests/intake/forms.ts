@@ -8,6 +8,8 @@
  */
 import type { Cond, DocSlot, Field, ServiceForm, Step } from "./engine";
 import { contextFor } from "../context/map";
+import type { ContextKey } from "../context/types";
+import { waqfModesFor } from "../waqf-mode";
 
 // ───────────────────────── Field helpers ─────────────────────────
 
@@ -135,6 +137,97 @@ const WAQF_DATA: Step = {
     radio("dataUpdateScope", "أين يُطبَّق التحديث؟", [["request", "لهذا الطلب فقط"], ["file", "في ملف الوقف أيضًا (بعد مراجعة الفريق ووفق الصلاحيات)"]], { showIf: NEEDS_UPDATE, requiredIf: NEEDS_UPDATE }),
   ],
 };
+
+// ───────────────────────── Waqf not registered in the platform ─────────────────────────
+
+/**
+ * Step for a waqf that exists but is not registered in «وقفك»: the minimum the service needs about the waqf, asked of
+ * the client instead of read from a waqf file. Built from the same map of records each service reads (context/map.ts):
+ * a governance service asks about the board, a financial one about the records, an asset one about the assets.
+ * Answers are kept in the request only (source: the client, not verified); no waqf file is created from them.
+ * «لا أعرف» is accepted where the client may not know; what work cannot start without is marked «start».
+ */
+const UNREG = when("waqfMode", "unregistered");
+const UNKNOWN = ["unknown", "لا أعرف"] as const;
+const BOARD_UW = when("uwNazirType", "board");
+const GOVERNANCE_KEYS: ContextKey[] = ["waqf.nazara", "board.composition", "governance.rules", "board.meetings", "board.resolutions", "governance.policies", "governance.evaluations"];
+
+function unregisteredWaqf(code: string, base: Step[], baseDocs: DocSlot[]): { step: Step; docs: DocSlot[] } | null {
+  if (!waqfModesFor(code).unregistered) return null;
+  const keys = new Set(contextFor(code));
+  const asked = new Set(base.flatMap((st) => st.fields.flatMap((x) => [x.key, ...(x.prefill ? [x.prefill] : [])])));
+  const has = (...k: ContextKey[]) => k.some((x) => keys.has(x));
+  const fields: Field[] = [
+    text("uwName", "اسم الوقف أو الاسم المتعارف عليه", { ...R, hint: "كما في الصك إن وجد." }),
+    radio("uwType", "نوع الوقف", [["general", "خيري (عام)"], ["ahli", "أهلي (ذري)"], ["mixed", "مشترك"], UNKNOWN], { ...R, hint: "بحسب الموقوف عليهم: جهات بر عامة، أو ذرية وأشخاص معينون، أو الاثنان." }),
+    radio("uwStatus", "حالة الوقف", [["registered_gaa", "موثّق ومسجّل لدى الهيئة العامة للأوقاف"], ["documented", "موثّق بصك ولم يُسجَّل لدى الهيئة"], ["undocumented", "قائم دون توثيق، أو صكه مفقود"], ["other", "غير ذلك"]], R),
+    text("uwGaaNumber", "رقم التسجيل لدى الهيئة أو الرقم الوطني الموحد", { showIf: when("uwStatus", "registered_gaa"), need: "support" }),
+    sel("uwCountry", "مقر الوقف", [["sa", "المملكة العربية السعودية"], ["other", "خارج المملكة"]], R),
+    text("uwCity", "المدينة أو المنطقة", { need: "support" }),
+    radio("uwHasDeed", "هل لدى الوقف صك أو وثيقة وقف؟", [["yes", "نعم"], ["no", "لا"], UNKNOWN], { ...R, need: "start", why: "يُعرف به مرجع شرط الواقف قبل بدء العمل." }),
+    ...(asked.has("waqf.deedNo") || asked.has("deedNo") ? [] : [
+      text("uwDeedNo", "رقم الصك أو الوثيقة", { showIf: yes("uwHasDeed"), need: "start", why: "يُطابق به الفريق الوقف ومستنداته قبل بدء العمل." }),
+      sel("uwDeedIssuer", "جهة إصدار الصك", DEED_ISSUER, { showIf: yes("uwHasDeed") }),
+    ]),
+    radio("uwWaqif", "الواقف", [["alive", "على قيد الحياة"], ["deceased", "متوفى"], ["entity", "جهة اعتبارية"], UNKNOWN], { need: "support" }),
+    text("uwWaqifName", "اسم الواقف", { showIf: { field: "uwWaqif", in: ["alive", "deceased", "entity"] }, need: "support" }),
+  ];
+  if (has(...GOVERNANCE_KEYS, "assets.register", "finance.records", "beneficiaries.register", "compliance.obligations") && !asked.has("nazirType")) {
+    fields.push(
+      radio("uwNazirType", "من يتولى نظارة الوقف؟", [["waqif", "الواقف نفسه"], ["individual", "ناظر فرد"], ["board", "مجلس نظارة"], ["entity", "جهة اعتبارية"], ["none", "لا يوجد ناظر معيّن"], UNKNOWN],
+        { need: "start", why: "تُحدَّد به الجهة التي يتعامل معها الفريق وصلاحياتها." }),
+      text("uwNazirName", "اسم الناظر أو الجهة", { showIf: { field: "uwNazirType", in: ["individual", "entity"] }, need: "support" }),
+    );
+  }
+  if (has("board.composition", "governance.rules", "board.meetings", "board.resolutions")) {
+    fields.push(num("uwBoardSize", "عدد أعضاء المجلس", { min: 1, showIf: BOARD_UW, need: "start", why: "يُبنى عليه نطاق العمل مع المجلس." }));
+    if (has("board.meetings", "board.resolutions")) fields.push(
+      num("uwMeetings", "عدد اجتماعات المجلس في آخر 12 شهرًا", { showIf: BOARD_UW, need: "support" }),
+      radio("uwMinutes", "محاضر الاجتماعات والقرارات", [["documented", "موثقة ومتاحة"], ["partial", "بعضها"], ["none", "لا توجد محاضر"], UNKNOWN],
+        { showIf: BOARD_UW, need: "start", why: "يقوم العمل على قرارات المجلس ومحاضره؛ فيُعرف ما يتاح منها قبل البدء." }),
+    );
+  }
+  if (has("governance.policies")) fields.push(checks("uwPolicies", "اللوائح والسياسات المعتمدة", [["bylaws", "نظام أساسي أو لائحة داخلية"], ["delegation", "مصفوفة صلاحيات"], ["coi", "سياسة تعارض المصالح"], ["distribution", "سياسة الصرف"], ["investment", "سياسة الاستثمار"], ["none", "لا يوجد شيء معتمد"], UNKNOWN], { need: "support" }));
+  if (has("governance.evaluations")) fields.push(radio("uwPrevEval", "هل أُجري تقييم أداء سابق للمجلس أو الناظر؟", [["yes", "نعم"], ["no", "لا"], UNKNOWN], { need: "support" }));
+  if (has("waqf.terms") && !asked.has("masarif")) fields.push(area("uwTerms", "مصارف الوقف وأهم شروط الواقف كما في الوثيقة", { need: "start", why: "شرط الواقف هو مرجع العمل، فيُقرأ قبل البدء.", review: "sharia" }));
+  if (has("assets.register") && !asked.has("candidates")) fields.push(table("uwAssets", "أصول الوقف", [
+    { key: "type", label: "نوع الأصل", type: "select", required: true, options: ASSET_TYPES },
+    { key: "description", label: "الوصف والموقع", type: "text", required: true },
+    { key: "value", label: "القيمة التقديرية (ر.س)", type: "money" },
+    { key: "ownership", label: "صك الملكية باسم الوقف؟", type: "select", options: [["yes", "نعم"], ["no", "لا"], ["unknown", "لا أعرف"]] },
+  ], { need: "start", maxRows: 20, why: "يُبنى عليه نطاق العمل، ويُطابق بمستندات الملكية." }));
+  if (has("finance.records")) fields.push(
+    radio("uwFinance", "السجلات المالية المتاحة", [["audited", "قوائم مالية مراجعة"], ["unaudited", "قوائم مالية غير مراجعة"], ["records", "سجلات وكشوف حسابات فقط"], ["none", "لا توجد سجلات مالية"], UNKNOWN],
+      { need: "start", why: "تحدد ما يُبنى عليه العمل المالي، وما يلزم إعداده أولًا." }),
+    text("uwFiscalYearEnd", "نهاية السنة المالية للوقف (الشهر-اليوم)", { need: "support", hint: "مثل 12-31" }),
+  );
+  if (has("beneficiaries.register")) fields.push(
+    num("uwBeneficiaryCount", "عدد المستفيدين تقريبًا", { need: "support" }),
+    area("uwBeneficiaryClasses", "فئات المستفيدين", { need: "support" }),
+  );
+  if (has("compliance.obligations")) fields.push(radio("uwGaaFilings", "تقديم إفصاحات الوقف وتقاريره للهيئة", [["regular", "منتظم"], ["partial", "بعضها"], ["none", "لم يُقدَّم شيء"], UNKNOWN], { need: "support" }));
+  if (has("risks.register")) fields.push(area("uwRisks", "مخاطر أو نزاعات معروفة على الوقف (إن وجدت)", { need: "support" }));
+
+  const taken = new Set(baseDocs.map((d) => d.docType));
+  const unreg = (c: Cond): Cond => ({ all: [UNREG, c] });
+  const docs: DocSlot[] = [
+    doc("uw_deed", "waqf_deed", "صك الوقف أو وثيقته", { showIf: unreg(yes("uwHasDeed")), need: "start", why: "مرجع شرط الواقف ومصارفه وناظره." }),
+    ...(fields.some((x) => x.key === "uwNazirType") ? [doc("uw_nazara", "nazara_deed", "صك النظارة أو قرار تعيين الناظر", { showIf: unreg({ field: "uwNazirType", in: ["individual", "board", "entity"] }), need: "support" })] : []),
+    ...(fields.some((x) => x.key === "uwMinutes") ? [doc("uw_minutes", "minutes", "محاضر اجتماعات المجلس وقراراته", { showIf: unreg({ field: "uwMinutes", in: ["documented", "partial"] }), need: "support" })] : []),
+    ...(fields.some((x) => x.key === "uwFinance") ? [doc("uw_fin", "financial_statement", "القوائم المالية الأخيرة", { showIf: unreg({ field: "uwFinance", in: ["audited", "unaudited"] }), need: "start", why: "يقوم عليها العمل المالي." })] : []),
+    ...(fields.some((x) => x.key === "uwAssets") ? [doc("uw_assets", "ownership_deed", "صكوك ملكية الأصول", { showIf: unreg({ field: "uwAssets", notEmpty: true }), need: "support" })] : []),
+  ].filter((d) => !taken.has(d.docType));
+  return {
+    step: {
+      key: "unregisteredWaqf",
+      title: "بيانات الوقف",
+      intro: "وقفك غير مسجل في المنصة، فنحتاج بياناته الأساسية التي تلزم هذه الخدمة. تُحفظ ضمن هذا الطلب فقط، ولا يُنشأ منها ملف وقف. ما لا تعرفه اختر فيه «لا أعرف»، وسنبيّن لك قبل الإرسال ما يلزم قبل بدء العمل.",
+      showIf: UNREG,
+      fields,
+    },
+    docs,
+  };
+}
 
 // ───────────────────────── Reusable service blocks ─────────────────────────
 
@@ -274,25 +367,65 @@ const FORMS: Record<string, Omit<ServiceForm, "steps"> & { steps: Step[] }> = {
     }],
   },
   T05: {
-    code: "T05", version: 2, sources: ["الدليل الإرشادي لاختيار الأصول الوقفية: المعايير الستة لاختيار الأصل"],
-    docs: [doc("assets", "ownership_deed", "مستندات الأصول المرشحة")],
-    steps: [{
-      key: "assets", title: "الأصول المرشحة والمعايير",
-      fields: [
-        table("candidates", "الأصول المتاحة لك للوقف", [
-          { key: "type", label: "نوع الأصل", type: "select", required: true, options: ASSET_TYPES },
-          { key: "description", label: "الوصف والموقع", type: "text", required: true },
-          { key: "value", label: "القيمة التقريبية (ر.س)", type: "money" },
-          { key: "income", label: "الدخل السنوي الحالي إن وجد (ر.س)", type: "money" },
-          { key: "owned", label: "مملوك ومسجل باسمك بصك ساري؟", type: "select", options: [["yes", "نعم"], ["no", "لا"], ["partial", "حصة مشاعة"]] },
-        ], { ...R, minRows: 1, hint: "صف كل أصل في صف: يُقارن بالمعايير الستة في الدليل." }),
-        radio("duration", "مدة الوقف", [["perpetual", "مؤبد"], ["temporary", "مؤقت"], ["undecided", "لم أحدد"]], R),
-        sel("sizeEstimate", "الحجم المتوقع للوقف", SIZE, R),
-        sel("beneficiaryKind", "نوع الموقوف عليهم", WAQF_KIND, R),
-        sel("management", "من سيدير الأصل؟", [["self", "الناظر بنفسه"], ["professional", "جهة احترافية مختصة"], ["undecided", "لم أحدد"]]),
-        area("goals", "غاية الوقف التي تريد أن يخدمها الأصل"),
-      ],
-    }],
+    code: "T05", version: 3, sources: ["الدليل الإرشادي لاختيار الأصول الوقفية: المعايير الستة لاختيار الأصل"],
+    docs: [
+      doc("assets", "ownership_deed", "مستند ملكية الأصل (صك، سجل تجاري، شهادة أسهم)", { showIf: { field: "assetType", in: ["real_estate", "land", "business", "securities", "other"] }, need: "start", why: "تُبنى الدراسة على ملكية ثابتة للأصل." }),
+      doc("portfolio", "bank_statement", "كشف المحفظة أو الحساب", { showIf: { field: "assetType", in: ["securities", "cash"] }, need: "support" }),
+      doc("valuation", "valuation", "تقرير التقييم", { showIf: when("valuationSource", "accredited"), need: "support" }),
+    ],
+    steps: [
+      {
+        key: "asset", title: "الأصل المراد وقفه",
+        intro: "تظهر الأسئلة بحسب نوع الأصل. ما لا تعرفه اختر فيه «لا أعرف»، وسنبيّن قبل الإرسال ما يلزم قبل بدء الدراسة.",
+        fields: [
+          radio("assetType", "نوع الأصل", [["real_estate", "عقار مبني"], ["land", "أرض"], ["securities", "أسهم أو وحدات صناديق أو محفظة"], ["cash", "نقد"], ["business", "حصص في منشأة أو شركة"], ["other", "أصل آخر"]], R),
+          // real estate and land
+          sel("propertyUse", "استخدام العقار", [["residential", "سكني"], ["commercial", "تجاري"], ["mixed", "مختلط"], ["agricultural", "زراعي"], ["industrial", "صناعي"], ["vacant", "أرض بيضاء"]], { showIf: { field: "assetType", in: ["real_estate", "land"] }, requiredIf: { field: "assetType", in: ["real_estate", "land"] } }),
+          text("propertyCity", "المدينة", { showIf: { field: "assetType", in: ["real_estate", "land"] }, requiredIf: { field: "assetType", in: ["real_estate", "land"] } }),
+          text("propertyDistrict", "الحي أو الموقع", { showIf: { field: "assetType", in: ["real_estate", "land"] }, need: "support" }),
+          num("propertyArea", "المساحة (م²)", { showIf: { field: "assetType", in: ["real_estate", "land"] }, need: "support" }),
+          text("propertyDeedNo", "رقم صك الملكية", { showIf: { field: "assetType", in: ["real_estate", "land"] }, need: "start", why: "يُتحقق به من الملكية وخلو الأصل من الموانع." }),
+          radio("occupancy", "حالة العقار", [["leased", "مؤجر"], ["vacant", "شاغر"], ["owner_used", "يستخدمه المالك"], UNKNOWN], { showIf: when("assetType", "real_estate"), need: "support" }),
+          money("currentIncome", "الدخل السنوي الحالي (ر.س)", { showIf: when("occupancy", "leased"), need: "support" }),
+          // securities
+          sel("securityKind", "نوع الأوراق المالية", [["listed", "أسهم مدرجة"], ["unlisted", "أسهم غير مدرجة"], ["fund", "وحدات صندوق استثماري"], ["portfolio", "محفظة مدارة"]], { showIf: when("assetType", "securities"), requiredIf: when("assetType", "securities") }),
+          text("securityIssuer", "الشركة أو الصندوق أو مدير المحفظة", { showIf: when("assetType", "securities"), requiredIf: when("assetType", "securities") }),
+          num("securityQty", "عدد الأسهم أو الوحدات", { showIf: when("assetType", "securities"), need: "start", why: "يُحدَّد به مقدار الموقوف." }),
+          text("custodian", "أمين الحفظ أو الوسيط", { showIf: when("assetType", "securities"), need: "support" }),
+          // cash
+          money("cashAmount", "المبلغ (ر.س)", { showIf: when("assetType", "cash"), requiredIf: when("assetType", "cash") }),
+          radio("cashPlan", "كيف تريد أن يُستعمل النقد؟", [["invest", "يُستثمر ويُصرف ريعه"], ["buy", "يُشترى به أصل يُوقف"], ["undecided", "لم أحدد"]], { showIf: when("assetType", "cash"), need: "support" }),
+          // business
+          text("businessName", "اسم المنشأة أو الشركة", { showIf: when("assetType", "business"), requiredIf: when("assetType", "business") }),
+          pct("businessShare", "نسبة الحصة", { showIf: when("assetType", "business"), need: "start", why: "يُحدَّد بها مقدار الموقوف." }),
+          text("businessCr", "رقم السجل التجاري", { showIf: when("assetType", "business"), need: "support" }),
+          area("otherDescription", "صف الأصل", { showIf: when("assetType", "other"), requiredIf: when("assetType", "other"), minLength: 10 }),
+          // ownership and value (every type)
+          radio("ownership", "الملكية الحالية", [["self", "مملوك لي بالكامل"], ["share", "حصة مشاعة مع آخرين"], ["heirs", "ملك ورثة لم يُقسم"], ["entity", "مملوك لجهة أمثلها"], UNKNOWN], { ...R, need: "start", why: "لا يُدرس وقف أصل لم تُعرف ملكيته." }),
+          radio("disposal", "صاحب الصفة في التصرف بالأصل", [["self", "أنا"], ["agent", "أنا بوكالة عن المالك"], ["consent", "يلزم موافقة شركاء أو ورثة"], UNKNOWN], { ...R, need: "start", review: "legal", why: "يُعرف به من يملك قرار الوقف." }),
+          money("value", "القيمة التقديرية (ر.س)", { need: "support" }),
+          sel("valuationSource", "مصدر التقدير", [["accredited", "تقييم من مقيّم معتمد"], ["market", "أسعار السوق"], ["estimate", "تقدير شخصي"], UNKNOWN], { showIf: { field: "value", notEmpty: true } }),
+          checks("encumbrances", "قيود أو التزامات على الأصل", [["mortgage", "رهن أو تمويل"], ["lease", "عقد إيجار قائم"], ["dispute", "نزاع قضائي"], ["partners", "حقوق شركاء"], ["none", "لا يوجد"], UNKNOWN], { need: "start", why: "قد تمنع الوقف أو تقيّده، فتُعرف قبل الدراسة." }),
+        ],
+      },
+      {
+        key: "assets", title: "الغرض من الوقف والمعايير",
+        fields: [
+          area("goals", "الغرض من الوقف والأهداف التي تريد أن يحققها الأصل", { ...R, minLength: 10 }),
+          radio("duration", "مدة الوقف", [["perpetual", "مؤبد"], ["temporary", "مؤقت"], ["undecided", "لم أحدد"]], R),
+          sel("sizeEstimate", "الحجم المتوقع للوقف", SIZE, R),
+          sel("beneficiaryKind", "نوع الموقوف عليهم", WAQF_KIND, R),
+          sel("management", "من سيدير الأصل؟", [["self", "الناظر بنفسه"], ["professional", "جهة احترافية مختصة"], ["undecided", "لم أحدد"]]),
+          table("candidates", "أصول أخرى مرشحة للمقارنة (اختياري)", [
+            { key: "type", label: "نوع الأصل", type: "select", required: true, options: ASSET_TYPES },
+            { key: "description", label: "الوصف والموقع", type: "text", required: true },
+            { key: "value", label: "القيمة التقريبية (ر.س)", type: "money" },
+            { key: "income", label: "الدخل السنوي الحالي إن وجد (ر.س)", type: "money" },
+            { key: "owned", label: "مملوك ومسجل باسمك بصك ساري؟", type: "select", options: [["yes", "نعم"], ["no", "لا"], ["partial", "حصة مشاعة"]] },
+          ], { hint: "إن كان لديك أكثر من أصل: يُقارن كل منها بالمعايير الستة في الدليل." }),
+        ],
+      },
+    ],
   },
   T06: {
     code: "T06", version: 1,
@@ -1192,5 +1325,12 @@ export function formFor(svc: { code: string; audiences: string[]; requiredDocume
     } else docs.push(doc(`svc_${d.docType}`, d.docType, d.label, { required: d.required }));
   }
   const ctx = contextFor(svc.code).length ? [WAQF_DATA] : [];
-  return { code: svc.code, version: base.version, sources: base.sources, steps: [ap.step, ...ctx, ...base.steps, NOTES], docs: [...docs, ...ap.docs] };
+  // which waqf the request concerns (registered / unregistered / none): set by the server from the request's start
+  const applicant: Step = { ...ap.step, fields: [...ap.step.fields, hidden("waqfMode")] };
+  const uw = unregisteredWaqf(svc.code, base.steps, docs);
+  return {
+    code: svc.code, version: base.version, sources: base.sources,
+    steps: [applicant, ...ctx, ...(uw ? [uw.step] : []), ...base.steps, NOTES],
+    docs: [...docs, ...(uw?.docs ?? []), ...ap.docs],
+  };
 }

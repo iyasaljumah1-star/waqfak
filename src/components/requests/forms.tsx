@@ -166,21 +166,56 @@ export function SignContractForm({ requestOtp, sign, contractId, partyKey = "", 
   );
 }
 
-/** First step of a request: pick the waqf (or none) and open the draft. The rest of the form is the intake wizard. */
-export function StartRequestForm({ action, service, rec, waqfs, defaultWaqf, allowNoWaqf }: {
-  action: Act; service: string; rec?: string; waqfs: { id: string; name: string }[]; defaultWaqf?: string; allowNoWaqf: boolean;
+/**
+ * First step of a request: which waqf it concerns — one registered in the platform (from the waqfs the user may request
+ * services for), one that exists but is not registered in «وقفك», or none yet (only for services that allow it). The
+ * choice only opens the draft; it creates no waqf record. The rest of the form is the intake wizard.
+ */
+type ModeKey = "registered" | "unregistered" | "none";
+const MODE_TEXT: Record<ModeKey, { label: string; hint: string }> = {
+  registered: { label: "وقف مسجل في منصة «وقفك»", hint: "تُستدعى بياناته من ملفه، فلا تعيد إدخالها." },
+  unregistered: { label: "لدي وقف، لكنه غير مسجل في منصة «وقفك»", hint: "تعبّئ بياناته الأساسية التي تلزم الخدمة، وتُحفظ ضمن الطلب فقط." },
+  none: { label: "لا يوجد لدي وقف قائم بعد", hint: "لطلب تأسيس وقف أو إجراء تمهيدي قبل وجوده." },
+};
+
+export function StartRequestForm({ action, service, rec, waqfs, defaultWaqf, modes, unavailable }: {
+  action: Act; service: string; rec?: string; waqfs: { id: string; name: string }[]; defaultWaqf?: string;
+  /** Choices this service accepts. */
+  modes: ModeKey[];
+  /** Why a choice is not offered for this service (shown once, below the choices). */
+  unavailable?: string | null;
 }) {
   const [s, a] = useActionState(action, initialState);
-  const options = [...waqfs.map((w) => ({ value: w.id, label: w.name })), ...(allowNoWaqf ? [{ value: "none", label: "لا يوجد وقف بعد (تأسيس أو وصية)" }] : [])];
+  const initial: ModeKey | "" = defaultWaqf ? "registered" : modes.length === 1 ? modes[0] : "";
+  const [mode, setMode] = useState<ModeKey | "">(initial);
+  const options = waqfs.map((w) => ({ value: w.id, label: w.name }));
   return (
     <form action={a} className="space-y-4">
       <input type="hidden" name="service" value={service} />
       <input type="hidden" name="rec" value={rec ?? ""} />
-      <Field label="الوقف المعني بالطلب" name="waqf" required hint="تظهر الأوقاف التي تملك فيها صلاحية طلب الخدمات. تُرفق مستندات الطلب بملف الوقف المختار." error={s.fieldErrors?.waqf}>
-        <Select name="waqf" required options={options} defaultValue={defaultWaqf ?? (options.length === 1 ? options[0].value : "")} placeholder="اختر الوقف" />
-      </Field>
+      <fieldset className="space-y-2" data-testid="waqf-mode">
+        <legend className="mb-1 text-[15px] font-semibold">الوقف المعني بالطلب <span className="text-critical">*</span></legend>
+        {modes.map((m) => (
+          <label key={m} className={cn("flex cursor-pointer items-start gap-3 rounded-md border px-3 py-2", mode === m ? "border-ink bg-ink-soft/40" : "border-line")}>
+            <input type="radio" name="waqfMode" value={m} checked={mode === m} onChange={() => setMode(m)} required className="mt-1 size-4 accent-[var(--ink)]" />
+            <span><span className="block text-[15px]">{MODE_TEXT[m].label}</span><span className="block text-[13px] text-muted">{MODE_TEXT[m].hint}</span></span>
+          </label>
+        ))}
+        {unavailable ? <p className="text-[13px] text-muted" data-testid="waqf-mode-note">{unavailable}</p> : null}
+      </fieldset>
+      {mode === "registered" ? (
+        options.length ? (
+          <Field label="اختر الوقف المسجل" name="waqf" required hint="تظهر الأوقاف التي تملك فيها صلاحية طلب الخدمات فقط. تُرفق مستندات الطلب بملف الوقف المختار." error={s.fieldErrors?.waqf}>
+            <Select name="waqf" required options={options} defaultValue={defaultWaqf ?? (options.length === 1 ? options[0].value : "")} placeholder="اختر الوقف" />
+          </Field>
+        ) : (
+          <p className="rounded-md bg-surface-2 px-3 py-2 text-[14px]" data-testid="no-registered-waqf">
+            لا يوجد وقف مسجل تملك فيه صلاحية طلب الخدمات. اختر «غير مسجل» إن كانت الخدمة تقبله، أو <a href="/app/waqfs/new" className="text-ink underline">سجّل الوقف</a> أولًا، أو اطلب من ناظره دعوتك.
+          </p>
+        )
+      ) : null}
       <FormMessage state={s} />
-      <SubmitButton size="lg" pendingText="جارٍ الفتح…">ابدأ نموذج الطلب</SubmitButton>
+      <SubmitButton size="lg" pendingText="جارٍ الفتح…" disabled={!mode || (mode === "registered" && !options.length)}>ابدأ نموذج الطلب</SubmitButton>
     </form>
   );
 }

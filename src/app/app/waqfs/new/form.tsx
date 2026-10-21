@@ -24,12 +24,20 @@ function Section({ title, hint, children }: { title: string; hint?: string; chil
   );
 }
 
-export function RegisterWaqfForm({ today }: { today: string }) {
+export function RegisterWaqfForm({ today, defaults, fromRequest }: { today: string; defaults?: Record<string, string>; fromRequest?: { id: string; number: string } }) {
   const [s, action] = useActionState(registerWaqf, initialState);
   const fe = s.fieldErrors ?? {};
-  const v = ((s.data?.values ?? {}) as Record<string, string>);
+  const v = ((s.data?.values ?? defaults ?? {}) as Record<string, string>);
   return (
     <form key={s.error ? JSON.stringify(v) : "f"} action={action} className="space-y-8 rounded-lg border border-line bg-surface p-4 md:p-6" noValidate>
+      {fromRequest ? (
+        <>
+          <input type="hidden" name="fromRequest" value={fromRequest.id} />
+          <p className="rounded-md bg-surface-2 px-3 py-2 text-[14px]" data-testid="register-from-request-note">
+            عبّأنا ما قدّمته في الطلب <bdi dir="ltr" className="tabular">{fromRequest.number}</bdi>. راجعه وأكمله. يُفتح للوقف ملف مستقل، ويبقى الطلب كما هو ولا يُربط بالملف تلقائيًا.
+          </p>
+        </>
+      ) : null}
       <Section title="الوقف وصكّه" hint="انقل البيانات كما وردت في صك الوقف. يمكنك استكمال الناقص لاحقًا من ملف الوقف.">
         <Field label="اسم الوقف" name="name" required error={fe.name} className="sm:col-span-2">
           <Input name="name" defaultValue={v.name} required maxLength={200} error={fe.name} placeholder="مثال: وقف آل فلان الخيري" />
