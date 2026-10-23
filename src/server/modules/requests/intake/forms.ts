@@ -48,6 +48,27 @@ const ASSET_TYPES = [
   ["real_estate", "عقار"], ["cash", "نقد"], ["securities", "أسهم أو وحدات صناديق أو محفظة"], ["business", "منشأة أو حصص في شركة"],
   ["movable", "منقولات"], ["intangible", "حقوق معنوية"], ["benefit", "منافع"], ["other", "أخرى"],
 ] as const;
+/** Kinds of a waqf asset (as in the waqf file's asset register). */
+const ASSET_KINDS = [
+  ["real_estate", "عقار"], ["shares", "أسهم"], ["fund_units", "وحدات صندوق"], ["sukuk", "صكوك"], ["cash", "نقد"],
+  ["movable", "منقولات"], ["usufruct", "منفعة"], ["intellectual_property", "حقوق معنوية"], ["other", "أخرى"],
+] as const;
+/** The document that proves the waqif owns an asset (never a real-estate deed for shares, or the reverse). */
+const OWNERSHIP_DOCS = [
+  ["deed", "صك ملكية عقاري"], ["securities_statement", "كشف حساب أوراق مالية أو إفادة إيداع"], ["bank_statement", "كشف حساب بنكي"],
+  ["contract", "عقد أو مستند ملكية آخر"], ["other", "مستند آخر"],
+] as const;
+const V2_KIND: Record<string, string> = { real_estate: "real_estate", cash: "cash", securities: "shares", business: "other", movable: "movable", intangible: "intellectual_property", benefit: "usufruct", other: "other" };
+/** T03 v2 → v3: the single asset (separate fields) becomes the first row of the assets table. */
+function upgradeT03(a: Record<string, unknown>): Record<string, unknown> {
+  if (a.assets || !a.assetDescription) return a;
+  const kind = V2_KIND[String(a.assetType ?? "")] ?? "other";
+  const row: Record<string, string> = {
+    kind, description: String(a.assetDescription ?? ""), docKind: kind === "real_estate" ? "deed" : "other", docNo: String(a.ownershipDeedNo ?? ""), docDate: String(a.ownershipDeedDate ?? ""),
+    owned: String(a.registeredToWaqif ?? ""), mortgaged: String(a.mortgaged ?? ""), share: String(a.share ?? ""), sharePercent: String(a.sharePercent ?? ""),
+  };
+  return { ...a, assets: JSON.stringify([Object.fromEntries(Object.entries(row).filter(([, v]) => v))]) };
+}
 const WAQF_KIND = [["general", "وقف عام (خيري)"], ["ahli", "وقف أهلي (ذري)"], ["mixed", "وقف مشترك"], ["undecided", "لم أحدد بعد"]] as const;
 const SIZE = [["large", "كبير"], ["medium", "متوسط"], ["small", "صغير"], ["direct_benefit", "ذو انتفاع مباشر"], ["unknown", "لا أعرف"]] as const;
 const FREQ = [["monthly", "شهري"], ["quarterly", "ربع سنوي"], ["semiannual", "نصف سنوي"], ["annual", "سنوي"]] as const;
@@ -288,7 +309,9 @@ const FORMS: Record<string, Omit<ServiceForm, "steps"> & { steps: Step[] }> = {
     }],
   },
   T03: {
-    code: "T03", version: 2,
+    code: "T03", version: 3,
+    // v2 asked one asset in separate fields; it becomes one row of the assets table
+    upgrade: upgradeT03,
     sources: [
       "الدليل الإرشادي لصياغة وثيقة الوقف (المبدأ الأول): البنود العشرة — المقدمة وبيانات الواقف، الأصل، اسم الوقف، المصارف وطبقاتها والترتيب بينها وبدائلها، استثناء الانتفاع، النظارة، واجبات الناظر، المجلس، الخاتمة، التوقيع والشهود",
       "الدليل الإرشادي لصياغة وثيقة الوقف م11–م14: وصف الأصل بما يميزه وصك ملكيته الساري وما يلحق به وحصة المشاع",
@@ -298,7 +321,7 @@ const FORMS: Record<string, Omit<ServiceForm, "steps"> & { steps: Step[] }> = {
     docs: [
       doc("ownership", "ownership_deed", "صك ملكية الأصل الموقوف أو مستند ملكيته", { required: true, hint: "يشترط أن يكون الأصل مملوكًا للواقف ومسجلًا باسمه بصك ساري." }),
       doc("waqifId", "id_document", "هوية الواقف"),
-      doc("mortgagee", "official_letter", "موافقة المرتهن", { showIf: yes("mortgaged"), requiredIf: yes("mortgaged") }),
+      doc("mortgagee", "official_letter", "موافقة المرتهن", { showIf: { field: "assets", row: "mortgaged", eq: "yes" }, requiredIf: { field: "assets", row: "mortgaged", eq: "yes" } }),
     ],
     steps: [
       {
@@ -311,17 +334,22 @@ const FORMS: Record<string, Omit<ServiceForm, "steps"> & { steps: Step[] }> = {
         ],
       },
       {
-        key: "asset", title: "الأصل الموقوف",
+        key: "asset", title: "الأصول الموقوفة",
+        intro: "صف لكل أصل بمستند ملكيته. إن كان للوقف ملف في المنصة تظهر أصوله المسجلة هنا: راجعها وصحّح ما يلزم، أو أضف أصلًا جديدًا.",
         fields: [
-          sel("assetType", "نوع الأصل", ASSET_TYPES, R),
-          area("assetDescription", "وصف الأصل بما يميزه", { ...R, minLength: 15, hint: "للعقار: المدينة والحي ورقم القطعة والحدود والمساحة. للأسهم: الشركة وعدد الأسهم." }),
-          text("ownershipDeedNo", "رقم صك الملكية أو مستندها", R),
-          date("ownershipDeedDate", "تاريخ الصك"),
-          yn("registeredToWaqif", "هل الأصل مملوك ومسجل باسم الواقف بصك ساري؟", R),
-          yn("mortgaged", "هل الأصل مرهون؟", R),
-          radio("share", "هل الوقف على كامل الأصل أم على حصة منه؟", [["whole", "كامل الأصل"], ["share", "حصة مشاعة"]], R),
-          pct("sharePercent", "نسبة الحصة", { showIf: when("share", "share"), requiredIf: when("share", "share") }),
-          radio("appurtenances", "ما يلحق بالأصل", [["all", "يشمل الوقف الأصل بجميع حقوقه وما فيه"], ["except", "يُستثنى منه جزء محدد"]], R),
+          table("assets", "الأصول الموقوفة", [
+            { key: "kind", label: "نوع الأصل", type: "select", required: true, options: ASSET_KINDS },
+            { key: "description", label: "وصف الأصل بما يميزه", type: "text", required: true },
+            { key: "docKind", label: "مستند الملكية", type: "select", required: true, options: OWNERSHIP_DOCS },
+            { key: "docNo", label: "رقم المستند", type: "text" },
+            { key: "docDate", label: "تاريخ المستند", type: "date" },
+            { key: "owned", label: "مملوك للواقف ومسجل باسمه", type: "select", required: true, options: [["yes", "نعم"], ["no", "لا"]] },
+            { key: "mortgaged", label: "مرهون", type: "select", required: true, options: [["no", "لا"], ["yes", "نعم"]] },
+            { key: "share", label: "الموقوف منه", type: "select", required: true, options: [["whole", "كامل الأصل"], ["share", "حصة مشاعة"]] },
+            { key: "sharePercent", label: "نسبة الحصة", type: "percent", required: true, showIf: { col: "share", in: ["share"] } },
+            { key: "src", label: "المصدر", type: "hidden" },
+          ], { ...R, minRows: 1, maxRows: 20, prefillTable: "waqf.assets", hint: "للعقار: المدينة والحي ورقم القطعة والمساحة وصك ملكيته. للأسهم: الشركة وعددها وكشف حساب الأوراق المالية. لا يُنسب أصل إلى مستند أصل آخر." }),
+          radio("appurtenances", "ما يلحق بالأصول", [["all", "يشمل الوقف كل أصل بجميع حقوقه وما فيه"], ["except", "يُستثنى جزء محدد"]], R),
           text("exceptionPart", "الجزء المستثنى", { showIf: when("appurtenances", "except"), requiredIf: when("appurtenances", "except") }),
         ],
       },
@@ -346,9 +374,16 @@ const FORMS: Record<string, Omit<ServiceForm, "steps"> & { steps: Step[] }> = {
           radio("nazirType", "من يتولى النظارة", [["self", "الواقف نفسه حال حياته"], ["named", "شخص يُسمّى"], ["board", "مجلس نظارة"], ["entity", "جهة اعتبارية (مثل شركة نظارة مرخصة)"]], R),
           text("nazirName", "اسم الناظر أو الجهة", { showIf: { field: "nazirType", in: ["named", "entity"] }, requiredIf: { field: "nazirType", in: ["named", "entity"] } }),
           num("boardSize", "عدد أعضاء المجلس", { showIf: when("nazirType", "board"), requiredIf: when("nazirType", "board"), min: 3, max: 15 }),
+          table("boardMembers", "أعضاء مجلس النظارة الأوائل", [
+            { key: "name", label: "الاسم الكامل", type: "text", required: true },
+            { key: "role", label: "الدور في المجلس", type: "select", required: true, options: [["chair", "رئيس"], ["member", "عضو"], ["secretary", "أمين سر"]] },
+            { key: "capacity", label: "الصفة (اختياري)", type: "text" },
+            { key: "src", label: "المصدر", type: "hidden" },
+          ], { showIf: when("nazirType", "board"), maxRows: 15, prefillTable: "waqf.board", hint: "تظهر هنا عضويات مجلس النظارة المسجلة في ملف الوقف إن وُجدت. نصاب المجلس وآلية قراراته ومدد العضوية يحددها الواقف مع المختص." }),
           radio("succession", "استخلاف الناظر بعد خلو النظارة", [["eldest", "الأصلح فالأصلح من الموقوف عليهم"], ["named", "من يسميه الناظر قبله كتابةً"], ["board", "ينتخبه المجلس"], ["authority", "تعيّنه الجهة المختصة"]], R),
           yn("investmentAllowed", "هل تجيز للناظر استثمار الوقف وتنميته؟", R),
           yn("amendmentRight", "هل تشترط لنفسك حق تعديل بعض الشروط؟", { hint: "التعديل بعد الثبوت لا يتم إلا بموافقة الجهة المختصة (100 سؤال، س76)." }),
+          yn("clientPreview", "هل تريد الاطلاع على المسودة وإبداء ملاحظاتك قبل اعتمادها؟", { hint: "إن اخترت نعم لا تُعتمد المسودة قبل أن يُسجّل الفريق اطلاعك عليها وما أبديته." }),
         ],
       },
     ],
@@ -1329,7 +1364,7 @@ export function formFor(svc: { code: string; audiences: string[]; requiredDocume
   const applicant: Step = { ...ap.step, fields: [...ap.step.fields, hidden("waqfMode")] };
   const uw = unregisteredWaqf(svc.code, base.steps, docs);
   return {
-    code: svc.code, version: base.version, sources: base.sources,
+    code: svc.code, version: base.version, sources: base.sources, upgrade: base.upgrade,
     steps: [applicant, ...ctx, ...(uw ? [uw.step] : []), ...base.steps, NOTES],
     docs: [...docs, ...(uw?.docs ?? []), ...ap.docs],
   };

@@ -33,6 +33,8 @@ import { ClientFieldsView } from "@/components/requests/client-fields";
 import { clientPhase } from "@/server/modules/requests/phase";
 import { outputStatesForPhase } from "@/server/modules/requests/phase-server";
 import { fieldWorkspace } from "@/server/modules/requests/field-workspace";
+import { clientApprovalAck, isLegalDraftService } from "@/server/modules/outputs/catalog";
+import { LEGAL_DRAFT_NOTICE } from "@/server/modules/outputs/render";
 
 export const metadata: Metadata = { title: "تفاصيل الطلب" };
 
@@ -245,6 +247,9 @@ export default async function RequestPage({ params, searchParams }: { params: Pr
           {/* Deliverables */}
           {deliverables.length ? (
             <Panel title="المخرجات" description={r.status === "awaiting_client_approval" ? "راجع المخرجات ثم اعتمدها أو اطلب تعديلات." : undefined}>
+              {isLegalDraftService(d.rc.service.code) ? (
+                <p className="mb-3 rounded-md border border-seal/40 bg-seal-soft/40 px-3 py-2 text-[14px]" data-testid="legal-draft-notice">{LEGAL_DRAFT_NOTICE}</p>
+              ) : null}
               <ul className="divide-y divide-line">
                 {deliverables.filter((x) => x.status !== "draft").map((x) => (
                   <li key={x.id} className="flex flex-col gap-1 py-3 sm:flex-row sm:items-center sm:justify-between">
@@ -262,7 +267,7 @@ export default async function RequestPage({ params, searchParams }: { params: Pr
               </ul>
               {r.status === "awaiting_client_approval" && canAct && submittedDels.length ? (
                 <div className="mt-4 border-t border-line pt-4">
-                  <TransitionPanel action={clientTransition} id={r.id}
+                  <TransitionPanel action={clientTransition} id={r.id} ack={{ to: "completed", text: clientApprovalAck(d.rc.service.code) }}
                     transitions={d.transitions.filter((t) => t.to === "completed" || t.to === "in_progress").map((t) => ({ ...t, label: t.to === "completed" ? "أعتمد المخرجات" : "أطلب تعديلات" }))} />
                 </div>
               ) : null}
@@ -323,9 +328,9 @@ export default async function RequestPage({ params, searchParams }: { params: Pr
             <DefinitionList cols={1} items={[
               { label: "الوقف", value: rc.waqf ? <Link className="text-ink hover:underline" href={`/app/w/${rc.waqf.id}`}>{rc.waqf.name}</Link> : "بلا وقف" },
               { label: "الأولوية", value: PRIORITY_LABEL[r.priority] ?? r.priority },
-              { label: "المختص", value: assignee?.name ?? "لم يُسند بعد" },
+              { label: "المختص", value: assignee?.name ?? (["draft", "submitted", "triage"].includes(r.status) ? "لم يُسند بعد" : "فريق «وقفك»") },
               { label: "أُرسل", value: r.submittedAt ? fmtDate(r.submittedAt) : "لم يُرسل" },
-              { label: "المهلة الحالية", value: <SlaBadge due={r.slaDueAt} status={r.status} /> },
+              { label: "المهلة الحالية", value: <SlaBadge due={r.slaDueAt} status={r.status} waitingOnViewer={phase?.owner === "client"} /> },
             ]} />
           </Panel>
           {canAct && others.length ? (

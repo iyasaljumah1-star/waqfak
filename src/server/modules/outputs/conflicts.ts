@@ -33,6 +33,46 @@ export type ConflictInput = {
   waqf: Record<string, string | null> | null;
   /** Fields of the form that are prefilled from the waqf file (field → "waqf.x"). */
   prefills: Record<string, string>;
+  /** Rows of the waqf file behind the request's prefilled tables (assets, board), each with its `src`. */
+  fileRows?: Record<string, Record<string, string>[]>;
+};
+
+/**
+ * A row of a request table that came from the waqf file and now differs from its record, in a column that identifies it
+ * (asset kind, ownership document, share; a member's name or role): shown with both values, never resolved here.
+ */
+const fileRowRule = (table: string, what: string, cols: { key: string; label: string; material: boolean }[]): Rule => (x) => {
+  const file = new Map((x.fileRows?.[table] ?? []).map((r) => [r.src, r]));
+  const out: Conflict[] = [];
+  (x.tables[table] ?? []).forEach((row, i) => {
+    const rec = row.src ? file.get(row.src) : undefined;
+    if (!row.src?.startsWith("file:")) return;
+    if (!rec) {
+      out.push({ key: `file:${table}:${i + 1}:gone`, label: `${what} ${i + 1}: سجله في ملف الوقف لم يعد قائمًا`, severity: "minor", sides: [{ field: table, label: `${what} ${i + 1}`, value: row.name ?? row.description ?? "—", source: FORM }], action: "يُتحقق هل حُذف السجل من ملف الوقف أو أُرشف، ثم يُبقى الصف أو يُحذف.", fields: [table] });
+      return;
+    }
+    for (const c of cols) {
+      const a = (row[c.key] ?? "").trim(), b = (rec[c.key] ?? "").trim();
+      if (!b || norm(a) === norm(b) || (digits(a) && digits(a) === digits(b) && /\d/.test(b))) continue;
+      out.push({
+        key: `file:${table}:${i + 1}:${c.key}`, label: `${what} ${i + 1}: «${c.label}» في الطلب يخالف ملف الوقف`, severity: c.material ? "material" : "minor",
+        sides: [{ field: table, label: `${c.label} في الطلب`, value: opt(x, `${table}.${c.key}`, a) || "—", source: FORM }, { field: table, label: `${c.label} في ملف الوقف`, value: opt(x, `${table}.${c.key}`, b), source: "ملف الوقف" }],
+        action: "يُتحقق من المستند: يُصحَّح الصف في الطلب، أو يُحدَّث ملف الوقف بإجرائه إن كان هو الأقدم. لا تختار المنصة قيمة.", fields: [table],
+      });
+    }
+  });
+  return out;
+};
+
+/** Each ownership document attached with a recorded number names one of the assets' documents. */
+const assetDocRule: Rule = (x) => {
+  const rows = x.tables.assets ?? [];
+  if (!rows.length) return [];
+  return x.docs.filter((d) => d.slot === "ownership" && d.number?.trim()).filter((d) => !rows.some((r) => digits(r.docNo) && digits(r.docNo) === digits(d.number))).map((d) => ({
+    key: `doc_number:ownership:assets:${digits(d.number)}`, label: `رقم «${d.title}» المرفق لا يطابق رقم مستند أي أصل في جدول الأصول`, severity: "material" as const,
+    sides: [{ field: "doc:ownership", label: `رقم «${d.title}»`, value: d.number!, source: "بيانات المستند المرفق في الطلب" }, { field: "assets", label: "أرقام مستندات الأصول", value: rows.map((r) => r.docNo || "—").join("، "), source: FORM }],
+    action: "يُطابق كل مستند مع أصله: تُصحَّح أرقام الأصول، أو بيانات المستند، أو يُستبدل المستند.", fields: ["assets"],
+  }));
 };
 
 const norm = (s: string | null | undefined) => (s ?? "").replace(/[ً-ْـ]/g, "").replace(/[أإآ]/g, "ا").replace(/ى/g, "ي").replace(/ة/g, "ه").replace(/\s+/g, " ").trim().toLowerCase();
@@ -188,6 +228,9 @@ const SERVICE: Record<string, Rule[]> = {
   ],
   T03: [
     docNumberRule("ownership", "ownershipDeedNo", "صك ملكية الأصل"),
+    assetDocRule,
+    fileRowRule("assets", "الأصل", [{ key: "kind", label: "نوع الأصل", material: true }, { key: "docKind", label: "مستند الملكية", material: true }, { key: "docNo", label: "رقم المستند", material: true }, { key: "share", label: "الموقوف منه", material: true }, { key: "sharePercent", label: "نسبة الحصة", material: true }, { key: "description", label: "الوصف", material: false }]),
+    fileRowRule("boardMembers", "عضو المجلس", [{ key: "name", label: "الاسم", material: true }, { key: "role", label: "الدور", material: true }, { key: "capacity", label: "الصفة", material: false }]),
     docNumberRule("waqifId", "waqifId", "هوية الواقف"),
   ],
 };

@@ -16,6 +16,7 @@ import { assignableRoleKeys, loadRequestCtx } from "./access";
 import { advance, logEvent, transition, type ActCtx } from "./engine";
 import { moveOpenTasks } from "@/server/modules/operations/exec";
 import { HOLD_PARTY_LABEL, STATUS_LABEL, type RequestStatus } from "./workflow";
+import { clientApprovalAck } from "@/server/modules/outputs/catalog";
 
 const uuid = z.string().uuid("قيمة غير صالحة.");
 const STATUSES = Object.keys(STATUS_LABEL) as [RequestStatus, ...RequestStatus[]];
@@ -31,6 +32,8 @@ const transitionSchema = z.object({
   note: z.string().max(2000).optional().default(""),
   holdParty: z.string().optional().default(""),
   holdFollowUpOn: z.string().optional().default(""),
+  /** The client's acknowledgement when approving the delivered outputs (checkbox). */
+  ack: z.string().optional().default(""),
 });
 
 async function doTransition(side: "client" | "staff", fd: FormData) {
@@ -43,7 +46,13 @@ async function doTransition(side: "client" | "staff", fd: FormData) {
     async (c) => {
       if (side === "staff" && !c.auth.isStaff) throw new ForbiddenError();
       const rc = await loadRequestCtx(c.tx, c.auth, d.id, side);
-      await transition(c, rc, { to: d.to, note: d.note, holdParty: d.holdParty || undefined, holdFollowUpOn: d.holdFollowUpOn || undefined });
+      // approving the delivery: the client confirms what he approves; the statement is recorded with the approval
+      let note = d.note;
+      if (side === "client" && d.to === "completed" && rc.req.status === "awaiting_client_approval") {
+        if (d.ack !== "on") throw new UserError("أكّد الإقرار قبل اعتماد المخرجات.");
+        note = `أقرّ العميل: ${clientApprovalAck(rc.service.code)}`;
+      }
+      await transition(c, rc, { to: d.to, note, holdParty: d.holdParty || undefined, holdFollowUpOn: d.holdFollowUpOn || undefined, confirmStages: side === "staff" && d.to === "quality_review" && d.ack === "on" });
       return { ok: true, message: `تم: ${STATUS_LABEL[d.to]}.` };
     },
     { revalidate: revalidateReq(d.id) },

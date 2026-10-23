@@ -4,7 +4,8 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
-import { contracts, invoices, notificationTemplates, payments, quotes, serviceRequests, users, waqfs } from "@/server/db/schema";
+import { contracts, invoices, notificationTemplates, paymentSchedule, payments, quotes, serviceRequests, users, waqfs } from "@/server/db/schema";
+import { closeFinanceTask } from "./schedule";
 import type { PaymentTerm } from "@/server/db/schema/commerce";
 import { ForbiddenError } from "@/server/authz/context";
 import { audit, nextNumber } from "@/server/lib/audit";
@@ -151,6 +152,11 @@ export async function approveInvoice(_: ActionState, fd: FormData): Promise<Acti
     if (!inv) throw new UserError("الفاتورة غير موجودة.");
     reval = invRevalidate(inv);
     if (inv.status !== "draft") throw new UserError(inv.status === "approved" ? "الفاتورة معتمدة مسبقًا وبانتظار الإرسال." : "تُعتمد المسودة فقط.");
+    // the company's statutory data is checked again when the legal number is assigned (it may have changed since the draft)
+    if (inv.kind === "tax_invoice" || inv.kind === "non_tax_invoice") {
+      const now = invoicePolicy(await companyProfile(c.tx));
+      if (now.kind !== inv.kind) throw new UserError(`لا تُعتمد ${INVOICE_KIND_LABEL[inv.kind as "tax_invoice"]}: ${now.gaps.length ? `ينقص في بيانات الشركة: ${now.gaps.join("، ")}` : "تغيّرت حالة التسجيل الضريبي للشركة منذ إعداد المسودة"}. استكمل الإعدادات أو ألغِ المسودة وأعدّها من جديد.`);
+    }
     const number = await nextNumber(c.tx, inv.kind === "proforma" ? "PRF" : "INV");
     const self = inv.createdBy === c.auth.user.id;
     await c.tx.update(invoices).set({ number, status: "approved", approvedAt: new Date(), approvedBy: c.auth.user.id, selfApproved: self, updatedBy: c.auth.user.id }).where(and(eq(invoices.id, inv.id), eq(invoices.status, "draft")));
@@ -198,6 +204,11 @@ export async function sendInvoice(_: ActionState, fd: FormData): Promise<ActionS
     if (inv.requestId) {
       const [req] = await c.tx.select().from(serviceRequests).where(eq(serviceRequests.id, inv.requestId));
       if (req) await logEvent(c.tx, req, c.auth.user.id, `صدرت ${kindLabel} ${inv.number}${inv.installmentLabel ? ` لدفعة «${inv.installmentLabel}»` : ""} بإجمالي ${fmtSAR(inv.total)}`);
+      // the installment's mandatory finance task is done once its invoice is sent
+      if (inv.quoteId && inv.installmentKey) {
+        const [row] = await c.tx.select({ id: paymentSchedule.id }).from(paymentSchedule).where(and(eq(paymentSchedule.quoteId, inv.quoteId), eq(paymentSchedule.termKey, inv.installmentKey))).limit(1);
+        if (row) await closeFinanceTask(c.tx, inv.requestId, row.id, c.auth.user.id, inv.number);
+      }
     }
     await notify(inv.userId, "request.awaiting_client", { number: inv.number, note: `صدرت ${kindLabel} ${inv.number} بمبلغ ${fmtSAR(inv.total)}` }, { waqfId: inv.waqfId, link: `/app/billing/${inv.id}`, tx: c.tx });
     await audit(c.tx, { actorUserId: c.auth.user.id, action: "billing.invoice_issue", entityType: "invoice", entityId: inv.id, waqfId: inv.waqfId, ip: c.ip, userAgent: c.userAgent, before: { status: "approved" }, after: { number: inv.number, status: "issued", sent: true } });

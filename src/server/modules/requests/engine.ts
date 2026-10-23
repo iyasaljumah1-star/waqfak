@@ -5,6 +5,8 @@ import { and, asc, eq, inArray } from "drizzle-orm";
 import type { Tx } from "@/server/db";
 import { deliverables, documents, holidays, quotes, requestEvents, requestItems, requestStages, roles, serviceRequests, services, tasks, userRoles, users, workflowTemplates } from "@/server/db/schema";
 import { prestartUnpaid } from "@/server/modules/commerce/state";
+import { installmentsDueOn, unbilledOf } from "@/server/modules/billing/schedule";
+import { FIELD_REVIEW_SERVICES, fieldRelease, fieldReleaseBlock } from "./field-policy";
 import { blocking } from "./items-pure";
 import { formFor } from "./intake/forms";
 import { intakeNeeds, type Answers, type DocMap } from "./intake/engine";
@@ -145,6 +147,8 @@ export type TransitionInput = {
   /** Event-driven change made by the platform on behalf of the actor (e.g. all deficiencies answered). Skips the
    *  actor-capacity table, never the business guards. */
   system?: boolean;
+  /** The sender confirms that the open work stages were actually done (sending to quality review). */
+  confirmStages?: boolean;
 };
 
 /**
@@ -198,8 +202,20 @@ export async function transition(c: ActCtx, rc: RequestCtx, input: TransitionInp
       // automatically when a record the service reads is missing or old) update the file and may outlive the request
       .filter((t) => !t.kind && !t.fieldKey?.startsWith("ctx:")).map((t) => t.title)
     : [];
+  const unbilled = to === "closed" ? await unbilledOf(tx, rc.req.id) : [];
+  // release to the client: the field-review policy of the service (essential fields reviewed, secondary reviewed or waived)
+  const fieldReview = from === "quality_review" && to === "awaiting_client_approval" && FIELD_REVIEW_SERVICES.includes(rc.service.code) && rc.req.intakeFormVersion
+    ? fieldReleaseBlock(fieldRelease(rc.service.code, (await (await import("./field-workspace")).fieldWorkspace(tx, rc, "staff")).analysis))
+    : null;
+  const openWorkStages = from === "in_progress" && to === "quality_review" ? await (async () => {
+    const plan0 = await currentPlan(tx, rc.req.id, rc.stagesDef);
+    const q = plan0.findIndex((s) => s.role === "quality");
+    const firstClient = plan0.findIndex((s) => !!s.clientApproval || s.role === "client");
+    const end = q >= 0 ? q : firstClient >= 0 ? firstClient : plan0.length;
+    return plan0.slice(0, end).filter((s) => s.status !== "done" && s.status !== "skipped").map((s) => rc.stagesDef.find((d) => d.key === s.key)?.name ?? s.key);
+  })() : [];
   const err = guardTransition({
-    startMissing, openTasks,
+    startMissing, openTasks, unbilled, fieldReview, openWorkStages, stagesConfirmed: !!input.confirmStages,
     from, to, actorUserId: auth.user.id, conflictCheck: rc.req.conflictCheck, workflowCode: rc.workflowCode, deliverers: rc.deliverers,
     submittedDeliverables: submitted.length, unsignedOpinionDeliverables: submitted.filter((d) => !d.signedBy?.trim()).length,
     contractSignedByClient: cs.clientSigned, hasContract: !!cs.contract, quoteAmount: rc.req.quoteAmount ? Number(rc.req.quoteAmount) : null,
@@ -236,6 +252,7 @@ export async function transition(c: ActCtx, rc: RequestCtx, input: TransitionInp
   const plan = await currentPlan(tx, rc.req.id, rc.stagesDef);
   const next = planStages(plan, from, to);
   const restarted = await applyStagePlan(tx, rc.req.id, next, auth.user.id);
+  if (openWorkStages.length) await logEvent(tx, rc.req, auth.user.id, `أكّد المرسِل عند الإرسال للجودة أن مراحل العمل أُنجزت فعلًا: ${openWorkStages.map((x) => `«${x}»`).join("، ")} (تأكيد صريح، لا إنجاز من المرحلة نفسها)`);
   await recomputeSla(tx, rc.req.id, { restartActive: restarted || from === "on_hold" });
 
   // Linked operational records (explicit rules; see operations/exec.ts and operations/links.ts)
@@ -247,6 +264,9 @@ export async function transition(c: ActCtx, rc: RequestCtx, input: TransitionInp
     await cancelOpenTasks(tx, rc.req.id, auth.user.id, `${to === "cancelled" ? "أُلغي" : "رُفض"} الطلب${note ? `: ${note}` : ""}`);
     await syncNazaraFromRequest(c, rc.req, to, note);
   }
+  // installments that become due with the delivery: due date set, one mandatory finance task each (idempotent)
+  if (to === "awaiting_client_approval") await installmentsDueOn(tx, rc.req, "delivery", auth.user.id);
+  if (to === "completed") await installmentsDueOn(tx, rc.req, "completion", auth.user.id);
   if (to === "awaiting_client_approval") {
     await releaseApprovedOutputs(tx, rc, auth.user.id, { ip: c.ip, userAgent: c.userAgent });
     // files of the delivered work become visible to the client now (they were internal while in preparation)
@@ -255,7 +275,9 @@ export async function transition(c: ActCtx, rc: RequestCtx, input: TransitionInp
     if (delDocs.length) await tx.update(documents).set({ approvalStatus: "approved" }).where(and(inArray(documents.id, delDocs), eq(documents.approvalStatus, "in_review")));
   }
 
-  const eventNote = [t.label, note].filter(Boolean).join(" — ");
+  // a quality review by someone who prepared the work is shown in the request's own log, with its basis
+  const selfNote = selfQA ? (qaMk?.ok ? "اعتماد مباشر للجودة: أعدّ المعتمد العمل بنفسه، والأساس صلاحية الاعتماد المباشر" : "اعتماد ذاتي للجودة: المخرجات كلها معتمدة وفق سياسة الاعتماد الذاتي، والمعتمد مدير مخوّل") : "";
+  const eventNote = [t.label, selfNote, note].filter(Boolean).join(" — ");
   await logEvent(tx, rc.req, auth.user.id, eventNote, from, to);
   await audit(tx, {
     actorUserId: auth.user.id, action: `requests.transition.${to}`, entityType: "service_request", entityId: rc.req.id, waqfId: rc.req.waqfId,

@@ -71,3 +71,30 @@ export function initialDueOn(t: { due: string; dueOn?: string | null }, executed
   if (t.due === "on_contract" || t.due === "before_start") return executedOn;
   return null;
 }
+
+/**
+ * When an installment becomes due by the progress of the work (PURE): «on_delivery» when the approved outputs are
+ * released to the client; «on_completion» and «on_milestone» (a contractual stage of the work) at the latest when the
+ * client approves the delivery — the work is then complete. Other kinds have their own dates.
+ */
+export function dueByEvent(dueKind: string, event: "delivery" | "completion"): boolean {
+  if (event === "delivery") return dueKind === "on_delivery";
+  return dueKind === "on_delivery" || dueKind === "on_completion" || dueKind === "on_milestone";
+}
+
+/** Invoice states that count as issued to the client (sent with its legal number); payment is a separate matter. */
+export const ISSUED_INVOICE_STATES = ["issued", "partially_paid", "paid"];
+
+/**
+ * Installments that block closing a request (PURE): every contractual installment needs an issued invoice before the
+ * request is closed. A draft or merely approved invoice, or a finance task, is not enough. Payment is not required.
+ */
+export function unbilledInstallments(rows: { id: string; label: string; total: number; invoices: { status: string; kind: string }[] }[]) {
+  return rows
+    .map((r) => {
+      const live = r.invoices.filter((i) => (i.kind === "tax_invoice" || i.kind === "non_tax_invoice") && i.status !== "void");
+      const issued = live.some((i) => ISSUED_INVOICE_STATES.includes(i.status));
+      return issued ? null : { id: r.id, label: r.label, total: r.total, state: live.length ? "فاتورة لم تُعتمد أو لم تُرسل بعد" : "بلا فاتورة" };
+    })
+    .filter((x): x is { id: string; label: string; total: number; state: string } => !!x);
+}

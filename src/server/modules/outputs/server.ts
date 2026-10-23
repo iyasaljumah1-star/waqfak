@@ -10,7 +10,7 @@ import { dataKeyFor, logAccess } from "@/server/modules/documents/core";
 import { pdfShell, renderPdf } from "@/server/modules/pdf/render";
 import { UserError } from "@/server/modules/_shared";
 import type { RequestCtx } from "@/server/modules/requests/access";
-import { SPECIALTY_LABEL, type OutputDef } from "./catalog";
+import { SPECIALTY_LABEL, isLegalDraftService, type OutputDef } from "./catalog";
 import { OUTPUT_PDF_CSS, outputHtml } from "./render";
 
 export type OutputRow = typeof outputs.$inferSelect;
@@ -82,7 +82,9 @@ async function names(tx: Tx, ids: (string | null)[]) {
 }
 
 /** Builds the PDF HTML of a version (draft banner unless it is the approved version). */
-export async function outputDocHtml(tx: Tx, rc: RequestCtx, o: OutputRow, v: VersionRow, signedBy: string | null) {
+const isLegalDraft = isLegalDraftService;
+
+export async function outputDocHtml(tx: Tx, rc: RequestCtx, o: OutputRow, v: VersionRow, signedBy: string | null, opts: { audience?: "client" | "internal"; clientPreview?: boolean } = {}) {
   const [w] = rc.req.waqfId ? await tx.select({ name: waqfs.name, isDemo: waqfs.isDemo }).from(waqfs).where(eq(waqfs.id, rc.req.waqfId)).limit(1) : [];
   const returns = await tx.select({ by: taskEvents.actorUserId, at: taskEvents.at, note: taskEvents.note }).from(taskEvents).innerJoin(tasks, eq(tasks.id, taskEvents.taskId))
     .where(and(eq(tasks.requestId, o.requestId), eq(tasks.kind, "prepare_output"), eq(tasks.outputKey, o.outputKey), eq(taskEvents.action, "reopen")));
@@ -94,8 +96,8 @@ export async function outputDocHtml(tx: Tx, rc: RequestCtx, o: OutputRow, v: Ver
     preparedBy: n.get(o.submittedBy ?? v.createdBy ?? "") ?? null, approvedBy: n.get(o.approvedBy ?? "") ?? null,
     approvedAt: o.approvedAt ? o.approvedAt.toISOString().slice(0, 10) : null, selfApproved: o.selfApproved, signedBy, isDemo: !!w?.isDemo,
     versionDate: v.createdAt.toISOString().slice(0, 10),
-    reviewRounds: returns.filter((r) => r.note?.startsWith("أُعيد المخرج")).map((r) => `أعاده للتعديل ${n.get(r.by ?? "") ?? "—"} في ${r.at.toISOString().slice(0, 10)}`), workflowStatus: isApprovedVersion ? "approved" : o.status === "in_review" && o.currentVersion === v.version ? "in_review" : "draft",
-    gaps: v.gaps,
+    reviewRounds: returns.filter((r) => r.note?.startsWith("أُعيد المخرج")).map((r) => `أعاده للتعديل ${n.get(r.by ?? "") ?? "—"} في ${r.at.toISOString().slice(0, 10)}`), workflowStatus: opts.clientPreview ? "client_preview" : isApprovedVersion ? "approved" : o.status === "in_review" && o.currentVersion === v.version ? "in_review" : "draft",
+    gaps: v.gaps, audience: opts.audience ?? "internal", legalDraft: isLegalDraft(rc.service.code), serviceName: rc.service.nameAr,
   }, v.sections);
   return pdfShell(o.title, html, OUTPUT_PDF_CSS);
 }
@@ -106,13 +108,13 @@ export async function previewDocHtml(tx: Tx, rc: RequestCtx, def: OutputDef, sec
   const html = outputHtml({
     number: "—", title: def.title, specialty: SPECIALTY_LABEL[def.specialty], serviceLine: `${rc.service.code} — ${rc.service.nameAr}`, requestNumber: rc.req.number,
     waqfName: w?.name ?? null, version: 0, status: "draft", preparedBy: null, approvedBy: null, approvedAt: null, selfApproved: false, signedBy: null, isDemo: !!w?.isDemo,
-    versionDate: new Date().toISOString().slice(0, 10), workflowStatus: "preview", gaps,
+    versionDate: new Date().toISOString().slice(0, 10), workflowStatus: "preview", gaps, legalDraft: isLegalDraft(rc.service.code),
   }, sections);
   return pdfShell(def.title, html, OUTPUT_PDF_CSS);
 }
 
 /** Stores a generated PDF in the documents vault (encrypted like any upload; generated, so no malware scan applies). */
-async function storeGeneratedPdf(tx: Tx, p: { waqfId: string | null; requestId: string; title: string; data: Buffer; ownerUserId: string; fileName: string }) {
+export async function storeGeneratedPdf(tx: Tx, p: { waqfId: string | null; requestId: string; title: string; data: Buffer; ownerUserId: string; fileName: string }) {
   const key = await dataKeyFor(tx, p.waqfId);
   const enc = encryptBuffer(p.data, key);
   const storageKey = newStorageKey({ waqfId: p.waqfId, userId: p.ownerUserId });
@@ -149,12 +151,12 @@ export async function releaseOutput(tx: Tx, rc: RequestCtx, o: OutputRow, actorI
   const [d] = o.deliverableId ? await tx.select({ signedBy: deliverables.signedBy }).from(deliverables).where(eq(deliverables.id, o.deliverableId)).limit(1) : [];
   let pdf: Buffer;
   try {
-    pdf = await renderPdf(await outputDocHtml(tx, rc, o, v, d?.signedBy ?? null), { headerTitle: o.title });
+    pdf = await renderPdf(await outputDocHtml(tx, rc, o, v, d?.signedBy ?? null, { audience: "client" }), { headerTitle: o.title });
   } catch (err) {
     console.error("[outputs.release] render failed", err);
     throw new UserError("تعذر إنشاء ملف PDF للمخرج المعتمد الآن. أعد المحاولة بعد قليل.");
   }
-  const docId = await storeGeneratedPdf(tx, { waqfId: rc.req.waqfId, requestId: rc.req.id, title: `${o.title} (${o.number})`, data: pdf, ownerUserId: o.approvedBy ?? actorId, fileName: `${o.number}-v${o.approvedVersion}.pdf` });
+  const docId = await storeGeneratedPdf(tx, { waqfId: rc.req.waqfId, requestId: rc.req.id, title: o.title, data: pdf, ownerUserId: o.approvedBy ?? actorId, fileName: `${rc.req.number}-${o.outputKey.includes("@") ? o.outputKey.split("@")[1] : "output"}.pdf` });
   await tx.update(outputs).set({ documentId: docId, updatedBy: actorId }).where(eq(outputs.id, o.id));
   if (o.deliverableId) await tx.update(deliverables).set({ documentId: docId, updatedBy: actorId }).where(eq(deliverables.id, o.deliverableId));
   await audit(tx, { actorUserId: actorId, action: "outputs.released", entityType: "output", entityId: o.id, waqfId: o.waqfId, ip: meta.ip, userAgent: meta.userAgent, after: { number: o.number, version: o.approvedVersion, documentId: docId } });

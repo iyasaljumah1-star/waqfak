@@ -23,12 +23,12 @@ export function ConflictBadge({ value }: { value: string }) {
 const toIso = (d: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Riyadh" }).format(d);
 
 /** SLA badge: overdue (red), due within 2 days (warn), otherwise neutral. */
-export function SlaBadge({ due, status }: { due: Date | null; status: string }) {
+export function SlaBadge({ due, status, waitingOnViewer }: { due: Date | null; status: string; /** the paused step is the viewer's own */ waitingOnViewer?: boolean }) {
   if (!due || ["completed", "closed", "cancelled", "rejected"].includes(status)) return <span className="text-sm text-muted">—</span>;
   const iso = toIso(due);
   const n = daysUntil(iso) ?? 0;
   const paused = status === "on_hold" || status === "awaiting_client" || status === "quote" || status === "awaiting_contract" || status === "awaiting_client_approval";
-  if (paused) return <Badge tone="neutral" icon={false}>{relDays(iso)} · بانتظار طرف آخر</Badge>;
+  if (paused) return <Badge tone="neutral" icon={false}>{relDays(iso)} · {waitingOnViewer ? "بانتظارك" : "بانتظار طرف آخر"}</Badge>;
   return <Badge tone={n < 0 ? "critical" : n <= 2 ? "warn" : "neutral"} icon={n < 0}>{relDays(iso)}</Badge>;
 }
 

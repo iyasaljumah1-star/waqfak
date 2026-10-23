@@ -315,6 +315,22 @@ export async function myDraftFor(auth: Auth, serviceId: string) {
   });
 }
 
+/**
+ * Earlier requests of the same service for the same waqf (not drafts, cancelled or rejected): shown as a notice to the
+ * client before starting and to the team on the request. Nothing is blocked — a new request may be legitimate.
+ */
+export async function sameServiceRequests(tx: Tx, p: { serviceId: string; waqfIds: string[]; excludeId?: string }) {
+  if (!p.waqfIds.length) return [];
+  const rows = await tx.select({ id: serviceRequests.id, number: serviceRequests.number, status: serviceRequests.status, waqfId: serviceRequests.waqfId, submittedAt: serviceRequests.submittedAt })
+    .from(serviceRequests)
+    .where(and(eq(serviceRequests.serviceId, p.serviceId), inArray(serviceRequests.waqfId, p.waqfIds), notInArray(serviceRequests.status, ["draft", "cancelled", "rejected"])))
+    .orderBy(desc(serviceRequests.submittedAt)).limit(20);
+  return rows.filter((r) => r.id !== p.excludeId);
+}
+export async function sameServiceRequestsFor(auth: Auth, serviceId: string, waqfIds: string[]) {
+  return read(auth, (tx) => sameServiceRequests(tx, { serviceId, waqfIds }));
+}
+
 /** Data for the intake wizard of a draft: form, saved answers, attached documents and the documents that can be attached. */
 export async function intakePageData(auth: Auth, id: string) {
   return read(auth, async (tx) => {

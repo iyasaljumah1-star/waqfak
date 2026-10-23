@@ -70,6 +70,10 @@ class Doc {
   check(c: Omit<CheckResult, "mode"> & { mode?: CheckResult["mode"] }) {
     this.checks.push({ mode: c.status === "verified" ? "auto" : "professional", ...c });
   }
+  /** A question the specialist must settle with a recorded, reasoned decision before approval (never decided here). */
+  decision(key: string, label: string, reason: string, source: string) {
+    this.checks.push({ key: `dec:${key}`, label, status: "specialist", mode: "professional", kind: "decision", reason, source, rule: "يحسمه المختص بقرار مسبب يُسجَّل قبل الاعتماد. لا تُضاف أحكام أو شروط نيابة عن الواقف دون موافقته، ولا يُعد القرار رأيًا شرعيًا ما لم يوقّعه مختص." });
+  }
   add(key: string, title: string, text: string, refs: string[], prov: Provenance = "computed") {
     const data = this.used;
     this.used = [];
@@ -302,6 +306,64 @@ const WAQF_KIND_AR: Record<string, string> = { general: "عامًّا (خيري�
 const DIVISION: Record<string, string> = { equal: "بالتساوي بينهم", inheritance: "للذكر مثل حظ الأنثيين", na: "" };
 const SUCCESSION_DEED: Record<string, string> = { ...SUCCESSION_WILL };
 
+const ASSET_KIND_AR: Record<string, string> = { real_estate: "عقار", shares: "أسهم", fund_units: "وحدات صندوق", sukuk: "صكوك", cash: "نقد", movable: "منقولات", usufruct: "منفعة", intellectual_property: "حقوق معنوية", other: "أصل" };
+const DOC_KIND_AR: Record<string, string> = { deed: "صك ملكية عقاري", securities_statement: "كشف حساب أوراق مالية", bank_statement: "كشف حساب بنكي", contract: "عقد أو مستند ملكية", other: "مستند" };
+const DOC_PHRASE: Record<string, string> = { deed: "صك الملكية", securities_statement: "كشف حساب الأوراق المالية (إفادة الإيداع)", bank_statement: "كشف الحساب البنكي", contract: "مستند الملكية", other: "المستند" };
+const ORDINAL_M = ["الأول", "الثاني", "الثالث", "الرابع", "الخامس", "السادس", "السابع", "الثامن", "التاسع", "العاشر"];
+const ROLE_AR: Record<string, string> = { chair: "رئيسًا", member: "عضوًا", secretary: "أمينًا للسر" };
+const V2_KIND: Record<string, string> = { real_estate: "real_estate", cash: "cash", securities: "shares", business: "other", movable: "movable", intangible: "intellectual_property", benefit: "usufruct", other: "other" };
+
+/** The assets of the deed: the assets table (form v3), or the single asset of a v2 answer set. */
+function assetRows(x: DraftInput): Row[] {
+  const t = x.tables.assets ?? [];
+  if (t.length) return t;
+  const k = x.keys;
+  if (!k.assetDescription) return [];
+  const kind = V2_KIND[k.assetType ?? ""] ?? "other";
+  return [{ kind, description: k.assetDescription, docKind: kind === "real_estate" ? "deed" : "other", docNo: k.ownershipDeedNo ?? "", docDate: k.ownershipDeedDate ?? "", owned: k.registeredToWaqif ?? "", mortgaged: k.mortgaged ?? "", share: k.share ?? "", sharePercent: k.sharePercent ?? "" }];
+}
+
+const FAMILY = /أولاد|ذري|ذرّي|أبناء|بنات|نسل|عقب|أحفاد/;
+
+/** The parts of a free-text note that each ask for something (sentences; «، وأن …» starts a new request). */
+export function noteParts(text: string | undefined): string[] {
+  if (!text?.trim()) return [];
+  return text.split(/[.؟!\n]+|،\s*و(?=أن\s|أرغب|أريد|أود|نرجو|يرجى)/u).map((x) => x.trim().replace(/^و\s*/, "")).filter((x) => x.length >= 8);
+}
+
+/**
+ * What the specialist must settle on the deed before approval (each a recorded, reasoned decision): questions the
+ * form leaves open by nature, the client's own notes, and his request to see the draft. Shown only where they apply.
+ */
+function deedDecisions(d: Doc, k: Record<string, string>, tables: Record<string, Row[]>, rows: Row[], reserve: number | null) {
+  const board = k.nazirType === "board";
+  if (board || k.nazirType === "named" || k.nazirType === "entity") {
+    d.decision("succession_vacancy", "الاستخلاف عند خلو النظارة كلها", `اختار الواقف: «${SUCCESSION_DEED[k.succession] ?? "لم يُحدد"}».${board && k.succession === "board" ? " إن خلا المجلس كله لم يبق من ينتخب؛ يُحدَّد البديل مع الواقف." : ""}`, `${FORM}: النظارة والاستخلاف`);
+  }
+  if (rows.some((r) => FAMILY.test(r.beneficiary ?? "") || r.division === "inheritance")) {
+    d.decision("descendants", "دخول أولاد البنات، وترتيب الأجيال والحجب، وانقطاع الذرية", "في المصارف ذرية؛ النص المولد لا يبيّن هذه المسائل، ولا تُفترض.", `${FORM}: جدول المصارف`);
+  }
+  if (reserve !== null && rows.some((r) => num(r.share) !== null)) {
+    d.decision("share_base", "وعاء الأنصبة بعد استقطاع نسبة العمارة", `حدد الواقف ${pct(reserve)} للعمارة وأنصبة بالنسبة؛ يُبيَّن هل الأنصبة من الغلة كلها أم مما يبقى بعد الاستقطاع.`, `${FORM}: النسبة المستقطعة وجدول المصارف`);
+  }
+  const tiers = new Map<number, number>();
+  for (const r of rows) tiers.set(num(r.tier) ?? 0, (tiers.get(num(r.tier) ?? 0) ?? 0) + 1);
+  if ([...tiers.values()].some((n) => n > 1)) {
+    d.decision("partial_extinction", "انقطاع فئة واحدة من مستحقي الطبقة", "في طبقة واحدة أكثر من مستحق؛ النص يبيّن المصرف عند انقطاع المستحقين جميعًا فقط.", `${FORM}: جدول المصارف`);
+  }
+  if (board) {
+    d.decision("conflict_of_interest", "تعارض المصالح في مجلس النظارة", (tables.boardMembers ?? []).some((m) => FAMILY.test(m.capacity ?? "")) ? "من الأعضاء من صفته من الذرية الموقوف عليها." : "يُبيَّن حكم العضو الذي له مصلحة في قرار المجلس.", `${FORM}: أعضاء المجلس`);
+    d.decision("board_terms", "مدد العضوية والعزل والمكافآت وآلية القرار", "يحددها الواقف؛ لا تُستنتج من أسماء الأعضاء.", `${FORM}: النظارة`);
+  }
+  d.decision("added_clauses", "البنود والقواعد التي يضيفها المختص ولم يحددها العميل", "كل قاعدة يكتبها المختص من عنده (نصاب، استخلاف بديل، بند معياري) تُعرض على الواقف ويُسجَّل قبوله قبل الاعتماد.", "نص البنود بعد تحرير المختص");
+  noteParts(k.notes).forEach((t, i) => {
+    d.decision(`client_note:${i + 1}`, `ملاحظة العميل ${i + 1}: «${t}»`, "يقرر المختص: تُطبق (ويُذكر البند) أو تحتاج إيضاح العميل (يُرسل له استفسار) أو لا تنطبق (مع السبب). لا تُضاف شروط جديدة إلى الوقف دون موافقة الواقف.", `${FORM}: ما الذي تريد أن يعرفه الفريق`);
+  });
+  if (k.clientPreview === "yes") {
+    d.decision("client_preview", "اطلاع العميل على المسودة قبل الاعتماد", "طلب الواقف الاطلاع على المسودة قبل اعتمادها؛ يُسجَّل تاريخ إرسالها له وما أبداه.", `${FORM}: الاطلاع على المسودة`);
+  }
+}
+
 export function draftDeed(x: DraftInput): Drafted {
   const k = x.keys;
   const d = new Doc(k);
@@ -311,40 +373,63 @@ export function draftDeed(x: DraftInput): Drafted {
   d.use("waqfKind", k.waqfKind);
   const kind = WAQF_KIND_AR[k.waqfKind];
   if (!kind) d.gap("field:waqfKind", k.waqfKind === "undecided" ? "نوع الوقف لم يُحدد بعد (عام أو أهلي أو مشترك)" : "نوع الوقف غير محدد", { field: "waqfKind" });
-  d.add("preamble", "المقدمة وبيانات الواقف", `أُقرّ أنا ${waqif}، صاحب الهوية الوطنية رقم ${id}، وأنا بكامل أهليتي واختياري، بأني أوقفت الأصل المبيّن في هذه الوثيقة وقفًا ${kind ?? fill("نوع الوقف")}، تحبيسًا لأصله وتسبيلًا لمنفعته، على الشروط الآتية.`, ["draft1"], "client");
-  factChecks(d, k, x.tables, [{ field: "waqifId", what: "رقم هوية الواقف" }], [{ field: "ownershipDeedDate", what: "تاريخ صك الملكية" }], today);
-
-  // Asset (principles 11–14; Q100 Q28)
-  const deedConflict = (x.conflicts ?? []).find((c) => c.key === "doc_number:ownership:ownershipDeedNo");
-  // trailing punctuation of the client's text would print «….،» before the clause goes on
-  const desc = d.need("assetDescription", "وصف الأصل بما يميزه").replace(/[\s.،؛]+$/u, "");
-  const deedNo = deedConflict ? (d.use("ownershipDeedNo", k.ownershipDeedNo, "conflict"), conflictMark("رقم صك الملكية في الإجابة يخالف رقم المستند المرفق")) : d.need("ownershipDeedNo", "رقم صك الملكية");
-  const deedDate = k.ownershipDeedDate ? ` وتاريخ ${k.ownershipDeedDate}` : "";
-  d.use("share", k.share);
-  const part = k.share === "share" ? `حصة مشاعة نسبتها ${num(k.sharePercent) !== null ? pct(num(k.sharePercent)!) : fill("نسبة الحصة")} منه` : k.share === "whole" ? "كامل الأصل" : fill("كامل الأصل أو حصة منه");
-  if (k.share === "share" && num(k.sharePercent) === null) d.gap("field:sharePercent", "نسبة الحصة المشاعة غير محددة", { field: "sharePercent" });
+  // Assets (principles 11–14; Q100 Q28): one clause per asset, each with its own ownership document
+  const assets = assetRows(x);
+  const many = assets.length > 1;
+  d.add("preamble", "المقدمة وبيانات الواقف", `أُقرّ أنا ${waqif}، صاحب الهوية الوطنية رقم ${id}، وأنا بكامل أهليتي واختياري، بأني أوقفت ${many ? "الأصول المبيّنة" : "الأصل المبيّن"} في هذه الوثيقة وقفًا ${kind ?? fill("نوع الوقف")}، تحبيسًا ${many ? "لأصولها" : "لأصله"} وتسبيلًا ${many ? "لمنفعتها" : "لمنفعته"}، على الشروط الآتية.`, ["draft1"], "client");
+  factChecks(d, k, x.tables, [{ field: "waqifId", what: "رقم هوية الواقف" }], [], today);
+  if (!assets.length) {
+    d.gap("field:assets", "لم تُحدد الأصول الموقوفة", { field: "assets" });
+    d.add("asset", "الأصل الموقوف", `الأصل الموقوف: ${fill("وصف الأصل ومستند ملكيته")}.`, ["draft11"], "client");
+  }
   d.use("appurtenances", k.appurtenances);
-  const app = k.appurtenances === "all" ? "بجميع حقوقه وما يلحق به وما فيه" : k.appurtenances === "except" ? `ويُستثنى منه: ${k.exceptionPart?.trim() || fill("الجزء المستثنى")}` : "";
-  d.add("asset", "الأصل الموقوف", `الأصل الموقوف: ${desc}، المملوك للواقف بموجب الصك رقم ${deedNo}${deedDate}. ويشمل الوقف ${part}${app ? `، ${app}` : ""}.`, ["draft11"], "client");
-  const ownVerified = x.verifiedDocs?.ownership;
-  d.check({
-    key: "ownership", label: "الأصل مملوك للواقف ومسجل باسمه بصك ساري", ref: "draft11",
-    status: k.registeredToWaqif === "no" ? "failed" : k.registeredToWaqif !== "yes" ? "incomplete" : ownVerified ? "verified" : x.attached.ownership ? "specialist" : "client_attested",
-    mode: ownVerified ? "professional" : undefined,
-    reason: k.registeredToWaqif === "no" ? "أجاب الواقف بأن الأصل غير مسجل باسمه بصك ساري." : k.registeredToWaqif !== "yes" ? "لم يُجب." : ownVerified ? `تحقق الفريق من صك الملكية المرفق (${ownVerified}).` : x.attached.ownership ? "الصك مرفق ولم يُتحقق منه بعد." : "إقرار الواقف دون صك مرفق.",
-    source: "إجابة «هل الأصل مملوك ومسجل باسم الواقف؟» ومستند صك الملكية", rule: "لا يُصاغ الوقف على أصل لا يملكه الواقف (الدليل الإرشادي لصياغة وثيقة الوقف، المبادئ 11–14).",
+  const app = k.appurtenances === "all" ? `بجميع ${many ? "حقوقها وما يلحق بها وما فيها" : "حقوقه وما يلحق به وما فيه"}` : k.appurtenances === "except" ? `ويُستثنى: ${k.exceptionPart?.trim() || fill("الجزء المستثنى")}` : "";
+  const bad: string[] = [];
+  assets.forEach((r, i) => {
+    const n = i + 1;
+    const tag = many ? ` (${n})` : "";
+    const desc = (r.description ?? "").trim().replace(/[\s.،؛]+$/u, "");
+    if (!desc) d.gap(`asset:${n}:description`, `الأصل${tag}: الوصف غير محدد`, { field: "assets" });
+    const docKind = r.docKind ?? "";
+    // a share is never proven by a real-estate deed, nor a property by a securities statement
+    const mismatch = (r.kind === "real_estate" && docKind && docKind !== "deed") || (r.kind !== "real_estate" && docKind === "deed");
+    if (mismatch) { bad.push(`الأصل${tag}`); d.gap(`asset:${n}:doc_kind`, `الأصل${tag}: مستند الملكية «${DOC_KIND_AR[docKind] ?? docKind}» لا يناسب نوعه «${ASSET_KIND_AR[r.kind ?? ""] ?? r.kind}»`, { field: "assets", why: "لا يُنسب أصل إلى مستند أصل آخر ولا إلى مستند من غير نوعه." }); }
+    if (!docKind) d.gap(`asset:${n}:doc_kind_missing`, `الأصل${tag}: نوع مستند الملكية غير محدد`, { field: "assets" });
+    if (!r.docNo?.trim()) d.gap(`asset:${n}:doc_no`, `الأصل${tag}: رقم مستند الملكية غير محدد`, { field: "assets", why: "يُعيَّن به الأصل ويُطابق عند التوثيق." });
+    if (r.docDate && /^\d{4}-\d{2}-\d{2}$/.test(r.docDate) && r.docDate > today) d.gap(`asset:${n}:doc_date`, `الأصل${tag}: تاريخ المستند مستقبلي`, { field: "assets" });
+    if (r.owned !== "yes") d.gap(`asset:${n}:owned`, `الأصل${tag}: ${r.owned === "no" ? "غير مملوك للواقف أو غير مسجل باسمه" : "لم يُبيَّن ملك الواقف له"}`, { field: "assets", hint: "لا يُصاغ الوقف على أصل لا يملكه الواقف؛ يُستكمل ما يثبت الملكية." });
+    if (r.share === "share" && num(r.sharePercent) === null) d.gap(`asset:${n}:share`, `الأصل${tag}: نسبة الحصة المشاعة غير محددة`, { field: "assets" });
+    const conflict = (x.conflicts ?? []).find((c) => c.key.startsWith(`file:assets:${n}:`) && c.severity === "material");
+    const docNo = conflict ? conflictMark(conflict.label) : r.docNo?.trim() ? r.docNo.trim() : fill("رقم مستند الملكية");
+    const docDate = r.docDate ? ` وتاريخ ${r.docDate}` : "";
+    const part = r.share === "share" ? `حصة مشاعة نسبتها ${num(r.sharePercent) !== null ? pct(num(r.sharePercent)!) : fill("نسبة الحصة")} منه` : r.share === "whole" ? "كامل الأصل" : fill("كامل الأصل أو حصة منه");
+    d.use("assets", `${n}: ${desc} — ${DOC_KIND_AR[docKind] ?? "مستند"} ${r.docNo ?? ""}`.trim(), conflict ? "conflict" : "provided");
+    const title = many ? `الأصل الموقوف (${n}): ${ASSET_KIND_AR[r.kind ?? ""] ?? "أصل"}` : "الأصل الموقوف";
+    d.add(many ? `asset:${n}` : "asset", title, `${many ? `الأصل ${ORDINAL_M[i] ?? n}` : "الأصل الموقوف"}: ${desc || fill("وصف الأصل")}، المملوك للواقف بموجب ${DOC_PHRASE[docKind] ?? "مستند الملكية"} رقم ${docNo}${docDate}. ويشمل الوقف ${part}${app ? `، ${app}` : ""}.`, ["draft11"], "client");
   });
-  if (k.registeredToWaqif !== "yes") d.gap("ownership", "الأصل غير مسجل باسم الواقف بصك ساري (أو لم يُجب)", { field: "registeredToWaqif", hint: "لا يُصاغ الوقف على أصل لا يملكه الواقف؛ يُستكمل ما يثبت الملكية." });
-  if (!x.attached.ownership) d.gap("doc:ownership", "صك ملكية الأصل لم يُرفق", { kind: "document", why: "لإثبات ملك الواقف للأصل ومطابقة رقم الصك.", hint: "يرفعه العميل في خانة المستند." });
+  const ownVerified = x.verifiedDocs?.ownership;
+  const attachedOwn = x.attached.ownership ?? 0;
+  const notOwned = assets.filter((r) => r.owned !== "yes").length;
+  d.check({
+    key: "ownership", label: many ? "كل أصل مملوك للواقف ومسجل باسمه بمستند ملكيته" : "الأصل مملوك للواقف ومسجل باسمه بمستند ساري", ref: "draft11",
+    status: !assets.length ? "incomplete" : assets.some((r) => r.owned === "no") || bad.length ? "failed" : notOwned ? "incomplete" : ownVerified && attachedOwn >= assets.length ? "verified" : attachedOwn ? "specialist" : "client_attested",
+    mode: ownVerified ? "professional" : undefined,
+    reason: !assets.length ? "لا أصول." : bad.length ? `مستند ملكية لا يناسب نوع الأصل: ${bad.join("، ")}.` : assets.some((r) => r.owned === "no") ? "أصل غير مملوك للواقف أو غير مسجل باسمه." : notOwned ? "لم يُبيَّن ملك الواقف لكل الأصول." : ownVerified && attachedOwn >= assets.length ? `تحقق الفريق من مستندات الملكية المرفقة (${ownVerified}).` : attachedOwn ? `مستندات الملكية المرفقة: ${attachedOwn} لعدد ${assets.length} من الأصول، ولم يُتحقق منها كلها بعد.` : "إقرار الواقف دون مستند ملكية مرفق.",
+    source: "جدول الأصول الموقوفة ومستندات الملكية المرفقة", rule: "لا يُصاغ الوقف على أصل لا يملكه الواقف، ولكل أصل مستند ملكيته (الدليل الإرشادي لصياغة وثيقة الوقف، المبادئ 11–14).",
+  });
+  if (!attachedOwn) d.gap("doc:ownership", "مستند ملكية الأصول لم يُرفق", { kind: "document", why: "لإثبات ملك الواقف ومطابقة رقم كل مستند.", hint: "يرفعه العميل في خانة المستند." });
+  else if (attachedOwn < assets.length) d.gap("doc:ownership_count", `مستندات الملكية المرفقة (${attachedOwn}) أقل من عدد الأصول (${assets.length})`, { kind: "document", why: "لكل أصل مستند ملكيته؛ لا يُكتفى بمستند أصل عن غيره.", hint: "يرفع العميل مستند ملكية كل أصل." });
+  const mortgaged = assets.filter((r) => r.mortgaged === "yes");
+  const unknownMortgage = assets.filter((r) => r.mortgaged !== "yes" && r.mortgaged !== "no");
   const mortVerified = x.verifiedDocs?.mortgagee;
   d.check({
-    key: "mortgage", label: "الأصل غير مرهون أو أُرفقت موافقة المرتهن", ref: "q28",
-    status: k.mortgaged === "no" ? "client_attested" : k.mortgaged === "yes" ? (x.attached.mortgagee ? (mortVerified ? "verified" : "specialist") : "failed") : "incomplete",
+    key: "mortgage", label: "لا أصل مرهونًا، أو أُرفقت موافقة المرتهن", ref: "q28",
+    status: unknownMortgage.length || !assets.length ? "incomplete" : mortgaged.length ? (x.attached.mortgagee ? (mortVerified ? "verified" : "specialist") : "failed") : "client_attested",
     mode: mortVerified ? "professional" : undefined,
-    reason: k.mortgaged === "no" ? "إقرار الواقف بأن الأصل غير مرهون؛ لم يُتحقق من سجل الرهون." : k.mortgaged === "yes" ? (x.attached.mortgagee ? (mortVerified ? `تحقق الفريق من موافقة المرتهن (${mortVerified}).` : "موافقة المرتهن مرفقة ولم يُتحقق منها.") : "الأصل مرهون ولا موافقة مرتهن مرفقة.") : "لم يُجب.",
-    source: "إجابة «هل الأصل مرهون؟» ومستند موافقة المرتهن", rule: "لا يوقف المرهون إلا بعد سداد الرهن أو موافقة المرتهن (100 سؤال، س28).",
+    reason: !assets.length ? "لا أصول." : unknownMortgage.length ? "لم يُبيَّن الرهن لكل الأصول." : mortgaged.length ? (x.attached.mortgagee ? (mortVerified ? `تحقق الفريق من موافقة المرتهن (${mortVerified}).` : "موافقة المرتهن مرفقة ولم يُتحقق منها.") : `أصل مرهون (${mortgaged.length}) ولا موافقة مرتهن مرفقة.`) : "إقرار الواقف بأن الأصول غير مرهونة؛ لم يُتحقق من سجل الرهون.",
+    source: "عمود «مرهون» في جدول الأصول ومستند موافقة المرتهن", rule: "لا يوقف المرهون إلا بعد سداد الرهن أو موافقة المرتهن (100 سؤال، س28).",
   });
-  if (k.mortgaged === "yes" && !x.attached.mortgagee) d.gap("mortgaged", "الأصل مرهون ولم تُرفق موافقة المرتهن", { kind: "document", hint: "100 سؤال س28: لا يوقف المرهون إلا بعد سداد الرهن أو موافقة المرتهن." });
+  if (mortgaged.length && !x.attached.mortgagee) d.gap("mortgaged", "أصل مرهون ولم تُرفق موافقة المرتهن", { kind: "document", hint: "100 سؤال س28: لا يوقف المرهون إلا بعد سداد الرهن أو موافقة المرتهن." });
 
   // Name
   d.add("name", "اسم الوقف", `يُسمّى هذا الوقف «${d.need("waqfName", "اسم الوقف")}».`, ["draft1"], "client");
@@ -396,11 +481,20 @@ export function draftDeed(x: DraftInput): Drafted {
   if (!k.investmentAllowed) d.gap("field:investmentAllowed", "لم يُحدد الإذن بالاستثمار", { field: "investmentAllowed" });
   d.add("duties", "واجبات الناظر", `يلتزم الناظر بشرط الواقف في هذه الوثيقة، وبالواجبات المقررة نظامًا على النظار. ${inv}`, ["nazara"]);
 
-  // Board
+  // Board: the members come from the request (prefilled from the waqf file's nazara board); the board's rules are the
+  // waqif's decisions, written by the specialist — never inferred from the members' names
   if (k.nazirType === "board") {
     d.use("boardSize", k.boardSize);
-    d.add("board", "مجلس النظارة", `يتكون مجلس النظارة من ${num(k.boardSize) ?? fill("عدد الأعضاء")} أعضاء. ${fill("أسماء الأعضاء الأوائل، وآلية تعيينهم، ونصاب اجتماعاته وقراراته")}`, ["draft1"]);
-    d.gap("board_rules", "تشكيل مجلس النظارة وآلية قراراته لم تُحدد في النموذج", { owner: "specialist", clause: "board", hint: "يكتبها المختص في نص البند بعد الرجوع للواقف." });
+    const members = x.tables.boardMembers ?? [];
+    const size = num(k.boardSize);
+    if (members.length && size !== null && members.length !== size) d.gap("board_count", `أعضاء المجلس المسمَّون (${members.length}) يخالفون عدد أعضاء المجلس (${size})`, { field: "boardMembers", why: "لا يُختار أحد الرقمين آليًا." });
+    members.forEach((m, i) => { const c = (x.conflicts ?? []).find((cf) => cf.key.startsWith(`file:boardMembers:${i + 1}:`) && cf.severity === "material"); if (c) d.use("boardMembers", m.name, "conflict"); });
+    const names = members.length
+      ? members.map((m, i) => { const c = (x.conflicts ?? []).find((cf) => cf.key.startsWith(`file:boardMembers:${i + 1}:`) && cf.severity === "material"); return `${c ? conflictMark(c.label) : m.name?.trim() || fill("اسم العضو")} ${ROLE_AR[m.role ?? ""] ?? "عضوًا"}`; }).join("، و")
+      : fill("أسماء الأعضاء الأوائل");
+    if (members.length) d.use("boardMembers", members.map((m) => m.name).join("، "));
+    d.add("board", "مجلس النظارة", `يتكون مجلس النظارة من ${size ?? fill("عدد الأعضاء")} أعضاء، والمجلس الأول: ${names}. ${fill("نصاب اجتماعات المجلس وآلية قراراته ومدد العضوية والعزل والمكافآت، بحسب ما يقرره الواقف")}`, ["draft1"]);
+    d.gap("board_rules", "نصاب المجلس وآلية قراراته ومدد العضوية والعزل والمكافآت لم يحددها الواقف في النموذج", { owner: "specialist", clause: "board", hint: "يكتبها المختص في نص البند بعد الرجوع للواقف." });
   }
 
   // Closing (Q100 Q76)
@@ -410,6 +504,8 @@ export function draftDeed(x: DraftInput): Drafted {
     : "هذه الوثيقة هي المرجع في شروط الوقف، ولا يُغيَّر شيء من شروطه بعد ثبوته إلا بالرجوع إلى المحكمة المختصة.", ["q76"], "client");
   if (k.amendmentRight === "yes") d.gap("amendment_scope", "الشروط التي يحتفظ الواقف بحق تعديلها لم تُحدد", { owner: "specialist", clause: "closing", hint: "تُحدد مع الواقف وتُكتب في نص البند." });
   d.check({ key: "official", label: "التوثيق لدى الجهة المختصة", status: "incomplete", reason: "لم يُسجَّل توثيق رسمي للوقف. يُسجَّل بعد صدوره ورفع ما يثبته، ولا يُعد اعتماد المنصة توثيقًا.", source: "سجل التوثيق الرسمي للمخرج", rule: "التوثيق يتم لدى الجهة المختصة لا في المنصة.", ref: "waqifsNajiz" });
+
+  deedDecisions(d, k, x.tables, rows, reserve);
 
   const signatures = [{ role: "الواقف", name: k.waqifName?.trim() || x.requesterName }, { role: "الشهود (وفق ما تطلبه جهة التوثيق)", name: "" }];
   return { title: "نص وثيقة الوقف", clauses: d.clauses, signatures, checks: d.checks, gaps: d.gaps };

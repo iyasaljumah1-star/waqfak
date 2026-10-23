@@ -7,7 +7,9 @@ import { CHECK_STATUS_AR } from "./checks";
 import { citationOf } from "./citations";
 import { PROV_LABEL } from "./pure";
 
-const esc = (s: unknown) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
+const escRaw = (s: unknown) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
+/** Escapes text and keeps ISO dates (2019-05-14) left-to-right inside Arabic sentences, so none prints reversed. */
+const esc = (s: unknown) => escRaw(s).replace(/\b\d{4}-\d{2}-\d{2}\b/g, (d) => `<bdi dir="ltr" class="tabular">${d}</bdi>`);
 const prov = (p?: string) => (p ? `<span class="prov">${esc(PROV_LABEL[p as keyof typeof PROV_LABEL] ?? p)}</span>` : "");
 
 function block(b: OutputBlock, final: boolean): string {
@@ -40,10 +42,22 @@ export type OutputDocMeta = {
   /** Earlier review rounds (who returned the draft for revision, and when). */
   reviewRounds?: string[];
   /** Date of this version, and where it stands: draft, under review, or approved. */
-  versionDate?: string; workflowStatus?: "draft" | "in_review" | "approved" | "preview";
+  versionDate?: string; workflowStatus?: "draft" | "in_review" | "approved" | "preview" | "client_preview";
   /** Gaps and conflicts of the version (printed at the top of a draft; never on the approved copy). */
   gaps?: OutputGap[];
+  /**
+   * «client»: the copy released to the client — no review rounds, staff names, output number or internal version, and
+   * no internal service code. «internal» (default): the team's copy with its full record.
+   */
+  audience?: "client" | "internal";
+  /** A drafted legal document (deed, will): printed with the notice that it is a draft until documented officially. */
+  legalDraft?: boolean;
+  /** Service name without its catalog code (for the client copy). */
+  serviceName?: string;
 };
+
+/** What a drafted deed or will is, printed at the top of every copy (internal approval ≠ documentation). */
+export const LEGAL_DRAFT_NOTICE = "مسودة للمراجعة قبل التوثيق: لا تكون هذه الوثيقة نافذة ولا موثقة إلا بعد إجرائها لدى الجهة المختصة. اعتماد «وقفك» لها اعتماد داخلي لجودة الصياغة ومطابقتها لبيانات الطلب، وليس توثيقًا ولا حكمًا شرعيًا أو قضائيًا.";
 
 const NEED_AR: Record<string, string> = { mandatory: "إلزامي", optional: "اختياري", review: "يقرره المختص" };
 
@@ -56,34 +70,40 @@ ${conflicts.length ? `<p><strong>تعارضات لا تُحسم آليًا:</str
 ${rest.length ? `<ul>${rest.map((g) => `<li>${esc(g.label)} — <span class="small">${esc(NEED_AR[g.need ?? (g.severity === "blocking" ? "mandatory" : "optional")])}</span></li>`).join("")}</ul>` : ""}</div>`;
 }
 
-const DOC_STATUS: Record<string, string> = { draft: "مسودة غير معتمدة", in_review: "بانتظار المراجعة والاعتماد", approved: "معتمد", preview: "معاينة من البيانات الحالية — لم تُحفظ مسودة" };
+const DOC_STATUS: Record<string, string> = { client_preview: "مسودة للاطلاع وإبداء الملاحظات — لم تُعتمد بعد", draft: "مسودة غير معتمدة", in_review: "بانتظار المراجعة والاعتماد", approved: "معتمد", preview: "معاينة من البيانات الحالية — لم تُحفظ مسودة" };
 
 export function outputHtml(meta: OutputDocMeta, sections: OutputSection[]): string {
   const final = meta.status === "approved";
+  const client = meta.audience === "client";
   // the approved copy goes to the client: internal review material (checks, notes) stays out of it
-  const body = sections.filter((s) => !s.removed && s.key !== "meta" && !(final && s.audience === "internal")).map((s) => `<h2>${esc(s.title)}</h2>${s.blocks.map((b) => block(b, final)).join("")}`).join("");
+  const body = sections.filter((s) => !s.removed && s.key !== "meta" && !((final || client) && s.audience === "internal")).map((s) => `<h2>${esc(s.title)}</h2>${s.blocks.map((b) => block(b, final || client)).join("")}`).join("");
+  // what specialist review this copy actually carries: a signature recorded on the delivery, or none — never assumed
+  const review = meta.signedBy ? `مراجعة موقّعة: ${esc(meta.signedBy)}` : "لم تُرفق بهذه النسخة مراجعة شرعية أو قانونية موقّعة.";
   return `<div class="brandbar"></div>
 <h1>${esc(meta.title)}</h1>
+${meta.legalDraft ? `<div class="box notice"><strong>${esc(LEGAL_DRAFT_NOTICE)}</strong></div>` : ""}
 <dl class="kv small">
-${meta.workflowStatus === "preview" ? "" : `<dt>رقم المخرج</dt><dd dir="ltr" class="tabular">${esc(meta.number)} · v${meta.version}</dd>`}
-<dt>الحالة</dt><dd>${esc(DOC_STATUS[meta.workflowStatus ?? (final ? "approved" : "draft")])}${final ? " — الاعتماد داخلي من «وقفك»، ولا يغني عن التوثيق لدى الجهة المختصة متى لزم" : ""}</dd>
-${meta.versionDate ? `<dt>تاريخ النسخة</dt><dd class="tabular">${esc(meta.versionDate)}</dd>` : ""}
-<dt>الخدمة</dt><dd>${esc(meta.serviceLine)}</dd>
-<dt>الطلب</dt><dd dir="ltr" class="tabular">${esc(meta.requestNumber)}</dd>
+${meta.workflowStatus === "preview" || client ? "" : `<dt>رقم المخرج</dt><dd dir="ltr" class="tabular">${escRaw(meta.number)} · v${meta.version}</dd>`}
+<dt>الحالة</dt><dd>${client ? (final ? "اعتُمدت داخليًا في «وقفك»" : esc(DOC_STATUS[meta.workflowStatus ?? "draft"])) : esc(DOC_STATUS[meta.workflowStatus ?? (final ? "approved" : "draft")])}${final ? " — الاعتماد داخلي من «وقفك»، ولا يغني عن التوثيق لدى الجهة المختصة" : ""}</dd>
+${meta.versionDate ? `<dt>تاريخ النسخة</dt><dd>${esc(meta.versionDate)}</dd>` : ""}
+<dt>الخدمة</dt><dd>${esc(client ? meta.serviceName ?? meta.serviceLine : meta.serviceLine)}</dd>
+<dt>الطلب</dt><dd dir="ltr" class="tabular">${escRaw(meta.requestNumber)}</dd>
 ${meta.waqfName ? `<dt>الوقف</dt><dd>${esc(meta.waqfName)}</dd>` : ""}
 <dt>التخصص</dt><dd>${esc(meta.specialty)}</dd>
-<dt>أعدّه</dt><dd>${esc(meta.preparedBy ?? "—")}</dd>
-${meta.reviewRounds?.length ? `<dt>المراجعة</dt><dd>${meta.reviewRounds.map(esc).join("؛ ")}</dd>` : ""}
-${final ? `<dt>راجعه واعتمده</dt><dd>${esc(meta.approvedBy ?? "—")}${meta.selfApproved ? " (اعتماد ذاتي وفق سياسة المخرج)" : ""} — ${esc(meta.approvedAt ?? "")}</dd>` : ""}
-${meta.signedBy ? `<dt>التوقيع</dt><dd>${esc(meta.signedBy)}</dd>` : ""}
+${client ? "" : `<dt>أعدّه</dt><dd>${esc(meta.preparedBy ?? "—")}</dd>`}
+${!client && meta.reviewRounds?.length ? `<dt>المراجعة</dt><dd>${meta.reviewRounds.map(esc).join("؛ ")}</dd>` : ""}
+${final ? (client ? `<dt>تاريخ الاعتماد الداخلي</dt><dd>${esc(meta.approvedAt ?? "")}</dd>` : `<dt>راجعه واعتمده</dt><dd>${esc(meta.approvedBy ?? "—")}${meta.selfApproved ? " (اعتماد ذاتي وفق سياسة المخرج)" : ""} — ${esc(meta.approvedAt ?? "")}</dd>`) : ""}
+${meta.legalDraft ? `<dt>المراجعة المتخصصة</dt><dd>${review}</dd>` : meta.signedBy ? `<dt>التوقيع</dt><dd>${esc(meta.signedBy)}</dd>` : ""}
 </dl>
-${final ? "" : meta.workflowStatus === "preview" ? `<div class="box critical">معاينة غير محفوظة من بيانات الطلب الحالية — ليست مسودة ولا مخرجًا معتمدًا، ولا تُسلَّم للعميل. ما ينقص مبيّن في موضعه.</div>` : `<div class="box critical">مسودة داخلية غير معتمدة — لا تُسلَّم للعميل. الوسوم بجانب كل معلومة تبين مصدرها.</div>`}
+${client && !final ? `<div class="box critical">مسودة للاطلاع وإبداء الملاحظات: لم تُعتمد بعد، وقد تتغير بعد ملاحظاتك ومراجعة الفريق.</div>` : ""}
+${final || client ? "" : meta.workflowStatus === "preview" ? `<div class="box critical">معاينة غير محفوظة من بيانات الطلب الحالية — ليست مسودة ولا مخرجًا معتمدًا، ولا تُسلَّم للعميل. ما ينقص مبيّن في موضعه.</div>` : `<div class="box critical">مسودة داخلية غير معتمدة — لا تُسلَّم للعميل. الوسوم بجانب كل معلومة تبين مصدرها.</div>`}
 ${meta.isDemo ? `<div class="box critical">وقف تجريبي: البيانات اصطناعية.</div>` : ""}
-${final ? "" : gapReport(meta.gaps ?? [])}
+${final || client ? "" : gapReport(meta.gaps ?? [])}
 ${body}`;
 }
 
-export const OUTPUT_PDF_CSS = `.prov{font-size:9px;color:#7a6a3a;background:#f5eedf;border-radius:3px;padding:0 4px;white-space:nowrap}
+export const OUTPUT_PDF_CSS = `.notice{border:2px solid #9a6b1f;background:#fbf3e2;page-break-inside:avoid}
+.prov{font-size:9px;color:#7a6a3a;background:#f5eedf;border-radius:3px;padding:0 4px;white-space:nowrap}
 tr.total td{border-top:2px solid #333}
 .clause{margin:0 0 10px;page-break-inside:avoid}.clause p{margin:2px 0}
 table.sign td.line{height:34px;min-width:110px;border-bottom:1px solid #333}

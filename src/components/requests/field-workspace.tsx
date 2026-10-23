@@ -1,3 +1,6 @@
+import { STATUS_LABEL } from "@/server/modules/requests/workflow";
+import type { FieldRelease } from "@/server/modules/requests/field-policy";
+import { ActionForm } from "@/components/requests/forms";
 import { AlertTriangle, CheckCircle2, CircleDashed, Lightbulb, Scale, ShieldQuestion, UserRound, Database, Paperclip } from "lucide-react";
 import { ProgressBar } from "@/components/ui";
 import { ContextBlockView } from "@/components/requests/context-blocks";
@@ -16,8 +19,8 @@ import { WAQF_MODE_AR, type WaqfMode } from "@/server/modules/requests/waqf-mode
 
 const KIND_ICON: Record<InsightKind, typeof Lightbulb> = { client: UserRound, fact: Database, inference: Lightbulb, recommendation: Lightbulb, specialist: Scale, gap: CircleDashed, conflict: AlertTriangle };
 const KIND_TONE: Record<InsightKind, string> = { client: "text-muted", fact: "text-ok", inference: "text-ink", recommendation: "text-seal", specialist: "text-seal", gap: "text-fine", conflict: "text-critical" };
-const STATE_AR = { pending: "لم يُراجع", approved: "معتمد", needs_review: "يحتاج مراجعة" } as const;
-const STATE_TONE = { pending: "bg-surface-2 text-muted", approved: "bg-ok-soft text-ok", needs_review: "bg-warn-soft text-warn" } as const;
+const STATE_AR = { pending: "لم يُراجع", approved: "معتمد", needs_review: "يحتاج مراجعة", waived: "تجاوز موثق (ثانوي)" } as const;
+const STATE_TONE = { pending: "bg-surface-2 text-muted", approved: "bg-ok-soft text-ok", needs_review: "bg-warn-soft text-warn", waived: "bg-seal-soft text-ink" } as const;
 const ORIGIN_AR: Record<FieldView["origin"], string> = { client: "أدخله العميل", file: "من ملف الوقف", file_changed: "عدّله العميل عن ملف الوقف", staff: "صحّحه الفريق", client_completion: "استكمله العميل", system: "من النظام" };
 
 export function InsightList({ items }: { items: Insight[] }) {
@@ -66,7 +69,7 @@ const flags = (f: { state: string; insights: Insight[] }, system: boolean) =>
 export function FieldWorkspaceView({ ws, requestId, waqfId, canAct, actions, docs, staff }: {
   ws: {
     analysis: RequestAnalysis; answers: Answers; form: { steps: { key: string; fields: Field[] }[] }; notes: Record<string, FieldNote[]>; tasks: Record<string, FieldTask[]>;
-    waqfMode?: WaqfMode; waqfStatus?: string | null; needs?: IntakeNeeds;
+    waqfMode?: WaqfMode; waqfStatus?: string | null; release?: FieldRelease | null; earlier?: { id: string; number: string; status: string }[]; needs?: IntakeNeeds;
   };
   requestId: string;
   waqfId: string | null;
@@ -84,6 +87,7 @@ export function FieldWorkspaceView({ ws, requestId, waqfId, canAct, actions, doc
     conflict: all.filter((x) => x.insights.some((i) => i.kind === "conflict")).length,
     needs_review: all.filter((x) => x.state === "needs_review").length,
     pending: all.filter((x) => x.state === "pending").length,
+    waived: all.filter((x) => x.state === "waived").length,
     approved: all.filter((x) => x.state === "approved").length,
     system: all.filter((x) => x.system).length,
   };
@@ -95,6 +99,42 @@ export function FieldWorkspaceView({ ws, requestId, waqfId, canAct, actions, doc
         <p className={cn("rounded-lg border px-4 py-2 text-[14px]", ws.waqfMode === "unregistered" ? "border-seal/40 bg-seal-soft/40" : "border-line bg-surface-2/50")} data-testid="ws-waqf-mode" data-mode={ws.waqfMode}>
           <span className="font-semibold">مسار الطلب: {WAQF_MODE_AR[ws.waqfMode]}.</span>{" "}
           {ws.waqfMode === "registered" ? `بيانات الوقف مستدعاة من ملفه في المنصة بمصدرها وتاريخها.${ws.waqfStatus === "draft" ? " ملف الوقف مسودة أُنشئت من معالج التأسيس: الوقف لم يُوثَّق ولم يُعتمد بعد." : ""}` : ws.waqfMode === "unregistered" ? "بيانات الوقف قدّمها العميل ضمن هذا الطلب، ولم يُنشأ لها ملف وقف؛ تُراجع وتُعتمد حقلًا حقلًا." : "لا وقف قائم؛ البيانات كلها من إجابات العميل."}
+        </p>
+      ) : null}
+      {ws.release?.enforced ? (
+        <section className="space-y-2 rounded-lg border border-line px-4 py-3 text-[14px]" data-testid="field-release">
+          <p className="font-semibold">مراجعة الحقول قبل الإفراج للعميل</p>
+          <p data-testid="field-release-counts">
+            الحقول الجوهرية: {ws.release.essentialCount - ws.release.essentialOpen.length} من {ws.release.essentialCount} معتمدة
+            {" · "}الثانوية: {ws.release.secondaryCount - ws.release.secondaryOpen.length - ws.release.waived.length} معتمدة، {ws.release.waived.length} متجاوزة بسبب موثق، {ws.release.secondaryOpen.length} لم تُراجع
+          </p>
+          {ws.release.essentialOpen.length ? (
+            <div className="rounded-md border border-critical/40 bg-critical-soft/30 px-3 py-2" data-testid="essential-open">
+              <p className="font-medium">حقول جوهرية تمنع الإفراج (لا يجوز تجاوزها):</p>
+              <ul className="list-disc ps-5">{ws.release.essentialOpen.map((x) => <li key={x.key}><a href={`#f-${x.key}`} className="underline">{x.label}</a> — {x.reason}</li>)}</ul>
+            </div>
+          ) : <p className="text-ok" data-testid="essential-done">الحقول الجوهرية كلها معتمدة.</p>}
+          {ws.release.waived.length ? <p className="text-muted">متجاوزة بسبب موثق: {ws.release.waived.map((x) => x.label).join("، ")}</p> : null}
+          {ws.release.secondaryOpen.length && canAct && actions.waiveSecondaryFields ? (
+            <details className="rounded-md border border-line px-3 py-2" data-testid="waive-form">
+              <summary className="cursor-pointer">تجاوز مراجعة حقول ثانوية بسبب موثق ({ws.release.secondaryOpen.length})</summary>
+              <ActionForm action={actions.waiveSecondaryFields} hidden={{ id: requestId }} submit="سجّل التجاوز" size="sm" className="mt-2 space-y-2">
+                <fieldset className="grid gap-1 sm:grid-cols-2">
+                  <legend className="mb-1 text-muted">الحقول الثانوية التي لم تُراجع</legend>
+                  {ws.release.secondaryOpen.map((x) => <label key={x.key} className="flex items-center gap-2"><input type="checkbox" name="fields" value={x.key} />{x.label}</label>)}
+                </fieldset>
+                <label className="block space-y-1"><span>سبب التجاوز (يُسجَّل باسمك في سجل الطلب)</span><textarea name="reason" required minLength={15} className="min-h-16 w-full rounded-md border border-line-strong bg-surface p-2" /></label>
+                <p className="text-[13px] text-muted">للمراجع المخول بمراجعة الجودة أو مدير التشغيل. لا يشمل الحقول الجوهرية.</p>
+              </ActionForm>
+            </details>
+          ) : null}
+        </section>
+      ) : null}
+      {ws.earlier?.length ? (
+        <p className="rounded-lg border border-line bg-surface-2/50 px-4 py-2 text-[14px]" data-testid="ws-earlier">
+          <span className="font-semibold">للوقف نفسه طلب سابق للخدمة نفسها: </span>
+          {ws.earlier.map((e, i) => <span key={e.id}>{i ? "، " : ""}<a href={`/admin/requests/${e.id}`} className="tabular text-ink underline" dir="ltr">{e.number}</a> ({STATUS_LABEL[e.status as keyof typeof STATUS_LABEL] ?? e.status})</span>)}
+          . راجعه قبل البدء لتجنب ازدواج العمل.
         </p>
       ) : null}
       {ws.needs?.start.length ? (

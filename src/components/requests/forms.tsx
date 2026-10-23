@@ -36,8 +36,10 @@ export function ActionForm({ action, hidden, children, submit, pendingText, vari
 }
 
 /** One button per allowed transition. Transitions that need a reason open a small form. */
-export function TransitionPanel({ action, id, transitions, holdParties }: {
+export function TransitionPanel({ action, id, transitions, holdParties, ack }: {
   action: Act; id: string; transitions: { to: string; label: string; needsNote?: boolean }[]; holdParties?: Record<string, string>;
+  /** A statement the user must tick before this transition (e.g. the client's approval of the delivery). */
+  ack?: { to: string; text: string };
 }) {
   const [open, setOpen] = useState<string | null>(null);
   const [s, a] = useActionState(action, initialState);
@@ -53,9 +55,15 @@ export function TransitionPanel({ action, id, transitions, holdParties }: {
               {t.label}
             </button>
           ) : (
-            <form key={t.to} action={a}>
+            <form key={t.to} action={a} className={ack?.to === t.to ? "basis-full space-y-2" : undefined}>
               <input type="hidden" name="id" value={id} />
               <input type="hidden" name="to" value={t.to} />
+              {ack?.to === t.to ? (
+                <label className="flex items-start gap-2 rounded-md border border-line bg-surface-2 p-3 text-[14px]" data-testid="approval-ack">
+                  <input type="checkbox" name="ack" required className="mt-1 size-4 shrink-0" />
+                  <span>{ack.text}</span>
+                </label>
+              ) : null}
               <SubmitButton size="md" variant={danger(t.to) ? "danger" : "primary"} pendingText="جارٍ التنفيذ…">{t.label}</SubmitButton>
             </form>
           ),

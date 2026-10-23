@@ -8,7 +8,8 @@ import type { ContextKey } from "./types";
 
 export const SERVICE_CONTEXT: Record<string, ContextKey[]> = {
   // التأسيس
-  T03: ["waqf.terms", "assets.register"],
+  // the assets are asked row by row in the form itself (prefilled from the asset register), not confirmed twice
+  T03: ["waqf.terms"],
   T04: ["waqf.identity", "waqf.terms", "documents.key"],
   T05: ["assets.register"],
   T06: ["waqf.identity", "waqf.nazara", "waqf.terms", "assets.register", "documents.key"],

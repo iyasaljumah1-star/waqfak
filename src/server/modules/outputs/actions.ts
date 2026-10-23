@@ -1,13 +1,15 @@
 "use server";
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, max } from "drizzle-orm";
 import { z } from "zod";
-import { deliverables, outputs, tasks } from "@/server/db/schema";
+import { deliverables, outputs, requestItems, tasks } from "@/server/db/schema";
+import { notify } from "@/server/modules/notify";
+import { renderPdf } from "@/server/modules/pdf/render";
 import { ForbiddenError } from "@/server/authz/context";
 import { audit } from "@/server/lib/audit";
 import { parseForm, userAction, UserError } from "@/server/modules/_shared";
 import { loadRequestCtx, type RequestCtx } from "@/server/modules/requests/access";
-import type { ActCtx } from "@/server/modules/requests/engine";
+import { logEvent, type ActCtx } from "@/server/modules/requests/engine";
 import { syncTask, taskEvent } from "@/server/modules/operations/exec";
 import type { ActionState } from "@/lib/utils";
 import { SPECIALTY_LABEL } from "./catalog";
@@ -15,7 +17,7 @@ import { draftInputs } from "./live";
 import { readSeparationPolicy } from "@/server/modules/approvals/policy";
 import { applyEdits, approvalCheck, DRAFT_STATUSES, mergeRegenerated, readiness, regenNote, regenSummary, settleGaps } from "./pure";
 import { syncConflicts, transitionGate } from "./quality";
-import { addVersion, ensureOutput, preparersOf, versionOf, type OutputRow } from "./server";
+import { addVersion, ensureOutput, outputDocHtml, preparersOf, storeGeneratedPdf, versionOf, type OutputRow } from "./server";
 import { cycleOutputFor } from "@/server/modules/operations/continuous";
 import { parseCycleKey } from "@/server/modules/operations/continuous-pure";
 
@@ -192,6 +194,7 @@ export async function approveOutput(_: ActionState, fd: FormData): Promise<Actio
     }).returning({ id: deliverables.id });
     await c.tx.update(outputs).set({ deliverableId: del.id }).where(eq(outputs.id, o.id));
     await syncTask(c.tx, rc.req.id, "review_output", { outputKey: o.outputKey }, "done", c.auth.user.id, check.self ? "اعتماد ذاتي وفق سياسة المخرج" : "اعتُمد المخرج");
+    if (check.self) await logEvent(c.tx, rc.req, c.auth.user.id, `اعتماد ذاتي للمخرج «${o.title}»: المعتمد ممن أعدّوه، والأساس ${c.auth.perms.has("approvals.direct") ? "صلاحية الاعتماد المباشر" : "سياسة المخرج التي تجيز اعتماد المعدّ المخوّل"}${r.data.note ? ` — المبرر: ${r.data.note}` : ""}`);
     await audit(c.tx, { actorUserId: c.auth.user.id, action: "outputs.approve", entityType: "output", entityId: o.id, waqfId: o.waqfId, ip: c.ip, userAgent: c.userAgent, after: { number: o.number, version: o.currentVersion, selfApproved: check.self, policy: o.reviewPolicy, specialty: SPECIALTY_LABEL[o.specialty], note: r.data.note || undefined } });
     const tail = cyc ? " لم يُرسل للعميل بعد: يُرسل من لوحة الخدمة المستمرة." : "";
     return { ok: true, message: (check.self ? "اعتُمد المخرج (اعتماد ذاتي مسجّل)." : "اعتُمد المخرج.") + tail };
@@ -216,5 +219,47 @@ export async function reviseOutput(_: ActionState, fd: FormData): Promise<Action
     await syncTask(c.tx, rc.req.id, "review_output", { outputKey: o.outputKey }, "todo", c.auth.user.id, "بانتظار اعتماد المراجعة الجديدة");
     await audit(c.tx, { actorUserId: c.auth.user.id, action: "outputs.revise", entityType: "output", entityId: o.id, waqfId: o.waqfId, ip: c.ip, userAgent: c.userAgent, before: { status: "approved", version: o.approvedVersion } });
     return { ok: true, message: "فُتحت مراجعة جديدة للمخرج." };
+  }, { revalidate: reval(r.data.requestId) });
+}
+
+// ───────────────────────── share a draft with the client for preview ─────────────────────────
+
+const previewSchema = z.object({ outputId: uuid, requestId: uuid });
+
+/**
+ * Sends the current draft to the client to read and comment on before it is approved (the client asked for it, or the
+ * team needs his view). The client gets the client copy (no internal record), marked as a draft not yet approved, and
+ * an item on his request to send his remarks. Nothing is approved or changed; the specialist records the outcome on the
+ * «اطلاع العميل على المسودة» decision.
+ */
+export async function shareDraftForPreview(_: ActionState, fd: FormData): Promise<ActionState> {
+  const r = parseForm(previewSchema, fd);
+  if ("state" in r) return r.state;
+  return userAction(async (c) => {
+    const { o, rc } = await loadOutput(c, r.data.outputId, r.data.requestId);
+    if (!rc.isAssignee && !rc.isOps) throw new ForbiddenError("يرسل المسودة للعميل المختص المسند إليه الطلب أو مدير التشغيل.");
+    if (!WORKING.includes(rc.req.status)) throw new UserError("تُرسل المسودة للاطلاع ما دام الطلب قيد العمل.");
+    const v = await versionOf(c.tx, o.id, o.currentVersion);
+    if (!v) throw new UserError("لا نسخة لإرسالها.");
+    const html = await outputDocHtml(c.tx, rc, o, v, null, { audience: "client", clientPreview: true });
+    let pdf: Buffer;
+    try {
+      pdf = await renderPdf(html, { headerTitle: o.title });
+    } catch (err) {
+      console.error("[outputs.preview] render failed", err);
+      throw new UserError("تعذر إنشاء ملف المسودة الآن. أعد المحاولة بعد قليل.");
+    }
+    const today = new Date().toISOString().slice(0, 10);
+    const docId = await storeGeneratedPdf(c.tx, { waqfId: rc.req.waqfId, requestId: rc.req.id, title: `${o.title} — للاطلاع (${today})`, data: pdf, ownerUserId: c.auth.user.id, fileName: `${rc.req.number}-preview-${today}.pdf` });
+    const [{ m }] = await c.tx.select({ m: max(requestItems.seq) }).from(requestItems).where(eq(requestItems.requestId, rc.req.id));
+    await c.tx.insert(requestItems).values({
+      requestId: rc.req.id, waqfId: rc.req.waqfId, seq: (m ?? 0) + 1, kind: "question", title: `اطلع على المسودة «${o.title}» وأرسل ملاحظاتك`,
+      body: `المسودة مرفقة في مستندات طلبك باسم «${o.title} — للاطلاع (${today})». لم تُعتمد بعد، وقد تتغير بعد ملاحظاتك ومراجعة الفريق.`,
+      required: false, visibility: "client", createdBy: c.auth.user.id,
+    });
+    await logEvent(c.tx, rc.req, c.auth.user.id, `أُرسلت مسودة «${o.title}» للعميل للاطلاع وإبداء الملاحظات (لم تُعتمد)`);
+    await notify(rc.req.requesterUserId, "request.awaiting_client", { number: rc.req.number, note: `مسودة «${o.title}» جاهزة لاطلاعك وملاحظاتك` }, { waqfId: rc.req.waqfId, link: `/app/requests/${rc.req.id}#items`, tx: c.tx });
+    await audit(c.tx, { actorUserId: c.auth.user.id, action: "outputs.preview_shared", entityType: "output", entityId: o.id, waqfId: o.waqfId, ip: c.ip, userAgent: c.userAgent, after: { number: o.number, version: v.version, documentId: docId } });
+    return { ok: true, message: "أُرسلت المسودة للعميل للاطلاع، وفُتح له بند لإرسال ملاحظاته. سجّل ما أبداه في قرار «اطلاع العميل على المسودة»." };
   }, { revalidate: reval(r.data.requestId) });
 }

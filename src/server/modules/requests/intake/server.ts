@@ -1,7 +1,8 @@
 import "server-only";
-import { and, eq, inArray, isNull, notInArray, or } from "drizzle-orm";
+import { assetRowFromFile, boardRowFromFile } from "./file-rows";
+import { and, asc, eq, inArray, isNull, notInArray, or } from "drizzle-orm";
 import type { Tx } from "@/server/db";
-import { documents, nazaraEvents, recommendations, serviceRequests, services, users, waqfs, workflowTemplates } from "@/server/db/schema";
+import { assets, bodies, bodyMemberships, documents, nazaraEvents, properties, recommendations, serviceRequests, services, users, waqfs, workflowTemplates } from "@/server/db/schema";
 import { ensureIntakeTask } from "@/server/modules/operations/exec";
 import { ensureGapTasks } from "../gap-tasks";
 import { linkRequest } from "@/server/modules/operations/links";
@@ -51,7 +52,25 @@ export async function prefillAnswers(tx: Tx, form: ServiceForm, userId: string, 
   const a: Answers = { preferredContact: "platform", priority: "normal", waqfMode: mode };
   if (waqfId && contextFor(form.code).length) a.waqfContext = "yes";
   for (const st of form.steps) for (const f of st.fields) if (f.prefill && src[f.prefill]) a[f.key] = String(src[f.prefill]);
+  // tables filled from the waqf file (asset register, nazara board): one row per record, marked with its source
+  const wanted = new Set(form.steps.flatMap((st) => st.fields).map((f) => f.prefillTable).filter(Boolean));
+  if (waqfId && wanted.size) {
+    const t = await fileTables(tx, waqfId);
+    for (const st of form.steps) for (const f of st.fields) if (f.prefillTable && t[f.prefillTable].length) a[f.key] = JSON.stringify(t[f.prefillTable]);
+  }
   return sanitizeAnswers(form, a);
+}
+
+/** The waqf file's asset register and active nazara-board members, as request table rows (with their source). */
+export async function fileTables(tx: Tx, waqfId: string): Promise<{ "waqf.assets": Record<string, string>[]; "waqf.board": Record<string, string>[] }> {
+  const as = await tx.select({ a: assets, deedNo: properties.deedNo, city: properties.city, district: properties.district }).from(assets)
+    .leftJoin(properties, eq(properties.assetId, assets.id)).where(and(eq(assets.waqfId, waqfId), isNull(assets.archivedAt))).orderBy(asc(assets.createdAt));
+  const ms = await tx.select({ id: bodyMemberships.id, personName: bodyMemberships.personName, role: bodyMemberships.role, capacity: bodyMemberships.capacity }).from(bodyMemberships)
+    .innerJoin(bodies, eq(bodies.id, bodyMemberships.bodyId)).where(and(eq(bodyMemberships.waqfId, waqfId), eq(bodies.kind, "board"), eq(bodyMemberships.status, "active"))).orderBy(asc(bodyMemberships.createdAt));
+  return {
+    "waqf.assets": as.map(({ a, deedNo, city, district }) => assetRowFromFile({ id: a.id, category: a.category, title: a.title, ownershipDocNo: a.ownershipDocNo, sharePct: a.sharePct, inWaqfName: a.inWaqfName, details: a.details ?? {}, deedNo, city, district })),
+    "waqf.board": ms.filter((m) => !!m.personName).map((m) => boardRowFromFile({ id: m.id, personName: m.personName!, role: m.role, capacity: m.capacity })),
+  };
 }
 
 /**

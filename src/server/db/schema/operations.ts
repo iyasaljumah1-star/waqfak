@@ -82,7 +82,7 @@ export type OutputBlock =
 
 /** The data a clause rests on: field, value, its state, and where/when it came from. */
 export type ClauseDatum = { field: string; value: string; status: "provided" | "missing" | "conflict" | "default" | "computed"; label?: string; source?: string; at?: string };
-export type OutputCheck = { key: string; label: string; status: "verified" | "specialist" | "client_attested" | "incomplete" | "na" | "failed"; reason: string; source: string; rule: string; ref?: string; mode: "auto" | "professional" };
+export type OutputCheck = { key: string; label: string; status: "verified" | "specialist" | "client_attested" | "incomplete" | "na" | "failed"; reason: string; source: string; rule: string; ref?: string; mode: "auto" | "professional"; kind?: "decision" };
 
 export type OutputSection = {
   key: string;
@@ -395,8 +395,9 @@ export const paymentSchedule = pgTable("payment_schedule", {
 // ───────────────────────── Field-level review of a request ─────────────────────────
 
 /** pending: not reviewed yet · approved: reviewed and approved by the team · needs_review: changed or reopened since. */
-export type FieldReviewStatus = "pending" | "approved" | "needs_review";
-export type FieldReviewEvent = { at: string; by: string; action: "approve" | "reopen" | "changed"; note?: string | null; value?: unknown };
+/** «waived»: a secondary field whose review was skipped with a recorded reason by an authorized reviewer (never an essential field). */
+export type FieldReviewStatus = "pending" | "approved" | "needs_review" | "waived";
+export type FieldReviewEvent = { at: string; by: string; action: "approve" | "reopen" | "changed" | "waive"; note?: string | null; value?: unknown };
 
 /**
  * Review state of one field (or one waqf-file context block, key "ctx:<block>") of a request. Approving a field never

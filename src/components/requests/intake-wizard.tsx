@@ -138,13 +138,13 @@ function TableInput({ f, value, onChange, answers }: { f: Field; value: AnswerVa
       {list.map((r, i) => (
         <div key={i} className="rounded-lg border border-line bg-surface-2/40 p-3" data-testid={`row-${f.key}-${i}`}>
           <div className="mb-2 flex items-center justify-between">
-            <span className="text-[13px] font-medium text-muted">{i + 1}</span>
+            <span className="text-[13px] font-medium text-muted">{i + 1}{r.src?.startsWith("file:") ? <span className="ms-2 rounded bg-ink-soft px-1.5 py-0.5 text-[12px] text-ink" data-testid="row-from-file">من ملف الوقف — صحّح ما يلزم</span> : null}</span>
             <button type="button" onClick={() => set(rows.filter((_, j) => j !== i))} className="inline-flex h-8 items-center gap-1 rounded-md px-2 text-[13px] text-critical hover:bg-critical-soft">
               <X aria-hidden className="size-3.5" />احذف الصف
             </button>
           </div>
           <div className="grid gap-2 sm:grid-cols-2">
-            {cols.filter((c) => cellVisible(c, r)).map((c) => {
+            {cols.filter((c) => c.type !== "hidden" && cellVisible(c, r)).map((c) => {
               const cid = `q-${f.key}-${i}-${c.key}`;
               const v = r[c.key] ?? "";
               const numeric = ["number", "money", "percent", "idnumber"].includes(c.type);

@@ -47,7 +47,7 @@ import { processingPhase } from "@/server/modules/requests/phase";
 import { WAQF_MODE_AR, waqfModeOf } from "@/server/modules/requests/waqf-mode";
 
 const PHASE_OWNER_AR = { client: "على العميل", team: "على الفريق", manager: "على مدير التشغيل", none: "—" } as const;
-import { createFieldTask, setFieldState } from "@/server/modules/requests/field-actions";
+import { createFieldTask, setFieldState, waiveSecondaryFields } from "@/server/modules/requests/field-actions";
 import { workspaceExtras } from "@/server/modules/operations/workspace-server";
 import { rollbackRequest, staffEditIntake } from "@/server/modules/operations/revisions-actions";
 import { commsChannels, commsHeadline, COMMS_STATE_TONE } from "@/server/modules/operations/comms";
@@ -56,6 +56,7 @@ import { OUTPUT_STATUS_LABEL } from "@/server/modules/outputs/pure";
 import { STATUS_LABEL as REQ_STATUS_LABEL } from "@/server/modules/requests/workflow";
 import { ContinuousPanel } from "@/components/operations/continuous-panel";
 import { PaymentScheduleTable } from "@/components/billing/payment-schedule";
+import { unbilledInstallments } from "@/server/modules/billing/schedule-pure";
 import { materializeSchedule, scheduleOf } from "@/server/modules/billing/schedule";
 import { setInstallmentDue } from "@/server/modules/billing/schedule-actions";
 import { continuousView } from "@/server/modules/operations/continuous";
@@ -92,6 +93,7 @@ export default async function StaffRequest({ params }: { params: Promise<{ id: s
   // the request's fields, the waqf-file records the service reads, their review states, analysis, notes and tasks
   const fws = r.intakeFormVersion ? await read(auth, (tx) => fieldWorkspace(tx, rc, "staff")) : null;
   const sched = paid ? await read(auth, async (tx) => { await materializeSchedule(tx, r.id, null); return scheduleOf(tx, r.id); }) : null;
+  const unbilled = sched ? unbilledInstallments(sched.rows.map((x) => ({ id: x.id, label: x.label, total: Number(x.total), invoices: x.invoices }))) : [];
   const cont = continuousSpec(rc.service.code) ? await read(auth, (tx) => continuousView(tx, auth, rc)) : null;
   const contStart = cont?.contract?.executedAt ? toISO(cont.contract.executedAt) : r.startApprovedAt ? toISO(r.startApprovedAt) : today;
   const termMonths = Number(d.answers.termMonths) > 0 ? Number(d.answers.termMonths) : 12;
@@ -167,6 +169,9 @@ export default async function StaffRequest({ params }: { params: Promise<{ id: s
   // ── Workspace: summary, sections, communications
   const wx = await read(auth, (tx) => workspaceExtras(tx, auth, rc));
   const activeStage = stages.find((s) => s.status === "active");
+  // work stages before quality review still open: sending to QA asks the sender to confirm them explicitly
+  const qIdx = stages.findIndex((s) => rc.stagesDef.find((x) => x.key === s.stageKey)?.role === "quality");
+  const openWork = r.status === "in_progress" && qIdx > 0 ? stages.slice(0, qIdx).filter((s) => s.status !== "done" && s.status !== "skipped").map((s) => s.name) : [];
   const outSummary = ops2.outputs.length
     ? ops2.outputs.map((o) => `${o.def.title}: ${o.o ? (o.o.status === "approved" && ["awaiting_client_approval", "completed", "closed"].includes(r.status) ? "مُسلَّم" : OUTPUT_STATUS_LABEL[o.o.status]) : "لم تُعدّ"}`).join("، ")
     : deliverables.length ? `${deliverables.length} تسليم` : "لا مخرجات بعد";
@@ -266,6 +271,12 @@ export default async function StaffRequest({ params }: { params: Promise<{ id: s
       {r.status === "on_hold" ? (
         <Alert tone="fine" title={`معلّق — بانتظار ${HOLD_PARTY_LABEL[r.holdParty ?? ""] ?? "طرف آخر"}`}>{r.holdReason}{r.holdFollowUpOn ? ` · المتابعة ${fmtBoth(r.holdFollowUpOn)}` : ""}</Alert>
       ) : null}
+      {sched && ["awaiting_client_approval", "completed"].includes(r.status) && unbilled.length ? (
+        <Alert tone="fine" title="دفعات مستحقة بلا فاتورة صادرة" data-testid="unbilled-alert">
+          <ul className="list-disc ps-5">{unbilled.map((u) => <li key={u.id}>«{u.label}» — {u.total.toFixed(2)} ر.س — {u.state}</li>)}</ul>
+          <p className="mt-1">لا يُغلق الطلب قبل إصدار فاتورة كل دفعة واعتمادها وإرسالها (لا يُشترط السداد). أصدرها من «جدول الدفعات».</p>
+        </Alert>
+      ) : null}
       {r.status === "quality_review" && iDelivered ? (
         <Alert tone="info" title="مبدأ العينين الأربع">أنت من أعدّ المخرجات، لذلك تُراجع الجودة من زميل آخر يحمل صلاحية مراجعة الجودة.</Alert>
       ) : null}
@@ -291,7 +302,8 @@ export default async function StaffRequest({ params }: { params: Promise<{ id: s
           ) : null}
           <Section id="work" title="العمل والمهام">
           <Panel title="سير العمل" description="الإجراءات المتاحة لك حسب الحالة ودورك. يُرسل عرض السعر ويُقبل من لوحته.">
-            <TransitionPanel action={staffTransition} id={r.id} transitions={staffTransitions} holdParties={HOLD_PARTY_LABEL} />
+            <TransitionPanel action={staffTransition} id={r.id} transitions={staffTransitions} holdParties={HOLD_PARTY_LABEL}
+              ack={openWork.length ? { to: "quality_review", text: `أؤكد أن مراحل العمل المفتوحة أُنجزت فعلًا: ${openWork.map((x) => `«${x}»`).join("، ")}. يُسجَّل هذا تأكيدًا مني في سجل الطلب، والأفضل إنجاز كل مرحلة من «أنجزت المرحلة الحالية».` } : undefined} />
             {r.status === "in_progress" && worker && (!cont || plan.snap.canAdvanceStage) ? (
               <div className="mt-3 border-t border-line pt-3">
                 <ActionForm action={advanceStageAction} hidden={{ id: r.id }} submit="أنجزت المرحلة الحالية" variant="secondary" size="sm" />
@@ -318,7 +330,7 @@ export default async function StaffRequest({ params }: { params: Promise<{ id: s
           <Panel id="intake" title="بيانات الطلب" description={r.intakeFormVersion ? `نموذج الخدمة — الإصدار ${r.intakeFormVersion}. كل حقل بقيمته ومصدره وحالة مراجعته، وتحليل النظام تحته، والإجراءات بجانبه.` : "طلب سابق لنماذج الخدمات: التفاصيل نص حر."}>
             {fws ? (
               <FieldWorkspaceView ws={fws} requestId={r.id} waqfId={r.waqfId} canAct={worker && !terminal && r.status !== "draft"}
-                actions={{ staffEditIntake, raiseItem, setFieldState, postStaffNote, createFieldTask }} docs={docOpts} staff={staff.map((x) => ({ value: x.id, label: x.name }))} />
+                actions={{ staffEditIntake, raiseItem, setFieldState, postStaffNote, createFieldTask, waiveSecondaryFields }} docs={docOpts} staff={staff.map((x) => ({ value: x.id, label: x.name }))} />
             ) : d.intakeSummary ? (
               <IntakeSummaryView sections={d.intakeSummary} docTitles={docTitle}
                 docs={d.form.docs.filter((s) => d.intakeDocs[s.key]?.length || s.required).map((s) => ({ label: s.label, ids: d.intakeDocs[s.key] ?? [] }))} />

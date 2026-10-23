@@ -17,6 +17,8 @@ export type FieldActionSet = {
   setFieldState: Act;
   postStaffNote: Act;
   createFieldTask: Act;
+  /** Records a reasoned waiver of secondary fields (authorized reviewer). */
+  waiveSecondaryFields?: Act;
 };
 
 /**
@@ -166,7 +168,7 @@ function TaskForm({ action, requestId, fieldKey, label, staff, suggested }: { ac
 export function FieldFilter({ counts }: { counts: Record<string, number> }) {
   const [f, setF] = useState("all");
   const [q, setQ] = useState("");
-  const chips: [string, string][] = [["all", "الكل"], ["gap", "ناقص"], ["conflict", "تعارض"], ["needs_review", "يحتاج مراجعة"], ["pending", "لم يُراجع"], ["approved", "معتمد"], ["system", "من ملف الوقف"]];
+  const chips: [string, string][] = [["all", "الكل"], ["gap", "ناقص"], ["conflict", "تعارض"], ["needs_review", "يحتاج مراجعة"], ["pending", "لم يُراجع"], ["approved", "معتمد"], ["waived", "تجاوز موثق"], ["system", "من ملف الوقف"]];
   return (
     <div className="space-y-2" data-testid="field-filter">
       <style>{`${f === "all" ? "" : `[data-fieldws] [data-row]:not([data-f~="${f}"]){display:none}`} ${q ? `[data-fieldws] [data-row]:not([data-q*="${q.replace(/["\\]/g, "")}"]){display:none}` : ""}`}</style>

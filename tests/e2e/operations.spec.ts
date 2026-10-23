@@ -223,6 +223,7 @@ test.describe.serial("service flows as one operating system", () => {
 
     // last stage → quality review → to the client (four-eyes satisfied by the recorded self-approval policy)
     await go(admin, `/admin/requests/${reqId}`);
+    if (await admin.getByTestId("approval-ack").count()) await admin.getByTestId("approval-ack").locator("input").check();
     await act(admin, "إرسال لمراجعة الجودة");
     await ex(admin.getByRole("button", { name: "اعتماد الجودة وإرسال للعميل" })).toBeVisible();
     await act(admin, "اعتماد الجودة وإرسال للعميل");
@@ -242,6 +243,7 @@ test.describe.serial("service flows as one operating system", () => {
     const pdf = await nazir.request.get(`/api/files/${rel.document_id}`);
     expect(pdf.status()).toBe(200);
     expect((await pdf.body()).subarray(0, 4).toString()).toBe("%PDF");
+    await nazir.getByTestId("approval-ack").locator("input").check();
     await act(nazir, "أعتمد المخرجات");
     await ex.poll(async () => (await sql<{ status: string }>("select status from service_requests where id = $1", [reqId]))[0].status).toBe("completed");
     await go(admin, `/admin/requests/${reqId}`);

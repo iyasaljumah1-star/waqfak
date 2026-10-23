@@ -26,7 +26,12 @@ export type CheckResult = {
   ref?: string;
   /** automatic (computed by the platform) or professional (needs/has a specialist's finding). */
   mode: "auto" | "professional";
+  /** «decision»: a question the specialist settles with a reasoned, recorded decision (never decided by the platform). */
+  kind?: "decision";
 };
+
+/** How a specialist settles a decision item (shown instead of the check verdicts). */
+export const DECISION_AR: Record<"verified" | "na" | "failed", string> = { verified: "حُسمت بقرار مسبب", na: "لا تنطبق", failed: "تحتاج قرار الواقف أو إيضاحه" };
 
 export const CHECK_STATUS_AR: Record<CheckStatus, string> = {
   verified: "متحقق آليًا",

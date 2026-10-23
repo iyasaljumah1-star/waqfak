@@ -15,7 +15,7 @@ import { docTypeLabel } from "@/server/modules/documents/labels";
 import { CHECK_STATUS_AR, STATUS_AR } from "@/server/modules/nazara/pure";
 import type { RequestCtx } from "@/server/modules/requests/access";
 import { docRequired, findField, sanitizeAnswers, summarize, tableRows, visibleDocs, visibleFields, visibleSteps } from "@/server/modules/requests/intake/engine";
-import { intakeOf, serviceForm } from "@/server/modules/requests/intake/server";
+import { fileTables, intakeOf, serviceForm } from "@/server/modules/requests/intake/server";
 import type { DeliveryRecordFacts, OutputContext } from "./build";
 import { detectConflicts } from "./conflicts";
 import { fiscalPeriodOfYear, lastFiscalPeriod } from "./fiscal";
@@ -66,6 +66,7 @@ async function withDataQuality(tx: Tx, rc: RequestCtx, ctx: OutputContext): Prom
     serviceCode: rc.service.code, keys: ctx.keys ?? {}, tables: ctx.tables ?? {}, labels, options,
     requester: { name: ctx.requester.name, capacityKey: typeof answers.capacity === "string" ? answers.capacity : null },
     docs: docSlots, waqf, prefills,
+    fileRows: rc.req.waqfId && (ctx.tables?.assets?.length || ctx.tables?.boardMembers?.length) ? await (async () => { const t = await fileTables(tx, rc.req.waqfId!); return { assets: t["waqf.assets"], boardMembers: t["waqf.board"] }; })() : undefined,
   });
   ctx.verifiedDocs = verifiedDocs;
   ctx.fieldLabels = labels;

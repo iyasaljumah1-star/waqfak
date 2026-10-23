@@ -1,14 +1,15 @@
 import "server-only";
 import { and, asc, eq, inArray, isNotNull } from "drizzle-orm";
 import type { Tx } from "@/server/db";
-import { contracts, paymentSchedule, quotes, roles, serviceRequests, settings, userRoles, users } from "@/server/db/schema";
+import { contracts, paymentSchedule, quotes, roles, serviceRequests, settings, tasks, userRoles, users } from "@/server/db/schema";
+import { taskEvent } from "@/server/modules/operations/exec";
 import type { PaymentTerm } from "@/server/db/schema/commerce";
 import { toISO, todayISO } from "@/server/engines/dates";
 import { rolePermissionMap } from "@/server/authz/context";
 import { ledgerOf } from "@/server/modules/commerce/state";
 import { splitInstallments } from "@/server/modules/commerce/pure";
 import { notify } from "@/server/modules/notify";
-import { dueAlerts, dueAlertSettings, initialDueOn, installmentStage, STAGE_AR, type InstallmentInvoice } from "./schedule-pure";
+import { dueAlerts, dueAlertSettings, dueByEvent, initialDueOn, installmentStage, STAGE_AR, unbilledInstallments, type InstallmentInvoice } from "./schedule-pure";
 
 export const DUE_ALERTS_KEY = "billing.due_alerts";
 
@@ -137,3 +138,52 @@ export async function allInstallments(tx: Tx) {
 }
 
 
+
+/**
+ * The work reached an event that makes installments due (outputs released / delivery approved): each such installment
+ * still without a due date gets today's date (recorded in its history), and the finance team gets one mandatory task per
+ * installment to issue its invoice — once (unique task per installment), however often the event repeats. No invoice is
+ * created here: invoices go through draft → finance approval → sending.
+ */
+export async function installmentsDueOn(tx: Tx, req: { id: string; waqfId: string | null; number: string; assignedToUserId: string | null }, event: "delivery" | "completion", actorId: string | null) {
+  await materializeSchedule(tx, req.id, actorId);
+  const { rows } = await scheduleOf(tx, req.id);
+  const owed = unbilledInstallments(rows.map((r) => ({ id: r.id, label: r.label, total: Number(r.total), invoices: r.invoices })));
+  const today = todayISO();
+  let tasksMade = 0;
+  for (const r of rows) {
+    if (!dueByEvent(r.dueKind, event) || !owed.some((o) => o.id === r.id)) continue;
+    if (!r.dueOn) {
+      await tx.update(paymentSchedule).set({
+        dueOn: today, updatedBy: actorId,
+        history: [...(r.history ?? []), { at: new Date().toISOString(), by: actorId, kind: "due_set" as const, note: event === "delivery" ? "استحقت بتسليم المخرجات المعتمدة للعميل" : "استحقت باعتماد العميل للمخرجات واكتمال العمل" }],
+      }).where(eq(paymentSchedule.id, r.id));
+    }
+    const [t] = await tx.insert(tasks).values({
+      waqfId: req.waqfId, requestId: req.id, sourceType: "request", sourceId: req.id, kind: "finance", outputKey: `pay:${r.id}`,
+      title: `إصدار فاتورة دفعة «${r.label}» (${Number(r.total).toFixed(2)} ر.س) واعتمادها وإرسالها`, description: req.number,
+      assigneeUserId: null, priority: "high", visibility: "internal", dueOn: today, createdBy: actorId, updatedBy: actorId,
+    }).onConflictDoNothing().returning();
+    if (t) {
+      tasksMade++;
+      await taskEvent(tx, t, { action: "create", to: t.status, actorId, note: "مهمة مالية إلزامية: لا يُغلق الطلب قبل إصدار الفاتورة" });
+      for (const u of await financeUserIds(tx)) await notify(u, "billing.installment_due", { label: r.label, number: req.number, stage: "مستحقة", amount: `${Number(r.total).toFixed(2)} ر.س`, due: today }, { waqfId: req.waqfId, link: `/admin/requests/${req.id}#billing`, tx });
+    }
+  }
+  return { tasksMade };
+}
+
+/** Installments of the request with no issued invoice (what blocks closing), with amounts. */
+export async function unbilledOf(tx: Tx, requestId: string) {
+  const { rows } = await scheduleOf(tx, requestId);
+  return unbilledInstallments(rows.map((r) => ({ id: r.id, label: r.label, total: Number(r.total), invoices: r.invoices })));
+}
+
+/** Closes the finance task of an installment once its invoice is sent. */
+export async function closeFinanceTask(tx: Tx, requestId: string, scheduleRowId: string, actorId: string, invoiceNumber: string) {
+  const open = await tx.select().from(tasks).where(and(eq(tasks.requestId, requestId), eq(tasks.kind, "finance"), eq(tasks.outputKey, `pay:${scheduleRowId}`), inArray(tasks.status, ["todo", "in_progress"])));
+  for (const t of open) {
+    await tx.update(tasks).set({ status: "done", completedAt: new Date(), completedBy: actorId, updatedBy: actorId }).where(eq(tasks.id, t.id));
+    await taskEvent(tx, t, { action: "complete", from: t.status, to: "done", actorId, note: `أُرسلت الفاتورة ${invoiceNumber}` });
+  }
+}

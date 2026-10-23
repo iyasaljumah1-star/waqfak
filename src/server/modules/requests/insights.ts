@@ -73,7 +73,7 @@ export type BlockView = { block: ContextBlock; state: FieldReviewStatus; approva
 export type RequestAnalysis = {
   steps: { key: string; title: string; fields: FieldView[] }[];
   blocks: BlockView[];
-  summary: { fields: number; required: number; requiredValid: number; approved: number; needsReview: number; pending: number; gaps: number; conflicts: number; completeness: number };
+  summary: { fields: number; required: number; requiredValid: number; approved: number; waived: number; needsReview: number; pending: number; gaps: number; conflicts: number; completeness: number };
 };
 
 /**
@@ -98,7 +98,8 @@ export function analyzeRequest(i: InsightInput): RequestAnalysis {
       const fileV = f.prefill ? i.fileValues[f.key] : undefined;
       const origin: FieldOrigin = lastRev ? (lastRev.kind === "client_completion" ? "client_completion" : "staff") : f.prefill && fileV != null && fileV !== "" ? (String(v ?? "") === String(fileV) ? "file" : "file_changed") : "client";
       const st8 = i.states[f.key];
-      const approvalOutdated = st8?.status === "approved" && !sameValue(st8.approvedValue, v ?? null);
+      // an approval or a recorded waiver holds for the value it was given on; a later change reopens the field
+      const approvalOutdated = (st8?.status === "approved" || st8?.status === "waived") && !sameValue(st8.approvedValue, v ?? null);
       const insights: Insight[] = [];
       // what the value is, and how far it can be relied on
       if (v === undefined || v === null || (typeof v === "string" && !v.trim())) {
@@ -113,7 +114,7 @@ export function analyzeRequest(i: InsightInput): RequestAnalysis {
         insights.push({ kind: "fact", text: `صحّحه ${lastRev.actor}${lastRev.reason ? ` — السبب: ${lastRev.reason.replace(/[.\s]+$/u, "")}` : ""}. القيمة الأصلية: ${prevText}.`, evidence: [`سجل التصحيحات ${lastRev.at.slice(0, 10)}`] });
       } else if (origin === "client_completion" && lastRev) {
         insights.push({ kind: "client", text: "استكمله العميل ردًا على طلب استكمال، ولم يُراجع بعد." });
-      } else if (st8?.status !== "approved") {
+      } else if (st8?.status !== "approved" && st8?.status !== "waived") {
         insights.push({ kind: "client", text: st.key === "unregisteredWaqf" ? "قدّمه العميل عن وقف غير مسجل في المنصة، ولم يُتحقق منه بعد." : "أدخله العميل، ولم يُتحقق منه بعد." });
       }
       // needed before work starts (the request could be sent without it, or with «لا أعرف»)
@@ -136,7 +137,7 @@ export function analyzeRequest(i: InsightInput): RequestAnalysis {
 
   const blocks: BlockView[] = i.blocks.map((b) => {
     const s = i.states[ctxField(b.key)];
-    const approvalOutdated = s?.status === "approved" && !sameValue(s.approvedValue, b.fingerprint);
+    const approvalOutdated = (s?.status === "approved" || s?.status === "waived") && !sameValue(s.approvedValue, b.fingerprint);
     const ins: Insight[] = [];
     const src = [`${b.source}${b.asOf ? ` (آخر تحديث ${b.asOf.slice(0, 10)})` : ""}`];
     if (b.status === "missing") ins.push({ kind: "gap", text: `${b.title}: غير مسجلة في ملف الوقف؛ لا يُفترض وجودها. تُطلب من العميل أدلتها أو تُسجَّل في الملف.`, evidence: src, task: `استكمال «${b.title}»` });
@@ -160,7 +161,7 @@ export function analyzeRequest(i: InsightInput): RequestAnalysis {
     steps, blocks,
     summary: {
       fields: all.length, required: req.length, requiredValid,
-      approved: units.filter((s) => s === "approved").length, needsReview: units.filter((s) => s === "needs_review").length, pending: units.filter((s) => s === "pending").length,
+      approved: units.filter((s) => s === "approved").length, waived: units.filter((s) => s === "waived").length, needsReview: units.filter((s) => s === "needs_review").length, pending: units.filter((s) => s === "pending").length,
       gaps, conflicts, completeness: denom ? Math.round(((requiredValid + blocksReady) / denom) * 100) : 100,
     },
   };

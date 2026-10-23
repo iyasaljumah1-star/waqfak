@@ -223,6 +223,7 @@ test.describe.serial("unified request workspace", () => {
     await nextStep(admin, reqId, /أرسل لمراجعة الجودة/);
     await nextStep(admin, reqId, /اعتماد ذاتي/);
     await go(client, `/app/requests/${reqId}`);
+    await client.getByTestId("approval-ack").locator("input").check();
     await client.getByRole("button", { name: "أعتمد المخرجات" }).click();
     await ex.poll(() => status(reqId)).toBe("completed");
     await go(admin, `/admin/requests/${reqId}`);

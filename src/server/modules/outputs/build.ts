@@ -458,11 +458,13 @@ export function buildDraft(c: OutputContext, def: OutputDef) {
     ...(t.disclaimer ? [{ type: "para" as const, text: t.disclaimer, prov: "system" as Provenance }] : []),
   ]));
   // the client copy carries the document, not the team's working material: the client's raw answers (contact data,
-  // priority) and the stages stay internal everywhere; a drafted document (will, deed) keeps only its clauses and sources
+  // priority) and the stages stay internal everywhere; a drafted document (will, deed) keeps only its clauses
   const DOCUMENT_PROFILES = new Set(["will_text", "deed_draft"]);
   for (const s of sections) {
     if (s.key === "request" || s.key === "stages") s.audience = "internal";
-    else if (DOCUMENT_PROFILES.has(def.profile) && !(s.key === "will_clauses" || s.key === "deed_clauses" || s.key === "references")) s.audience = "internal";
+    // the reference list names the guides the drafting followed: review material for the team and the specialist,
+    // not part of a document that goes to a notary or court
+    else if (DOCUMENT_PROFILES.has(def.profile) && !(s.key === "will_clauses" || s.key === "deed_clauses")) s.audience = "internal";
   }
   if (c.waqf?.isDemo) gaps.push({ key: "demo", label: "الوقف تجريبي: المخرج للاختبار فقط", severity: "warning" });
   // conflicts between the data sources: never resolved by the generator, listed with each side's value

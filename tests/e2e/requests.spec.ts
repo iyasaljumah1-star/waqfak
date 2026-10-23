@@ -599,6 +599,8 @@ test.describe.serial("service request lifecycle", () => {
     await emp.getByLabel("عنوان المخرج").fill("تقرير التقييم المعمّق (اختبار)");
     await emp.getByRole("button", { name: "سجّل المخرج" }).click();
     await ex(emp.getByText("أُضيف المخرج.")).toBeVisible();
+    // open work stages are confirmed explicitly by the sender (recorded in the request log)
+    if (await emp.getByTestId("approval-ack").count()) await emp.getByTestId("approval-ack").locator("input").check();
     await emp.getByRole("button", { name: "إرسال لمراجعة الجودة" }).click();
     await ex(statusBadge(emp, "مراجعة الجودة")).toBeVisible();
     const ops = await as(browser, "ops", viewport);
@@ -614,6 +616,7 @@ test.describe.serial("service request lifecycle", () => {
 
     const naz = await as(browser, "nazir", viewport);
     await naz.goto(`/app/requests/${reqId}?t=${Date.now()}`);
+    await naz.getByTestId("approval-ack").locator("input").check();
     await naz.getByRole("button", { name: "أعتمد المخرجات" }).click();
     await ex(naz.getByText(/لا يكتمل الطلب وفيه 1/)).toBeVisible();
     await naz.getByTestId("item-3").getByLabel("ردك").fill("نعم، أضيفوه (اختبار).");
@@ -623,6 +626,7 @@ test.describe.serial("service request lifecycle", () => {
     await ops.getByTestId("item-3").getByRole("button", { name: "اقبل وأغلق" }).click();
     await ex(ops.getByTestId("item-3").getByText("مقبول ومغلق")).toBeVisible();
     await naz.reload();
+    await naz.getByTestId("approval-ack").locator("input").check();
     await naz.getByRole("button", { name: "أعتمد المخرجات" }).click();
     await ex(statusBadge(naz, "مكتمل")).toBeVisible();
     await ex(naz.getByTestId("request-states")).toContainText("نُفّذت الخدمة");

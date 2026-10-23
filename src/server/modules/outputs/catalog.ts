@@ -85,6 +85,8 @@ const SERVICE_PROFILE: Record<string, Profile> = {
 const TITLE_OVERRIDE: Record<string, string> = {
   N01: "تقرير دراسة ملف الوقف وتوصية القبول",
   C01: "تقرير التقييم التشخيصي",
+  // the platform drafts the deed; it becomes a deed only once documented by the competent authority
+  T03: "مسودة وثيقة وقف للمراجعة قبل التوثيق",
 };
 
 export function outputsFor(svc: { code: string; outputs?: string | null; nameAr?: string }): OutputDef[] {
@@ -92,6 +94,16 @@ export function outputsFor(svc: { code: string; outputs?: string | null; nameAr?
   if (!profile) return [];
   const title = TITLE_OVERRIDE[svc.code] ?? (svc.outputs?.split(/،|,/)[0]?.trim() || svc.nameAr || svc.code);
   return [{ key: `${svc.code}.main`, title, specialty: PROFILE_SPECIALTY[profile], profile, review: PROFILE_REVIEW[profile] }];
+}
+
+/** Drafted legal documents (deed, will): drafts until documented by the competent authority. */
+export const isLegalDraftService = (code: string) => ["deed_draft", "will_text"].includes(SERVICE_PROFILE[code] ?? "");
+
+/** What the client confirms when approving the delivered outputs (recorded with the approval; waives no right). */
+export function clientApprovalAck(code: string) {
+  return isLegalDraftService(code)
+    ? "اطلعتُ على المستند المسلَّم، وأعلم أنه مسودة لا تكون نافذة ولا موثقة إلا بعد إجرائها لدى الجهة المختصة. لا يُعد هذا الإقرار تنازلًا عن أي حق لي، ولا يُعفي «وقفك» من مسؤولياتها عن الخدمة."
+    : "اطلعتُ على المخرجات المسلّمة وأعتمدها. لا يُعد هذا الإقرار تنازلًا عن أي حق لي، ولا يُعفي «وقفك» من مسؤولياتها عن الخدمة.";
 }
 
 /** The output of a delivery cycle of a continuous service (one per cycle; titled with the cycle's period). */
@@ -289,13 +301,13 @@ export const PROFILE_REFS: Record<Profile, string[]> = {
 /** The ten clauses of a waqf deed (الدليل الإرشادي لصياغة وثيقة الوقف) with the intake answers that feed each one. */
 export const DEED_CLAUSES: { key: string; title: string; fields: string[] }[] = [
   { key: "waqif", title: "الواقف", fields: ["waqifName", "waqifId"] },
-  { key: "asset", title: "الأصل الموقوف", fields: ["assetType", "assetDescription", "ownershipDeedNo", "registeredToWaqif", "mortgaged", "mortgageNote", "share", "sharePercent"] },
+  { key: "asset", title: "الأصول الموقوفة", fields: ["assets", "appurtenances", "exceptionPart"] },
   { key: "name", title: "اسم الوقف", fields: ["waqfName"] },
   { key: "masarif", title: "المصارف", fields: ["beneficiaries"] },
   { key: "exception", title: "الاستثناء", fields: ["selfBenefit"] },
   { key: "nazara", title: "النظارة", fields: ["nazara"] },
   { key: "duties", title: "واجبات الناظر", fields: ["investmentAllowed"] },
-  { key: "board", title: "المجلس", fields: ["board"] },
+  { key: "board", title: "المجلس", fields: ["boardSize", "boardMembers"] },
   { key: "closing", title: "الخاتمة", fields: ["amendmentRight"] },
   { key: "signature", title: "التوقيع", fields: [] },
 ];

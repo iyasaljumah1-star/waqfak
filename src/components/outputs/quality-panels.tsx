@@ -4,7 +4,7 @@ import { Checkbox, Field, Input, Select, Textarea } from "@/components/ui/form";
 import { ActionForm } from "@/components/requests/forms";
 import { fmtDateTime } from "@/lib/utils";
 import type { OutputBlock, OutputCheck, OutputSection } from "@/server/db/schema/operations";
-import { CHECK_STATUS_AR, CHECK_STATUS_TONE, REVIEW_STATUS_AR } from "@/server/modules/outputs/checks";
+import { CHECK_STATUS_AR, CHECK_STATUS_TONE, REVIEW_STATUS_AR, DECISION_AR } from "@/server/modules/outputs/checks";
 import { BINDING_AR, CITATION_REVIEW_AR, citationOf } from "@/server/modules/outputs/citations";
 import type { Conflict } from "@/server/modules/outputs/conflicts";
 import type { DiffSeg } from "@/server/modules/outputs/pure";
@@ -159,13 +159,22 @@ export function ChecksPanel({ checks, findings, canReview, outputId, requestId, 
                 <dt>البيانات</dt><dd>{c.source}</dd>
                 <dt>القاعدة</dt><dd>{c.rule}</dd>
               </dl>
-              {f ? <p className="mt-2 rounded bg-seal-soft/40 p-2 text-[13px]" data-testid={`finding-${c.key}`}><span className="font-medium">{REVIEW_STATUS_AR[f.status]}</span> — {f.note} <span className="text-muted">({f.byName ?? "—"}، {fmtDateTime(new Date(f.at))}، النسخة {f.version})</span></p> : null}
+              {f ? <p className="mt-2 rounded bg-seal-soft/40 p-2 text-[13px]" data-testid={`finding-${c.key}`}><span className="font-medium">{c.kind === "decision" ? DECISION_AR[f.status] : REVIEW_STATUS_AR[f.status]}</span> — {f.note} <span className="text-muted">({f.byName ?? "—"}، {fmtDateTime(new Date(f.at))}، النسخة {f.version})</span></p> : null}
               {canReview && reviewable && open ? (
                 <details className="mt-2">
                   <summary className="cursor-pointer text-[13px] text-ink">{f ? "حدّث رأيك" : "سجّل رأي المختص"}</summary>
                   <ActionForm action={recordCheckFinding} hidden={{ outputId, requestId, key: c.key }} submit="سجّل الرأي" size="sm" className="mt-2">
-                    <Field label="الرأي" name={`st-${c.key}`}><Select name="status" id={`st-${c.key}`} options={[{ value: "verified", label: "تحقق منه المختص" }, { value: "failed", label: "غير مستوفٍ" }, { value: "na", label: "لا ينطبق" }]} /></Field>
-                    <Field label="سند الرأي (المستند أو المرجع الذي اطلعت عليه)" name={`nt-${c.key}`}><Textarea id={`nt-${c.key}`} name="note" required minLength={10} className="min-h-16" /></Field>
+                    {c.kind === "decision" ? (
+                      <>
+                        <Field label="القرار" name={`st-${c.key}`}><Select name="status" id={`st-${c.key}`} options={[{ value: "verified", label: DECISION_AR.verified }, { value: "failed", label: DECISION_AR.failed }, { value: "na", label: DECISION_AR.na }]} /></Field>
+                        <Field label="القرار ومبرره (ما قرره الواقف أو المختص، والبند الذي طُبق فيه، أو سبب عدم الانطباق)" name={`nt-${c.key}`} hint="«تحتاج قرار الواقف أو إيضاحه» يمنع الاعتماد حتى يُحسم؛ أرسل للعميل استفسارًا من «طلب استكمال» على الحقل المعني."><Textarea id={`nt-${c.key}`} name="note" required minLength={10} className="min-h-16" /></Field>
+                      </>
+                    ) : (
+                      <>
+                        <Field label="الرأي" name={`st-${c.key}`}><Select name="status" id={`st-${c.key}`} options={[{ value: "verified", label: "تحقق منه المختص" }, { value: "failed", label: "غير مستوفٍ" }, { value: "na", label: "لا ينطبق" }]} /></Field>
+                        <Field label="سند الرأي (المستند أو المرجع الذي اطلعت عليه)" name={`nt-${c.key}`}><Textarea id={`nt-${c.key}`} name="note" required minLength={10} className="min-h-16" /></Field>
+                      </>
+                    )}
                   </ActionForm>
                 </details>
               ) : null}

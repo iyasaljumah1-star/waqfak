@@ -12,6 +12,8 @@ import { analyzeRequest, type FieldState } from "./insights";
 import { intakeOf, prefillSources, serviceForm, validDocMap, withServerAnswers } from "./intake/server";
 import { intakeNeeds } from "./intake/engine";
 import { waqfModeOf } from "./waqf-mode";
+import { sameServiceRequests } from "./queries";
+import { fieldRelease } from "./field-policy";
 
 export type FieldNote = { id: string; visibility: string; body: string; author: string; at: string; documentId: string | null; documentTitle: string | null };
 export type FieldTask = { id: string; title: string; status: string; dueOn: string | null; assignee: string | null };
@@ -67,7 +69,11 @@ export async function fieldWorkspace(tx: Tx, rc: RequestCtx, audience: "staff" |
     form, answers, analysis,
     /** Which waqf the request concerns, and what the service still needs (before sending / starting / to help). */
     waqfMode: waqfModeOf(rc.req),
+    /** Field review before release (ACC-12): counts, open essential / secondary fields, recorded waivers. */
+    release: audience === "staff" ? fieldRelease(rc.service.code, analysis) : null,
     /** The linked waqf file's status (a «draft» file comes from the establishment wizard: the waqf is not documented). */
+    /** Earlier requests of the same service for the same waqf (team notice; not a block). */
+    earlier: audience === "staff" && rc.req.waqfId ? (await sameServiceRequests(tx, { serviceId: rc.service.id, waqfIds: [rc.req.waqfId], excludeId: rc.req.id })).map((e) => ({ id: e.id, number: e.number, status: e.status })) : [],
     waqfStatus: rc.req.waqfId ? (await tx.select({ status: waqfs.status }).from(waqfs).where(eq(waqfs.id, rc.req.waqfId)).limit(1))[0]?.status ?? null : null,
     needs: intakeNeeds(form, answers, docMap),
     revisions: revs.map((r) => ({ kind: r.kind, target: r.target, at: r.at.toISOString(), actor: r.actor ?? "—", reason: r.reason, before: r.before, after: r.after })),

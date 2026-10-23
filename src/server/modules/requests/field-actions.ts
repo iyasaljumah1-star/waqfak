@@ -16,6 +16,8 @@ import { findField, validateField, visibleFields, visibleSteps } from "./intake/
 import { intakeOf, serviceForm } from "./intake/server";
 import { todayISO } from "@/server/engines/dates";
 import { recordFieldState } from "./field-state";
+import { FIELD_REVIEW_SERVICES, isEssential } from "./field-policy";
+import { logEvent } from "./engine";
 import type { Tx } from "@/server/db";
 
 /**
@@ -109,5 +111,39 @@ export async function createFieldTask(_: ActionState, fd: FormData): Promise<Act
     const to = assignee ?? rc.req.assignedToUserId;
     if (to && to !== c.auth.user.id) await notify(to, "task.assigned", { title: d.title, waqf: rc.waqf?.name ?? "—", due: d.dueOn || "غير محدد" }, { waqfId: rc.req.waqfId, link: `/admin/requests/${rc.req.id}#work`, tx: c.tx }).catch(() => undefined);
     return { ok: true, message: `أُنشئت المهمة «${d.title}» مرتبطة بـ«${cur.label}».` };
+  }, { revalidate: reval(d.id) });
+}
+
+const waiveSchema = z.object({
+  id: z.string().uuid(),
+  fields: z.array(FIELD).min(1, "اختر الحقول الثانوية التي يُتجاوز عن مراجعتها.").max(80),
+  reason: z.string().trim().min(15, "اكتب سبب التجاوز (15 حرفًا على الأقل)."),
+});
+
+/**
+ * Records that secondary fields are released without a field-by-field review (ACC-12): only by an authorized reviewer
+ * (quality-review permission or operations manager), with a written reason, and never for an essential field. Each
+ * waiver is attached to the field's current value (a later change reopens it) and recorded in the request log and audit.
+ */
+export async function waiveSecondaryFields(_: ActionState, fd: FormData): Promise<ActionState> {
+  const r = parseForm(waiveSchema, { id: fd.get("id"), fields: fd.getAll("fields").map(String), reason: fd.get("reason") });
+  if ("state" in r) return r.state;
+  const d = r.data;
+  return userAction(async (c) => {
+    const rc = await loadRequestCtx(c.tx, c.auth, d.id, "staff");
+    if (!c.auth.perms.has("staff.quality_review") && !rc.isOps) throw new ForbiddenError("تجاوز مراجعة الحقول الثانوية لمراجع مخول (صلاحية مراجعة الجودة) أو لمدير التشغيل.");
+    if (["draft", "closed", "cancelled", "rejected"].includes(rc.req.status)) throw new UserError("لا تُراجع حقول طلب مسودة أو منتهٍ.");
+    if (!FIELD_REVIEW_SERVICES.includes(rc.service.code)) throw new UserError("لا تُطبَّق سياسة مراجعة الحقول على هذه الخدمة بعد.");
+    const essential = d.fields.filter((k) => isEssential(rc.service.code, k));
+    if (essential.length) throw new UserError(`لا يجوز تجاوز مراجعة حقل جوهري: ${essential.join("، ")}. يُراجع ويُعتمد.`);
+    const labels: string[] = [];
+    for (const key of [...new Set(d.fields)]) {
+      const cur = await currentValue(c.tx, rc, key);
+      await recordFieldState(c.tx, rc, key, { at: new Date().toISOString(), by: c.auth.user.id, action: "waive", note: d.reason, value: cur.value }, "waived", cur.value);
+      labels.push(cur.label);
+    }
+    await logEvent(c.tx, rc.req, c.auth.user.id, `تجاوز موثق لمراجعة ${labels.length} من الحقول الثانوية: ${labels.map((l) => `«${l}»`).join("، ")} — السبب: ${d.reason}`);
+    await audit(c.tx, { actorUserId: c.auth.user.id, action: "requests.fields_waived", entityType: "service_request", entityId: rc.req.id, waqfId: rc.req.waqfId, ip: c.ip, userAgent: c.userAgent, after: { fields: d.fields, reason: d.reason } });
+    return { ok: true, message: `سُجّل تجاوز مراجعة ${labels.length} من الحقول الثانوية بسببه.` };
   }, { revalidate: reval(d.id) });
 }

@@ -227,6 +227,7 @@ test.describe.serial("execution engine: next step, drafted documents, verificati
 
     // the client approves; the team closes from the panel
     await go(client, `/app/requests/${willReq}`);
+    await client.getByTestId("approval-ack").locator("input").check();
     await client.getByRole("button", { name: "أعتمد المخرجات" }).click();
     await ex.poll(() => status(willReq)).toBe("completed");
     await nextStep(admin, willReq, /أغلق الطلب/, true);

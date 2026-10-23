@@ -7,7 +7,8 @@
  */
 
 export type Cond =
-  | { field: string; eq?: string; in?: string[]; notEmpty?: boolean; not?: boolean }
+  /** `row`: the field is a table and the condition holds when any of its rows has that column matching. */
+  | { field: string; eq?: string; in?: string[]; notEmpty?: boolean; not?: boolean; row?: string }
   | { all: Cond[] }
   | { any: Cond[] };
 
@@ -23,7 +24,8 @@ export type FieldType =
 export type Column = {
   key: string;
   label: string;
-  type: "text" | "number" | "money" | "percent" | "select" | "date" | "idnumber";
+  /** «hidden»: kept with the row, never shown or edited in the form (e.g. which waqf-file record a row came from). */
+  type: "text" | "number" | "money" | "percent" | "select" | "date" | "idnumber" | "hidden";
   required?: boolean;
   options?: readonly (readonly [string, string])[];
   min?: number;
@@ -80,6 +82,8 @@ export type Field = {
   columns?: Column[];
   minRows?: number;
   maxRows?: number;
+  /** Table fields filled from the waqf file when a request starts (each row keeps which record it came from). */
+  prefillTable?: "waqf.assets" | "waqf.board";
   /** Table fields: the column `col` may not add up to more than `max` within one group of rows (`by`), or in all rows. */
   sumMax?: { col: string; by?: string; max: number };
 };
@@ -141,6 +145,8 @@ export type ServiceForm = {
   docs: DocSlot[];
   /** Where the questions come from (project reference files or the service definition). */
   sources: string[];
+  /** Carries answers saved under an earlier version of the form into this one (applied before the form rules). */
+  upgrade?: (a: Record<string, unknown>) => Record<string, unknown>;
 };
 
 export type AnswerValue = string | string[];
@@ -159,6 +165,11 @@ export function evalCond(c: Cond | undefined, a: Answers): boolean {
   if ("any" in c) return c.any.some((x) => evalCond(x, a));
   const v = a[c.field];
   let r: boolean;
+  if (c.row) {
+    const cells = tableRows(v).map((x) => x[c.row!] ?? "");
+    r = c.in ? cells.some((x) => c.in!.includes(x)) : c.eq !== undefined ? cells.includes(c.eq) : cells.some((x) => x !== "");
+    return c.not ? !r : r;
+  }
   if (c.notEmpty) r = !isEmpty(v);
   else if (c.in) r = Array.isArray(v) ? v.some((x) => c.in!.includes(x)) : c.in.includes(String(v ?? ""));
   else if (c.eq !== undefined) r = Array.isArray(v) ? v.includes(c.eq) : String(v ?? "") === c.eq;
@@ -219,6 +230,7 @@ export function validateField(f: Field, v: AnswerValue | undefined, a: Answers):
       if (rows.length < (f.minRows ?? (fieldRequired(f, a) ? 1 : 0))) return `«${f.label}»: أضف ${f.minRows ?? 1} صفًا على الأقل.`;
       for (const [i, r] of rows.entries())
         for (const c of (f.columns ?? []).filter((c) => cellVisible(c, r))) {
+          if (c.type === "hidden") continue;
           const cellField: Field = { key: c.key, label: `${f.label} — الصف ${i + 1}: ${c.label}`, type: c.type, required: c.required, options: columnOptions(c, a), min: c.min, max: c.max };
           const e = validateField(cellField, r[c.key], a);
           if (e) return e;
@@ -282,7 +294,8 @@ export function checkIntake(form: ServiceForm, a: Answers, docs: DocMap): Intake
 
 /** Keeps only answers to known, visible fields; trims text; drops invalid option values. Used on every save. */
 export function sanitizeAnswers(form: ServiceForm, raw: unknown): Answers {
-  const input = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const input0 = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const input = form.upgrade ? form.upgrade(input0) : input0;
   const fields = new Map(form.steps.flatMap((s) => s.fields).map((f) => [f.key, f]));
   const out: Answers = {};
   for (const [k, v] of Object.entries(input)) {
@@ -333,7 +346,7 @@ export function displayValue(f: Field, v: AnswerValue | undefined): string {
 
 /** One line per row: "label: value، …" (for summaries, documents and search). */
 export function tableText(f: Field, rows: TableRow[]) {
-  return rows.map((r, i) => `${i + 1}) ${(f.columns ?? []).filter((c) => cellVisible(c, r) && r[c.key]).map((c) => `${c.label}: ${cellDisplay(c, r[c.key])}`).join("، ")}`).join("\n");
+  return rows.map((r, i) => `${i + 1}) ${(f.columns ?? []).filter((c) => c.type !== "hidden" && cellVisible(c, r) && r[c.key]).map((c) => `${c.label}: ${cellDisplay(c, r[c.key])}`).join("، ")}${r.src?.startsWith("file:") ? " (من ملف الوقف)" : ""}`).join("\n");
 }
 
 export function cellDisplay(c: Column, v: string | undefined) {

@@ -157,6 +157,13 @@ export type GuardInput = {
   /** Titles of the request's tasks still open (to do / in progress) that the work depends on — a task a person opened on
    *  a field (a title check…) or on the request; not workflow stages nor automatic waqf-file follow-ups. */
   openTasks?: string[];
+  /** Work stages (before quality review) not completed yet, by name; and whether the sender confirmed them done. */
+  openWorkStages?: string[];
+  stagesConfirmed?: boolean;
+  /** The field-review policy's refusal of release (essential fields unreviewed, secondary neither reviewed nor waived). */
+  fieldReview?: string | null;
+  /** Contractual installments without an issued invoice (label, amount, what is missing): block closing. */
+  unbilled?: { label: string; total: number; state: string }[];
 };
 
 /** Returns an Arabic error when a guard blocks the transition, otherwise null. */
@@ -182,12 +189,19 @@ export function guardTransition(g: GuardInput): string | null {
   }
   if (g.from === "in_progress" && g.to === "quality_review" && g.continuous)
     return "خدمة مستمرة: تُسلَّم مخرجاتها عبر دورات التسليم، ويبقى الطلب مفتوحًا حتى نهاية مدة الخدمة.";
+  // sending to quality review never completes the work stages by itself: each stage is completed when done, or the
+  // sender confirms explicitly that the open stages were done (recorded as his confirmation)
+  if (g.from === "in_progress" && g.to === "quality_review" && g.openWorkStages?.length && !g.stagesConfirmed)
+    return `مراحل العمل لم تُنجز بعد: ${g.openWorkStages.map((x) => `«${x}»`).join("، ")}. أنجز كل مرحلة من «أنجزت المرحلة الحالية»، أو أكّد صراحةً أنها أُنجزت فعلًا عند الإرسال للجودة.`;
   if (g.to === "quality_review" && (g.outputsUnfinished ?? 0) > 0) return `في الطلب ${g.outputsUnfinished} من المخرجات قيد الإعداد: أرسلها للمراجعة أولًا.`;
   if (g.to === "quality_review" && g.submittedDeliverables === 0) return "ارفع مخرجًا واحدًا على الأقل قبل الإرسال لمراجعة الجودة.";
   // Work is not handed to the client, nor the request closed, while a task the team opened on it is still open (a title
   // or mortgage check…): it is done, or cancelled with a written reason, first.
   if (g.openTasks?.length && ((g.from === "quality_review" && g.to === "awaiting_client_approval") || g.to === "closed"))
     return `في الطلب ${g.openTasks.length === 1 ? "مهمة مفتوحة" : `${g.openTasks.length} مهام مفتوحة`}: ${g.openTasks.slice(0, 4).map((t) => `«${t}»`).join("، ")}${g.openTasks.length > 4 ? "، وغيرها" : ""}. أنجزها أو ألغها بسبب مكتوب أولًا.`;
+  if (g.to === "closed" && g.unbilled?.length)
+    return `لا يُغلق الطلب قبل إصدار فواتير الدفعات المستحقة: ${g.unbilled.map((u) => `«${u.label}» ${u.total.toFixed(2)} ر.س (${u.state})`).join("، ")}. الخطوة التالية: أصدر الفاتورة من «جدول الدفعات» واعتمدها وأرسلها؛ لا يُشترط السداد للإغلاق.`;
+  if (g.from === "quality_review" && g.to === "awaiting_client_approval" && g.fieldReview) return g.fieldReview;
   if (g.from === "quality_review" && g.to === "awaiting_client_approval") {
     if ((g.outputsUnfinished ?? 0) + (g.outputsInReview ?? 0) > 0) return "لا يُرسل للعميل قبل اعتماد كل المخرجات المعدّة في المنصة.";
     if (g.deliverers.includes(g.actorUserId) && !g.selfApprovalCoversQA) return "مبدأ العينين الأربع: يراجع جودةَ العمل زميلٌ آخر غير من أعدّه.";

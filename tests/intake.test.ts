@@ -90,12 +90,12 @@ describe("intake engine", () => {
   });
 
   it("drops answers to hidden fields, unknown keys and invalid options", () => {
-    const a = sanitizeAnswers(form, { ...base, capacity: "waqif", poaNumber: "123", unknown: "x", assetType: "nope", mortgaged: "no", mortgageNote: "should go" });
+    const a = sanitizeAnswers(form, { ...base, capacity: "waqif", poaNumber: "123", unknown: "x", assets: JSON.stringify([{ kind: "nope", description: "أرض", docKind: "deed", owned: "yes", mortgaged: "no", share: "whole" }]), mortgageNote: "should go" });
     expect(a.poaNumber).toBeUndefined();
     expect(a.unknown).toBeUndefined();
     expect(a.mortgageNote).toBeUndefined();
-    expect(a.assetType).toBe("nope"); // select value kept for display; validation rejects it
-    expect(validateStep(form.steps.find((s) => s.fields.some((f) => f.key === "assetType"))!, a).assetType).toBeTruthy();
+    expect(String(a.assets)).toContain("nope"); // cell value kept for display; validation rejects it
+    expect(validateStep(form.steps.find((s) => s.fields.some((f) => f.key === "assets"))!, a).assets).toBeTruthy();
   });
 
   it("cascades: hiding a field also hides fields that depend on it", () => {
@@ -107,8 +107,8 @@ describe("intake engine", () => {
 
   it("full check: fields and documents, progress and summary", () => {
     const answers = {
-      ...base, waqifName: "واقف تجريبي", waqifId: "1000000001", waqfName: "وقف تجريبي", waqfKind: "general", assetType: "real_estate",
-      assetDescription: "أرض تجريبية في حي تجريبي", ownershipDeedNo: "000", registeredToWaqif: "yes", mortgaged: "no", share: "whole", appurtenances: "all",
+      ...base, waqifName: "واقف تجريبي", waqifId: "1000000001", waqfName: "وقف تجريبي", waqfKind: "general",
+      assets: JSON.stringify([{ kind: "real_estate", description: "أرض تجريبية في حي تجريبي", docKind: "deed", docNo: "000", owned: "yes", mortgaged: "no", share: "whole" }]), appurtenances: "all",
       masarif: JSON.stringify([{ tier: "1", beneficiary: "مصرف تجريبي", share: "100", division: "na" }]), alternateMasraf: "الفقراء والمساكين",
       selfBenefit: "no", nazirType: "self", succession: "authority", investmentAllowed: "yes",
     };
@@ -125,7 +125,9 @@ describe("intake engine", () => {
     expect(summaryText(form, answers)).toContain("أرض تجريبية");
     // conditional documents appear only when relevant
     expect(visibleDocs(form, answers).some((d) => d.key === "mortgagee")).toBe(false);
-    expect(visibleDocs(form, { ...answers, mortgaged: "yes" }).some((d) => d.key === "mortgagee")).toBe(true);
+    // a row condition: the mortgagee's consent is asked when any asset row is mortgaged
+    const mortgagedRow = JSON.stringify([{ kind: "real_estate", description: "أرض", docKind: "deed", docNo: "1", owned: "yes", mortgaged: "yes", share: "whole" }]);
+    expect(visibleDocs(form, { ...answers, assets: mortgagedRow }).some((d) => d.key === "mortgagee")).toBe(true);
   });
 });
 

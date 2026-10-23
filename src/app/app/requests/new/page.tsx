@@ -12,7 +12,8 @@ import { visibleDocs, docRequired } from "@/server/modules/requests/intake/engin
 import { clientJourney } from "@/server/modules/requests/journey";
 import { myDraftFor } from "@/server/modules/requests/queries";
 import { loadServiceByCode, PRICE_UNKNOWN } from "@/server/modules/requests/catalog";
-import { recommendationForPrefill, requestableWaqfs } from "@/server/modules/requests/queries";
+import { recommendationForPrefill, requestableWaqfs, sameServiceRequestsFor } from "@/server/modules/requests/queries";
+import { STATUS_LABEL } from "@/server/modules/requests/workflow";
 import { waqfModesFor } from "@/server/modules/requests/waqf-mode";
 
 export const metadata: Metadata = { title: "طلب خدمة" };
@@ -59,6 +60,9 @@ export default async function NewRequestPage({ searchParams }: { searchParams: P
   const modeKeys = (["registered", "unregistered", "none"] as const).filter((m) => modes[m]);
   const unavailableNote = [modes.reasons.none, modes.reasons.unregistered].filter(Boolean).join(" ") || null;
   const defaultWaqf = rec?.waqfId ?? (sp.waqf && waqfs.some((w) => w.id === sp.waqf) ? sp.waqf : undefined);
+  // the same service already requested for one of the client's waqfs: a notice, never a block
+  const earlier = await sameServiceRequestsFor(auth, s.id, waqfs.map((w) => w.id));
+  const waqfName = new Map(waqfs.map((w) => [w.id, w.name]));
 
   return (
     <div className="space-y-6">
@@ -68,6 +72,14 @@ export default async function NewRequestPage({ searchParams }: { searchParams: P
           {s.requiresLicenseKey && PRACTICE_GATED_LICENSES.has(s.requiresLicenseKey) ? (
             <Alert tone="info" title="كيف تسير خدمة تولي النظارة">
               نستلم ملف الوقف ومستنداته وندرسه، ثم يُعتمد قبول النظارة، ثم تبدأ «وقفك» النظارة بقرار التعيين الموثّق لدى الجهة المختصة؛ ومباشرتها مشروطة بسريان ترخيص الهيئة العامة للأوقاف للناظر الاعتباري (لائحة تنظيم أعمال النظارة م4 وم5/2).
+            </Alert>
+          ) : null}
+          {earlier.length ? (
+            <Alert tone="info" title="سبق طلب هذه الخدمة لوقفك" >
+              <ul className="list-disc space-y-0.5 ps-5" data-testid="earlier-requests">
+                {earlier.slice(0, 5).map((e) => <li key={e.id}><Link href={`/app/requests/${e.id}`} className="tabular text-ink underline" dir="ltr">{e.number}</Link> — {waqfName.get(e.waqfId ?? "") ?? ""} — {STATUS_LABEL[e.status as keyof typeof STATUS_LABEL] ?? e.status}</li>)}
+              </ul>
+              <p className="mt-1">يمكنك تقديم طلب جديد إن كان لغرض آخر، أو متابعة الطلب السابق من صفحته.</p>
             </Alert>
           ) : null}
           {!availability.available ? (

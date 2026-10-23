@@ -77,7 +77,7 @@ describe("deed drafting (T03)", () => {
     const d = deed(FULL, M);
     const t = d.clauses.map((c) => `${c.title}: ${c.text}`).join("\n");
     expect(t).toContain("وقفًا عامًّا (خيريًّا)، تحبيسًا لأصله وتسبيلًا لمنفعته");
-    expect(t).toContain("الصك رقم T-123");
+    expect(t).toContain("بموجب صك الملكية رقم T-123"); // a v2 answer set: its single asset becomes one row
     expect(t).toContain("كامل الأصل، بجميع حقوقه وما يلحق به وما فيه");
     expect(t).toContain("بعد استقطاع 10٪ من صافي الريع");
     expect(t).toContain("على أولاد الواقف بالتساوي بينهم؛ فإن انقرضوا أو انقطعوا فعلى طلبة العلم");
@@ -88,7 +88,7 @@ describe("deed drafting (T03)", () => {
 
   it("blocks on ownership and mortgage, and leaves board rules and partial self-benefit to the specialist", () => {
     const d = deed({ ...FULL, registeredToWaqif: "no", mortgaged: "yes", nazirType: "board", boardSize: "5", selfBenefit: "yes", selfBenefitScope: "part" }, M, {});
-    expect(d.gaps.find((g) => g.key === "ownership")?.severity).toBe("blocking");
+    expect(d.gaps.find((g) => g.key === "asset:1:owned")?.severity).toBe("blocking");
     expect(d.gaps.find((g) => g.key === "mortgaged")?.severity).toBe("blocking");
     expect(d.gaps.find((g) => g.key === "doc:ownership")?.severity).toBe("blocking");
     expect(d.gaps.find((g) => g.key === "board_rules")?.owner).toBe("specialist");

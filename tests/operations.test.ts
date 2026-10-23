@@ -124,7 +124,7 @@ describe("draft builder", () => {
 
   it("deed draft writes clauses from structured answers and blocks on a mortgaged asset", () => {
     const def = outputsFor({ code: "T03" })[0];
-    const d = buildDraft(baseCtx({ keys: { waqifName: "فلان", mortgaged: "yes" }, tables: {}, formDocs: [] }), def);
+    const d = buildDraft(baseCtx({ keys: { waqifName: "فلان" }, tables: { assets: [{ kind: "real_estate", description: "أرض", docKind: "deed", docNo: "1", owned: "yes", mortgaged: "yes", share: "whole" }] }, formDocs: [] }), def);
     expect(d.gaps.some((g) => g.key === "mortgaged" && g.severity === "blocking")).toBe(true);
     expect(d.gaps.some((g) => g.key === "field:masarif" && g.owner === "client")).toBe(true);
     const sec = d.sections.find((s) => s.key === "deed_clauses")!;
