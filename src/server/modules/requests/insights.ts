@@ -80,7 +80,15 @@ export type RequestAnalysis = {
  * Compares an approved value with the current one. Scalars compare by their text: a jsonb column hands a stored
  * "1012345678" back as the number 1012345678, which must not make an untouched approval look outdated.
  */
-const norm = (x: unknown): unknown => (x === null || x === undefined ? null : typeof x === "number" || typeof x === "boolean" ? String(x) : Array.isArray(x) ? x.map(norm) : x);
+const norm = (x: unknown): unknown => {
+  if (x === null || x === undefined) return null;
+  if (typeof x === "number" || typeof x === "boolean") return String(x);
+  // a table answer is stored as JSON text; the jsonb column may hand it back parsed — compare the parsed form
+  if (typeof x === "string" && /^\s*[[{]/.test(x)) { try { return norm(JSON.parse(x)); } catch { return x; } }
+  if (Array.isArray(x)) return x.map(norm);
+  if (typeof x === "object") return Object.fromEntries(Object.entries(x as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => [k, norm(v)]));
+  return x;
+};
 export const sameValue = (a: unknown, b: unknown) => JSON.stringify(norm(a)) === JSON.stringify(norm(b));
 const fact = (b: ContextBlock) => b.facts;
 

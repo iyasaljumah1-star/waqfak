@@ -75,6 +75,9 @@ describe("ACC-03: an approved numeric-looking value is not reported as changed",
     expect(sameValue("1012345678", "1012345679")).toBe(false);
     expect(sameValue(null, undefined)).toBe(true);
     expect(sameValue(["a", 1], ["a", "1"])).toBe(true);
+    // a table answer (JSON text) against the parsed rows the jsonb column returns
+    expect(sameValue('[{"tier":"1","share":"60"}]', [{ share: "60", tier: 1 }])).toBe(true);
+    expect(sameValue('[{"tier":"1","share":"60"}]', [{ share: "50", tier: 1 }])).toBe(false);
   });
 });
 

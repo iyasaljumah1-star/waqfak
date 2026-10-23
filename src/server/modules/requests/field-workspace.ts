@@ -53,7 +53,9 @@ export async function fieldWorkspace(tx: Tx, rc: RequestCtx, audience: "staff" |
   const docIds = notes.map((n) => n.documentId).filter((x): x is string => !!x);
   const docTitles = docIds.length ? new Map((await tx.select({ id: documents.id, title: documents.title }).from(documents).where(inArray(documents.id, docIds))).map((d) => [d.id, d.title])) : new Map<string, string>();
   const fileValues: Record<string, string | null | undefined> = {};
-  for (const st of form.steps) for (const f of st.fields) if (f.prefill) fileValues[f.key] = src[f.prefill];
+  // only the waqf file's values: an answer prefilled from the account (e.g. the user's name) and changed is not a
+  // conflict with the waqf file
+  for (const st of form.steps) for (const f of st.fields) if (f.prefill?.startsWith("waqf.")) fileValues[f.key] = src[f.prefill];
   const stateMap: Record<string, FieldState> = Object.fromEntries(states.map((s) => [s.fieldKey, { status: s.status, approvedValue: s.approvedValue, decidedAt: s.decidedAt ? s.decidedAt.toISOString() : null, decidedBy: s.decidedBy, note: s.note }]));
   const visibleItems = audience === "client" ? items.filter((x) => x.visibility === "client") : items;
   const analysis = analyzeRequest({

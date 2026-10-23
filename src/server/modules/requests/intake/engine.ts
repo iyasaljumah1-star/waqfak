@@ -145,9 +145,16 @@ export type ServiceForm = {
   docs: DocSlot[];
   /** Where the questions come from (project reference files or the service definition). */
   sources: string[];
-  /** Carries answers saved under an earlier version of the form into this one (applied before the form rules). */
-  upgrade?: (a: Record<string, unknown>) => Record<string, unknown>;
 };
+
+/**
+ * Carries answers saved under an earlier version of a service's form into the current one (applied before the form
+ * rules). Registered by the forms module; kept out of the form itself, which is passed to the browser as plain data.
+ */
+const UPGRADES: Record<string, (a: Record<string, unknown>) => Record<string, unknown>> = {};
+export function registerUpgrade(code: string, fn: (a: Record<string, unknown>) => Record<string, unknown>) {
+  UPGRADES[code] = fn;
+}
 
 export type AnswerValue = string | string[];
 export type Answers = Record<string, AnswerValue | undefined>;
@@ -295,7 +302,7 @@ export function checkIntake(form: ServiceForm, a: Answers, docs: DocMap): Intake
 /** Keeps only answers to known, visible fields; trims text; drops invalid option values. Used on every save. */
 export function sanitizeAnswers(form: ServiceForm, raw: unknown): Answers {
   const input0 = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
-  const input = form.upgrade ? form.upgrade(input0) : input0;
+  const input = UPGRADES[form.code] ? UPGRADES[form.code](input0) : input0;
   const fields = new Map(form.steps.flatMap((s) => s.fields).map((f) => [f.key, f]));
   const out: Answers = {};
   for (const [k, v] of Object.entries(input)) {

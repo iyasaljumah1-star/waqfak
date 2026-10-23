@@ -57,6 +57,12 @@ export async function prefillAnswers(tx: Tx, form: ServiceForm, userId: string, 
   if (waqfId && wanted.size) {
     const t = await fileTables(tx, waqfId);
     for (const st of form.steps) for (const f of st.fields) if (f.prefillTable && t[f.prefillTable].length) a[f.key] = JSON.stringify(t[f.prefillTable]);
+    // a file with a nazara board: the nazara is the board, of its members' number (the client may change both)
+    const fields = new Map(form.steps.flatMap((st) => st.fields).map((f) => [f.key, f]));
+    if (t["waqf.board"].length && fields.get("nazirType")?.options?.some(([k]) => k === "board") && !a.nazirType) {
+      a.nazirType = "board";
+      if (fields.has("boardSize") && !a.boardSize) a.boardSize = String(t["waqf.board"].length);
+    }
   }
   return sanitizeAnswers(form, a);
 }

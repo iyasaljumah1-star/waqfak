@@ -2,6 +2,8 @@ import "server-only";
 import { revalidatePath } from "next/cache";
 import { ZodError, type ZodType } from "zod";
 import { withContext, type Tx } from "../db";
+import { asSystem } from "../db/as-system";
+import { audit } from "../lib/audit";
 import { ForbiddenError, loadWaqfAccess, requireAuth, type Auth, type WaqfAccess } from "../authz/context";
 import type { Permission } from "../authz/catalog";
 import { RateLimitError } from "../lib/rate-limit";
@@ -27,8 +29,10 @@ export type WaqfCtx = { auth: Auth; access: WaqfAccess; tx: Tx; ip: string; user
  * (RLS), loads RBAC+ABAC access, checks the permission, then runs `fn`. Errors become Arabic ActionState.
  */
 export async function waqfAction(waqfId: string, perm: Permission, fn: (c: WaqfCtx) => Promise<ActionState | void>, revalidate?: string | string[]): Promise<ActionState> {
+  let who: Auth | null = null;
   try {
     const auth = await requireAuth();
+    who = auth;
     const { ip, userAgent } = await requestInfo();
     const res = await withContext(auth.db, async (tx) => {
       const access = await loadWaqfAccess(tx, auth, waqfId);
@@ -45,14 +49,17 @@ export async function waqfAction(waqfId: string, perm: Permission, fn: (c: WaqfC
     for (const p of [revalidate ?? []].flat()) revalidatePath(p);
     return res ?? { ok: true, message: "تم الحفظ." };
   } catch (e) {
+    await recordDenial(who, e, `waqf_action:${perm}`);
     return toState(e);
   }
 }
 
 /** Same as waqfAction for actions that are not waqf-scoped (personal or staff actions). */
 export async function userAction(fn: (c: { auth: Auth; tx: Tx; ip: string; userAgent: string }) => Promise<ActionState | void>, opts: { perm?: Permission; revalidate?: string | string[] | (() => string[]) } = {}): Promise<ActionState> {
+  let who: Auth | null = null;
   try {
     const auth = await requireAuth();
+    who = auth;
     if (opts.perm && !auth.perms.has(opts.perm)) throw new ForbiddenError();
     const { ip, userAgent } = await requestInfo();
     const res = await withContext(auth.db, (tx) => fn({ auth, tx, ip, userAgent }));
@@ -60,7 +67,22 @@ export async function userAction(fn: (c: { auth: Auth; tx: Tx; ip: string; userA
     for (const p of [typeof opts.revalidate === "function" ? opts.revalidate() : opts.revalidate ?? []].flat()) if (p) revalidatePath(p);
     return res ?? { ok: true, message: "تم الحفظ." };
   } catch (e) {
+    await recordDenial(who, e, "user_action");
     return toState(e);
+  }
+}
+
+/**
+ * Records a refused action (permission or scope) in the audit trail, in its own transaction since the action's one is
+ * rolled back. Only who, when, from where and the refusal's own message are kept — no submitted data.
+ */
+async function recordDenial(auth: Auth | null, e: unknown, where: string) {
+  if (!(e instanceof ForbiddenError) || !auth) return;
+  try {
+    const { ip, userAgent } = await requestInfo();
+    await withContext(auth.db, (tx) => asSystem(tx, () => audit(tx, { actorUserId: auth.user.id, action: "authz.denied", entityType: "action", entityId: null, ip, userAgent, after: { where, reason: e.message.slice(0, 200) } })));
+  } catch (err) {
+    console.error("[authz.denied] not recorded", err);
   }
 }
 

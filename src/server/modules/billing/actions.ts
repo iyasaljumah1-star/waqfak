@@ -85,7 +85,7 @@ export async function issueInvoice(_: ActionState, fd: FormData): Promise<Action
       contractId = k.id;
       const party = k.parties.find((p) => p.side === "client");
       if (party) buyer = { name: party.name, capacity: party.capacity, ...(party.idNumber ? { idLabel: party.idLabel ?? "", idNumber: party.idNumber } : {}) };
-      line = `${rc.service.nameAr} (${rc.service.code}) — ${part.label} (${part.percent}٪) — العقد ${k.number}، العرض ${q.number}`;
+      line = `${rc.service.nameAr} — ${part.label} (${part.percent}٪) — العقد ${k.number}، العرض ${q.number}`;
       // Never invoice beyond what the executed contracts cover.
       const issues = await consistencyFor(c.tx, d.id);
       const contracted = (await c.tx.select({ amount: contracts.amount }).from(contracts).where(and(eq(contracts.requestId, d.id), eq(contracts.status, "signed")))).reduce((s, x) => s + Number(x.amount ?? 0), 0);
@@ -104,7 +104,7 @@ export async function issueInvoice(_: ActionState, fd: FormData): Promise<Action
       if (!(amountNet > 0)) throw new UserError("لا يوجد مبلغ متفق عليه.");
       vatRate = policy.kind === "non_tax_invoice" ? 0 : await vatRateSetting(c.tx);
       contractId = cs.contract?.id ?? null;
-      line = `${rc.service.nameAr} (${rc.service.code}) — طلب ${rc.req.number}`;
+      line = `${rc.service.nameAr} — طلب ${rc.req.number}`;
     }
 
     const t = computeInvoice(amountNet, vatRate);

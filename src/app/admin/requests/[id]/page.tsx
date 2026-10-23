@@ -129,7 +129,7 @@ export default async function StaffRequest({ params }: { params: Promise<{ id: s
     return {
       kind, scope: kind === "amendment" ? "" : rc.service.summary, deliverables: kind === "amendment" ? "" : rc.service.outputs ?? "", exclusions: "", assumptions: "", clientObligations: "",
       durationDays: days ? String(days) : "", discount: "0", validUntil,
-      lines: [{ description: kind === "amendment" ? "" : `${rc.service.nameAr} (${rc.service.code})`, qty: "1", unit: rc.service.basePrice ? String(Number(rc.service.basePrice)) : "" }],
+      lines: [{ description: kind === "amendment" ? "" : rc.service.nameAr, qty: "1", unit: rc.service.basePrice ? String(Number(rc.service.basePrice)) : "" }],
       terms: [],
     };
   };
@@ -171,7 +171,7 @@ export default async function StaffRequest({ params }: { params: Promise<{ id: s
   const activeStage = stages.find((s) => s.status === "active");
   // work stages before quality review still open: sending to QA asks the sender to confirm them explicitly
   const qIdx = stages.findIndex((s) => rc.stagesDef.find((x) => x.key === s.stageKey)?.role === "quality");
-  const openWork = r.status === "in_progress" && qIdx > 0 ? stages.slice(0, qIdx).filter((s) => s.status !== "done" && s.status !== "skipped").map((s) => s.name) : [];
+  const openWork = r.status === "in_progress" && qIdx > 0 ? stages.slice(0, qIdx).filter((s, i) => s.status !== "done" && s.status !== "skipped" && !(i === qIdx - 1 && s.status === "active")).map((s) => s.name) : [];
   const outSummary = ops2.outputs.length
     ? ops2.outputs.map((o) => `${o.def.title}: ${o.o ? (o.o.status === "approved" && ["awaiting_client_approval", "completed", "closed"].includes(r.status) ? "مُسلَّم" : OUTPUT_STATUS_LABEL[o.o.status]) : "لم تُعدّ"}`).join("، ")
     : deliverables.length ? `${deliverables.length} تسليم` : "لا مخرجات بعد";

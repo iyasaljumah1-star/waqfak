@@ -383,7 +383,8 @@ export function draftDeed(x: DraftInput): Drafted {
     d.add("asset", "الأصل الموقوف", `الأصل الموقوف: ${fill("وصف الأصل ومستند ملكيته")}.`, ["draft11"], "client");
   }
   d.use("appurtenances", k.appurtenances);
-  const app = k.appurtenances === "all" ? `بجميع ${many ? "حقوقها وما يلحق بها وما فيها" : "حقوقه وما يلحق به وما فيه"}` : k.appurtenances === "except" ? `ويُستثنى: ${k.exceptionPart?.trim() || fill("الجزء المستثنى")}` : "";
+  // each clause is about one asset: its own rights and what belongs to it
+  const app = k.appurtenances === "all" ? "بجميع حقوقه وما يلحق به وما فيه" : k.appurtenances === "except" ? `ويُستثنى: ${k.exceptionPart?.trim() || fill("الجزء المستثنى")}` : "";
   const bad: string[] = [];
   assets.forEach((r, i) => {
     const n = i + 1;

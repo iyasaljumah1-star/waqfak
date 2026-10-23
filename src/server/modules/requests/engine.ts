@@ -6,6 +6,7 @@ import type { Tx } from "@/server/db";
 import { deliverables, documents, holidays, quotes, requestEvents, requestItems, requestStages, roles, serviceRequests, services, tasks, userRoles, users, workflowTemplates } from "@/server/db/schema";
 import { prestartUnpaid } from "@/server/modules/commerce/state";
 import { installmentsDueOn, unbilledOf } from "@/server/modules/billing/schedule";
+import { asSystem } from "@/server/db/as-system";
 import { FIELD_REVIEW_SERVICES, fieldRelease, fieldReleaseBlock } from "./field-policy";
 import { blocking } from "./items-pure";
 import { formFor } from "./intake/forms";
@@ -212,7 +213,9 @@ export async function transition(c: ActCtx, rc: RequestCtx, input: TransitionInp
     const q = plan0.findIndex((s) => s.role === "quality");
     const firstClient = plan0.findIndex((s) => !!s.clientApproval || s.role === "client");
     const end = q >= 0 ? q : firstClient >= 0 ? firstClient : plan0.length;
-    return plan0.slice(0, end).filter((s) => s.status !== "done" && s.status !== "skipped").map((s) => rc.stagesDef.find((d) => d.key === s.key)?.name ?? s.key);
+    // the last work stage, when it is the active one, is completed by submitting its work to quality review (that is
+    // its act); any earlier stage still open was never done and is not completed by the transition
+    return plan0.slice(0, end).filter((s, i) => s.status !== "done" && s.status !== "skipped" && !(i === end - 1 && s.status === "active")).map((s) => rc.stagesDef.find((d) => d.key === s.key)?.name ?? s.key);
   })() : [];
   const err = guardTransition({
     startMissing, openTasks, unbilled, fieldReview, openWorkStages, stagesConfirmed: !!input.confirmStages,
@@ -265,8 +268,10 @@ export async function transition(c: ActCtx, rc: RequestCtx, input: TransitionInp
     await syncNazaraFromRequest(c, rc.req, to, note);
   }
   // installments that become due with the delivery: due date set, one mandatory finance task each (idempotent)
-  if (to === "awaiting_client_approval") await installmentsDueOn(tx, rc.req, "delivery", auth.user.id);
-  if (to === "completed") await installmentsDueOn(tx, rc.req, "completion", auth.user.id);
+  // The transition itself was authorized above; the schedule and the finance task are bookkeeping the row-level policy
+  // reserves to staff (the client's approval is what makes a «completion» installment due).
+  if (to === "awaiting_client_approval") await asSystem(tx, () => installmentsDueOn(tx, rc.req, "delivery", auth.user.id));
+  if (to === "completed") await asSystem(tx, () => installmentsDueOn(tx, rc.req, "completion", auth.user.id));
   if (to === "awaiting_client_approval") {
     await releaseApprovedOutputs(tx, rc, auth.user.id, { ip: c.ip, userAgent: c.userAgent });
     // files of the delivered work become visible to the client now (they were internal while in preparation)

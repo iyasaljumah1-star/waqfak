@@ -630,6 +630,31 @@ test.describe.serial("service request lifecycle", () => {
     await naz.getByRole("button", { name: "أعتمد المخرجات" }).click();
     await ex(statusBadge(naz, "مكتمل")).toBeVisible();
     await ex(naz.getByTestId("request-states")).toContainText("نُفّذت الخدمة");
+    // ACC-14: the client's approval makes the completion/milestone installments due (date recorded) with a finance task
+    const late = await sql<{ id: string; due_on: string | null }>("select id, due_on from payment_schedule where request_id = $1 and due_kind in ('on_completion','on_milestone','on_delivery')", [reqId]);
+    for (const r of late) {
+      expect(r.due_on).toBeTruthy();
+      expect((await sql("select 1 from tasks where request_id = $1 and kind = 'finance' and output_key = $2", [reqId, `pay:${r.id}`])).length).toBe(1);
+    }
+    // closing waits for an issued invoice of every contractual installment (payment is not required)
+    await emp.goto(`/admin/requests/${reqId}?t=${Date.now()}`);
+    await emp.getByRole("button", { name: "إغلاق الطلب" }).click();
+    await ex(emp.getByText(/لا يُغلق الطلب قبل إصدار فواتير الدفعات المستحقة/)).toBeVisible();
+    const fin = await as(browser, "admin", viewport);
+    for (let i = 0; i < 4; i++) {
+      await emp.goto(`/admin/requests/${reqId}?t=${Date.now()}#billing`);
+      const issue = emp.getByRole("button", { name: "أعدّ مسودة الفاتورة" });
+      if (!(await issue.count())) break;
+      await issue.first().click();
+      await ex.poll(async () => (await sql("select 1 from invoices where request_id = $1 and status = 'draft'", [reqId])).length).toBe(1);
+      const [dr] = await sql<{ id: string }>("select id from invoices where request_id = $1 and status = 'draft'", [reqId]);
+      await fin.goto(`/admin/finance/${dr.id}?t=${Date.now()}`);
+      await fin.getByRole("button", { name: /^اعتمد الفاتورة/ }).click();
+      await ex.poll(async () => (await sql<{ status: string }>("select status from invoices where id = $1", [dr.id]))[0].status).toBe("approved");
+      await emp.goto(`/admin/requests/${reqId}?t=${Date.now()}#billing`);
+      await emp.getByTestId(`invoice-cycle-${dr.id}`).getByRole("button", { name: "أرسل الفاتورة للعميل" }).click();
+      await ex.poll(async () => (await sql<{ status: string }>("select status from invoices where id = $1", [dr.id]))[0].status).toBe("issued");
+    }
     await emp.goto(`/admin/requests/${reqId}?t=${Date.now()}`);
     await emp.getByRole("button", { name: "إغلاق الطلب" }).click();
     await ex(statusBadge(emp, "مغلق")).toBeVisible();

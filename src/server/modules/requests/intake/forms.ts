@@ -7,6 +7,7 @@
  * Bump `version` of a form when its questions change; stored answers keep the version they were given under.
  */
 import type { Cond, DocSlot, Field, ServiceForm, Step } from "./engine";
+import { registerUpgrade } from "./engine";
 import { contextFor } from "../context/map";
 import type { ContextKey } from "../context/types";
 import { waqfModesFor } from "../waqf-mode";
@@ -60,6 +61,7 @@ const OWNERSHIP_DOCS = [
 ] as const;
 const V2_KIND: Record<string, string> = { real_estate: "real_estate", cash: "cash", securities: "shares", business: "other", movable: "movable", intangible: "intellectual_property", benefit: "usufruct", other: "other" };
 /** T03 v2 → v3: the single asset (separate fields) becomes the first row of the assets table. */
+registerUpgrade("T03", (a) => upgradeT03(a));
 function upgradeT03(a: Record<string, unknown>): Record<string, unknown> {
   if (a.assets || !a.assetDescription) return a;
   const kind = V2_KIND[String(a.assetType ?? "")] ?? "other";
@@ -310,8 +312,7 @@ const FORMS: Record<string, Omit<ServiceForm, "steps"> & { steps: Step[] }> = {
   },
   T03: {
     code: "T03", version: 3,
-    // v2 asked one asset in separate fields; it becomes one row of the assets table
-    upgrade: upgradeT03,
+    // v2 asked one asset in separate fields; it becomes one row of the assets table (registerUpgrade below)
     sources: [
       "الدليل الإرشادي لصياغة وثيقة الوقف (المبدأ الأول): البنود العشرة — المقدمة وبيانات الواقف، الأصل، اسم الوقف، المصارف وطبقاتها والترتيب بينها وبدائلها، استثناء الانتفاع، النظارة، واجبات الناظر، المجلس، الخاتمة، التوقيع والشهود",
       "الدليل الإرشادي لصياغة وثيقة الوقف م11–م14: وصف الأصل بما يميزه وصك ملكيته الساري وما يلحق به وحصة المشاع",
@@ -1364,7 +1365,7 @@ export function formFor(svc: { code: string; audiences: string[]; requiredDocume
   const applicant: Step = { ...ap.step, fields: [...ap.step.fields, hidden("waqfMode")] };
   const uw = unregisteredWaqf(svc.code, base.steps, docs);
   return {
-    code: svc.code, version: base.version, sources: base.sources, upgrade: base.upgrade,
+    code: svc.code, version: base.version, sources: base.sources,
     steps: [applicant, ...ctx, ...(uw ? [uw.step] : []), ...base.steps, NOTES],
     docs: [...docs, ...(uw?.docs ?? []), ...ap.docs],
   };

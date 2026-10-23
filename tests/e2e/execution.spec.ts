@@ -275,6 +275,10 @@ test.describe.serial("execution engine: next step, drafted documents, verificati
     await nextStep(admin, id, /أرسل لمراجعة الجودة/);
     await nextStep(admin, id, /اعتماد ذاتي/);
     await ex.poll(() => status(id)).toBe("awaiting_client_approval");
+    // ACC-20: both self-approvals are in the request log, with their basis
+    const log = (await sql<{ note: string }>("select note from request_events where request_id = $1", [id])).map((e) => e.note ?? "");
+    expect(log.some((n) => n.startsWith("اعتماد ذاتي للمخرج") && n.includes("والأساس"))).toBe(true);
+    expect(log.some((n) => n.includes("اعتماد ذاتي للجودة") || n.includes("اعتماد مباشر للجودة"))).toBe(true);
   });
 
   test("T03 deed: drafted clauses; a mortgaged asset and missing documents block with gaps naming field and owner", async ({ browser }, info) => {
@@ -299,7 +303,7 @@ test.describe.serial("execution engine: next step, drafted documents, verificati
     expect(v.gaps.find((g) => g.key === "doc:ownership")).toMatchObject({ severity: "blocking" });
     await go(admin, `/admin/requests/${r.id}/outputs/${o.id}`);
     await ex(admin.getByTestId("section-deed_clauses")).toContainText("على أولاد الواقف بالتساوي بينهم؛ فإن انقرضوا أو انقطعوا فعلى طلبة العلم");
-    await ex(admin.getByTestId("output-gaps")).toContainText("الأصل مرهون ولم تُرفق موافقة المرتهن");
+    await ex(admin.getByTestId("output-gaps")).toContainText("أصل مرهون ولم تُرفق موافقة المرتهن"); // v2 answers: one asset, upgraded to a row
     // the PDF of the draft carries the draft status and the clauses
     const pdf = await admin.request.get(`/admin/requests/${r.id}/outputs/${o.id}/pdf?v=1`);
     expect(pdf.status()).toBe(200);

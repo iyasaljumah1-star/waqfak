@@ -50,6 +50,7 @@ describe("ACC-10: several assets, each with its own ownership document", () => {
     expect(assets[1].text).toContain("بموجب كشف حساب الأوراق المالية (إفادة الإيداع) رقم SA-778899");
     expect(assets[1].text).not.toContain("310123456789");
     expect(d.clauses[0].text).toContain("أوقفت الأصول المبيّنة");
+    expect(assets[1].text).toContain("ويشمل الوقف كامل الأصل، بجميع حقوقه وما يلحق به وما فيه.");
     expect(d.gaps.filter((g) => g.key.startsWith("asset:"))).toEqual([]);
   });
 
