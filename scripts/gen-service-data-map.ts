@@ -52,6 +52,8 @@ for (const s of SERVICES) {
   lines.push(`**يُسحب من ملف الوقف:** ${ctx.length ? ctx.map((k: ContextKey) => `${CONTEXT_TITLE_AR[k]}`).join("، ") : "لا شيء (تبدأ الخدمة من إجابات العميل)"}.`, "");
   if (ctx.length) lines.push("يؤكد العميل هذه البيانات أو يطلب تحديثها (للطلب فقط أو في الملف)، ولا يُطلب منه إدخالها من جديد.", "");
   if (prefilled.length) lines.push(`**معبأ مسبقًا ويحتاج تأكيدًا:** ${prefilled.map((f) => f.label).join("، ")}.`, "");
+  const tables = fields.filter((f) => (f as { prefillTable?: string }).prefillTable);
+  if (tables.length) lines.push(`**جداول تُعبأ من ملف الوقف (صفًا صفًا مع مصدر كل صف، ويصححها العميل أو الفريق بسبب):** ${tables.map((f) => `${f.label} (${(f as { prefillTable?: string }).prefillTable === "waqf.assets" ? "سجل الأصول" : "مجلس النظارة"})`).join("، ")}.`, "");
   lines.push(`**بيانات خاصة بالخدمة:** ${own.map((f) => `${f.label}${f.required ? " *" : ""}`).join("، ") || "—"}.`, "");
   if (review.length) lines.push(`**تحتاج مراجعة مختص:** ${review.map((f) => `${f.label} (${REVIEW_AR[f.review!]})`).join("، ")}.`, "");
   if (form.docs.length) lines.push(`**المستندات:** ${form.docs.map((d) => d.label).join("، ")}.`, "");
