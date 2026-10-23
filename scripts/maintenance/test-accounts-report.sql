@@ -40,7 +40,7 @@ where r.id in :R order by r.created_at;
 select r.number, s.code, r.status, u.full_name as requester from service_requests r join services s on s.id = r.service_id join users u on u.id = r.requester_user_id
 where r.waqf_id in :W and r.requester_user_id not in :U;
 
-\echo '\n== 5. Rows to delete per table (waqf, request or document scope; audit_logs excluded)'
+\echo '\n== 5. Dependent rows to delete per table (scoped to the waqfs, requests and documents above; requests in 3, documents in 8, account records in 6; audit_logs kept)'
 select string_agg(q, ' union all ' order by q) || ' order by 1' from (
 select format('select %L as table_name, count(*) as rows from %I where %s having count(*) > 0', c.table_name, c.table_name,
   string_agg(case c.column_name
@@ -49,7 +49,7 @@ select format('select %L as table_name, count(*) as rows from %I where %s having
     when 'service_request_id' then 'service_request_id in ' || :'R'
     when 'document_id' then 'document_id in ' || :'D' end, ' or '))
 from information_schema.columns c join information_schema.tables t on t.table_name = c.table_name and t.table_schema = c.table_schema and t.table_type = 'BASE TABLE'
-where c.table_schema = 'public' and c.column_name in ('waqf_id', 'request_id', 'service_request_id', 'document_id') and c.table_name not in ('audit_logs')
+where c.table_schema = 'public' and c.column_name in ('waqf_id', 'request_id', 'service_request_id', 'document_id') and c.table_name not in ('audit_logs', 'service_requests', 'documents', 'notifications', 'invoices', 'payments')
 group by c.table_name) x(q)
 \gexec
 
