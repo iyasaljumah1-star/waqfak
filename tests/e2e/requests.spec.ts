@@ -643,6 +643,7 @@ test.describe.serial("service request lifecycle", () => {
     const fin = await as(browser, "admin", viewport);
     for (let i = 0; i < 4; i++) {
       await emp.goto(`/admin/requests/${reqId}?t=${Date.now()}#billing`);
+      await ex(emp.getByRole("table", { name: "جدول الدفعات التعاقدي" })).toBeVisible(); // count() does not wait for the section
       const issue = emp.getByRole("button", { name: "أعدّ مسودة الفاتورة" });
       if (!(await issue.count())) break;
       await issue.first().click();

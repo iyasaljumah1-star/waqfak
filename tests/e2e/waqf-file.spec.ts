@@ -121,13 +121,14 @@ test.describe("waqf file & establish wizard", () => {
     await page.getByLabel(/الاسم المقترح للوقف/).fill("وقف اختبار المعالج (تجريبي)");
     await page.getByLabel(/^نوع الوقف/).selectOption("ahli");
     await page.getByRole("button", { name: "التالي" }).click();
-    await page.getByLabel(/^نوع الأصل/).selectOption("real_estate");
-    await page.getByLabel(/وصف الأصل بما يميزه/).fill("أرض تجريبية للاختبار الآلي.");
-    await page.getByLabel(/رقم صك الملكية/).fill("0000 (تجريبي)");
-    await page.getByRole("group", { name: /مملوك ومسجل باسم الواقف/ }).getByRole("radio", { name: "نعم" }).check();
-    await page.getByRole("group", { name: /هل الأصل مرهون/ }).getByRole("radio", { name: "لا" }).check();
-    await page.getByRole("radio", { name: "كامل الأصل" }).check();
-    await page.getByRole("radio", { name: /يشمل الوقف الأصل بجميع حقوقه/ }).check();
+    // T03 v3: the assets table is prefilled from the waqf file (one row per asset, marked as from the file)
+    const assets = page.getByTestId("table-assets");
+    await expect(assets.getByTestId("row-from-file").first()).toBeVisible();
+    await expect(page.locator("#q-assets-0-kind")).toHaveValue("real_estate");
+    await expect(page.locator("#q-assets-0-docKind")).toHaveValue("deed");
+    await expect(page.locator("#q-assets-0-owned")).toHaveValue("yes");
+    await page.locator("#q-assets-0-mortgaged").selectOption("no");
+    await page.getByRole("radio", { name: /يشمل الوقف كل أصل بجميع حقوقه/ }).check();
     await page.getByRole("button", { name: "التالي" }).click();
     await page.getByTestId("table-masarif").getByRole("button", { name: /أضف صفًا/ }).click();
     await page.locator("#q-masarif-0-tier").fill("1");
