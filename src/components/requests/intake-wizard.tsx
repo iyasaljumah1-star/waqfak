@@ -14,6 +14,8 @@ import {
   type Answers, type AnswerValue, type Column, type DocMap, type Field, type ServiceForm, type TableRow,
 } from "@/server/modules/requests/intake/engine";
 
+const OFFLINE = "تعذّر الحفظ: لم يصل الطلب إلى الخادم. تحقق من اتصالك بالإنترنت ثم أعد المحاولة؛ إجاباتك ما زالت في هذه الصفحة ولم يُحفظ منها شيء بعد.";
+
 type Act = (prev: ActionState, fd: FormData) => Promise<ActionState>;
 export type DocOption = { id: string; title: string; docType: string; source: "request" | "waqf" };
 
@@ -198,7 +200,7 @@ export function IntakeWizard({ requestId, form, initialAnswers, docMap, docOptio
   const [busy, startTransition] = useTransition();
   // Server-side validation on submit: show its errors and jump to the first step that needs attention.
   const [sub, doSubmit] = useActionState(async (prev: ActionState, fd: FormData) => {
-    const r = await submit(prev, fd);
+    const r: ActionState = await submit(prev, fd).catch(() => ({ error: OFFLINE }));
     if (r.error) {
       if (r.fieldErrors) setErrors(clean(r.fieldErrors));
       const first = r.data?.firstStep as string | undefined;
@@ -268,7 +270,12 @@ export function IntakeWizard({ requestId, form, initialAnswers, docMap, docOptio
     fd.set("answers", JSON.stringify(answers));
     if (stepToValidate) fd.set("step", stepToValidate);
     startTransition(async () => {
-      const r = await save(initialState, fd);
+      // A lost connection rejects the call: keep the answers on screen and say what happened instead of failing the page.
+      const r = await save(initialState, fd).catch(() => null);
+      if (!r) {
+        setSaveErr(OFFLINE);
+        return;
+      }
       if (r.fieldErrors && Object.keys(r.fieldErrors).length) {
         setErrors(clean(r.fieldErrors));
         setSaveErr(r.error ?? null);
@@ -316,8 +323,9 @@ export function IntakeWizard({ requestId, form, initialAnswers, docMap, docOptio
     fd.set("documentId", documentId);
     fd.set("mode", mode);
     startTransition(async () => {
-      setDocMsg(await attach(initialState, fd));
-      router.refresh();
+      const r = await attach(initialState, fd).catch(() => null);
+      setDocMsg(r ?? { ...initialState, error: OFFLINE });
+      if (r) router.refresh();
     });
   }
 

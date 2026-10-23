@@ -2,7 +2,7 @@ import "server-only";
 import { and, asc, desc, eq, inArray, isNotNull } from "drizzle-orm";
 import type { Tx } from "@/server/db";
 import { asSystem } from "@/server/db/as-system";
-import { dataConflicts, documents, requestFieldStates, requestItems, requestNotes, requestRevisions, tasks, users } from "@/server/db/schema";
+import { dataConflicts, documents, requestFieldStates, requestItems, requestNotes, requestRevisions, tasks, users, waqfs } from "@/server/db/schema";
 import { todayISO } from "@/server/engines/dates";
 import type { RequestCtx } from "./access";
 import { contextFor } from "./context/map";
@@ -67,6 +67,8 @@ export async function fieldWorkspace(tx: Tx, rc: RequestCtx, audience: "staff" |
     form, answers, analysis,
     /** Which waqf the request concerns, and what the service still needs (before sending / starting / to help). */
     waqfMode: waqfModeOf(rc.req),
+    /** The linked waqf file's status (a «draft» file comes from the establishment wizard: the waqf is not documented). */
+    waqfStatus: rc.req.waqfId ? (await tx.select({ status: waqfs.status }).from(waqfs).where(eq(waqfs.id, rc.req.waqfId)).limit(1))[0]?.status ?? null : null,
     needs: intakeNeeds(form, answers, docMap),
     revisions: revs.map((r) => ({ kind: r.kind, target: r.target, at: r.at.toISOString(), actor: r.actor ?? "—", reason: r.reason, before: r.before, after: r.after })),
     notes: Object.fromEntries(Object.entries(byField(visibleNotes)).map(([k, xs]) => [k, xs.map((n): FieldNote => ({ id: n.id, visibility: n.visibility, body: n.body, author: n.author ?? "—", at: n.at.toISOString(), documentId: n.documentId, documentTitle: n.documentId ? docTitles.get(n.documentId) ?? "مستند" : null }))])) as Record<string, FieldNote[]>,

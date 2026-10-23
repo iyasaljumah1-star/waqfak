@@ -154,6 +154,9 @@ export type GuardInput = {
   startMissing?: string[];
   /** Continuous service (workflow «subscription»): reasons the service may not end yet (empty = it may). */
   continuous?: { endBlockers: string[] } | null;
+  /** Titles of the request's tasks still open (to do / in progress) that the work depends on — a task a person opened on
+   *  a field (a title check…) or on the request; not workflow stages nor automatic waqf-file follow-ups. */
+  openTasks?: string[];
 };
 
 /** Returns an Arabic error when a guard blocks the transition, otherwise null. */
@@ -181,6 +184,10 @@ export function guardTransition(g: GuardInput): string | null {
     return "خدمة مستمرة: تُسلَّم مخرجاتها عبر دورات التسليم، ويبقى الطلب مفتوحًا حتى نهاية مدة الخدمة.";
   if (g.to === "quality_review" && (g.outputsUnfinished ?? 0) > 0) return `في الطلب ${g.outputsUnfinished} من المخرجات قيد الإعداد: أرسلها للمراجعة أولًا.`;
   if (g.to === "quality_review" && g.submittedDeliverables === 0) return "ارفع مخرجًا واحدًا على الأقل قبل الإرسال لمراجعة الجودة.";
+  // Work is not handed to the client, nor the request closed, while a task the team opened on it is still open (a title
+  // or mortgage check…): it is done, or cancelled with a written reason, first.
+  if (g.openTasks?.length && ((g.from === "quality_review" && g.to === "awaiting_client_approval") || g.to === "closed"))
+    return `في الطلب ${g.openTasks.length === 1 ? "مهمة مفتوحة" : `${g.openTasks.length} مهام مفتوحة`}: ${g.openTasks.slice(0, 4).map((t) => `«${t}»`).join("، ")}${g.openTasks.length > 4 ? "، وغيرها" : ""}. أنجزها أو ألغها بسبب مكتوب أولًا.`;
   if (g.from === "quality_review" && g.to === "awaiting_client_approval") {
     if ((g.outputsUnfinished ?? 0) + (g.outputsInReview ?? 0) > 0) return "لا يُرسل للعميل قبل اعتماد كل المخرجات المعدّة في المنصة.";
     if (g.deliverers.includes(g.actorUserId) && !g.selfApprovalCoversQA) return "مبدأ العينين الأربع: يراجع جودةَ العمل زميلٌ آخر غير من أعدّه.";

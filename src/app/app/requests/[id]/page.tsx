@@ -103,7 +103,7 @@ export default async function RequestPage({ params, searchParams }: { params: Pr
       {r.status !== "draft" ? <NextActionBanner next={d.next} viewer="client" /> : null}
       {phase ? (
         <p className="rounded-lg border border-line bg-surface-2/50 px-4 py-2 text-[14px]" data-testid="client-phase" data-phase={phase.phase}>
-          <span className="font-semibold">مرحلة الطلب: {phase.label}</span> — الخطوة التالية: {phase.next} ({phase.owner === "client" ? "عليك" : phase.owner === "none" ? "لا إجراء" : "على فريق وقفك"})
+          <span className="font-semibold">مرحلة الطلب: {phase.label}</span> {phase.owner === "none" ? null : <> — الخطوة التالية: {phase.next} ({phase.owner === "client" ? "عليك" : "على فريق وقفك"})</>}
         </p>
       ) : null}
 

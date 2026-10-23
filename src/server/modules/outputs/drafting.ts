@@ -316,7 +316,8 @@ export function draftDeed(x: DraftInput): Drafted {
 
   // Asset (principles 11–14; Q100 Q28)
   const deedConflict = (x.conflicts ?? []).find((c) => c.key === "doc_number:ownership:ownershipDeedNo");
-  const desc = d.need("assetDescription", "وصف الأصل بما يميزه");
+  // trailing punctuation of the client's text would print «….،» before the clause goes on
+  const desc = d.need("assetDescription", "وصف الأصل بما يميزه").replace(/[\s.،؛]+$/u, "");
   const deedNo = deedConflict ? (d.use("ownershipDeedNo", k.ownershipDeedNo, "conflict"), conflictMark("رقم صك الملكية في الإجابة يخالف رقم المستند المرفق")) : d.need("ownershipDeedNo", "رقم صك الملكية");
   const deedDate = k.ownershipDeedDate ? ` وتاريخ ${k.ownershipDeedDate}` : "";
   d.use("share", k.share);

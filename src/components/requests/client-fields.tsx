@@ -52,7 +52,7 @@ export function ClientFieldsView({ analysis, form, revisions, notes, requestId, 
                   {rev ? (
                     <dd className="flex items-start gap-1.5 text-[13px] text-seal" data-testid="cfield-revision">
                       <Pencil aria-hidden className="mt-0.5 size-3.5 shrink-0" />
-                      <span>{rev.kind === "client_completion" ? "حدّثتَه ردًا على طلب استكمال" : `عدّله ${rev.actor}`} في {fmtDateTime(rev.at)}{rev.kind !== "client_completion" && rev.reason ? ` — السبب: ${rev.reason}` : ""}. القيمة السابقة: {earlier(f.key, before)}.</span>
+                      <span>{rev.kind === "client_completion" ? "حدّثتَه ردًا على طلب استكمال" : `عدّله ${rev.actor}`} في {fmtDateTime(rev.at)}{rev.kind !== "client_completion" && rev.reason ? ` — السبب: ${rev.reason.replace(/[.\s]+$/u, "")}` : ""}. القيمة السابقة: {earlier(f.key, before)}.</span>
                     </dd>
                   ) : null}
                   {f.state === "approved" ? <dd className="flex items-center gap-1 text-[13px] text-ok" data-testid="cfield-approved"><CheckCircle2 aria-hidden className="size-3.5" />راجعه فريق وقفك واعتمده</dd> : null}

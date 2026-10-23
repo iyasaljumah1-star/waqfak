@@ -80,6 +80,8 @@ export type Field = {
   columns?: Column[];
   minRows?: number;
   maxRows?: number;
+  /** Table fields: the column `col` may not add up to more than `max` within one group of rows (`by`), or in all rows. */
+  sumMax?: { col: string; by?: string; max: number };
 };
 
 export type TableRow = Record<string, string>;
@@ -221,6 +223,18 @@ export function validateField(f: Field, v: AnswerValue | undefined, a: Answers):
           const e = validateField(cellField, r[c.key], a);
           if (e) return e;
         }
+      if (f.sumMax) {
+        const { col, by, max } = f.sumMax;
+        const sums = new Map<string, number>();
+        for (const r of rows) {
+          const n = Number(String(r[col] ?? "").replace(/[,٬]/g, ""));
+          if (Number.isFinite(n) && r[col]) sums.set(by ? r[by] ?? "" : "", (sums.get(by ? r[by] ?? "" : "") ?? 0) + n);
+        }
+        const colLabel = f.columns?.find((c) => c.key === col)?.label ?? col;
+        const byLabel = by ? f.columns?.find((c) => c.key === by)?.label ?? by : "";
+        for (const [g, total] of sums)
+          if (total > max + 1e-9) return `«${f.label}»: مجموع «${colLabel}»${by ? ` في الصفوف التي «${byLabel}» فيها ${g}` : ""} يبلغ ${+total.toFixed(2)}٪، والحد الأعلى ${max}٪.`;
+      }
       return null;
     }
     default: {

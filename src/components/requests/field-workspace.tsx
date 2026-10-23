@@ -66,7 +66,7 @@ const flags = (f: { state: string; insights: Insight[] }, system: boolean) =>
 export function FieldWorkspaceView({ ws, requestId, waqfId, canAct, actions, docs, staff }: {
   ws: {
     analysis: RequestAnalysis; answers: Answers; form: { steps: { key: string; fields: Field[] }[] }; notes: Record<string, FieldNote[]>; tasks: Record<string, FieldTask[]>;
-    waqfMode?: WaqfMode; needs?: IntakeNeeds;
+    waqfMode?: WaqfMode; waqfStatus?: string | null; needs?: IntakeNeeds;
   };
   requestId: string;
   waqfId: string | null;
@@ -94,7 +94,7 @@ export function FieldWorkspaceView({ ws, requestId, waqfId, canAct, actions, doc
       {ws.waqfMode ? (
         <p className={cn("rounded-lg border px-4 py-2 text-[14px]", ws.waqfMode === "unregistered" ? "border-seal/40 bg-seal-soft/40" : "border-line bg-surface-2/50")} data-testid="ws-waqf-mode" data-mode={ws.waqfMode}>
           <span className="font-semibold">مسار الطلب: {WAQF_MODE_AR[ws.waqfMode]}.</span>{" "}
-          {ws.waqfMode === "registered" ? "بيانات الوقف مستدعاة من ملفه في المنصة بمصدرها وتاريخها." : ws.waqfMode === "unregistered" ? "بيانات الوقف قدّمها العميل ضمن هذا الطلب، ولم يُنشأ لها ملف وقف؛ تُراجع وتُعتمد حقلًا حقلًا." : "لا وقف قائم؛ البيانات كلها من إجابات العميل."}
+          {ws.waqfMode === "registered" ? `بيانات الوقف مستدعاة من ملفه في المنصة بمصدرها وتاريخها.${ws.waqfStatus === "draft" ? " ملف الوقف مسودة أُنشئت من معالج التأسيس: الوقف لم يُوثَّق ولم يُعتمد بعد." : ""}` : ws.waqfMode === "unregistered" ? "بيانات الوقف قدّمها العميل ضمن هذا الطلب، ولم يُنشأ لها ملف وقف؛ تُراجع وتُعتمد حقلًا حقلًا." : "لا وقف قائم؛ البيانات كلها من إجابات العميل."}
         </p>
       ) : null}
       {ws.needs?.start.length ? (

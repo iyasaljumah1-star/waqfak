@@ -76,7 +76,12 @@ export type RequestAnalysis = {
   summary: { fields: number; required: number; requiredValid: number; approved: number; needsReview: number; pending: number; gaps: number; conflicts: number; completeness: number };
 };
 
-const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+/**
+ * Compares an approved value with the current one. Scalars compare by their text: a jsonb column hands a stored
+ * "1012345678" back as the number 1012345678, which must not make an untouched approval look outdated.
+ */
+const norm = (x: unknown): unknown => (x === null || x === undefined ? null : typeof x === "number" || typeof x === "boolean" ? String(x) : Array.isArray(x) ? x.map(norm) : x);
+export const sameValue = (a: unknown, b: unknown) => JSON.stringify(norm(a)) === JSON.stringify(norm(b));
 const fact = (b: ContextBlock) => b.facts;
 
 export function analyzeRequest(i: InsightInput): RequestAnalysis {
@@ -93,7 +98,7 @@ export function analyzeRequest(i: InsightInput): RequestAnalysis {
       const fileV = f.prefill ? i.fileValues[f.key] : undefined;
       const origin: FieldOrigin = lastRev ? (lastRev.kind === "client_completion" ? "client_completion" : "staff") : f.prefill && fileV != null && fileV !== "" ? (String(v ?? "") === String(fileV) ? "file" : "file_changed") : "client";
       const st8 = i.states[f.key];
-      const approvalOutdated = st8?.status === "approved" && !same(st8.approvedValue, v ?? null);
+      const approvalOutdated = st8?.status === "approved" && !sameValue(st8.approvedValue, v ?? null);
       const insights: Insight[] = [];
       // what the value is, and how far it can be relied on
       if (v === undefined || v === null || (typeof v === "string" && !v.trim())) {
@@ -105,7 +110,7 @@ export function analyzeRequest(i: InsightInput): RequestAnalysis {
       } else if (origin === "staff" && lastRev) {
         const prev = lastRev.before && typeof lastRev.before === "object" ? (lastRev.before as Record<string, unknown>)[f.key] : undefined;
         const prevText = prev === undefined || prev === null || prev === "" ? "فارغة" : typeof prev === "string" || Array.isArray(prev) ? displayValue(f, prev as string | string[]) : String(prev);
-        insights.push({ kind: "fact", text: `صحّحه ${lastRev.actor}${lastRev.reason ? ` — السبب: ${lastRev.reason}` : ""}. القيمة الأصلية: ${prevText}.`, evidence: [`سجل التصحيحات ${lastRev.at.slice(0, 10)}`] });
+        insights.push({ kind: "fact", text: `صحّحه ${lastRev.actor}${lastRev.reason ? ` — السبب: ${lastRev.reason.replace(/[.\s]+$/u, "")}` : ""}. القيمة الأصلية: ${prevText}.`, evidence: [`سجل التصحيحات ${lastRev.at.slice(0, 10)}`] });
       } else if (origin === "client_completion" && lastRev) {
         insights.push({ kind: "client", text: "استكمله العميل ردًا على طلب استكمال، ولم يُراجع بعد." });
       } else if (st8?.status !== "approved") {
@@ -131,7 +136,7 @@ export function analyzeRequest(i: InsightInput): RequestAnalysis {
 
   const blocks: BlockView[] = i.blocks.map((b) => {
     const s = i.states[ctxField(b.key)];
-    const approvalOutdated = s?.status === "approved" && !same(s.approvedValue, b.fingerprint);
+    const approvalOutdated = s?.status === "approved" && !sameValue(s.approvedValue, b.fingerprint);
     const ins: Insight[] = [];
     const src = [`${b.source}${b.asOf ? ` (آخر تحديث ${b.asOf.slice(0, 10)})` : ""}`];
     if (b.status === "missing") ins.push({ kind: "gap", text: `${b.title}: غير مسجلة في ملف الوقف؛ لا يُفترض وجودها. تُطلب من العميل أدلتها أو تُسجَّل في الملف.`, evidence: src, task: `استكمال «${b.title}»` });

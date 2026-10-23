@@ -3,7 +3,7 @@ import { readSeparationPolicy } from "@/server/modules/approvals/policy";
 import { makerChecker } from "@/server/authz/separation";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import type { Tx } from "@/server/db";
-import { deliverables, documents, holidays, quotes, requestEvents, requestItems, requestStages, roles, serviceRequests, services, userRoles, users, workflowTemplates } from "@/server/db/schema";
+import { deliverables, documents, holidays, quotes, requestEvents, requestItems, requestStages, roles, serviceRequests, services, tasks, userRoles, users, workflowTemplates } from "@/server/db/schema";
 import { prestartUnpaid } from "@/server/modules/commerce/state";
 import { blocking } from "./items-pure";
 import { formFor } from "./intake/forms";
@@ -191,8 +191,15 @@ export async function transition(c: ActCtx, rc: RequestCtx, input: TransitionInp
     const form = formFor({ code: rc.service.code, audiences: rc.service.audiences, requiredDocuments: rc.service.requiredDocuments });
     return intakeNeeds(form, intake.answers ?? {}, intake.docs ?? {}).start.map((x) => (x.kind === "doc" ? `مستند ${x.label}` : x.label));
   })() : [];
+  const openTasks = (from === "quality_review" && to === "awaiting_client_approval") || to === "closed"
+    ? (await tx.select({ title: tasks.title, kind: tasks.kind, fieldKey: tasks.fieldKey }).from(tasks).where(and(eq(tasks.requestId, rc.req.id), inArray(tasks.status, ["todo", "in_progress"]))))
+      // only tasks the team opened by hand (on a field or on the request): workflow tasks (intake, stages, preparing and
+      // reviewing outputs) follow the transitions and the output gate; waqf-file follow-ups («ctx:…», opened
+      // automatically when a record the service reads is missing or old) update the file and may outlive the request
+      .filter((t) => !t.kind && !t.fieldKey?.startsWith("ctx:")).map((t) => t.title)
+    : [];
   const err = guardTransition({
-    startMissing,
+    startMissing, openTasks,
     from, to, actorUserId: auth.user.id, conflictCheck: rc.req.conflictCheck, workflowCode: rc.workflowCode, deliverers: rc.deliverers,
     submittedDeliverables: submitted.length, unsignedOpinionDeliverables: submitted.filter((d) => !d.signedBy?.trim()).length,
     contractSignedByClient: cs.clientSigned, hasContract: !!cs.contract, quoteAmount: rc.req.quoteAmount ? Number(rc.req.quoteAmount) : null,

@@ -333,7 +333,7 @@ const FORMS: Record<string, Omit<ServiceForm, "steps"> & { steps: Step[] }> = {
             { key: "beneficiary", label: "المصرف أو المستحق (اسمًا أو وصفًا)", type: "text", required: true },
             { key: "share", label: "النصيب من الريع", type: "percent" },
             { key: "division", label: "القسمة بين أهل الطبقة", type: "select", options: [["equal", "بالتساوي"], ["inheritance", "للذكر مثل حظ الأنثيين"], ["na", "لا ينطبق (جهة)"]] },
-          ], { ...R, minRows: 1, hint: "الطبقة 1 تستحق أولًا، ثم من بعدها عند انقطاعها. الواو بين المستحقين تقتضي التسوية (الدليل الاسترشادي لتصنيف الوقف)." }),
+          ], { ...R, minRows: 1, sumMax: { col: "share", by: "tier", max: 100 }, hint: "الطبقة 1 تستحق أولًا، ثم من بعدها عند انقطاعها. الواو بين المستحقين تقتضي التسوية (الدليل الاسترشادي لتصنيف الوقف)." }),
           text("alternateMasraf", "المصرف البديل إذا انقطع المستحقون", { ...R, hint: "الدليل الإرشادي لصياغة وثيقة الوقف: بيان بدائل المصارف." }),
           pct("reservePercent", "نسبة تُستقطع من الريع لعمارة الوقف وصيانته وتنميته", { hint: "اتركها فارغة إن تُركت لتقدير الناظر." }),
           yn("selfBenefit", "هل تستثني لنفسك الانتفاع بالوقف في حياتك؟", R),
@@ -562,7 +562,7 @@ const FORMS: Record<string, Omit<ServiceForm, "steps"> & { steps: Step[] }> = {
           table("waqfMasarif", "مصارف الوقف", [
             { key: "beneficiary", label: "المصرف", type: "text", required: true },
             { key: "share", label: "النصيب من الريع", type: "percent" },
-          ], { ...R, minRows: 1 }),
+          ], { ...R, minRows: 1, sumMax: { col: "share", max: 100 } }),
           text("waqfNazir", "ناظر الوقف بعد الوفاة", R),
           radio("waqfSuccession", "استخلاف الناظر", [["eldest", "الأصلح فالأصلح من الموقوف عليهم"], ["named", "من يسميه الناظر قبله كتابةً"], ["authority", "تعيّنه الجهة المختصة"]], R),
           area("waqfConditions", "شروط الوقف المقترحة (اختياري)", { hint: "مثال: تقديم عمارة الأصل على الصرف، أو استثمار جزء من الغلة. يراجعها المختص قبل اعتمادها في النص." }),

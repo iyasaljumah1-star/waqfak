@@ -5,7 +5,7 @@
  * (e.g. «بانتظار اعتماد المسؤول المخول» exists only once a service has an output under review).
  */
 export type Phase =
-  | "draft" | "submitted" | "completeness" | "awaiting_client" | "ready_to_assign" | "in_progress" | "specialist_review"
+  | "draft" | "submitted" | "completeness" | "awaiting_client" | "ready_to_assign" | "quote" | "contract" | "in_progress" | "specialist_review"
   | "authorized_approval" | "ready_to_deliver" | "client_approval" | "completed" | "on_hold" | "ended";
 
 export const PHASE_AR: Record<Phase, string> = {
@@ -14,6 +14,8 @@ export const PHASE_AR: Record<Phase, string> = {
   completeness: "قيد فحص اكتمال البيانات",
   awaiting_client: "بانتظار استكمال العميل",
   ready_to_assign: "جاهزة للتوزيع على الفريق",
+  quote: "بانتظار قبول عرض السعر",
+  contract: "بانتظار توقيع العقد",
   in_progress: "قيد التنفيذ",
   specialist_review: "بانتظار مراجعة متخصصة",
   authorized_approval: "بانتظار اعتماد المسؤول المخول",
@@ -60,7 +62,10 @@ export function processingPhase(p: PhaseInput): { phase: Phase; label: string; o
     case "draft": return out("draft", "client", "إكمال النموذج وإرساله");
     case "on_hold": return out("on_hold", "team", "رفع التعليق عند زوال سببه");
     case "cancelled": case "rejected": case "closed": return out("ended", "none", "لا إجراء");
-    case "completed": return out("completed", "none", "لا إجراء");
+    case "completed": return out("completed", "team", "إغلاق الطلب وأرشفة المخرجات");
+    // before work starts: the client decides on the quote, then signs the contract (and pays what the quote requires first)
+    case "quote": return out("quote", "client", "مراجعة عرض السعر وقبوله أو طلب تعديله");
+    case "awaiting_contract": return out("contract", "client", "توقيع العقد وسداد الدفعة المشروطة قبل البدء إن وُجدت");
     case "awaiting_client": return out("awaiting_client", "client", "استكمال ما طلبه الفريق");
     case "awaiting_client_approval": return out("client_approval", "client", "مراجعة المخرجات واعتمادها أو طلب تعديل");
     case "submitted": case "triage": {

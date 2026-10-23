@@ -32,10 +32,32 @@ export function settleGaps(sections: OutputSection[], gaps: OutputGap[]): Output
   return gaps.filter((g) => !(g.clause && g.owner === "specialist" && written.has(g.clause)));
 }
 
-/** What blocks submission for review or approval: blocking data gaps and unwritten specialist parts. */
+/** Markers of text that is not final: «[يُستكمل: …]» (missing) and «[تعارض يُحسم: …]» (conflicting data). */
+const OPEN_MARK = /\[(?:يُستكمل|يستكمل|تعارض يُحسم|تعارض يحسم)/;
+
+/**
+ * Printed text that still holds a «[يُستكمل…]» or «[تعارض يُحسم…]» marker — whoever wrote it (generator or person).
+ * A marker typed by a reviewer raises no gap, so without this a document could be sent and approved with it.
+ * Gaps already tied to the clause are not repeated.
+ */
+export function openMarkers(sections: OutputSection[], gaps: OutputGap[] = []): { section: string; prompt: string }[] {
+  const out: { section: string; prompt: string }[] = [];
+  const covered = new Set(gaps.filter((g) => g.clause).map((g) => g.clause!));
+  for (const s of sections) {
+    if (s.audience === "internal" || s.removed) continue;
+    for (const b of s.blocks) {
+      if (b.type === "clause" && OPEN_MARK.test(b.text) && !covered.has(b.key)) out.push({ section: `${s.title} — البند ${b.n} «${b.title}» (فيه نص بين معقوفين)`, prompt: "نص ناقص أو متعارض بين معقوفين" });
+      else if (b.type === "para" && !b.internal && OPEN_MARK.test(b.text)) out.push({ section: `${s.title} (فيه نص بين معقوفين)`, prompt: "نص ناقص أو متعارض بين معقوفين" });
+      else if (b.type === "specialist" && OPEN_MARK.test(b.text)) out.push({ section: s.title, prompt: b.prompt });
+    }
+  }
+  return out;
+}
+
+/** What blocks submission for review or approval: blocking data gaps, unwritten specialist parts, and open markers. */
 export function readiness(sections: OutputSection[], gaps: OutputGap[]) {
   const blocking = gaps.filter((g) => g.severity === "blocking");
-  const unwritten = emptySpecialist(sections);
+  const unwritten = [...emptySpecialist(sections), ...openMarkers(sections, blocking)];
   return { ready: !blocking.length && !unwritten.length, blocking, unwritten, warnings: gaps.filter((g) => g.severity === "warning") };
 }
 
