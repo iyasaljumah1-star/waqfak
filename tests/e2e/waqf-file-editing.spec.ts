@@ -28,6 +28,9 @@ test.describe.serial("waqf file editing and the separation of waqfs from request
   test.skip(({ isMobile }) => isMobile, "data steps run once on desktop; the homes are checked on mobile below");
   let client: Page;
   let waqfId = "";
+  // the documented test waqf is archived afterwards: other suites (tests/compliance-engine.test.ts) count the documented
+  // waqfs of each size in the shared database
+  test.afterAll(async () => { if (waqfId) await sql("update waqfs set archived_at = now() where id = $1", [waqfId]); });
 
   test("a founder registers an existing waqf: it is a file being completed, not a waqf yet", async ({ browser }) => {
     test.setTimeout(240_000);
