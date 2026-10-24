@@ -37,25 +37,30 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
   const [d, queues] = await Promise.all([dashboardData(auth), workQueues(auth)]);
   const max = Math.max(1, ...(d.requests?.byStatus.map((s) => s.n) ?? [1]));
   const shortcuts = ADMIN_NAV.filter((n) => n.href !== "/admin" && n.perm && auth.perms.has(n.perm));
-  const tiles: ReactNode[] = [];
-  if (d.clients) tiles.push(<Tile key="c" href="/admin/clients" label="العملاء" value={fmtNumber(d.clients.total)} sub={`${fmtNumber(d.clients.new30)} جديد خلال 30 يومًا`} />);
-  if (d.waqfs) tiles.push(<Tile key="w" href="/admin/waqfs" label="الأوقاف" value={fmtNumber(d.waqfs.total)} sub={`${fmtNumber(d.waqfs.active)} نشط أو مسجّل · ${fmtNumber(d.waqfs.demo)} تجريبي`} />);
+  // Waqfs and service requests are separate sections with their own counters: a request is never counted as a waqf,
+  // and «الأوقاف» counts complete waqfs only (waqf-core/completeness); drafts and files being completed are apart.
+  const waqfTiles: ReactNode[] = [];
+  if (d.waqfs) {
+    waqfTiles.push(
+      <Tile key="w" href="/admin/waqfs" label="الأوقاف المكتملة" value={fmtNumber(d.waqfs.complete)} sub="موثقة وصكها في الوثائق، بأصول ومصارف ونظارة" />,
+      <Tile key="wp" href="/admin/waqfs?state=in_progress" label="ملفات قيد التأسيس أو الاستكمال" value={fmtNumber(d.waqfs.inProgress)} sub={`${fmtNumber(d.waqfs.demo)} تجريبي ضمن الكل`} />,
+      <Tile key="wr" href="/admin/waqfs?state=reviews" label="تعديلات ملفات بانتظار المراجعة" value={fmtNumber(d.waqfs.reviews)} tone={d.waqfs.reviews ? "fine" : undefined} />,
+    );
+  }
+  if (d.obligations)
+    waqfTiles.push(<Tile key="o" href="/admin/waqfs" label="التزامات نظامية متأخرة" value={fmtNumber(d.obligations.overdue)} tone={d.obligations.overdue ? "critical" : "ok"} sub={`في ${fmtNumber(d.obligations.waqfsAffected)} وقف · ${fmtNumber(d.obligations.dueSoon)} تقترب`} />);
+  const requestTiles: ReactNode[] = [];
   if (d.requests)
-    tiles.push(
-      <Tile key="r" href="/admin/requests" label={d.requests.scope === "all" ? "الطلبات المفتوحة" : "طلباتي المفتوحة"} value={fmtNumber(d.requests.open)} sub={d.requests.unassigned !== null ? `${fmtNumber(d.requests.unassigned)} غير مسند` : undefined} />,
+    requestTiles.push(
+      <Tile key="r" href="/admin/requests" label={d.requests.scope === "all" ? "الطلبات المفتوحة" : "طلباتي المفتوحة"} value={fmtNumber(d.requests.open)} sub={`إجمالي الطلبات المقدّمة: ${fmtNumber(d.requests.total)}`} />,
+      <Tile key="rw" href="/admin/requests" label="طلبات غير مرتبطة بوقف" value={fmtNumber(d.requests.withoutWaqf)} sub="مفتوحة" />,
+      <Tile key="ru" href="/admin/requests?tab=unassigned" label="غير مسندة" value={d.requests.unassigned !== null ? fmtNumber(d.requests.unassigned) : "—"} />,
       <Tile key="sla" href="/admin/requests?tab=overdue" label="تجاوزت المهلة" value={fmtNumber(d.requests.slaBreaches)} tone={d.requests.slaBreaches ? "critical" : "ok"} sub="بلا انتظار للعميل" />,
     );
-  if (d.obligations)
-    tiles.push(<Tile key="o" href="/admin/waqfs" label="التزامات نظامية متأخرة" value={fmtNumber(d.obligations.overdue)} tone={d.obligations.overdue ? "critical" : "ok"} sub={`في ${fmtNumber(d.obligations.waqfsAffected)} وقف · ${fmtNumber(d.obligations.dueSoon)} تقترب`} />);
-  if (d.invoices) tiles.push(<Tile key="i" href="/admin/finance" label="فواتير غير مسددة" value={fmtSAR(d.invoices.amount)} tone={d.invoices.overdue ? "fine" : undefined} sub={`المتبقي على ${fmtNumber(d.invoices.outstanding)} فاتورة · ${fmtNumber(d.invoices.overdue)} متأخرة`} />);
-  if (d.assessments) tiles.push(<Tile key="a" href="/admin/assessments" label="تقييمات بانتظار المراجعة" value={fmtNumber(d.assessments.awaitingReview)} tone={d.assessments.awaitingReview ? "fine" : undefined} />);
-  if (d.contact) tiles.push(<Tile key="m" href="/admin/clients/messages" label="رسائل تواصل جديدة" value={fmtNumber(d.contact.new)} tone={d.contact.new ? "fine" : undefined} />);
-  if (d.privacy) tiles.push(<Tile key="p" href="/admin/notifications/privacy" label="طلبات بيانات شخصية مفتوحة" value={fmtNumber(d.privacy.open)} tone={d.privacy.overdue ? "critical" : undefined} sub={d.privacy.overdue ? `${fmtNumber(d.privacy.overdue)} تجاوز المهلة النظامية` : "ضمن المهلة"} />);
-  if (d.breakGlass) tiles.push(<Tile key="b" href="/admin/users/break-glass" label="وصول طارئ" value={fmtNumber(d.breakGlass.pending)} sub={`بانتظار الاعتماد · ${fmtNumber(d.breakGlass.active)} نشط الآن`} tone={d.breakGlass.pending ? "fine" : undefined} />);
-  if (d.outbox && (d.outbox.failed || d.outbox.queued)) tiles.push(<Tile key="x" href="/admin/notifications/outbox" label="رسائل صادرة (7 أيام)" value={fmtNumber(d.outbox.queued)} sub={`في الانتظار · ${fmtNumber(d.outbox.failed)} فشل`} tone={d.outbox.failed ? "critical" : undefined} />);
-
+  const tiles: ReactNode[] = [];
+  if (d.clients) tiles.push(<Tile key="c" href="/admin/clients" label="العملاء" value={fmtNumber(d.clients.total)} sub={`${fmtNumber(d.clients.new30)} جديد خلال 30 يومًا`} />);
   // With few KPIs (e.g. a content editor) the page offers the viewer's sections instead of empty space.
-  const fewTiles = tiles.length < 3;
+  const fewTiles = tiles.length + waqfTiles.length + requestTiles.length < 3;
 
   return (
     <div className="space-y-6">
@@ -66,9 +71,26 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
         </Alert>
       ) : null}
 
+      {waqfTiles.length ? (
+        <section aria-labelledby="dash-waqfs" className="space-y-2" data-testid="dash-waqfs">
+          <h2 id="dash-waqfs" className="text-lg font-semibold">الأوقاف</h2>
+          <div className="grid grid-cols-2 gap-2 sm:gap-3 xl:grid-cols-4">{waqfTiles}</div>
+        </section>
+      ) : null}
+      {requestTiles.length ? (
+        <section aria-labelledby="dash-requests" className="space-y-2" data-testid="dash-requests">
+          <h2 id="dash-requests" className="text-lg font-semibold">الخدمات والطلبات</h2>
+          <div className="grid grid-cols-2 gap-2 sm:gap-3 xl:grid-cols-4">{requestTiles}</div>
+        </section>
+      ) : null}
       <WorkQueues queues={queues} />
 
-      {tiles.length ? <section aria-label="مؤشرات الشركة" className="grid grid-cols-2 gap-2 sm:gap-3 xl:grid-cols-4">{tiles}</section> : null}
+      {tiles.length ? (
+        <section aria-labelledby="dash-other" className="space-y-2">
+          <h2 id="dash-other" className="text-lg font-semibold">مؤشرات أخرى</h2>
+          <div className="grid grid-cols-2 gap-2 sm:gap-3 xl:grid-cols-4">{tiles}</div>
+        </section>
+      ) : null}
 
       <div className={cn("grid gap-6", fewTiles && d.requests && "xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]", !fewTiles && "max-w-4xl")}>
         {d.requests ? (

@@ -10,7 +10,7 @@ import { and, eq } from "drizzle-orm";
 import { users, waqfMemberships } from "@/server/db/schema";
 import { waqfAccess } from "@/server/modules/waqf-core/queries";
 import {
-  addBody, addBodyMember, addSuccession, appointTrustee, endBodyMember, endTrustee, removeSuccession, saveFounder, updateBodyMember,
+  addBody, addBodyMember, addSuccession, appointTrustee, endBodyMember, endTrustee, removeSuccession, saveFounder, updateBodyMember, updateTrustee,
 } from "@/server/modules/waqf-file/actions";
 import { todayIso } from "@/server/modules/waqf-file/form";
 import { AUTHORITY_LABEL, BODY_KIND_LABEL, BODY_ROLE_LABEL, FOUNDER_POWERS, options, TRUSTEE_KIND_LABEL } from "@/server/modules/waqf-file/labels";
@@ -122,7 +122,25 @@ export default async function PartiesPage({ params }: { params: Promise<{ id: st
                   </ul>
                 ) : null}
                 {canEdit ? (
-                  <div className="mt-3">
+                  <div className="mt-3 space-y-2">
+                    <Disclosure summary="عدّل بيانات الناظر" testId={`edit-trustee-${t.id}`}>
+                      <ActionForm
+                        action={updateTrustee}
+                        hidden={{ waqfId: id, trusteeId: t.id }}
+                        submitLabel="احفظ التعديل"
+                        fields={[
+                          { name: "displayName", label: "الاسم", required: true, defaultValue: t.displayName },
+                          { name: "nationality", label: "الجنسية", defaultValue: t.nationality },
+                          { name: "startsOn", label: "تاريخ البدء", type: "date", required: true, defaultValue: t.startsOn },
+                          { name: "specialty", label: "التخصص", defaultValue: t.specialty },
+                          { name: "licenseNo", label: "رقم الترخيص (للناظر الاعتباري)", ltr: true, defaultValue: t.licenseNo },
+                          { name: "licenseExpiresOn", label: "انتهاء الترخيص", type: "date", defaultValue: t.licenseExpiresOn },
+                          { name: "isChair", label: "رئيس المجلس", type: "checkbox", defaultValue: t.isChair },
+                          { name: "isIndependent", label: "مستقل", type: "checkbox", defaultValue: t.isIndependent },
+                          { name: "residesInKsa", label: "مقيم في المملكة", type: "checkbox", defaultValue: t.residesInKsa !== false },
+                        ]}
+                      />
+                    </Disclosure>
                     <Disclosure summary="إنهاء النظارة">
                       <ActionForm
                         action={endTrustee}

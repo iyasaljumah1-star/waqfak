@@ -15,6 +15,9 @@ import { STATUS_AR as NAZARA_STATUS } from "@/server/modules/nazara/pure";
 import { read } from "@/server/modules/_shared";
 import { waqfCenterData } from "@/server/modules/operations/waqf-center-server";
 import { WaqfCenterPanel } from "@/components/operations/waqf-center";
+import { fileReviews } from "@/server/modules/waqf-core/file-review";
+import { completenessOf } from "@/server/modules/waqf-core/completeness";
+import { FileReviews } from "@/components/waqf/file-reviews";
 
 export const metadata: Metadata = { title: "ملف وقف" };
 
@@ -34,6 +37,9 @@ export default async function AdminWaqfPage({ params }: { params: Promise<{ id: 
   const w = d.waqf;
   const overdue = d.obligations.filter((o) => o.status === "overdue").length;
   const center = await read(auth, (tx) => waqfCenterData(tx, id));
+  const editor = auth.perms.has("admin.waqfs.edit");
+  const [reviews, comp] = await read(auth, (tx) => Promise.all([all ? fileReviews(tx, id, { limit: 20 }) : Promise.resolve([]), completenessOf(tx, [id])]));
+  const fileState = comp.get(id);
 
   return (
     <div>
@@ -50,7 +56,7 @@ export default async function AdminWaqfPage({ params }: { params: Promise<{ id: 
             {overdue ? <Badge tone="critical">{overdue} التزام متأخر</Badge> : null}
           </span>
         }
-        actions={all ? <ActionLink href={`/app/w/${w.id}`} variant="secondary"><ExternalLink aria-hidden className="size-4" />فتح ملف الوقف الكامل</ActionLink> : undefined}
+        actions={all ? <ActionLink href={`/app/w/${w.id}`} variant={editor ? "primary" : "secondary"} data-testid="open-file"><ExternalLink aria-hidden className="size-4" />{editor ? "استكمال ملف الوقف وتعديله" : "فتح ملف الوقف الكامل"}</ActionLink> : undefined}
       />
       {grant ? (
         <Alert tone="critical" title="تطلع عبر وصول طارئ" className="mb-6">
@@ -58,6 +64,12 @@ export default async function AdminWaqfPage({ params }: { params: Promise<{ id: 
         </Alert>
       ) : null}
 
+      {fileState ? (
+        <Alert tone={fileState.complete ? "ok" : "warn"} title={fileState.complete ? "ملف وقف مكتمل" : "ملف قيد الاستكمال"} className="mb-6">
+          {fileState.complete ? "موثق وصكه في الوثائق، ومسجلة أصوله ومصارفه ونظارته." : `لا يُعد ضمن الأوقاف المكتملة: ${fileState.missing.join("، ")}.`}
+        </Alert>
+      ) : null}
+      <div className="mb-6"><FileReviews reviews={reviews} waqfId={id} canReview={editor} viewerId={auth.user.id} staffView /></div>
       <div className="grid gap-6 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         <div className="space-y-6">
           {center ? <WaqfCenterPanel items={center.items} nazara={center.nazara} counts={center.counts} requestHref={(rid) => `/admin/requests/${rid}`} nazaraHref={center.facts.nazara && auth.perms.has("nazara.view") ? `/admin/nazara/${center.facts.nazara.id}` : null} /> : null}

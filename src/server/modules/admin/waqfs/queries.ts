@@ -7,8 +7,17 @@ import {
 } from "@/server/db/schema";
 import { read } from "@/server/modules/_shared";
 import { likeTerm } from "../guard";
+import { COMPLETE_WAQF_SQL, completenessOf } from "@/server/modules/waqf-core/completeness";
+import { openReviewCounts } from "@/server/modules/waqf-core/file-review";
 
-export type WaqfFilter = { q?: string; type?: string; size?: string; status?: string; demo?: string };
+/** state: complete (default — what «الأوقاف» means), in_progress (drafts and files being completed), reviews (with file changes awaiting review), all. */
+export type WaqfFilter = { q?: string; type?: string; size?: string; status?: string; demo?: string; state?: string };
+export const WAQF_STATES = [
+  { key: "complete", label: "الأوقاف المكتملة" },
+  { key: "in_progress", label: "قيد التأسيس أو الاستكمال" },
+  { key: "reviews", label: "تعديلات بانتظار المراجعة" },
+  { key: "all", label: "كل الملفات" },
+] as const;
 
 type W = typeof waqfs.$inferSelect;
 
@@ -21,6 +30,13 @@ export async function listAllWaqfs(auth: Auth, f: WaqfFilter) {
     if (f.demo === "yes") conds.push(eq(waqfs.isDemo, true));
     if (f.demo === "no") conds.push(eq(waqfs.isDemo, false));
     if (f.q?.trim()) conds.push(or(ilike(waqfs.name, likeTerm(f.q)), ilike(waqfs.internalNumber, likeTerm(f.q)), ilike(waqfs.nationalUnifiedNumber, likeTerm(f.q))));
+    const state = f.state ?? "complete";
+    const completeIds = sql`(select w.id from waqfs w where ${COMPLETE_WAQF_SQL})`;
+    // will plans (a waqf after death, still an idea) are not waqf files to complete
+    const notWillIdea = sql`not (${waqfs.creationMode} = 'bequest' and ${waqfs.status} = 'idea')`;
+    if (state === "complete") conds.push(sql`${waqfs.id} in ${completeIds}`);
+    if (state === "in_progress") conds.push(sql`${waqfs.id} not in ${completeIds}`, sql`${waqfs.status} <> 'ended'`, notWillIdea);
+    if (state === "reviews") conds.push(sql`exists (select 1 from tasks t where t.waqf_id = ${waqfs.id} and t.kind = 'file_review' and t.status in ('todo','in_progress'))`);
     const rows = await tx
       .select({
         id: waqfs.id, name: waqfs.name, number: waqfs.internalNumber, legalType: waqfs.legalType, sizeClass: waqfs.sizeClass, status: waqfs.status,
@@ -45,10 +61,11 @@ export async function listAllWaqfs(auth: Auth, f: WaqfFilter) {
         .where(and(inArray(obligationInstances.waqfId, ids), eq(obligationInstances.status, "overdue")))
         .groupBy(obligationInstances.waqfId),
     ]);
+    const [comp, reviews] = await Promise.all([completenessOf(tx, ids), openReviewCounts(tx, ids)]);
     const m = new Map(mem.map((x) => [x.waqfId, x.n]));
     const q = new Map(req.map((x) => [x.waqfId!, x.n]));
     const o = new Map(obl.map((x) => [x.waqfId, x.n]));
-    return rows.map((r) => ({ ...r, members: m.get(r.id) ?? 0, openRequests: q.get(r.id) ?? 0, overdue: o.get(r.id) ?? 0 }));
+    return rows.map((r) => ({ ...r, members: m.get(r.id) ?? 0, openRequests: q.get(r.id) ?? 0, overdue: o.get(r.id) ?? 0, completeness: comp.get(r.id) ?? { complete: false, missing: [] }, reviews: reviews.get(r.id) ?? 0 }));
   });
 }
 export type AdminWaqfRow = Awaited<ReturnType<typeof listAllWaqfs>>[number];

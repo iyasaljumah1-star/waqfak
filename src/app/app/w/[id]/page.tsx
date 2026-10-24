@@ -15,6 +15,9 @@ import { waqfCenterData } from "@/server/modules/operations/waqf-center-server";
 import { WaqfCenterPanel } from "@/components/operations/waqf-center";
 import { JourneyPanel } from "@/components/waqf/journey-panel";
 import { journeyOf } from "@/server/modules/establish/journey-server";
+import { fileReviews } from "@/server/modules/waqf-core/file-review";
+import { completenessOf } from "@/server/modules/waqf-core/completeness";
+import { FileReviews } from "@/components/waqf/file-reviews";
 
 export const metadata = { title: "نظرة عامة" };
 
@@ -45,6 +48,10 @@ export default async function WaqfOverview({ params, searchParams }: { params: P
   const stage = j?.stage ?? Math.min(5, Math.max(1, w.stage || 1));
   const establishing = !!j && (j.stage <= 2 || (!!j.facts.wizard && !j.facts.wizard.finished));
   const draftOpen = !!j?.facts.wizard && !j.facts.wizard.finished;
+  // changes to the file put to the team's review, and whether the file is complete (what «الأوقاف» lists)
+  const canEditFile = can("waqf.edit") || can("deed.edit") || can("assets.edit") || can("beneficiaries.edit");
+  const [reviews, comp] = await read(auth, (tx) => Promise.all([canEditFile ? fileReviews(tx, id, { limit: 10 }) : Promise.resolve([]), completenessOf(tx, [id])]));
+  const fileState = comp.get(id);
   const flags = [
     w.collectsDonations && "يجمع تبرعات",
     w.hasForeignParty && "له طرف أجنبي",
@@ -75,9 +82,20 @@ export default async function WaqfOverview({ params, searchParams }: { params: P
       {j && establishing ? <JourneyPanel j={j} updatedAt={w.updatedAt} viewer={{ manages: waqfCan(access, "waqf.edit"), uploads: waqfCan(access, "documents.upload") }} /> : null}
       {access.establishingFounder ? (
         <div data-testid="establishing-founder"><Alert tone="info" title="تستكمل ملف الوقف بصفتك الواقف">
-          إلى أن يُوثَّق الوقف أو يتولاه ناظر أو رئيس مجلس في المنصة، يمكنك تعديل بياناته وأصوله ومصارفه وتشكيل مجلس النظارة ودعوة أعضائه. بعد التوثيق تنتقل إدارة الملف إلى النظارة.
+          ما دام الوقف لا يتولاه ناظر أو رئيس مجلس في المنصة، يمكنك إضافة بياناته وتعديلها: الشروط، والمصارف والمستحقين، والنظار وأعضاء المجلس، والأصول ومستنداتها. تُحفظ تعديلاتك مباشرة، وما يمس بيانات وقف موثق أو بيانات استُخدمت في وثيقة معتمدة يُحال إلى فريق «وقفك» لمراجعته.
         </Alert></div>
       ) : null}
+      {access.staffEditor && !access.roles.length ? (
+        <div data-testid="staff-editor"><Alert tone="info" title="تحرر ملف الوقف بصفتك من فريق «وقفك»">
+          يمكنك إضافة بيانات الملف وتعديلها، وتُسجَّل تعديلاتك في سجل التدقيق. ما يمس بيانات وقف موثق أو بيانات استُخدمت في وثيقة معتمدة يُحال لمراجعة عضو آخر في الفريق.
+        </Alert></div>
+      ) : null}
+      {fileState && !fileState.complete && !draftOpen ? (
+        <div data-testid="file-incomplete"><Alert tone="warn" title="ملف الوقف لم يكتمل بعد">
+          لا يظهر الوقف ضمن «الأوقاف» حتى يكتمل: {fileState.missing.join("، ")}.
+        </Alert></div>
+      ) : null}
+      <FileReviews reviews={reviews} waqfId={id} canReview={auth.perms.has("admin.waqfs.edit")} viewerId={auth.user.id} staffView={auth.isStaff} />
       {nazara ? (
         <Alert tone={nazara.status === "active" ? "ok" : nazara.status === "suspended" ? "warn" : "info"} title={`نظارة «وقفك» على الوقف: ${NAZARA_STATUS_AR[nazara.status as keyof typeof NAZARA_STATUS_AR] ?? nazara.status}${nazara.isPractice ? " (تجريبية)" : ""}`}>
           {nazara.status === "active"

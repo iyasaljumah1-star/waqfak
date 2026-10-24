@@ -61,6 +61,7 @@ export const PERMISSIONS = {
   "admin.audit": ["عرض سجل العمليات الشامل", "admin"],
   "admin.requests.all": ["عرض كل الطلبات وتوزيعها", "admin"],
   "admin.waqfs.all": ["عرض كل الأوقاف", "admin"],
+  "admin.waqfs.edit": ["استكمال ملفات الأوقاف وتعديلها ومراجعة التعديلات", "admin"],
   "admin.notifications": ["إدارة قوالب الإشعارات", "admin"],
   "admin.finance": ["الفواتير والمدفوعات", "admin"],
   "admin.reports": ["تقارير الشركة", "admin"],
@@ -160,7 +161,7 @@ export const ROLES: Record<string, { nameAr: string; scope: "global" | "waqf"; p
   super_admin: {
     nameAr: "مسؤول النظام الأعلى", scope: "global", globalAccess: true,
     permissions: ["admin.access", "admin.users", "admin.roles", "admin.services", "admin.pricing", "admin.rules",
-      "admin.compliance", "admin.content", "admin.settings", "admin.audit", "admin.requests.all", "admin.waqfs.all",
+      "admin.compliance", "admin.content", "admin.settings", "admin.audit", "admin.requests.all", "admin.waqfs.all", "admin.waqfs.edit",
       "admin.notifications", "admin.finance", "admin.reports", "breakglass.approve", "staff.requests.assigned",
       "staff.deliver", "staff.quality_review", "staff.assessment_review", "admin.clients.edit", "admin.pii.view",
       "nazara.view", "nazara.manage", "nazara.approve", "requests.quotes.approve", "admin.contracts.approve", "approvals.direct"],
@@ -177,7 +178,7 @@ export const ROLES: Record<string, { nameAr: string; scope: "global" | "waqf"; p
   },
   ops_manager: {
     nameAr: "مدير التشغيل", scope: "global", globalAccess: true,
-    permissions: ["admin.access", "admin.requests.all", "admin.waqfs.all", "admin.services", "admin.pricing", "admin.compliance",
+    permissions: ["admin.access", "admin.requests.all", "admin.waqfs.all", "admin.waqfs.edit", "admin.services", "admin.pricing", "admin.compliance",
       "admin.reports", "staff.requests.assigned", "staff.deliver", "staff.quality_review", "staff.assessment_review", "breakglass.approve",
       "nazara.view", "nazara.manage", "requests.quotes.approve", "admin.contracts.approve"],
   },
@@ -207,15 +208,31 @@ export const ROLES: Record<string, { nameAr: string; scope: "global" | "waqf"; p
 
 /** Permissions a staff member gets on a waqf where they hold an active assignment (request). */
 /**
- * While a waqf is being established (idea, draft or documenting) and no nazir or board chair holds it on the platform,
- * the founder establishing it completes its file: data, deed text, assets, masarif, the board's composition and who is
- * invited to the file. These lapse by themselves once the waqf is documented or a nazir/chair is on the platform; from
- * then on the nazara manages the file. Operations (finance, beneficial owners, distributions) are never included.
+ * The founder completes and corrects the file of their waqf for as long as no nazir or board chair holds it on the
+ * platform — at any stage, not only while it is being established (a documented waqf whose nazara is not on the platform
+ * would otherwise have nobody able to complete its file). Once a nazir or chair holds it, the nazara manages the file.
+ * Changes to a documented waqf, or to data used in an approved deed document, go to the team for review
+ * (waqf-core/file-review.ts). Operations (finance, beneficial owners, distributions) are never included.
  */
 export const ESTABLISHING_FOUNDER_PERMS: Permission[] = [
   "waqf.edit", "deed.edit", "assets.edit", "beneficiaries.view", "beneficiaries.edit", "governance.manage", "waqf.members.manage",
 ];
-export const ESTABLISHING_STATUSES = ["idea", "draft", "documenting"] as const;
+/** Statuses in which the founder may hold the file (an ended waqf is closed). */
+export const ESTABLISHING_STATUSES = ["idea", "draft", "documenting", "documented", "registered", "active", "suspended"] as const;
+
+/**
+ * What staff holding «admin.waqfs.edit» (system administrator, operations manager) may do in any waqf file: complete
+ * and correct its data — identity, deed and terms, masarif and beneficiaries, nazara and board, assets and their
+ * documents. Never finance, distributions, beneficial owners or file membership. Their changes are reviewed like the
+ * founder's (waqf-core/file-review.ts).
+ */
+export const STAFF_WAQF_EDIT_PERMS: Permission[] = [
+  "waqf.view", "waqf.edit", "deed.view", "deed.edit", "assets.view", "assets.edit", "beneficiaries.view", "beneficiaries.edit",
+  "governance.view", "governance.manage", "documents.view", "documents.upload",
+];
+
+/** The waqf-file permissions whose changes are content of the file (what review and the wizard guard watch). */
+export const FILE_CONTENT_PERMS: Permission[] = ["waqf.edit", "deed.edit", "assets.edit", "beneficiaries.edit", "governance.manage"];
 
 export const STAFF_ASSIGNED_WAQF_PERMS: Permission[] = [
   "waqf.view", "deed.view", "assets.view", "finance.view", "finance.summary", "statements.view", "beneficiaries.view",

@@ -5,7 +5,7 @@ import { withContext, type Tx } from "../db";
 import { asSystem } from "../db/as-system";
 import { audit } from "../lib/audit";
 import { ForbiddenError, loadWaqfAccess, requireAuth, type Auth, type WaqfAccess } from "../authz/context";
-import type { Permission } from "../authz/catalog";
+import { FILE_CONTENT_PERMS, type Permission } from "../authz/catalog";
 import { RateLimitError } from "../lib/rate-limit";
 import { requestInfo } from "../lib/request-info";
 import type { ActionState } from "@/lib/utils";
@@ -38,12 +38,26 @@ export async function waqfAction(waqfId: string, perm: Permission, fn: (c: WaqfC
       const access = await loadWaqfAccess(tx, auth, waqfId);
       if (!access) throw new ForbiddenError("لا تشمل صلاحياتك هذا الوقف. اطلب من ناظره دعوتك إليه.");
       if (!access.perms.has(perm)) throw new ForbiddenError();
+      const content = (FILE_CONTENT_PERMS as string[]).includes(perm);
+      // An establishment draft still open in the wizard keeps its data in the wizard until it is approved: editing the
+      // file sections meanwhile would be copied twice when the wizard is approved.
+      if (content && access.waqf.status === "idea" && access.waqf.creationMode === "inter_vivos") {
+        const { draftState } = await import("./establish/queries");
+        const d = await draftState(tx, waqfId);
+        if (d && !d.state.finishedAt) throw new UserError("هذا الوقف مسودة تأسيس لم تُعتمد بعد: تُستكمل بياناته من معالج التأسيس، وتصبح أقسام الملف قابلة للتعديل بعد اعتماد المسودة.");
+      }
+      const { auditMark, recordFileChanges } = content ? await import("./waqf-core/file-review") : { auditMark: null, recordFileChanges: null };
+      const mark = auditMark ? await auditMark(tx) : 0;
       const out = await fn({ auth, access, tx, ip, userAgent });
+      // a change to the substance of a documented file, or to data used in an approved deed document, goes to review
+      let reviewed = false;
+      if (recordFileChanges && (!out || !("error" in out && out.error))) reviewed = !!(await recordFileChanges(tx, auth, access, mark));
       // every change to a waqf file re-evaluates its journey stage from the records (forward or back)
       if (!out || !("error" in out && out.error)) {
         const { syncJourneyAfterChange } = await import("./establish/journey-server");
         await syncJourneyAfterChange(tx, waqfId, auth.user.id);
       }
+      if (reviewed) return { ...(out ?? {}), ok: true, message: `${out?.message ?? "تم الحفظ."} أُحيل التعديل إلى فريق «وقفك» لمراجعته، ولا يتغير أي مخرج معتمد.` };
       return out;
     });
     for (const p of [revalidate ?? []].flat()) revalidatePath(p);

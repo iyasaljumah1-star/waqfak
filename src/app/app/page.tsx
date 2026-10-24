@@ -9,6 +9,10 @@ import { fmtBoth, NAZIR_MODE_LABEL, relDays, SIZE_LABEL, STATUS_LABEL, TYPE_LABE
 import { requireAuth } from "@/server/authz/context";
 import { roleName } from "@/server/authz/catalog";
 import { dashboardData, myWaqfs } from "@/server/modules/portal/queries";
+import { homeRequests } from "@/server/modules/requests/queries";
+import { completenessOf } from "@/server/modules/waqf-core/completeness";
+import { read } from "@/server/modules/_shared";
+import { HomeRequestList, SectionHead } from "@/components/portal/home-requests";
 
 export const metadata: Metadata = { title: "الرئيسية" };
 
@@ -21,18 +25,27 @@ const STARTS = [
 export default async function Dashboard() {
   const auth = await requireAuth({ next: "/app" });
   const waqfs = await myWaqfs(auth);
-  const managed = waqfs.filter((w) => !w.beneficiaryOnly);
+  const mine = waqfs.filter((w) => !w.beneficiaryOnly);
   const benef = waqfs.filter((w) => w.beneficiaryOnly);
+  // «الأوقاف» lists complete waqfs only (documented with evidence, assets, masarif and nazara recorded); drafts and files
+  // still being completed are listed apart; service requests are their own section and never counted as waqfs.
+  const [comp, requests] = await Promise.all([read(auth, (tx) => completenessOf(tx, mine.map((w) => w.id))), homeRequests(auth)]);
+  const managed = mine.filter((w) => comp.get(w.id)?.complete);
+  const inProgress = mine.filter((w) => !comp.get(w.id)?.complete);
   const data = await dashboardData(auth, managed.map((w) => w.id));
+  const openRequests = requests.filter((r) => r.open);
+  const waitingOnMe = openRequests.filter((r) => r.phase.owner === "client").length;
+  const shownRequests = [...openRequests, ...requests.filter((r) => !r.open)].slice(0, 8);
+  const started = mine.length > 0 || requests.length > 0;
   const firstName = (auth.user.fullName ?? "").trim().split(/\s+/)[0] || "";
 
   return (
     <div className="space-y-8">
       <PageHeader
         title={firstName ? `أهلًا ${firstName}` : "أهلًا بك"}
-        description={managed.length ? "ما يستحق انتباهك في أوقافك، مرتبًا بالأقرب موعدًا." : "حسابك جاهز. اختر من أين تبدأ."}
+        description={started ? "أوقافك المكتملة، وملفات الأوقاف قيد الاستكمال، وطلبات الخدمات: كلٌّ في قسمه." : "حسابك جاهز. اختر من أين تبدأ."}
         actions={
-          managed.length ? (
+          started ? (
             <>
               <ButtonLink href="/app/services" variant="primary" size="sm"><ClipboardList aria-hidden className="size-4" />اطلب خدمة</ButtonLink>
               <ButtonLink href="/assessment" variant="secondary" size="sm">قيّم وقفك</ButtonLink>
@@ -49,12 +62,30 @@ export default async function Dashboard() {
         </Alert>
       ) : null}
 
-      {managed.length ? (
-        <section aria-labelledby="my-waqfs" className="space-y-3">
-          <div className="flex items-baseline justify-between gap-2">
-            <h2 id="my-waqfs" className="text-lg font-semibold">أوقافك</h2>
-            <Link href="/app/waqfs" className="text-sm text-ink hover:underline">عرض الكل</Link>
-          </div>
+      {started ? (
+        <dl className="grid grid-cols-2 gap-2 sm:grid-cols-4" data-testid="home-counters">
+          {[
+            { k: "الأوقاف المكتملة", v: managed.length, href: "#my-waqfs" },
+            { k: "ملفات قيد الاستكمال", v: inProgress.length, href: "#in-progress" },
+            { k: "طلبات مفتوحة", v: openRequests.length, href: "#my-requests" },
+            { k: "بانتظار إجراء منك", v: waitingOnMe, href: "#my-requests" },
+          ].map((c) => (
+            <div key={c.k} className="rounded-lg border border-line bg-surface p-3">
+              <dt className="text-[13px] text-muted">{c.k}</dt>
+              <dd className="tabular text-xl font-semibold"><a href={c.href} className="hover:underline">{c.v}</a></dd>
+            </div>
+          ))}
+        </dl>
+      ) : null}
+
+      {started ? (
+        <section aria-labelledby="my-waqfs" className="space-y-3 scroll-mt-20" id="my-waqfs-section">
+          <SectionHead id="my-waqfs" title="الأوقاف" count={`(${managed.length})`} href="/app/waqfs" hrefLabel="كل الأوقاف" />
+          {!managed.length ? (
+            <p className="rounded-lg border border-dashed border-line bg-surface px-4 py-4 text-sm text-muted" data-testid="no-complete-waqfs">
+              لا وقف مكتمل بعد. يظهر الوقف هنا حين يُوثَّق ويُرفع صكه، وتُسجَّل أصوله ومصارفه ونظارته.{inProgress.length ? " ملفاتك قيد الاستكمال أدناه." : ""}
+            </p>
+          ) : null}
           <ul className="space-y-3">
             {managed.map((w) => {
               const obl = data.obligations.get(w.id) ?? [];
@@ -128,6 +159,33 @@ export default async function Dashboard() {
         </section>
       ) : null}
 
+      {inProgress.length ? (
+        <section aria-labelledby="in-progress" className="space-y-3">
+          <SectionHead id="in-progress" title="ملفات أوقاف قيد التأسيس أو الاستكمال" count={`(${inProgress.length})`} />
+          <p className="text-sm text-muted">ليست ضمن الأوقاف المكتملة بعد. افتح الملف لتضيف بياناته أو تعدّلها.</p>
+          <ul className="divide-y divide-line rounded-lg border border-line bg-surface" data-testid="in-progress-waqfs">
+            {inProgress.map((w) => (
+              <li key={w.id} className="px-4 py-3 md:px-5" data-testid="in-progress-waqf">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Link href={`/app/w/${w.id}`} className="font-naskh text-lg font-bold text-ink hover:underline">{w.name}</Link>
+                  <Badge tone={STATUS_TONE[w.status] ?? "neutral"} icon={false}>{STATUS_LABEL[w.status] ?? w.status}</Badge>
+                </div>
+                <p className="text-[13px] text-muted"><span dir="ltr" className="tabular">{w.internalNumber}</span> · بصفتك {w.roles.map(roleName).join("، ")}</p>
+                <p className="mt-1 text-[14px]"><span className="text-muted">ينقصه: </span>{(comp.get(w.id)?.missing ?? []).join("، ")}</p>
+                <Link href={`/app/w/${w.id}`} className="mt-1 inline-flex items-center gap-1 text-sm text-ink hover:underline">استكمل الملف <ArrowLeft aria-hidden className="size-3.5" /></Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      {started ? (
+        <section aria-labelledby="my-requests" className="space-y-3">
+          <SectionHead id="my-requests" title="الخدمات والطلبات" count={`(${openRequests.length} مفتوح من ${requests.length})`} href="/app/requests" hrefLabel="كل الطلبات" />
+          <HomeRequestList rows={shownRequests} />
+        </section>
+      ) : null}
+
       {benef.length ? (
         <section aria-labelledby="my-entitlements" className="space-y-3">
           <h2 id="my-entitlements" className="text-lg font-semibold">استحقاقاتك</h2>
@@ -148,7 +206,7 @@ export default async function Dashboard() {
         </section>
       ) : null}
 
-      {!managed.length ? (
+      {!started ? (
         <section aria-labelledby="start-paths" className="space-y-3">
           <h2 id="start-paths" className="text-lg font-semibold">{benef.length ? "تريد إدارة وقف أو تأسيسه؟" : "من أين تبدأ؟"}</h2>
           <ul className="divide-y divide-line rounded-lg border border-line bg-surface">
@@ -172,7 +230,7 @@ export default async function Dashboard() {
         </section>
       ) : null}
 
-      {managed.length ? (
+      {started ? (
         <p className="text-sm text-muted">
           <ListChecks aria-hidden className="me-1.5 inline size-4 align-[-3px]" />
           مهامك عبر كل الأوقاف في <Link href="/app/tasks" className="text-ink hover:underline">مهامي</Link>، ومواعيدها في{" "}

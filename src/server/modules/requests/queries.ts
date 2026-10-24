@@ -366,3 +366,40 @@ export async function intakePageData(auth: Auth, id: string) {
     return { rc, form, answers, docMap, options, blocks, canEdit: rc.isRequester || rc.memberCreate };
   });
 }
+
+export type HomeRequest = RequestListRow & {
+  phase: { label: string; next: string; owner: "client" | "team" | "manager" | "none" };
+  openClientItems: number;
+  outputs: { total: number; delivered: number };
+  open: boolean;
+};
+
+/**
+ * The «الخدمات والطلبات» section of the client's home: every request I may see — linked to a waqf or not — with its
+ * phase, the next step and who acts, what is waiting on me and the outputs delivered. A request is never a waqf: it
+ * keeps its own status whatever the waqf's state, and a waqf's completeness never closes it.
+ */
+export async function homeRequests(auth: Auth): Promise<HomeRequest[]> {
+  const rows = await listClientRequests(auth);
+  if (!rows.length) return [];
+  const ids = rows.map((r) => r.id);
+  return read(auth, async (tx) => {
+    const { asSystem } = await import("@/server/db/as-system");
+    const { outputs } = await import("@/server/db/schema");
+    const { clientPhase } = await import("./phase");
+    const [items, outs] = await Promise.all([
+      tx.select({ r: requestItems.requestId, status: requestItems.status, visibility: requestItems.visibility }).from(requestItems).where(inArray(requestItems.requestId, ids)),
+      // output states only (never notes, versions or reviewers), for requests already visible to me above
+      asSystem(tx, () => tx.select({ r: outputs.requestId, status: outputs.status, deliverableId: outputs.deliverableId }).from(outputs).where(inArray(outputs.requestId, ids))),
+    ]);
+    return rows.map((r) => {
+      const open = items.filter((i) => i.r === r.id && i.visibility === "client" && ["open", "correction_requested"].includes(i.status)).length;
+      const o = outs.filter((x) => x.r === r.id).map((x) => ({ status: x.status, delivered: !!x.deliverableId }));
+      const p = clientPhase({ status: r.status, assigned: !!r.assignedToUserId, data: null, openClientItems: open, outputs: o });
+      return {
+        ...r, openClientItems: open, outputs: { total: o.length, delivered: o.filter((x) => x.delivered).length },
+        phase: { label: p.label, next: p.next, owner: p.owner }, open: !["completed", "closed", "cancelled", "rejected"].includes(r.status),
+      };
+    });
+  });
+}

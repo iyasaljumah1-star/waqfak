@@ -11,6 +11,8 @@ import { roleName } from "@/server/authz/catalog";
 import { myWaqfs } from "@/server/modules/portal/queries";
 import { read } from "@/server/modules/_shared";
 import { journeyOf } from "@/server/modules/establish/journey-server";
+import { completenessOf } from "@/server/modules/waqf-core/completeness";
+import type { MyWaqf } from "@/server/modules/portal/queries";
 
 export const metadata: Metadata = { title: "أوقافي" };
 
@@ -23,17 +25,16 @@ export default async function WaqfsPage() {
     for (const w of waqfs) if (!w.beneficiaryOnly && ["idea", "draft", "documenting", "documented"].includes(w.status)) { const j = await journeyOf(tx, w.id); if (j && j.stage <= 2) out.push([w.id, j]); }
     return out;
   }));
-  return (
-    <>
-      <PageHeader
-        title="أوقافي"
-        description="كل وقف يرتبط به حسابك، ودورك فيه. تحدد أدوارك ما تراه وما تستطيع فعله في ملف كل وقف."
-        actions={<ActionLink href="/app/waqfs/new" size="sm"><Plus aria-hidden className="size-4" />سجّل وقفًا قائمًا</ActionLink>}
-      />
-      <div className="rounded-lg border border-line bg-surface px-2 md:px-3">
+  // «الأوقاف المكتملة» only when the records prove it; drafts and files missing data are listed apart (never as waqfs)
+  const comp = await read(auth, (tx) => completenessOf(tx, waqfs.map((w) => w.id)));
+  const complete = waqfs.filter((w) => !w.beneficiaryOnly && comp.get(w.id)?.complete);
+  const inProgress = waqfs.filter((w) => !w.beneficiaryOnly && !comp.get(w.id)?.complete);
+  const benef = waqfs.filter((w) => w.beneficiaryOnly);
+  const table = (rows: MyWaqf[], caption: string, testId: string, withMissing = false) => (
+      <div className="rounded-lg border border-line bg-surface px-2 md:px-3" data-testid={testId}>
         <DataTable
-          caption="أوقافي"
-          rows={waqfs}
+          caption={caption}
+          rows={rows}
           rowKey={(w) => w.id}
           columns={[
             {
@@ -72,12 +73,13 @@ export default async function WaqfsPage() {
               ),
             },
             { key: "stage", label: "المرحلة", hideOnMobile: true, render: (w) => <StageMeter stage={journeys.get(w.id)?.stage ?? w.stage} /> },
+            ...(withMissing ? [{ key: "missing", label: "ينقصه", render: (w: MyWaqf) => <span className="text-[13px]">{(comp.get(w.id)?.missing ?? []).join("، ")}</span> }] : []),
           ]}
           empty={
             <div className="py-4">
               <EmptyState
                 icon={Landmark}
-                title="لا يرتبط حسابك بأي وقف بعد"
+                title={waqfs.length ? "لا وقف مكتمل بعد" : "لا يرتبط حسابك بأي وقف بعد"}
                 action={
                   <div className="flex flex-wrap justify-center gap-2">
                     <ActionLink href="/app/waqfs/new" size="sm">سجّل وقفًا قائمًا</ActionLink>
@@ -85,11 +87,38 @@ export default async function WaqfsPage() {
                   </div>
                 }
               >
-                سجّل وقفًا موثّقًا تديره أو أسّس وقفًا جديدًا. إن دعاك ناظر إلى وقف فسيظهر هنا بعد قبول الدعوة.
+                {waqfs.length ? "يظهر الوقف هنا حين يُوثَّق ويُرفع صكه، وتُسجَّل أصوله ومصارفه ونظارته. ملفاتك قيد الاستكمال أدناه." : "سجّل وقفًا موثّقًا تديره أو أسّس وقفًا جديدًا. إن دعاك ناظر إلى وقف فسيظهر هنا بعد قبول الدعوة."}
               </EmptyState>
             </div>
           }
         />
+      </div>
+  );
+  return (
+    <>
+      <PageHeader
+        title="أوقافي"
+        description="أوقافك المكتملة، وملفات الأوقاف التي تؤسسها أو تستكملها، كلٌّ في قسمه. طلبات الخدمات في «طلباتي»."
+        actions={<ActionLink href="/app/waqfs/new" size="sm"><Plus aria-hidden className="size-4" />سجّل وقفًا قائمًا</ActionLink>}
+      />
+      <div className="space-y-6">
+        <section aria-labelledby="complete-h" className="space-y-2">
+          <h2 id="complete-h" className="text-lg font-semibold">الأوقاف المكتملة <span className="tabular text-[15px] font-normal text-muted">({complete.length})</span></h2>
+          {table(complete, "الأوقاف المكتملة", "complete-waqfs")}
+        </section>
+        {inProgress.length ? (
+          <section aria-labelledby="progress-h" className="space-y-2">
+            <h2 id="progress-h" className="text-lg font-semibold">ملفات قيد التأسيس أو الاستكمال <span className="tabular text-[15px] font-normal text-muted">({inProgress.length})</span></h2>
+            <p className="text-sm text-muted">لا تُعد أوقافًا مكتملة حتى تُوثَّق ويُرفع صكها وتُسجَّل أصولها ومصارفها ونظارتها. افتح الملف لتستكمله.</p>
+            {table(inProgress, "ملفات قيد الاستكمال", "in-progress-waqfs", true)}
+          </section>
+        ) : null}
+        {benef.length ? (
+          <section aria-labelledby="benef-h" className="space-y-2">
+            <h2 id="benef-h" className="text-lg font-semibold">أوقاف أنت من مستحقيها</h2>
+            {table(benef, "أوقاف أنت من مستحقيها", "benef-waqfs")}
+          </section>
+        ) : null}
       </div>
     </>
   );

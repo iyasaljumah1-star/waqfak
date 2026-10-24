@@ -45,7 +45,9 @@ export default async function WaqfLayout({ children, params }: { children: React
     <div>
       <header className="mb-4">
         <nav aria-label="مسار التنقل" className="mb-1 text-sm text-muted">
-          <Link href="/app/waqfs" className="hover:text-ink hover:underline">أوقافي</Link>
+          {asStaff && auth.perms.has("admin.waqfs.all")
+            ? <Link href={`/admin/waqfs/${id}`} className="hover:text-ink hover:underline">لوحة الفريق: الأوقاف</Link>
+            : <Link href="/app/waqfs" className="hover:text-ink hover:underline">أوقافي</Link>}
           <span aria-hidden className="mx-1 text-line-strong">/</span>
           <span dir="ltr" className="tabular">{w.internalNumber}</span>
         </nav>
@@ -68,7 +70,9 @@ export default async function WaqfLayout({ children, params }: { children: React
         {asStaff ? (
           <p className="mt-3 inline-flex items-center gap-2 rounded-md border border-line bg-surface px-3 py-1.5 text-[13px] text-muted">
             <BriefcaseBusiness aria-hidden className="size-4 text-ink" />
-            وصول بصفتك موظفًا مكلّفًا، للاطلاع في حدود ما يلزم لإنجاز الطلب المسند إليك.
+            {access.staffEditor
+              ? "وصول بصفتك من فريق «وقفك» المخوّل باستكمال ملفات الأوقاف وتعديلها؛ تُسجَّل تعديلاتك."
+              : "وصول بصفتك موظفًا مكلّفًا، للاطلاع في حدود ما يلزم لإنجاز الطلب المسند إليك."}
           </p>
         ) : null}
         {access.delegation ? (

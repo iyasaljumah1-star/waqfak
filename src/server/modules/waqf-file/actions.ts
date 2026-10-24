@@ -229,6 +229,35 @@ export async function appointTrustee(_: ActionState, fd: FormData): Promise<Acti
   }, "parties");
 }
 
+const updateTrusteeSchema = z.object({
+  trusteeId: z.uuid(),
+  displayName: reqText(200, "اكتب اسم الناظر أو الجهة."),
+  nationality: optText(60),
+  isIndependent: flag,
+  isChair: flag,
+  residesInKsa: flag,
+  specialty: optText(120),
+  licenseNo: optText(60),
+  licenseExpiresOn: optDate,
+  startsOn: reqDate("أدخل تاريخ بدء النظارة."),
+});
+
+/** Corrects the record of an active nazir (name, licence, dates…). Ending or replacing the nazara has its own actions. */
+export async function updateTrustee(_: ActionState, fd: FormData): Promise<ActionState> {
+  return fileAction(fd, updateTrusteeSchema, "waqf.edit", async (c, d) => {
+    const w = c.access.waqf;
+    const [t] = await c.tx.select().from(trustees).where(and(eq(trustees.id, d.trusteeId), eq(trustees.waqfId, w.id))).limit(1);
+    assertFound(t);
+    if (t!.status !== "active") throw new UserError("لا تُعدّل بيانات نظارة منتهية.");
+    if (t!.kind === "legal_entity" && !d.licenseNo) return { error: "الناظر الاعتباري يلزمه ترخيص من الهيئة.", fieldErrors: { licenseNo: "أدخل رقم الترخيص." } };
+    const { trusteeId, ...values } = d;
+    const before = { displayName: t!.displayName, nationality: t!.nationality, isIndependent: t!.isIndependent, isChair: t!.isChair, residesInKsa: t!.residesInKsa, specialty: t!.specialty, licenseNo: t!.licenseNo, licenseExpiresOn: t!.licenseExpiresOn, startsOn: t!.startsOn };
+    await c.tx.update(trustees).set({ ...values, updatedBy: c.auth.user.id }).where(eq(trustees.id, trusteeId));
+    await audit(c.tx, { actorUserId: c.auth.user.id, action: "waqf.trustee_updated", entityType: "trustee", entityId: trusteeId, waqfId: w.id, ...meta(c), before, after: values });
+    return { ok: true, message: "حُفظت بيانات الناظر." };
+  }, "parties");
+}
+
 const endSchema = z.object({ trusteeId: z.uuid(), endsOn: reqDate("أدخل تاريخ انتهاء النظارة."), reason: reqText(500, "اذكر سبب الانتهاء (وفاة، اعتذار، عزل، انتهاء المدة…).") });
 
 export async function endTrustee(_: ActionState, fd: FormData): Promise<ActionState> {

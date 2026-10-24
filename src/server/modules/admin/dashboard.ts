@@ -3,16 +3,18 @@ import { and, count, eq, gt, inArray, isNull, lt, notInArray, sql } from "drizzl
 import type { Auth } from "@/server/authz/context";
 import {
   assessments, breakGlassAccess, contactMessages, dataSubjectRequests, invoices, obligationInstances, outboxMessages,
-  serviceRequests, users, waqfs,
+  serviceRequests, tasks, users, waqfs,
 } from "@/server/db/schema";
 import { read } from "@/server/modules/_shared";
+import { COMPLETE_WAQF_SQL } from "@/server/modules/waqf-core/completeness";
 
 const CLOSED = ["draft", "completed", "closed", "cancelled", "rejected"] as const;
 
 export type DashboardData = {
   clients?: { total: number; new30: number };
-  waqfs?: { total: number; active: number; demo: number };
-  requests?: { scope: "all" | "mine"; byStatus: { status: string; n: number }[]; open: number; slaBreaches: number; unassigned: number | null };
+  /** complete = what «الأوقاف» lists (waqf-core/completeness); inProgress = drafts and files still being completed. */
+  waqfs?: { complete: number; inProgress: number; demo: number; reviews: number };
+  requests?: { scope: "all" | "mine"; byStatus: { status: string; n: number }[]; open: number; slaBreaches: number; unassigned: number | null; withoutWaqf: number; total: number };
   obligations?: { overdue: number; dueSoon: number; waqfsAffected: number };
   invoices?: { outstanding: number; amount: number; overdue: number };
   assessments?: { awaitingReview: number };
@@ -41,15 +43,12 @@ export async function dashboardData(auth: Auth): Promise<DashboardData> {
     }
 
     if (can("admin.waqfs.all")) {
-      const [w] = await tx
-        .select({
-          total: count(),
-          active: sql<number>`count(*) filter (where ${waqfs.status} in ('active','registered'))`.mapWith(Number),
-          demo: sql<number>`count(*) filter (where ${waqfs.isDemo})`.mapWith(Number),
-        })
-        .from(waqfs)
-        .where(isNull(waqfs.archivedAt));
-      out.waqfs = w;
+      const wr = await tx.execute<{ complete: number; total: number; demo: number }>(sql`
+        select count(*) filter (where ${COMPLETE_WAQF_SQL})::int as complete, count(*)::int as total, count(*) filter (where w.is_demo)::int as demo
+        from waqfs w where w.archived_at is null and w.status <> 'ended' and not (w.creation_mode = 'bequest' and w.status = 'idea')`);
+      const [rv] = await tx.select({ n: count() }).from(tasks).where(and(eq(tasks.kind, "file_review"), inArray(tasks.status, ["todo", "in_progress"])));
+      const row = wr.rows[0] ?? { complete: 0, total: 0, demo: 0 };
+      out.waqfs = { complete: Number(row.complete), inProgress: Number(row.total) - Number(row.complete), demo: Number(row.demo), reviews: rv.n };
       const [o] = await tx
         .select({
           overdue: sql<number>`count(*) filter (where ${obligationInstances.status} = 'overdue')`.mapWith(Number),
@@ -74,7 +73,10 @@ export async function dashboardData(auth: Auth): Promise<DashboardData> {
         const [u] = await tx.select({ n: count() }).from(serviceRequests).where(and(open, isNull(serviceRequests.assignedToUserId)));
         unassigned = u.n;
       }
+      const [nw] = await tx.select({ n: count() }).from(serviceRequests).where(and(open, isNull(serviceRequests.waqfId)));
+      const [all] = await tx.select({ n: count() }).from(serviceRequests).where(and(scope, notInArray(serviceRequests.status, ["draft"])));
       out.requests = {
+        withoutWaqf: nw.n, total: all.n,
         scope: allReq ? "all" : "mine",
         byStatus: byStatus.map((r) => ({ status: r.status, n: r.n })).sort((a, b) => b.n - a.n),
         open: byStatus.reduce((s, r) => s + r.n, 0),

@@ -42,6 +42,8 @@ export const NOTIFICATION_TEMPLATES = [
   { key: "delivery.available", titleAr: "تسليم جديد متاح في طلبك {number}", bodyAr: "{title}. اطّلع عليه في صفحة الطلب ثم اعتمده أو اطلب تعديله.", severity: "important" as const, channels: ["in_app"] },
   { key: "delivery.client_decision", titleAr: "رد العميل على تسليم في الطلب {number}", bodyAr: "{decision}: {title}. {note}", severity: "important" as const, channels: ["in_app"] },
   { key: "delivery.response_overdue", titleAr: "تسليم بانتظار ردك في الطلب {number}", bodyAr: "{title} متاح منذ {days} يومًا ولم يُعتمد أو يُطلب تعديله.", severity: "info" as const, channels: ["in_app"] },
+  { key: "waqf.file_review_due", titleAr: "تعديل على ملف وقف بانتظار مراجعتك: {waqf}", bodyAr: "{what} — بواسطة {by}. {why}", severity: "important" as const, channels: ["in_app"] },
+  { key: "waqf.file_review_result", titleAr: "نتيجة مراجعة تعديلك على ملف {waqf}", bodyAr: "{result}. {note}", severity: "info" as const, channels: ["in_app"] },
   { key: "billing.installment_due", titleAr: "استحقاق دفعة: {label} — {number}", bodyAr: "{stage}. المبلغ {amount}، والاستحقاق {due}. لا تُصدر فاتورة تلقائيًا: أعدّ مسودتها من صفحة الطلب.", severity: "important" as const, channels: ["in_app"] },
   { key: "contract.executed", titleAr: "نفذ العقد {number} بتوقيع جميع أطرافه", bodyAr: "نسخته الموقّعة متاحة في صفحة الطلب {request}.", severity: "info" as const, channels: ["in_app", "email"] },
   { key: "request.assigned", titleAr: "طلب جديد مسند إليك: {number}", bodyAr: "{service} — {waqf}", severity: "important" as const, channels: ["in_app", "email"] },
