@@ -53,7 +53,8 @@ test.describe.serial("portal shell & core", () => {
     const A = demo().waqfs.A;
     await page.goto("/app");
     await expect(page.getByRole("heading", { level: 1 })).toContainText("أهلًا");
-    await expect(page.getByRole("heading", { name: "أوقافك" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /^الأوقاف/ })).toBeVisible(); // complete waqfs only; requests are their own section
+    await expect(page.getByRole("heading", { name: /^الخدمات والطلبات/ })).toBeVisible();
     const card = page.locator(`a[href="/app/w/${A}"]`).first();
     await expect(card).toBeVisible();
     await expect(page.getByText("الالتزامات القادمة").first()).toBeVisible();

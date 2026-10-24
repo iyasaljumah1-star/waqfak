@@ -49,9 +49,13 @@ test("admin signs in with password + TOTP and lands on the company dashboard", a
   await loginAs(page, "admin", { fresh: true });
   await page.goto("/admin");
   await expect(page.getByRole("heading", { name: "لوحة الشركة", level: 1 })).toBeVisible();
-  const kpis = page.getByRole("region", { name: "مؤشرات الشركة" });
-  for (const label of ["العملاء", "الأوقاف", "الطلبات المفتوحة", "تجاوزت المهلة", "التزامات نظامية متأخرة", "فواتير غير مسددة", "رسائل تواصل جديدة"])
-    await expect(kpis.getByText(label, { exact: true })).toBeVisible();
+  // waqfs and service requests are separate sections with their own counters (a request is never counted as a waqf)
+  const waqfs = page.getByTestId("dash-waqfs");
+  for (const label of ["الأوقاف المكتملة", "ملفات قيد التأسيس أو الاستكمال", "التزامات نظامية متأخرة"]) await expect(waqfs.getByText(label, { exact: true })).toBeVisible();
+  const reqs = page.getByTestId("dash-requests");
+  for (const label of ["الطلبات المفتوحة", "طلبات غير مرتبطة بوقف", "تجاوزت المهلة"]) await expect(reqs.getByText(label, { exact: true })).toBeVisible();
+  const kpis = page.getByRole("region", { name: "مؤشرات أخرى" });
+  for (const label of ["العملاء", "فواتير غير مسددة", "رسائل تواصل جديدة"]) await expect(kpis.getByText(label, { exact: true })).toBeVisible();
   await expect(page.getByText("بيئة تجريبية")).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/${info.project.name}-dashboard.png`, fullPage: true });
   if (isMobile(page)) {

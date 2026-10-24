@@ -335,7 +335,7 @@ async function chairPage(browser: Browser) {
   return page;
 }
 
-test("14: documented only with the deed in the vault; the founder's establishment permissions then lapse", async ({ browser }) => {
+test("14: documented only with the deed in the vault; the founder keeps completing the file, under the team's review", async ({ browser }) => {
   test.setTimeout(600_000);
   const page = await clientPage(browser);
   // the ownership deed the land still lacks, uploaded from its gap (the upload form opens on the right type)
@@ -372,13 +372,13 @@ test("14: documented only with the deed in the vault; the founder's establishmen
   await expect(page.getByTestId("journey-steps").locator('[data-step="documentation"]')).toHaveAttribute("data-state", "done");
   expect((await sql<{ s: string }>("select status s from waqfs where id = $1", [waqfId]))[0].s).toBe("documented");
   await shot(page, "journey-documented");
-  // the nazara manages the file from here on: no more editing by the founder
-  await expect(page.getByTestId("establishing-founder")).toHaveCount(0);
+  // no nazir holds the file on the platform: the founder still completes it, and its changes now go to the team's review
+  await expect(page.getByTestId("establishing-founder")).toBeVisible();
   // what is left for the file is now the nazara's (the founder may still upload the registration certificate)
-  await expect(page.getByTestId("journey-gaps").locator('a[data-gap="reg:data"]')).toContainText("على النظارة");
+  await expect(page.getByTestId("journey-gaps").locator('a[data-gap="reg:data"]')).toContainText("مطلوب منك");
   await expect(page.getByTestId("journey-gaps").locator('a[data-gap="doc:reg"]')).toContainText("لدى الجهة");
   await page.goto(`/app/w/${waqfId}/assets`);
-  await expect(page.getByTestId("add-asset-form")).toHaveCount(0);
+  await expect(page.getByTestId("add-asset")).toBeVisible();
 });
 
 test("16–19: members with capacity and contact, management rules, agenda with presenter and attachment, governance report", async ({ browser }) => {

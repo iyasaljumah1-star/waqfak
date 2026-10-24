@@ -45,7 +45,7 @@ test.describe.serial("waqf file editing and the separation of waqfs from request
     await client.goto("/app/waqfs/new");
     const f = client.locator("main form").first();
     await f.locator('[name="name"]').fill("وقف اختبار التحرير الآلي (تجريبي)");
-    await f.locator('[name="deedNo"]').fill("4410000777");
+    await f.locator('[name="deedNo"]').fill(`44${String(Date.now()).slice(-8)}`);
     await f.locator('[name="deedDate"]').fill("2024-03-10");
     await f.locator('[name="documentedOn"]').fill("2024-03-10");
     await f.locator('[name="legalType"]').selectOption("public");

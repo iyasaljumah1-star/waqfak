@@ -59,6 +59,12 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
     );
   const tiles: ReactNode[] = [];
   if (d.clients) tiles.push(<Tile key="c" href="/admin/clients" label="العملاء" value={fmtNumber(d.clients.total)} sub={`${fmtNumber(d.clients.new30)} جديد خلال 30 يومًا`} />);
+  if (d.invoices) tiles.push(<Tile key="i" href="/admin/finance" label="فواتير غير مسددة" value={fmtSAR(d.invoices.amount)} tone={d.invoices.overdue ? "fine" : undefined} sub={`المتبقي على ${fmtNumber(d.invoices.outstanding)} فاتورة · ${fmtNumber(d.invoices.overdue)} متأخرة`} />);
+  if (d.assessments) tiles.push(<Tile key="a" href="/admin/assessments" label="تقييمات بانتظار المراجعة" value={fmtNumber(d.assessments.awaitingReview)} tone={d.assessments.awaitingReview ? "fine" : undefined} />);
+  if (d.contact) tiles.push(<Tile key="m" href="/admin/clients/messages" label="رسائل تواصل جديدة" value={fmtNumber(d.contact.new)} tone={d.contact.new ? "fine" : undefined} />);
+  if (d.privacy) tiles.push(<Tile key="p" href="/admin/notifications/privacy" label="طلبات بيانات شخصية مفتوحة" value={fmtNumber(d.privacy.open)} tone={d.privacy.overdue ? "critical" : undefined} sub={d.privacy.overdue ? `${fmtNumber(d.privacy.overdue)} تجاوز المهلة النظامية` : "ضمن المهلة"} />);
+  if (d.breakGlass) tiles.push(<Tile key="b" href="/admin/users/break-glass" label="وصول طارئ" value={fmtNumber(d.breakGlass.pending)} sub={`بانتظار الاعتماد · ${fmtNumber(d.breakGlass.active)} نشط الآن`} tone={d.breakGlass.pending ? "fine" : undefined} />);
+  if (d.outbox && (d.outbox.failed || d.outbox.queued)) tiles.push(<Tile key="x" href="/admin/notifications/outbox" label="رسائل صادرة (7 أيام)" value={fmtNumber(d.outbox.queued)} sub={`في الانتظار · ${fmtNumber(d.outbox.failed)} فشل`} tone={d.outbox.failed ? "critical" : undefined} />);
   // With few KPIs (e.g. a content editor) the page offers the viewer's sections instead of empty space.
   const fewTiles = tiles.length + waqfTiles.length + requestTiles.length < 3;
 
