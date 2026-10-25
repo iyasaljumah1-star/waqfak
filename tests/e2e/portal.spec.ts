@@ -17,8 +17,9 @@ async function sessionPage(browser: Browser, key: string, viewport: { width: num
   if (existsSync(file)) {
     const ctx = await browser.newContext({ ...opts, storageState: file });
     const page = await ctx.newPage();
-    await page.goto("/app/profile");
-    if (new URL(page.url()).pathname === "/app/profile") return page; // a redirect to /login?next=/app/profile is not a session
+    // the same page the tests start from, and the session must hold there (a redirect to /login or /login/mfa is not a session)
+    await page.goto("/app");
+    if (new URL(page.url()).pathname === "/app" && !(await page.getByRole("heading", { level: 1, name: "تسجيل الدخول" }).count())) return page;
     await ctx.close();
   }
   const ctx = await browser.newContext(opts);
