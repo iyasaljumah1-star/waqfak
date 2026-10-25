@@ -2,7 +2,7 @@ import "dotenv/config";
 import { existsSync, mkdirSync } from "node:fs";
 import { Client } from "pg";
 import { expect, test, type Browser, type BrowserContext } from "@playwright/test";
-import { demo, loginAs } from "./helpers";
+import { demo, loginAs, isSignedIn } from "./helpers";
 
 /** Test cleanup with global access (removes only rows this spec created). */
 async function sysQuery(text: string, params: unknown[] = []) {
@@ -44,8 +44,7 @@ async function as(browser: Browser, key: string) {
         if (existsSync(file)) {
           const ctx = await browser.newContext({ ...opts, storageState: file });
           const p = await ctx.newPage();
-          await p.goto("/app/profile");
-          const ok = !/\/login/.test(p.url());
+          const ok = await isSignedIn(p); // not the URL after goto(): a page streams its redirect to /login
           await p.close();
           if (ok) return ctx;
           await ctx.close();

@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync } from "node:fs";
 import { expect as baseExpect, test, type Browser, type Page } from "@playwright/test";
-import { demo, loginAs, uniquePhone } from "./helpers";
+import { demo, loginAs, uniquePhone, isSignedIn } from "./helpers";
 
 // The dev server runs on 2 CPUs next to other suites: server actions can take several seconds.
 const expect = baseExpect.configure({ timeout: 20_000 });
@@ -17,9 +17,7 @@ async function sessionPage(browser: Browser, key: string, viewport: { width: num
   if (existsSync(file)) {
     const ctx = await browser.newContext({ ...opts, storageState: file });
     const page = await ctx.newPage();
-    // the same page the tests start from, and the session must hold there (a redirect to /login or /login/mfa is not a session)
-    await page.goto("/app");
-    if (new URL(page.url()).pathname === "/app" && !(await page.getByRole("heading", { level: 1, name: "تسجيل الدخول" }).count())) return page;
+    if (await isSignedIn(page)) return page; // an expired session answers 401 (a page would stream its redirect)
     await ctx.close();
   }
   const ctx = await browser.newContext(opts);

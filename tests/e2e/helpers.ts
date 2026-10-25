@@ -37,6 +37,15 @@ type DemoUser = { id: string; phone: string; email?: string; password?: string |
 export type DemoCreds = { waqfs: { A: string; B: string; C: string }; users: Record<string, DemoUser> };
 export const demo = (): DemoCreds => JSON.parse(readFileSync("storage/demo-credentials.json", "utf8"));
 
+/**
+ * Whether the page's context holds a live session. Asked of an API route (401 without one) rather than read from the URL
+ * after opening a page: a page answers 200 and streams its redirect to /login, so the URL right after goto() still says
+ * /app for an expired session — a cached session that had expired was taken for a live one.
+ */
+export async function isSignedIn(page: Page) {
+  return (await page.request.get("/api/files/00000000-0000-4000-8000-000000000000")).status() !== 401;
+}
+
 /** Logs in as a demo user. Staff: email + password + TOTP. Clients: phone + on-screen OTP. */
 export async function loginAs(page: Page, key: string, opts: { fresh?: boolean } = {}) {
   const u = demo().users[key];
@@ -45,8 +54,8 @@ export async function loginAs(page: Page, key: string, opts: { fresh?: boolean }
   const cache = `storage/.e2e-auth/${key}.json`;
   if (!opts.fresh && existsSync(cache) && Date.now() - statSync(cache).mtimeMs < 8 * 60_000) {
     await page.context().addCookies(JSON.parse(readFileSync(cache, "utf8")));
-    await page.goto("/app");
-    if (!/\/login/.test(page.url())) {
+    if (await isSignedIn(page)) {
+      await page.goto("/app");
       writeFileSync(cache, JSON.stringify(await page.context().cookies()));
       return u;
     }
