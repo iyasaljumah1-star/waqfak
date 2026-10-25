@@ -367,26 +367,41 @@ async function registerWaqf(client: Page, name: string) {
 /** Answers each step of the intake (first choice, short texts, the deed PDF for document slots) and sends it. */
 async function fillAndSubmit(p: Page, id: string) {
   await p.goto(`/app/requests/${id}/intake`);
+  const stepLine = p.locator("p", { hasText: /^الخطوة \d+ من \d+:/ }).first();
+  const confirm = p.getByLabel(/أقر بأن البيانات والمستندات/);
+  const short = { timeout: 5_000 };
   for (let i = 0; i < 15; i++) {
-    if (await p.getByLabel(/أقر بأن البيانات والمستندات/).isVisible().catch(() => false)) break;
+    await expect(stepLine.or(confirm).first()).toBeVisible({ timeout: T });
+    if (await confirm.isVisible()) break;
+    const step = await stepLine.innerText();
     const main = p.locator("main");
+    // the waqf's recorded data: confirmed as it is
+    const ok = main.getByRole("radio", { name: /البيانات صحيحة|صحيحة ومحدّثة/ }).first();
+    if (await ok.count()) await ok.check(short);
     for (const fs of await main.locator("fieldset").all()) {
       const r = fs.locator('input[type="radio"]');
-      if ((await r.count()) && !(await fs.locator('input[type="radio"]:checked').count())) await r.first().check().catch(() => {});
+      if ((await r.count()) && !(await fs.locator('input[type="radio"]:checked').count())) await r.first().check(short).catch(() => {});
     }
     const cb = main.locator('input[type="checkbox"]').first();
-    if ((await cb.count()) && !(await main.locator('input[type="checkbox"]:checked').count())) await cb.check().catch(() => {});
-    for (const ta of await main.locator("textarea").all()) if (!(await ta.inputValue())) await ta.fill("نص اختباري يصف المطلوب في هذه الخدمة بتفصيل كافٍ.");
-    for (const inp of await main.locator('input[type="text"][required], input:not([type])[required]').all()) if (!(await inp.inputValue())) await inp.fill("4410000123");
-    for (const d of await main.locator('input[type="date"][required]').all()) if (!(await d.inputValue())) await d.fill("2024-03-10");
-    for (const s of await main.locator("select").all()) if (!(await s.inputValue())) await s.selectOption({ index: 1 }).catch(() => {});
-    for (const f of await main.getByTestId("document-file-input").all()) { await f.setInputFiles({ name: "deed.pdf", mimeType: "application/pdf", buffer: pdf("intake deed") }); await p.waitForTimeout(2500); }
-    const next = p.getByRole("button", { name: "التالي" });
-    if (!(await next.count())) break;
-    await next.click();
-    await p.waitForTimeout(1200);
+    if ((await cb.count()) && !(await main.locator('input[type="checkbox"]:checked').count())) await cb.check(short).catch(() => {});
+    for (const ta of await main.locator("textarea:visible").all()) if (!(await ta.inputValue())) await ta.fill("نص اختباري يصف المطلوب في هذه الخدمة بتفصيل كافٍ.", short);
+    for (const inp of await main.locator('input[type="text"][required]:visible, input:not([type])[required]:visible').all()) if (!(await inp.inputValue())) await inp.fill("4410000123", short);
+    for (const d of await main.locator('input[type="date"][required]:visible').all()) if (!(await d.inputValue())) await d.fill("2024-03-10", short);
+    for (const sel of await main.locator("select:visible").all()) if (!(await sel.inputValue())) await sel.selectOption({ index: 1 }, short).catch(() => {});
+    for (const slot of await main.locator("[data-testid^='slot-']").all()) {
+      if (await slot.getByText("أُرفق").count()) continue;
+      await slot.getByTestId("document-file-input").setInputFiles({ name: "deed.pdf", mimeType: "application/pdf", buffer: pdf("intake deed") });
+      await expect(slot.getByText("أُرفق"), `upload on «${step}»`).toBeVisible({ timeout: T });
+    }
+    await p.getByRole("button", { name: "التالي" }).click();
+    // the wizard saves the step, then shows the next one (or says what is missing on this one)
+    await expect(async () => {
+      const now = (await confirm.isVisible()) ? "confirm" : await stepLine.innerText().catch(() => step);
+      expect(now, `stuck on «${step}»: ${(await p.locator('main [role="alert"]').allInnerTexts()).join(" | ").slice(0, 300)}`).not.toBe(step);
+    }).toPass({ timeout: T });
   }
-  await p.getByLabel(/أقر بأن البيانات والمستندات/).check();
+  await expect(confirm, "the intake reached its review step").toBeVisible({ timeout: T });
+  await confirm.check();
   await p.getByRole("button", { name: "أرسل الطلب" }).click();
   await p.waitForURL(/\?created=1/, { timeout: T });
 }
