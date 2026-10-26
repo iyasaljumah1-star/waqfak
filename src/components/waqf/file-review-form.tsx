@@ -5,16 +5,16 @@ import { Textarea } from "@/components/ui/form";
 import { reviewFileChange } from "@/server/modules/waqf-core/file-review-actions";
 
 /** The reviewer's decision on one change to a waqf file. */
-export function FileReviewForm({ taskId, waqfId }: { taskId: string; waqfId: string }) {
+export function FileReviewForm({ taskId, waqfId, request = false }: { taskId: string; waqfId: string; request?: boolean }) {
   return (
     <RawActionForm action={reviewFileChange} hidden={{ taskId, waqfId }} testId={`review-form-${taskId}`}
       extraButtons={(pending) => (
         <>
-          <Submit pending={pending} name="decision" value="approve" size="sm">اعتمد التعديل</Submit>
-          <Submit pending={pending} name="decision" value="return" variant="secondary" size="sm">يحتاج تصحيحًا</Submit>
+          <Submit pending={pending} name="decision" value="approve" size="sm">{request ? "اقبل الطلب" : "اعتمد التعديل"}</Submit>
+          <Submit pending={pending} name="decision" value="return" variant="secondary" size="sm">{request ? "أعد الطلب للتصحيح" : "يحتاج تصحيحًا"}</Submit>
         </>
       )}>
-      <label className="block text-[13px] text-muted" htmlFor={`note-${taskId}`}>ملاحظة المراجعة (لازمة عند طلب التصحيح)</label>
+      <label className="block text-[13px] text-muted" htmlFor={`note-${taskId}`}>{request ? "ملاحظة للواقف (لازمة عند إعادة الطلب: السبب وما يلزم)" : "ملاحظة المراجعة (لازمة عند طلب التصحيح)"}</label>
       <Textarea id={`note-${taskId}`} name="note" rows={2} maxLength={1000} />
     </RawActionForm>
   );

@@ -18,6 +18,8 @@ import { journeyOf } from "@/server/modules/establish/journey-server";
 import { fileReviews } from "@/server/modules/waqf-core/file-review";
 import { completenessOf } from "@/server/modules/waqf-core/completeness";
 import { FileReviews } from "@/components/waqf/file-reviews";
+import { ChangeRequestForm } from "@/components/waqf/change-request-form";
+import { changeRequestRefusal } from "@/server/modules/waqf-core/file-review-pure";
 
 export const metadata = { title: "نظرة عامة" };
 
@@ -50,7 +52,9 @@ export default async function WaqfOverview({ params, searchParams }: { params: P
   const draftOpen = !!j?.facts.wizard && !j.facts.wizard.finished;
   // changes to the file put to the team's review, and whether the file is complete (what «الأوقاف» lists)
   const canEditFile = can("waqf.edit") || can("deed.edit") || can("assets.edit") || can("beneficiaries.edit");
-  const [reviews, comp] = await read(auth, (tx) => Promise.all([canEditFile ? fileReviews(tx, id, { limit: 10 }) : Promise.resolve([]), completenessOf(tx, [id])]));
+  // a documented waqf: its founder asks for changes instead of editing (owner's decision of 2026-10-26)
+  const requester = !changeRequestRefusal({ roles: access.roles, status: w.status, canEdit: can("waqf.edit") || can("deed.edit") });
+  const [reviews, comp] = await read(auth, (tx) => Promise.all([canEditFile || requester ? fileReviews(tx, id, { limit: 10 }) : Promise.resolve([]), completenessOf(tx, [id])]));
   const fileState = comp.get(id);
   const flags = [
     w.collectsDonations && "يجمع تبرعات",
@@ -94,6 +98,15 @@ export default async function WaqfOverview({ params, searchParams }: { params: P
         <div data-testid="file-incomplete"><Alert tone="warn" title="ملف الوقف لم يكتمل بعد">
           لا يظهر الوقف ضمن «الأوقاف» حتى يكتمل: {fileState.missing.join("، ")}.
         </Alert></div>
+      ) : null}
+      {requester ? (
+        <section id="change-request" aria-labelledby="change-request-h" className="rounded-lg border border-line bg-surface" data-testid="change-request">
+          <div className="border-b border-line px-4 py-3 md:px-5">
+            <h2 id="change-request-h" className="font-semibold">الوقف موثق: التعديل بطلب إلى فريق «وقفك»</h2>
+            <p className="text-[13px] text-muted">بعد توثيق الوقف لا تُعدَّل بياناته من حساب الواقف مباشرة. اكتب ما تريد تغييره ومبرره، فيراجعه الفريق المخوّل وينفذه في الملف أو يعيده إليك مع السبب. تبقى البيانات الحالية كما هي حتى التنفيذ، ويُحفظ كل تعديل بقيمته السابقة.</p>
+          </div>
+          <div className="px-4 py-3 md:px-5"><ChangeRequestForm waqfId={id} /></div>
+        </section>
       ) : null}
       <FileReviews reviews={reviews} waqfId={id} canReview={auth.perms.has("admin.waqfs.edit")} viewerId={auth.user.id} staffView={auth.isStaff} />
       {nazara ? (

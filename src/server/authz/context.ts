@@ -105,7 +105,7 @@ export type WaqfAccess = {
   viaGlobal: boolean;
   delegation: { validTo: string; scope: string[] } | null;
   isBeneficiaryOnly: boolean;
-  /** The founder holds the file (ESTABLISHING_FOUNDER_PERMS) for this waqf right now: no nazir or chair on the platform. */
+  /** The founder holds the file (ESTABLISHING_FOUNDER_PERMS) right now: the waqf is still being established and no nazir or chair holds it. */
   establishingFounder?: boolean;
   /** Staff completing or correcting the file under «admin.waqfs.edit» (STAFF_WAQF_EDIT_PERMS). */
   staffEditor?: boolean;
@@ -140,7 +140,8 @@ export async function loadWaqfAccess(tx: Tx, auth: Auth, waqfId: string): Promis
       for (const p of d.scope) if (allowed.has(p)) perms.add(p); // intersection of role ceiling and POA scope
     }
   }
-  // The founder completes the file of their waqf until a nazir or chair holds it on the platform (see catalog).
+  // The founder completes the file while the waqf is being established, until a nazir or chair holds it (see catalog).
+  // Once documented, the founder asks for changes instead (waqf-core/change-request-actions.ts).
   let establishingFounder = false;
   if (activeRoles.includes("founder") && (ESTABLISHING_STATUSES as readonly string[]).includes(waqf.status)) {
     const [held] = await tx

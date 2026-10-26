@@ -15,7 +15,7 @@ export type WaqfFilter = { q?: string; type?: string; size?: string; status?: st
 export const WAQF_STATES = [
   { key: "complete", label: "الأوقاف المكتملة" },
   { key: "in_progress", label: "قيد التأسيس أو الاستكمال" },
-  { key: "reviews", label: "تعديلات بانتظار المراجعة" },
+  { key: "reviews", label: "تعديلات وطلبات بانتظار المراجعة" },
   { key: "all", label: "كل الملفات" },
 ] as const;
 
@@ -36,7 +36,7 @@ export async function listAllWaqfs(auth: Auth, f: WaqfFilter) {
     const notWillIdea = sql`not (${waqfs.creationMode} = 'bequest' and ${waqfs.status} = 'idea')`;
     if (state === "complete") conds.push(sql`${waqfs.id} in ${completeIds}`);
     if (state === "in_progress") conds.push(sql`${waqfs.id} not in ${completeIds}`, sql`${waqfs.status} <> 'ended'`, notWillIdea);
-    if (state === "reviews") conds.push(sql`exists (select 1 from tasks t where t.waqf_id = ${waqfs.id} and t.kind = 'file_review' and t.status in ('todo','in_progress'))`);
+    if (state === "reviews") conds.push(sql`exists (select 1 from tasks t where t.waqf_id = ${waqfs.id} and t.kind in ('file_review','file_change_request') and t.status in ('todo','in_progress'))`);
     const rows = await tx
       .select({
         id: waqfs.id, name: waqfs.name, number: waqfs.internalNumber, legalType: waqfs.legalType, sizeClass: waqfs.sizeClass, status: waqfs.status,

@@ -37,6 +37,8 @@ export default async function WaqfLayout({ children, params }: { children: React
     icon: n.icon,
   }));
   const asStaff = (access.isStaffAssigned || access.viaGlobal) && access.roles.length === 0;
+  const { changeRequestRefusal } = await import("@/server/modules/waqf-core/file-review-pure");
+  const requester = !changeRequestRefusal({ roles: access.roles, status: w.status, canEdit: access.perms.has("waqf.edit") || access.perms.has("deed.edit") });
   // a file still in the establishment wizard: every section says where its data is completed
   const draft = ["idea", "draft"].includes(w.status) ? await read(auth, (tx) => draftState(tx, id)) : null;
   const openDraft = draft && !draft.state.finishedAt && w.createdBy === auth.user.id ? draft.state : null;
@@ -73,6 +75,12 @@ export default async function WaqfLayout({ children, params }: { children: React
             {access.staffEditor
               ? "وصول بصفتك من فريق «وقفك» المخوّل باستكمال ملفات الأوقاف وتعديلها؛ تُسجَّل تعديلاتك."
               : "وصول بصفتك موظفًا مكلّفًا، للاطلاع في حدود ما يلزم لإنجاز الطلب المسند إليك."}
+          </p>
+        ) : null}
+        {requester ? (
+          <p className="mt-3 rounded-md border border-line bg-surface px-3 py-2 text-[13px]" data-testid="founder-request-banner">
+            الوقف موثق: لا تُعدَّل بياناته من حساب الواقف مباشرة.{" "}
+            <Link href={`${base}#change-request`} className="font-medium text-ink underline">قدّم طلب تعديل إلى فريق «وقفك»</Link>
           </p>
         ) : null}
         {access.delegation ? (

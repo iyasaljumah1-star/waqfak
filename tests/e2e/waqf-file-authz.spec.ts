@@ -44,6 +44,7 @@ test.describe.serial("waqf file permissions on the server", () => {
   test.setTimeout(300_000);
   const pages = new Map<string, Page>();
   let founderWaqf = "";
+  let establishingWaqf = "";
   const as = async (browser: Browser, key: string) => {
     if (!pages.has(key)) { const p = await (await browser.newContext()).newPage(); await loginAs(p, key); pages.set(key, p); }
     return pages.get(key)!;
@@ -51,8 +52,9 @@ test.describe.serial("waqf file permissions on the server", () => {
   test.afterAll(async () => {
     // test cleanup on the test database: the conditions written by allowed calls, their reviews, the founder's waqf
     await sql("delete from conditions where literal_text like $1", [`${MARK}%`]);
-    await sql("update tasks set status = 'done', completed_at = now() where kind = 'file_review' and status = 'todo' and description like '%deed.condition_added%' and waqf_id = any($1)", [[demo().waqfs.A, demo().waqfs.B, demo().waqfs.C, founderWaqf].filter(Boolean)]);
-    if (founderWaqf) await sql("update waqfs set archived_at = now() where id = $1", [founderWaqf]);
+    await sql("update tasks set status = 'done', completed_at = now() where kind in ('file_review','file_change_request') and status = 'todo' and waqf_id = any($1)", [[demo().waqfs.A, demo().waqfs.B, demo().waqfs.C, founderWaqf, establishingWaqf].filter(Boolean)]);
+    const mine = [founderWaqf, establishingWaqf].filter(Boolean);
+    if (mine.length) await sql("update waqfs set archived_at = now() where id = any($1)", [mine]);
   });
 
   const W = () => demo().waqfs;
@@ -104,7 +106,7 @@ test.describe.serial("waqf file permissions on the server", () => {
     await sql("update assets set archived_at = now() where title like $1", [`${MARK}%`]);
   });
 
-  test("the founder holds the file only while no nazir or chair holds it on the platform", async ({ browser }) => {
+  test("the founder edits only while establishing (and no nazir holds it); once documented, only by request (option «ب»)", async ({ browser }) => {
     const founder = await (await browser.newContext()).newPage();
     await founder.goto("/signup");
     await founder.getByLabel("الاسم الكامل").fill("واقف مصفوفة الصلاحيات (تجريبي)");
@@ -115,38 +117,71 @@ test.describe.serial("waqf file permissions on the server", () => {
     await founder.getByLabel("رمز التحقق").fill((await founder.locator("span.tracking-\\[0\\.3em\\]").first().innerText()).trim());
     await founder.getByRole("button", { name: "تحقّق" }).click();
     await founder.waitForURL(/\/app/, { timeout: 60_000 });
-    await founder.goto("/app/waqfs/new");
-    const f = founder.locator("main form").first();
-    await f.locator('[name="name"]').fill("وقف مصفوفة الصلاحيات (اختبار آلي)");
-    await f.locator('[name="deedNo"]').fill(`46${String(Date.now()).slice(-8)}`);
-    await f.locator('[name="documentedOn"]').fill("2024-03-10");
-    await f.locator('[name="legalType"]').selectOption("public");
-    await f.locator('[name="nazirMode"]').selectOption("individual");
-    await f.locator('[name="assetBand"]').selectOption("lt5");
-    await f.locator('[name="myRole"]').selectOption("founder");
-    await f.getByRole("button").last().click();
-    await founder.waitForURL(/\/app\/w\/[0-9a-f-]{36}/, { timeout: 60_000 });
-    founderWaqf = founder.url().match(/\/app\/w\/([0-9a-f-]{36})/)![1];
+    const register = async (name: string, documented: boolean) => {
+      await founder.goto("/app/waqfs/new");
+      const f = founder.locator("main form").first();
+      await f.locator('[name="name"]').fill(name);
+      if (documented) {
+        await f.locator('[name="deedNo"]').fill(`46${String(Date.now()).slice(-8)}`);
+        await f.locator('[name="documentedOn"]').fill("2024-03-10");
+      }
+      await f.locator('[name="legalType"]').selectOption("public");
+      await f.locator('[name="nazirMode"]').selectOption("individual");
+      await f.locator('[name="assetBand"]').selectOption("lt5");
+      await f.locator('[name="myRole"]').selectOption("founder");
+      await f.getByRole("button").last().click();
+      await founder.waitForURL(/\/app\/w\/[0-9a-f-]{36}/, { timeout: 60_000 });
+      return founder.url().match(/\/app\/w\/([0-9a-f-]{36})/)![1];
+    };
+    const cond = (w: string, tag: string, pos: string) => ({ waqfId: w, category: "asset", literalText: `${MARK} ${tag}`, position: pos });
 
-    let r = await call(founder, browser, "saveCondition", `/app/w/${founderWaqf}/deed`, { waqfId: founderWaqf, category: "asset", literalText: `${MARK} founder-alone`, position: "1" });
-    expect(await conditionsWith(founderWaqf, "founder-alone"), r.text).toBe(1);
-    // its change to a documented file goes to review
-    expect((await sql<{ n: number }>("select count(*)::int n from tasks where waqf_id = $1 and kind = 'file_review' and status = 'todo'", [founderWaqf]))[0].n).toBe(1);
-    // another client is refused on it
-    r = await call(await as(browser, "outsider"), browser, "saveCondition", `/app/w/${founderWaqf}/deed`, { waqfId: founderWaqf, category: "asset", literalText: `${MARK} outsider-on-founder`, position: "2" });
-    expect(await conditionsWith(founderWaqf, "outsider-on-founder")).toBe(0);
-    // a nazir joins the file (test setup: an active nazir membership) → the founder is read-only on the file's data
-    const [m] = await sql<{ id: string }>("insert into waqf_memberships (waqf_id, user_id, role_key, status) values ($1, $2, 'nazir', 'active') returning id", [founderWaqf, demo().users.nazir.id]);
-    r = await call(founder, browser, "saveCondition", `/app/w/${founderWaqf}/deed`, { waqfId: founderWaqf, category: "asset", literalText: `${MARK} founder-with-nazir`, position: "3" });
-    expect(await conditionsWith(founderWaqf, "founder-with-nazir")).toBe(0);
+    // a waqf still being documented: the founder completes its file while no nazir or chair holds it
+    establishingWaqf = await register("وقف قيد التوثيق للمصفوفة (اختبار آلي)", false);
+    expect((await sql<{ s: string }>("select status s from waqfs where id = $1", [establishingWaqf]))[0].s).toBe("documenting");
+    let r = await call(founder, browser, "saveCondition", `/app/w/${establishingWaqf}/deed`, cond(establishingWaqf, "establishing-alone", "1"));
+    expect(await conditionsWith(establishingWaqf, "establishing-alone"), r.text).toBe(1);
+    const [m] = await sql<{ id: string }>("insert into waqf_memberships (waqf_id, user_id, role_key, status) values ($1, $2, 'nazir', 'active') returning id", [establishingWaqf, demo().users.nazir.id]);
+    r = await call(founder, browser, "saveCondition", `/app/w/${establishingWaqf}/deed`, cond(establishingWaqf, "establishing-with-nazir", "2"));
+    expect(await conditionsWith(establishingWaqf, "establishing-with-nazir")).toBe(0);
     expect(r.kind).toBe("error");
-    // the nazara ends → the founder holds the file again
     await sql("update waqf_memberships set status = 'ended', ends_at = now() where id = $1", [m.id]);
-    r = await call(founder, browser, "saveCondition", `/app/w/${founderWaqf}/deed`, { waqfId: founderWaqf, category: "asset", literalText: `${MARK} founder-again`, position: "4" });
-    expect(await conditionsWith(founderWaqf, "founder-again"), r.text).toBe(1);
+    // a change request is for documented waqfs only: while establishing the founder edits the file directly
+    r = await call(founder, browser, "requestFileChange", `/app/w/${establishingWaqf}`, { waqfId: establishingWaqf, section: "أخرى", details: "طلب تعديل قبل التوثيق (اختبار آلي)", reason: "اختبار الرفض قبل التوثيق" });
+    expect(r.text).toContain("تملك تعديل هذا الملف مباشرة");
+    expect((await sql<{ n: number }>("select count(*)::int n from tasks where waqf_id = $1 and kind = 'file_change_request'", [establishingWaqf]))[0].n).toBe(0);
+
+    // a documented waqf: the founder is refused direct edits, with or without a nazir on the platform
+    founderWaqf = await register("وقف مصفوفة الصلاحيات (اختبار آلي)", true);
+    for (const [tag, action, path, fields] of [
+      ["doc-cond", "saveCondition", "deed", cond(founderWaqf, "doc-cond", "1")],
+      ["doc-asset", "saveAsset", "assets", { waqfId: founderWaqf, category: "cash", title: `${MARK} doc-asset`, marketValue: "1", details: "{}" }],
+    ] as const) {
+      r = await call(founder, browser, action, `/app/w/${founderWaqf}/${path}`, fields as Record<string, string>);
+      expect(r.text, tag).toMatch(/ليست لديك صلاحية/);
+    }
+    expect(await conditionsWith(founderWaqf, "doc-cond")).toBe(0);
+    expect((await sql<{ n: number }>("select count(*)::int n from assets where waqf_id = $1", [founderWaqf]))[0].n).toBe(0);
+    const [m2] = await sql<{ id: string }>("insert into waqf_memberships (waqf_id, user_id, role_key, status) values ($1, $2, 'nazir', 'active') returning id", [founderWaqf, demo().users.nazir.id]);
+    r = await call(founder, browser, "saveCondition", `/app/w/${founderWaqf}/deed`, cond(founderWaqf, "doc-with-nazir", "2"));
+    expect(await conditionsWith(founderWaqf, "doc-with-nazir")).toBe(0);
+    // the nazir on the platform keeps editing it (unchanged)
+    r = await call(await as(browser, "nazir"), browser, "saveCondition", `/app/w/${founderWaqf}/deed`, cond(founderWaqf, "doc-nazir", "3"));
+    expect(await conditionsWith(founderWaqf, "doc-nazir"), r.text).toBe(1);
+    await sql("update waqf_memberships set status = 'ended', ends_at = now() where id = $1", [m2.id]);
+    r = await call(founder, browser, "saveCondition", `/app/w/${founderWaqf}/deed`, cond(founderWaqf, "doc-after-nazir", "4"));
+    expect(await conditionsWith(founderWaqf, "doc-after-nazir")).toBe(0);
+    // … and asks for the change instead; nobody else may file a request on the founder's behalf
+    r = await call(founder, browser, "requestFileChange", `/app/w/${founderWaqf}`, { waqfId: founderWaqf, section: "الوثيقة والشروط", details: `${MARK}: إضافة شرط تقديم الأحوج`, reason: "نص البند الخامس من الصك" });
+    expect(r.kind, r.text).toBe("ok");
+    for (const who of ["outsider", "emp1", "admin"]) {
+      const before = (await sql<{ n: number }>("select count(*)::int n from tasks where waqf_id = $1 and kind = 'file_change_request'", [founderWaqf]))[0].n;
+      await call(await as(browser, who), browser, "requestFileChange", `/app/w/${founderWaqf}`, { waqfId: founderWaqf, section: "أخرى", details: `${MARK}: طلب من غير الواقف`, reason: "اختبار الرفض" });
+      expect((await sql<{ n: number }>("select count(*)::int n from tasks where waqf_id = $1 and kind = 'file_change_request'", [founderWaqf]))[0].n, who).toBe(before);
+    }
+    expect((await sql<{ n: number }>("select count(*)::int n from tasks where waqf_id = $1 and kind = 'file_change_request' and status = 'todo'", [founderWaqf]))[0].n).toBe(1);
 
     // reviewing: only file editors, never on their own change
-    const [t] = await sql<{ id: string }>("select id from tasks where waqf_id = $1 and kind = 'file_review' and status = 'todo' order by created_at limit 1", [founderWaqf]);
+    const [t] = await sql<{ id: string }>("select id from tasks where waqf_id = $1 and kind = 'file_change_request' and status = 'todo' order by created_at limit 1", [founderWaqf]);
     const review = (p: Page | null) => call(p, browser, "reviewFileChange", `/admin/waqfs/${founderWaqf}`, { taskId: t.id, waqfId: founderWaqf, decision: "approve", note: "" });
     const state = async () => (await sql<{ s: string }>("select status s from tasks where id = $1", [t.id]))[0].s;
     for (const who of ["emp1", "mlro", "outsider"]) { await review(await as(browser, who)); expect(await state(), who).toBe("todo"); }

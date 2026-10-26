@@ -208,23 +208,23 @@ export const ROLES: Record<string, { nameAr: string; scope: "global" | "waqf"; p
 
 /** Permissions a staff member gets on a waqf where they hold an active assignment (request). */
 /**
- * The founder completes and corrects the file of their waqf for as long as no nazir or board chair holds it on the
- * platform — at any stage, not only while it is being established (a documented waqf whose nazara is not on the platform
- * would otherwise have nobody able to complete its file). Once a nazir or chair holds it, the nazara manages the file.
- * Changes to a documented waqf, or to data used in an approved deed document, go to the team for review
- * (waqf-core/file-review.ts). Operations (finance, beneficial owners, distributions) are never included.
+ * While a waqf is being established (idea, draft or documenting) and no nazir or board chair holds it on the platform,
+ * the founder establishing it completes its file: data, deed text, assets, masarif, the board's composition and who is
+ * invited to the file. Once the waqf is documented these lapse — whether or not a nazir is on the platform (owner's
+ * decision of 2026-10-26, option «ب»): the founder then asks for a change (waqf-core/change-request-actions.ts) and the
+ * team holding «admin.waqfs.edit» reviews and carries it out. Operations (finance, beneficial owners, distributions) are
+ * never included.
  */
 export const ESTABLISHING_FOUNDER_PERMS: Permission[] = [
   "waqf.edit", "deed.edit", "assets.edit", "beneficiaries.view", "beneficiaries.edit", "governance.manage", "waqf.members.manage",
 ];
-/** Statuses in which the founder may hold the file (an ended waqf is closed). */
-export const ESTABLISHING_STATUSES = ["idea", "draft", "documenting", "documented", "registered", "active", "suspended"] as const;
+export const ESTABLISHING_STATUSES = ["idea", "draft", "documenting"] as const;
 
 /**
  * What staff holding «admin.waqfs.edit» (system administrator, operations manager) may do in any waqf file: complete
  * and correct its data — identity, deed and terms, masarif and beneficiaries, nazara and board, assets and their
- * documents. Never finance, distributions, beneficial owners or file membership. Their changes are reviewed like the
- * founder's (waqf-core/file-review.ts).
+ * documents. Never finance, distributions, beneficial owners or file membership. Their changes to a documented file, or to data used
+ * in an approved deed output, are reviewed by another editor (waqf-core/file-review.ts).
  */
 export const STAFF_WAQF_EDIT_PERMS: Permission[] = [
   "waqf.view", "waqf.edit", "deed.view", "deed.edit", "assets.view", "assets.edit", "beneficiaries.view", "beneficiaries.edit",

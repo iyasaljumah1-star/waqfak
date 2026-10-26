@@ -46,7 +46,7 @@ export async function dashboardData(auth: Auth): Promise<DashboardData> {
       const wr = await tx.execute<{ complete: number; total: number; demo: number }>(sql`
         select count(*) filter (where ${COMPLETE_WAQF_SQL})::int as complete, count(*)::int as total, count(*) filter (where w.is_demo)::int as demo
         from waqfs w where w.archived_at is null and w.status <> 'ended' and not (w.creation_mode = 'bequest' and w.status = 'idea')`);
-      const [rv] = await tx.select({ n: count() }).from(tasks).where(and(eq(tasks.kind, "file_review"), inArray(tasks.status, ["todo", "in_progress"])));
+      const [rv] = await tx.select({ n: count() }).from(tasks).where(and(inArray(tasks.kind, ["file_review", "file_change_request"]), inArray(tasks.status, ["todo", "in_progress"])));
       const row = wr.rows[0] ?? { complete: 0, total: 0, demo: 0 };
       out.waqfs = { complete: Number(row.complete), inProgress: Number(row.total) - Number(row.complete), demo: Number(row.demo), reviews: rv.n };
       const [o] = await tx

@@ -41,7 +41,7 @@ async function approvedDeedOutputs(tx: Tx, waqfId: string) {
   );
 }
 
-async function reviewerIds(tx: Tx) {
+export async function reviewerIds(tx: Tx) {
   const map = await rolePermissionMap();
   const keys = [...map.entries()].filter(([, p]) => p.has("admin.waqfs.edit")).map(([k]) => k);
   if (!keys.length) return [];
@@ -92,7 +92,13 @@ export async function recordFileChanges(tx: Tx, auth: Auth, access: WaqfAccess, 
   return t.id;
 }
 
+/** The two kinds of item in a file's review list: a saved change to review, and a founder's request for a change. */
+export const REVIEW_KINDS = ["file_review", "file_change_request"] as const;
+
 export type FileReview = {
+  kind: (typeof REVIEW_KINDS)[number];
+  /** A founder's change request: the section, what to change and why (as submitted). */
+  request: { section: string; details: string; reason: string } | null;
   id: string; title: string; description: string | null; status: string; priority: string; createdAt: Date; createdBy: string | null; createdByName: string | null;
   completedAt: Date | null; completedByName: string | null; createdByStaff: boolean; note: string | null;
   changes: { id: number; action: string; section: string; before: unknown; after: unknown }[];
@@ -102,10 +108,10 @@ export type FileReview = {
 export async function fileReviews(tx: Tx, waqfId: string, opts: { openOnly?: boolean; limit?: number } = {}): Promise<FileReview[]> {
   return asSystem(tx, async () => {
     const list = await tx.select({
-      id: tasks.id, title: tasks.title, description: tasks.description, status: tasks.status, priority: tasks.priority, createdAt: tasks.createdAt, createdBy: tasks.createdBy,
+      kind: tasks.kind, id: tasks.id, title: tasks.title, description: tasks.description, status: tasks.status, priority: tasks.priority, createdAt: tasks.createdAt, createdBy: tasks.createdBy,
       completedAt: tasks.completedAt, completedBy: tasks.completedBy, checklist: tasks.checklist,
     }).from(tasks)
-      .where(and(eq(tasks.waqfId, waqfId), eq(tasks.kind, "file_review"), opts.openOnly ? inArray(tasks.status, ["todo", "in_progress"]) : undefined))
+      .where(and(eq(tasks.waqfId, waqfId), inArray(tasks.kind, [...REVIEW_KINDS]), opts.openOnly ? inArray(tasks.status, ["todo", "in_progress"]) : undefined))
       .orderBy(desc(tasks.createdAt)).limit(opts.limit ?? 20);
     if (!list.length) return [];
     const ids = [...new Set(list.flatMap((t) => [t.createdBy, t.completedBy]).filter((x): x is string => !!x))];
@@ -114,9 +120,14 @@ export async function fileReviews(tx: Tx, waqfId: string, opts: { openOnly?: boo
     const staff = new Set(people.filter((u) => u.staff).map((u) => u.id));
     const out: FileReview[] = [];
     for (const t of list) {
-      const auditIds = [...(t.description ?? "").matchAll(/#(\d+)/g)].map((m) => Number(m[1]));
+      const isRequest = t.kind === "file_change_request";
+      const line = (k: string) => (t.description ?? "").split("\n").find((l) => l.startsWith(`${k}: `))?.slice(k.length + 2) ?? "";
+      const auditLine = (t.description ?? "").split("\n").find((l) => l.startsWith("سجل التدقيق: ")) ?? "";
+      const auditIds = isRequest ? [] : [...auditLine.matchAll(/#(\d+)/g)].map((m) => Number(m[1]));
       const rows = auditIds.length ? await tx.select({ id: auditLogs.id, action: auditLogs.action, before: auditLogs.before, after: auditLogs.after }).from(auditLogs).where(inArray(auditLogs.id, auditIds)).orderBy(auditLogs.id) : [];
       out.push({
+        kind: isRequest ? "file_change_request" : "file_review",
+        request: isRequest ? { section: line("القسم"), details: line("المطلوب"), reason: line("المبرر") } : null,
         id: t.id, title: t.title, description: t.description, status: t.status, priority: t.priority, createdAt: t.createdAt, createdBy: t.createdBy,
         createdByName: t.createdBy ? names.get(t.createdBy) ?? null : null, createdByStaff: !!t.createdBy && staff.has(t.createdBy), completedAt: t.completedAt, completedByName: t.completedBy ? names.get(t.completedBy) ?? null : null,
         note: (t.checklist ?? []).map((c) => c.text).join(" ") || null,
@@ -132,7 +143,7 @@ export async function openReviewCounts(tx: Tx, waqfIds: string[]) {
   if (!waqfIds.length) return new Map<string, number>();
   const rows = await asSystem(tx, () =>
     tx.select({ w: tasks.waqfId, n: sql<number>`count(*)::int` }).from(tasks)
-      .where(and(inArray(tasks.waqfId, waqfIds), eq(tasks.kind, "file_review"), inArray(tasks.status, ["todo", "in_progress"]), isNull(tasks.requestId)))
+      .where(and(inArray(tasks.waqfId, waqfIds), inArray(tasks.kind, [...REVIEW_KINDS]), inArray(tasks.status, ["todo", "in_progress"]), isNull(tasks.requestId)))
       .groupBy(tasks.waqfId),
   );
   return new Map(rows.map((r) => [r.w!, Number(r.n)]));

@@ -45,3 +45,20 @@ export function completeness(f: CompletenessFacts): { complete: boolean; missing
   if (!f.trustees && !f.boardMembers) missing.push("لا ناظر أو مجلس نظارة مسجل");
   return { complete: missing.length === 0, missing };
 }
+
+/** Sections a founder may ask to change once the waqf is documented (the same sections the team's review covers). */
+export const CHANGE_REQUEST_SECTIONS = ["الهوية والتسجيل", "الوثيقة والشروط", "المصارف والمستحقون", "الأطراف والنظارة", "الأصول الموقوفة", "أخرى"] as const;
+
+/** Statuses after which the founder asks for changes instead of editing (owner's decision of 2026-10-26, option «ب»). */
+export const DOCUMENTED_STATUSES = ["documented", "registered", "active", "suspended"] as const;
+
+/**
+ * Who may submit a change request on a waqf (PURE): its founder, once the waqf is documented and the founder no longer
+ * edits it directly. Returns the refusal, or null when allowed.
+ */
+export function changeRequestRefusal(a: { roles: string[]; status: string; canEdit: boolean }): string | null {
+  if (!a.roles.includes("founder")) return "طلب تعديل بيانات الملف للواقف. من يدير الملف يعدّله من أقسامه.";
+  if (a.canEdit) return "تملك تعديل هذا الملف مباشرة من أقسامه؛ لا حاجة إلى طلب.";
+  if (!(DOCUMENTED_STATUSES as readonly string[]).includes(a.status)) return "يُقدَّم طلب التعديل بعد توثيق الوقف.";
+  return null;
+}

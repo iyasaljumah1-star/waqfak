@@ -2,7 +2,7 @@
  * Editing a waqf file after creation, and keeping waqfs apart from service requests (order of 2026-10-24).
  */
 import { describe, expect, it } from "vitest";
-import { completeness, reviewReason, reviewSection } from "@/server/modules/waqf-core/file-review-pure";
+import { changeRequestRefusal, completeness, reviewReason, reviewSection } from "@/server/modules/waqf-core/file-review-pure";
 import { ESTABLISHING_FOUNDER_PERMS, ESTABLISHING_STATUSES, FILE_CONTENT_PERMS, ROLES, STAFF_WAQF_EDIT_PERMS } from "@/server/authz/catalog";
 
 const full = { status: "registered", archived: false, deedInVault: true, assets: 2, classes: 3, trustees: 1, boardMembers: 0 };
@@ -42,9 +42,9 @@ describe("who may edit a waqf file after creation", () => {
     for (const p of ["waqf.edit", "deed.edit", "assets.edit", "beneficiaries.edit", "governance.manage", "documents.upload"]) expect(STAFF_WAQF_EDIT_PERMS).toContain(p);
     for (const p of ["finance.edit", "finance.approve", "distributions.approve", "bo.edit", "waqf.members.manage", "documents.view_secret"]) expect(STAFF_WAQF_EDIT_PERMS).not.toContain(p);
   });
-  it("the founder keeps the file at every stage until a nazir or chair holds it (not only while establishing)", () => {
-    for (const s of ["idea", "draft", "documenting", "documented", "registered", "active"]) expect(ESTABLISHING_STATUSES as readonly string[]).toContain(s);
-    expect(ESTABLISHING_STATUSES as readonly string[]).not.toContain("ended");
+  it("the founder edits only while the waqf is being established; once documented, never directly (option «ب»)", () => {
+    for (const st of ["idea", "draft", "documenting"]) expect(ESTABLISHING_STATUSES as readonly string[]).toContain(st);
+    for (const st of ["documented", "registered", "active", "suspended", "ended"]) expect(ESTABLISHING_STATUSES as readonly string[]).not.toContain(st);
     for (const p of FILE_CONTENT_PERMS) expect(ESTABLISHING_FOUNDER_PERMS).toContain(p);
     expect(ESTABLISHING_FOUNDER_PERMS).not.toContain("finance.edit");
   });
@@ -71,5 +71,17 @@ describe("which changes go to review", () => {
     const r = reviewReason("approved_output", ["OUT-000150 «مسودة وثيقة وقف للمراجعة قبل التوثيق» (REQ-000525)"]);
     expect(r).toContain("OUT-000150");
     expect(r).toContain("لم يتغير المخرج المعتمد");
+  });
+});
+
+describe("a documented waqf's founder asks for changes instead of editing", () => {
+  it("allowed: the founder, on a documented, registered, active or suspended waqf, without a direct edit right", () => {
+    for (const status of ["documented", "registered", "active", "suspended"]) expect(changeRequestRefusal({ roles: ["founder"], status, canEdit: false })).toBeNull();
+  });
+  it("refused: before documentation (the founder edits the file then), to anyone not the founder, and to who edits directly", () => {
+    expect(changeRequestRefusal({ roles: ["founder"], status: "draft", canEdit: true })).toContain("مباشرة");
+    expect(changeRequestRefusal({ roles: ["founder"], status: "documenting", canEdit: false })).toContain("بعد توثيق الوقف");
+    expect(changeRequestRefusal({ roles: ["beneficiary"], status: "registered", canEdit: false })).toContain("للواقف");
+    expect(changeRequestRefusal({ roles: ["founder", "nazir"], status: "registered", canEdit: true })).toContain("مباشرة");
   });
 });

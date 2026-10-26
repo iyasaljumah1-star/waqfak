@@ -5,8 +5,8 @@ import { readFileSync } from "node:fs";
 import { demo, loginAs, uniquePhone } from "./helpers";
 
 /**
- * Order of 2026-10-24: a waqf file is completed and corrected after it is created (by its founder while no nazir holds it
- * on the platform, and by the team's file editors), changes of a documented file go to review, and the homes keep
+ * Orders of 2026-10-24 and 2026-10-26: a waqf file is completed and corrected after it is created — by the team's file
+ * editors; a documented waqf's founder asks them for a change (option «ب»), changes of a documented file go to review, and the homes keep
  * complete waqfs, files being completed and service requests apart.
  */
 const expect = baseExpect.configure({ timeout: 30_000 });
@@ -61,7 +61,9 @@ test.describe.serial("waqf file editing and the separation of waqfs from request
     await f.getByRole("button").last().click();
     await client.waitForURL(/\/app\/w\/[0-9a-f-]{36}/, { timeout: T });
     waqfId = client.url().match(/\/app\/w\/([0-9a-f-]{36})/)![1];
-    await expect(client.getByTestId("establishing-founder")).toBeVisible();
+    // documented at registration: the founder asks for changes, never edits directly (option «ب»)
+    await expect(client.getByTestId("establishing-founder")).toHaveCount(0);
+    await expect(client.getByTestId("change-request")).toBeVisible();
     await expect(client.getByTestId("file-incomplete")).toContainText("لا أصول موقوفة مسجلة");
 
     await client.goto("/app");
@@ -70,55 +72,109 @@ test.describe.serial("waqf file editing and the separation of waqfs from request
     await expect(client.getByTestId("my-waqfs-count")).toHaveText("(0)");
   });
 
-  test("the founder adds terms, a masraf, an asset and a nazir to the same file; each change is saved and reviewed", async () => {
-    test.setTimeout(240_000);
-    await client.goto(`/app/w/${waqfId}/deed`);
-    let d = await open(client, "أضف شرطًا");
-    await d.getByLabel("الفئة").selectOption({ index: 1 });
-    await d.getByLabel("النص كما ورد").fill("يُقدَّم الأحوج فالأحوج (اختبار آلي).");
-    await d.getByRole("button", { name: /احفظ|أضف|سجّل/ }).click();
-    await expect(client.getByText(/أُحيل التعديل إلى فريق «وقفك» لمراجعته/).first()).toBeVisible({ timeout: T });
+  test("documented: the founder cannot edit the file (UI and server) and asks the team for a change instead", async ({ browser }) => {
+    test.setTimeout(300_000);
+    // no edit forms in the sections, and a banner pointing to the change request
+    for (const [section, summary] of [["deed", "أضف شرطًا"], ["beneficiaries", "أضف مصرفًا"], ["assets", "أضف أصلًا"], ["parties", "عيّن ناظرًا"]] as const) {
+      await client.goto(`/app/w/${waqfId}/${section}`);
+      await expect(client.getByTestId("founder-request-banner")).toBeVisible();
+      await expect(client.locator("summary", { hasText: summary })).toHaveCount(0);
+    }
+    // a crafted request to the server action is refused, and nothing is written
+    const r = await postAction(client, "saveCondition", `/app/w/${waqfId}/deed`, { waqfId, category: "asset", literalText: "محاولة تعديل مباشر من الواقف (اختبار آلي)", position: "1" });
+    expect(r).toContain("ليست لديك صلاحية");
+    expect((await sql<{ n: number }>("select count(*)::int n from conditions where waqf_id = $1", [waqfId]))[0].n).toBe(0);
 
-    await client.goto(`/app/w/${waqfId}/beneficiaries`);
-    d = client.getByTestId("add-class");
-    await d.locator("summary").click();
-    await d.getByLabel(/المصرف أو وصف المستحقين/).fill("الفقراء والمساكين (اختبار آلي)");
-    for (const s of await d.locator("select").all()) if (!(await s.inputValue())) await s.selectOption({ index: 1 });
-    const tier = d.getByLabel(/^الطبقة/);
-    if (!(await tier.inputValue())) await tier.fill("1");
-    await d.getByRole("button", { name: /احفظ|أضف|سجّل/ }).click();
-    await expect(client.getByText(/أُضيف المصرف/).first()).toBeVisible({ timeout: T });
+    // the change request: section, what to change, why
+    await client.goto(`/app/w/${waqfId}`);
+    let form = client.getByTestId("change-request-form");
+    await form.getByRole("button", { name: "أرسل طلب التعديل" }).click();
+    await expect(form.getByText("اختر القسم المطلوب تعديله.")).toBeVisible();
+    await form.locator('select[name="section"]').selectOption("الأصول الموقوفة");
+    await form.locator('textarea[name="details"]').fill("إضافة أصل: نقد موقوف قدره 50000 ريال في حساب بنكي باسم الوقف.");
+    await form.locator('textarea[name="reason"]').fill("الأصل مذكور في الصك ولم يُسجل في الملف.");
+    await form.getByRole("button", { name: "أرسل طلب التعديل" }).click();
+    await expect(client.getByText(/أُرسل طلب التعديل إلى فريق «وقفك»/)).toBeVisible({ timeout: T });
+    await client.reload();
+    form = client.getByTestId("change-request-form");
+    await form.locator('select[name="section"]').selectOption("الوثيقة والشروط");
+    await form.locator('textarea[name="details"]').fill("إضافة شرط: يُقدَّم الأحوج فالأحوج من المستحقين.");
+    await form.locator('textarea[name="reason"]').fill("نص البند الخامس من الصك.");
+    await form.getByRole("button", { name: "أرسل طلب التعديل" }).click();
+    await expect(client.getByText(/أُرسل طلب التعديل إلى فريق «وقفك»/)).toBeVisible({ timeout: T });
+    const reqs = await sql<{ id: string; title: string }>("select id, title from tasks where waqf_id = $1 and kind = 'file_change_request' and status = 'todo' order by created_at", [waqfId]);
+    expect(reqs.map((x) => x.title)).toEqual(["طلب تعديل من الواقف: الأصول الموقوفة", "طلب تعديل من الواقف: الوثيقة والشروط"]);
+    const asked = await sql<{ after: { section: string } }>("select after from audit_logs where waqf_id = $1 and action = 'waqf.change_requested' order by id", [waqfId]);
+    expect(asked.map((x) => x.after.section)).toEqual(["الأصول الموقوفة", "الوثيقة والشروط"]);
+    // the request changes nothing in the file itself
+    expect((await sql<{ n: number }>("select count(*)::int n from assets where waqf_id = $1", [waqfId]))[0].n).toBe(0);
 
-    await client.goto(`/app/w/${waqfId}/assets?add=1`);
-    d = client.getByTestId("add-asset");
+    // the team sees them: in the «reviews» list and on the waqf page
+    const admin = await staff(browser, "admin");
+    await admin.goto("/admin/waqfs?state=reviews");
+    await expect(admin.locator("main tbody")).toContainText("وقف اختبار التحرير الآلي");
+    await admin.goto(`/admin/waqfs/${waqfId}#file-reviews`);
+    const assetReq = admin.getByTestId(`file-review-${reqs[0].id}`);
+    const termsReq = admin.getByTestId(`file-review-${reqs[1].id}`);
+    await expect(assetReq).toContainText("طلب تعديل من الواقف");
+    await expect(assetReq.getByTestId("change-request-body")).toContainText("50000 ريال");
+    await expect(assetReq.getByTestId("change-request-body")).toContainText("الأصل مذكور في الصك");
+    // returned for correction: a reason is required, then recorded and shown to the founder
+    await termsReq.getByRole("button", { name: "أعد الطلب للتصحيح" }).click();
+    await expect(termsReq.getByText(/اكتب سبب الإعادة/)).toBeVisible();
+    await termsReq.locator("textarea").fill("اذكر رقم البند في الصك ونصه كما ورد.");
+    await termsReq.getByRole("button", { name: "أعد الطلب للتصحيح" }).click();
+    await expect(admin.getByTestId(`file-review-${reqs[1].id}`)).toContainText("أُعيد للتصحيح", { timeout: T });
+    // accepted: the team carries it out in the file
+    await assetReq.getByRole("button", { name: "اقبل الطلب" }).click();
+    await expect(admin.getByTestId(`file-review-${reqs[0].id}`)).toContainText("قُبل", { timeout: T });
+    const decided = await sql<{ action: string; after: { note?: string } | null }>("select action, after from audit_logs where entity_id = any($1) and action in ('waqf.change_request_returned','waqf.change_request_accepted') order by id", [reqs.map((x) => x.id)]);
+    expect(decided.map((x) => x.action)).toEqual(["waqf.change_request_returned", "waqf.change_request_accepted"]);
+    expect(decided[0].after?.note).toContain("اذكر رقم البند");
+    await client.goto(`/app/w/${waqfId}`);
+    await expect(client.getByTestId("file-reviews")).toContainText("اذكر رقم البند في الصك");
+    await expect(client.getByTestId("file-reviews")).not.toContainText("مدير المنصة");
+
+    // the team's file editor carries out the accepted request and completes the file: each change saved and reviewed
+    await admin.goto(`/app/w/${waqfId}/assets?add=1`);
+    let d = admin.getByTestId("add-asset");
     await d.getByLabel(/^نوع الأصل/).selectOption({ label: "نقد" });
     await d.getByLabel(/^وصف المبلغ/).fill("نقد موقوف (اختبار آلي)");
     for (const l of ["العملة", "مكان المبلغ"]) {
-      const s = d.getByLabel(new RegExp(`^${l}`));
-      if ((await s.evaluate((e) => e.tagName)) === "SELECT") { if (!(await s.inputValue())) await s.selectOption({ index: 1 }); } else if (!(await s.inputValue())) await s.fill("حساب بنكي");
+      const sel = d.getByLabel(new RegExp(`^${l}`));
+      if ((await sel.evaluate((e) => e.tagName)) === "SELECT") { if (!(await sel.inputValue())) await sel.selectOption({ index: 1 }); } else if (!(await sel.inputValue())) await sel.fill("حساب بنكي");
     }
     await d.getByLabel(/^المبلغ/).fill("50000");
     await d.getByRole("button", { name: /احفظ|أضف|سجّل/ }).last().click();
-    await expect(client.getByText(/أُضيف الأصل/).first()).toBeVisible({ timeout: T });
-
-    await client.goto(`/app/w/${waqfId}/parties`);
-    d = client.getByTestId("appoint-trustee");
+    await expect(admin.getByText(/أُضيف الأصل/).first()).toBeVisible({ timeout: T });
+    await admin.goto(`/app/w/${waqfId}/deed`);
+    d = await open(admin, "أضف شرطًا");
+    await d.getByLabel("الفئة").selectOption({ index: 1 });
+    await d.getByLabel("النص كما ورد").fill("يُقدَّم الأحوج فالأحوج (اختبار آلي).");
+    await d.getByRole("button", { name: /احفظ|أضف|سجّل/ }).click();
+    await expect(admin.getByText(/أُحيل التعديل إلى فريق «وقفك» لمراجعته/).first()).toBeVisible({ timeout: T });
+    await admin.goto(`/app/w/${waqfId}/beneficiaries`);
+    d = admin.getByTestId("add-class");
+    await d.locator("summary").click();
+    await d.getByLabel(/المصرف أو وصف المستحقين/).fill("الفقراء والمساكين (اختبار آلي)");
+    for (const sel of await d.locator("select").all()) if (!(await sel.inputValue())) await sel.selectOption({ index: 1 });
+    const tier = d.getByLabel(/^الطبقة/);
+    if (!(await tier.inputValue())) await tier.fill("1");
+    await d.getByRole("button", { name: /احفظ|أضف|سجّل/ }).click();
+    await expect(admin.getByText(/أُضيف المصرف/).first()).toBeVisible({ timeout: T });
+    await admin.goto(`/app/w/${waqfId}/parties`);
+    d = admin.getByTestId("appoint-trustee");
     await d.locator("summary").click();
     await d.getByLabel(/^الاسم/).fill("ناظر الاختبار الآلي");
     await d.getByRole("button", { name: "سجّل التعيين" }).click();
-    await expect(client.getByText(/سُجّل التعيين/).first()).toBeVisible({ timeout: T });
-    // correct the nazir in place (not a new appointment)
-    await client.reload();
-    const edit = client.locator("[data-testid^='edit-trustee-']").first();
+    await expect(admin.getByText(/سُجّل التعيين/).first()).toBeVisible({ timeout: T });
+    await admin.reload();
+    const edit = admin.locator("[data-testid^='edit-trustee-']").first();
     await edit.locator("summary").click();
     await edit.getByLabel("التخصص").fill("إدارة أوقاف (اختبار آلي)");
     await edit.getByRole("button", { name: "احفظ التعديل" }).click();
-    await expect(client.getByText(/حُفظت بيانات الناظر/).first()).toBeVisible({ timeout: T });
+    await expect(admin.getByText(/حُفظت بيانات الناظر/).first()).toBeVisible({ timeout: T });
     expect((await sql<{ n: number }>("select count(*)::int n from trustees where waqf_id = $1", [waqfId]))[0].n).toBe(1);
-
-    // saved and retrievable; one review per change, with the previous value kept in the audit trail
-    await client.goto(`/app/w/${waqfId}`);
-    await expect(client.getByTestId("file-reviews")).toContainText("بانتظار مراجعة الفريق");
     const reviews = await sql<{ n: number }>("select count(*)::int n from tasks where waqf_id = $1 and kind = 'file_review' and status = 'todo'", [waqfId]);
     expect(reviews[0].n).toBe(5);
     const upd = await sql<{ before: { specialty: string | null }; after: { specialty: string } }>("select before, after from audit_logs where waqf_id = $1 and action = 'waqf.trustee_updated'", [waqfId]);
@@ -163,43 +219,30 @@ test.describe.serial("waqf file editing and the separation of waqfs from request
     expect((await sql<{ s: string }>("select status s from service_requests where waqf_id = $1", [waqfId])).map((r) => r.s)).toEqual(["draft"]);
   });
 
-  test("the team's file editor corrects the file; another editor reviews; nobody reviews their own change", async ({ browser }) => {
+  test("another editor reviews the file editor's changes; nobody reviews their own change", async ({ browser }) => {
     test.setTimeout(240_000);
-    const admin = await (await browser.newContext()).newPage();
-    await loginAs(admin, "admin");
+    const admin = await staff(browser, "admin");
     await admin.goto(`/admin/waqfs/${waqfId}`);
     await expect(admin.getByTestId("open-file")).toContainText("استكمال ملف الوقف وتعديله");
     await admin.goto(`/app/w/${waqfId}`);
     await expect(admin.getByTestId("staff-editor")).toBeVisible();
-    await admin.goto(`/app/w/${waqfId}/deed`);
-    const d = await open(admin, "أضف شرطًا");
-    await d.getByLabel("الفئة").selectOption({ index: 2 });
-    await d.getByLabel("النص كما ورد").fill("شرط أضافه فريق «وقفك» (اختبار آلي).");
-    await d.getByRole("button", { name: /احفظ|أضف|سجّل/ }).click();
-    await expect(admin.getByText(/أُحيل التعديل إلى فريق «وقفك» لمراجعته/).first()).toBeVisible({ timeout: T });
-    // the founder's changes: approve one, return one with a reason
+    // the admin's own changes carry no review form for the admin
     await admin.goto(`/admin/waqfs/${waqfId}#file-reviews`);
-    const pending = admin.locator("[data-testid^='file-review-']").filter({ hasText: "بانتظار المراجعة" });
-    const own = pending.filter({ hasText: "فريق «وقفك»" }).or(pending.filter({ hasText: "مدير المنصة" }));
+    const own = admin.locator("[data-testid^='file-review-']").filter({ hasText: "بانتظار المراجعة" }).filter({ hasText: "مدير المنصة" });
+    await expect(own.first()).toBeVisible();
     await expect(own.first().locator("form")).toHaveCount(0);
-    const asset = pending.filter({ hasText: "الأصول الموقوفة" }).first();
-    await asset.getByRole("button", { name: "اعتمد التعديل" }).click();
-    await expect(admin.locator("[data-testid^='file-review-']").filter({ hasText: "الأصول الموقوفة" }).first()).toContainText("اعتُمد", { timeout: T });
-    const terms = admin.locator("[data-testid^='file-review-']").filter({ hasText: "الوثيقة والشروط" }).filter({ hasText: "واقف تحرير الملف" }).first();
-    await terms.locator("textarea").fill("اذكر رقم البند في صك الوقف لهذا الشرط.");
-    await terms.getByRole("button", { name: "يحتاج تصحيحًا" }).click();
-    await expect(admin.locator("[data-testid^='file-review-']").filter({ hasText: "اذكر رقم البند" }).first()).toBeVisible({ timeout: T });
-    // another editor reviews the admin's own change
-    const ops = await (await browser.newContext()).newPage();
-    await loginAs(ops, "ops");
+    // the operations manager reviews them: approves the asset, returns the condition with a reason
+    const ops = await staff(browser, "ops");
     await ops.goto(`/admin/waqfs/${waqfId}#file-reviews`);
-    const mine = ops.locator("[data-testid^='file-review-']").filter({ hasText: "مدير المنصة" }).filter({ hasText: "بانتظار المراجعة" }).first();
-    await mine.getByRole("button", { name: "اعتمد التعديل" }).click();
-    await expect(ops.locator("[data-testid^='file-review-']").filter({ hasText: "مدير المنصة" }).first()).toContainText("اعتُمد", { timeout: T });
-    // the founder is told and sees the result without staff names
-    await client.goto(`/app/w/${waqfId}`);
-    await expect(client.getByTestId("file-reviews")).toContainText("اذكر رقم البند");
-    await expect(client.getByTestId("file-reviews")).not.toContainText("مدير العمليات");
+    const asset = ops.locator("[data-testid^='file-review-']").filter({ hasText: "بانتظار المراجعة" }).filter({ hasText: "نقد موقوف (اختبار آلي)" }).first();
+    await asset.getByRole("button", { name: "اعتمد التعديل" }).click();
+    await expect(ops.locator("[data-testid^='file-review-']").filter({ hasText: "نقد موقوف (اختبار آلي)" }).first()).toContainText("اعتُمد", { timeout: T });
+    const terms = ops.locator("[data-testid^='file-review-']").filter({ hasText: "يُقدَّم الأحوج فالأحوج (اختبار آلي)" }).first();
+    await terms.locator("textarea").fill("اربط الشرط برقم البند في الصك.");
+    await terms.getByRole("button", { name: "يحتاج تصحيحًا" }).click();
+    await expect(ops.locator("[data-testid^='file-review-']").filter({ hasText: "اربط الشرط برقم البند" }).first()).toBeVisible({ timeout: T });
+    const audited = await sql<{ action: string }>("select action from audit_logs where waqf_id = $1 and action in ('waqf.file_review_approved','waqf.file_review_returned') order by id", [waqfId]);
+    expect(audited.map((x) => x.action)).toEqual(["waqf.file_review_approved", "waqf.file_review_returned"]);
   });
 
   test("a staff member without the file-editor right, and another client, cannot edit the file", async ({ browser }) => {
@@ -255,26 +298,29 @@ test.describe.serial("waqf file editing and the separation of waqfs from request
       "select o.id, o.approved_version v, md5((select sections::text from output_versions x where x.output_id = o.id and x.version = o.approved_version)) h, (select count(*)::int from output_versions x where x.output_id = o.id) n from outputs o where o.request_id = $1 and o.status = 'approved'", [linkedReq]);
     expect(out).toBeTruthy();
 
-    // the founder edits the file: saved, and put to review because an approved deed output used the waqf's data
+    // the founder can no longer change the file; the team's editor does — saved, and put to review because an approved
+    // deed output used the waqf's data
     await client.goto(`/app/w/${waqfId}/deed`);
-    const d = await open(client, "أضف شرطًا");
+    await expect(client.locator("summary", { hasText: "أضف شرطًا" })).toHaveCount(0);
+    await admin.goto(`/app/w/${waqfId}/deed`);
+    const d = await open(admin, "أضف شرطًا");
     await d.getByLabel("الفئة").selectOption({ index: 1 });
     await d.getByLabel("النص كما ورد").fill("شرط أُضيف بعد اعتماد تقرير المراجعة (اختبار آلي).");
     await d.getByRole("button", { name: /احفظ|أضف|سجّل/ }).click();
-    await expect(client.getByText(/ولا يتغير أي مخرج معتمد/).first()).toBeVisible({ timeout: T });
+    await expect(admin.getByText(/ولا يتغير أي مخرج معتمد/).first()).toBeVisible({ timeout: T });
     const [rv] = await sql<{ id: string; description: string; priority: string }>("select id, description, priority from tasks where waqf_id = $1 and kind = 'file_review' order by created_at desc limit 1", [waqfId]);
     expect(rv.description).toContain("استُخدمت في مخرج معتمد");
     expect(rv.priority).toBe("high");
-    // the reviewer sees the value before and after (from the audit trail), asks for a correction with a reason
-    await admin.goto(`/admin/waqfs/${waqfId}#file-reviews`);
-    const card = admin.getByTestId(`file-review-${rv.id}`);
+    // another editor sees the value before and after (from the audit trail), asks for a correction with a reason
+    await ops.goto(`/admin/waqfs/${waqfId}#file-reviews`);
+    const card = ops.getByTestId(`file-review-${rv.id}`);
     await expect(card).toContainText("نص الشرط");
     await expect(card).toContainText("شرط أُضيف بعد اعتماد تقرير المراجعة");
     await card.getByRole("button", { name: "يحتاج تصحيحًا" }).click();
-    await expect(card).toContainText("اكتب ما يلزم تصحيحه");
+    await expect(card).toContainText("اكتب سبب الإعادة");
     await card.locator("textarea").fill("اربط الشرط ببند الصك، وقرر هل يلزم إصدار جديد لتقرير المراجعة.");
     await card.getByRole("button", { name: "يحتاج تصحيحًا" }).click();
-    await expect(admin.getByTestId(`file-review-${rv.id}`)).toContainText("يحتاج تصحيحًا", { timeout: T });
+    await expect(ops.getByTestId(`file-review-${rv.id}`)).toContainText("يحتاج تصحيحًا", { timeout: T });
     // the approved output is exactly as it was
     const [after] = await sql<{ v: number; h: string; n: number; s: string }>(
       "select o.status s, o.approved_version v, md5((select sections::text from output_versions x where x.output_id = o.id and x.version = o.approved_version)) h, (select count(*)::int from output_versions x where x.output_id = o.id) n from outputs o where o.id = $1", [out.id]);
@@ -463,4 +509,14 @@ async function closeRequest(admin: Page, id: string) {
   await expect(btn).toContainText("أغلق الطلب");
   await btn.click();
   await expect.poll(() => reqStatus(id)).toBe("closed");
+}
+
+/** A server action posted directly (as a crafted request would arrive), with the page's session; returns the raw answer. */
+async function postAction(page: Page, name: string, path: string, fields: Record<string, string>) {
+  const m = JSON.parse(readFileSync(".next/server/server-reference-manifest.json", "utf8")).node as Record<string, { exportedName?: string }>;
+  const id = Object.entries(m).find(([, v]) => v.exportedName === name)![0];
+  const fd = new FormData();
+  for (const [k, v] of Object.entries(fields)) fd.append(`_1_${k}`, v);
+  fd.append("0", JSON.stringify([{}, "$K1"]));
+  return (await page.request.post(path, { headers: { "Next-Action": id, Accept: "text/x-component" }, multipart: fd })).text();
 }

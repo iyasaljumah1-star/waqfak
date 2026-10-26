@@ -44,7 +44,7 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
     waqfTiles.push(
       <Tile key="w" href="/admin/waqfs" label="الأوقاف المكتملة" value={fmtNumber(d.waqfs.complete)} sub="موثقة وصكها في الوثائق، بأصول ومصارف ونظارة" />,
       <Tile key="wp" href="/admin/waqfs?state=in_progress" label="ملفات قيد التأسيس أو الاستكمال" value={fmtNumber(d.waqfs.inProgress)} sub={`${fmtNumber(d.waqfs.demo)} تجريبي ضمن الكل`} />,
-      <Tile key="wr" href="/admin/waqfs?state=reviews" label="تعديلات ملفات بانتظار المراجعة" value={fmtNumber(d.waqfs.reviews)} tone={d.waqfs.reviews ? "fine" : undefined} />,
+      <Tile key="wr" href="/admin/waqfs?state=reviews" label="تعديلات وطلبات تعديل بانتظار المراجعة" value={fmtNumber(d.waqfs.reviews)} tone={d.waqfs.reviews ? "fine" : undefined} />,
     );
   }
   if (d.obligations)
