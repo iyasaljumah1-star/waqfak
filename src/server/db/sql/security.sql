@@ -227,6 +227,40 @@ DROP POLICY IF EXISTS staff_only ON task_events;
 -- Platform rules running in a client's action (e.g. submission creates the intake task) may write events; only staff read them.
 CREATE POLICY staff_only ON task_events AS RESTRICTIVE FOR SELECT TO waqfak_app USING (request_id IS NULL OR app_current_user() IS NULL OR app_is_staff());
 
+-- ───────────── Processing engine and the final approval (owner's order of 2026-11-01, phase 2) ─────────────
+-- Nothing of an output reaches the client before the system administrator's final approval, whatever the route.
+-- The processing record (jobs, runs, steps) belongs to the team.
+DROP POLICY IF EXISTS staff_only ON processing_runs;
+CREATE POLICY staff_only ON processing_runs AS RESTRICTIVE FOR ALL TO waqfak_app USING (app_current_user() IS NULL OR app_is_staff()) WITH CHECK (app_current_user() IS NULL OR app_is_staff());
+DROP POLICY IF EXISTS staff_only ON processing_steps;
+CREATE POLICY staff_only ON processing_steps AS RESTRICTIVE FOR ALL TO waqfak_app USING (app_current_user() IS NULL OR app_is_staff()) WITH CHECK (app_current_user() IS NULL OR app_is_staff());
+-- The client's submission queues the first job (written in the client's transaction); only staff read the queue.
+DROP POLICY IF EXISTS staff_only ON processing_jobs;
+CREATE POLICY staff_only ON processing_jobs AS RESTRICTIVE FOR SELECT TO waqfak_app USING (app_current_user() IS NULL OR app_is_staff());
+DROP POLICY IF EXISTS staff_update ON processing_jobs;
+CREATE POLICY staff_update ON processing_jobs AS RESTRICTIVE FOR UPDATE TO waqfak_app USING (app_current_user() IS NULL OR app_is_staff());
+DROP POLICY IF EXISTS staff_delete ON processing_jobs;
+CREATE POLICY staff_delete ON processing_jobs AS RESTRICTIVE FOR DELETE TO waqfak_app USING (app_current_user() IS NULL OR app_is_staff());
+
+-- A delivery record exists for the client only once released: a cycle delivery once sent (released_at), any other one
+-- once the request reached the client's side (legacy manual flow: awaiting the client's approval, completed, closed).
+DROP POLICY IF EXISTS released_or_staff ON deliverables;
+CREATE POLICY released_or_staff ON deliverables AS RESTRICTIVE FOR SELECT TO waqfak_app USING (
+  app_current_user() IS NULL OR app_is_staff() OR released_at IS NOT NULL
+  OR (cycle_id IS NULL AND status <> 'draft' AND EXISTS (
+    SELECT 1 FROM service_requests r WHERE r.id = deliverables.request_id AND r.status IN ('awaiting_client_approval', 'completed', 'closed'))));
+
+-- A deliverable file of a request is hidden from the client until it is approved (released), unless the client owns it.
+DROP POLICY IF EXISTS unreleased_staff_only ON documents;
+CREATE POLICY unreleased_staff_only ON documents AS RESTRICTIVE FOR SELECT TO waqfak_app USING (
+  app_current_user() IS NULL OR app_is_staff() OR owner_user_id = app_current_user()
+  OR NOT (doc_type = 'deliverable' AND request_id IS NOT NULL AND approval_status IS DISTINCT FROM 'approved'));
+
+-- Team-side events of a request (output preparation, approvals, engine steps) are never read by the client.
+DROP POLICY IF EXISTS internal_staff_only ON request_events;
+CREATE POLICY internal_staff_only ON request_events AS RESTRICTIVE FOR SELECT TO waqfak_app USING (
+  internal = false OR app_current_user() IS NULL OR app_is_staff());
+
 -- Corrections and rollbacks of a request are team records.
 DROP POLICY IF EXISTS staff_only ON request_revisions;
 CREATE POLICY staff_only ON request_revisions AS RESTRICTIVE FOR ALL TO waqfak_app USING (app_current_user() IS NULL OR app_is_staff()) WITH CHECK (app_current_user() IS NULL OR app_is_staff());
@@ -327,6 +361,15 @@ BEGIN
      OR (NEW.status = 'approved' AND items.status = 'specialist' AND l.status IS NULL);
   IF n > 0 THEN
     RAISE EXCEPTION 'output_guard: % check(s) failed or awaiting a specialist finding', n USING ERRCODE = 'check_violation';
+  END IF;
+  -- engine-processed requests: the final approval belongs to holders of «outputs.final_approve» (system administrator),
+  -- and never to the account that produced the version (the platform's processing account)
+  IF NEW.status = 'approved' AND EXISTS (SELECT 1 FROM service_requests r WHERE r.id = NEW.request_id AND r.processing_mode = 'engine') THEN
+    IF NEW.approved_by IS NULL OR NOT EXISTS (
+      SELECT 1 FROM user_roles ur JOIN role_permissions rp ON rp.role_id = ur.role_id JOIN permissions p ON p.id = rp.permission_id
+      WHERE ur.user_id = NEW.approved_by AND p.key = 'outputs.final_approve') THEN
+      RAISE EXCEPTION 'output_guard: final approval requires outputs.final_approve' USING ERRCODE = 'check_violation';
+    END IF;
   END IF;
   RETURN NEW;
 END $$;

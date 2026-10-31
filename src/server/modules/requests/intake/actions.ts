@@ -1,7 +1,9 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { and, desc, eq, notInArray } from "drizzle-orm";
+import { after } from "next/server";
+import { kick } from "@/server/engine/queue/worker";
+import { and, desc, eq, notInArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { documents, recommendations, serviceRequests, services, waqfs } from "@/server/db/schema";
 import { ForbiddenError, loadWaqfAccess } from "@/server/authz/context";
@@ -11,7 +13,7 @@ import type { ActionState } from "@/lib/utils";
 import { loadRequestCtx, memberCan } from "../access";
 import { flagMap, readSetting, serviceAvailability, type License } from "../catalog";
 import { logEvent, type ActCtx } from "../engine";
-import { sanitizeAnswers, validateStep, visibleSteps } from "./engine";
+import { validateStep, visibleSteps } from "./engine";
 import { withServerAnswers } from "./server";
 import { waqfModeOf, waqfModesFor, type WaqfMode } from "../waqf-mode";
 import { intakeOf, prefillAnswers, serviceForm, submitDraft, validDocMap } from "./server";
@@ -37,6 +39,9 @@ export async function startRequest(_: ActionState, fd: FormData): Promise<Action
   let id = "";
   let existingOpen = "";
   const res = await userAction(async ({ auth, tx, ip, userAgent }) => {
+    // One opening at a time per account and service: two clicks (or two tabs) at the same moment wait for each other,
+    // so the second finds the draft the first created instead of creating another one.
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`start:${auth.user.id}:${d.service.toUpperCase()}`}))`);
     const [svc] = await tx.select().from(services).where(and(eq(services.code, d.service.toUpperCase()), eq(services.isPublished, true))).limit(1);
     if (!svc) throw new UserError("الخدمة غير موجودة.");
     const avail = serviceAvailability(svc, await flagMap(tx), await readSetting<License[]>(tx, "company.licenses", []));
@@ -190,7 +195,19 @@ export async function submitIntake(_: ActionState, fd: FormData): Promise<Action
   if (fd.get("confirm") !== "on") return { error: "أكّد صحة البيانات قبل الإرسال.", fieldErrors: { confirm: "أكّد صحة البيانات قبل الإرسال." } };
   const raw = parseAnswers(fd);
   let ok = false;
+  let already = false;
+  let engine = false;
   const res = await userAction(async (c) => {
+    // the request row is locked for the whole submission: a second submission of the same draft (double click,
+    // retried request, second tab) waits here, then finds it already submitted and opens it — nothing is duplicated
+    await c.tx.execute(sql`select 1 from service_requests where id = ${id} for update`);
+    const rc0 = await loadRequestCtx(c.tx, c.auth, id, "client");
+    if (rc0.req.status !== "draft") {
+      if (!rc0.isRequester && !rc0.memberCreate) throw new ForbiddenError("لا تملك صلاحية تعديل هذا الطلب.");
+      if (rc0.req.status === "cancelled") throw new UserError("حُذفت هذه المسودة، فلا تُرسل.");
+      already = true;
+      return;
+    }
     const rc = await editableDraft(c, id);
     const out = await submitDraft(c, rc, raw);
     if (!out.ok) {
@@ -206,8 +223,12 @@ export async function submitIntake(_: ActionState, fd: FormData): Promise<Action
       };
     }
     ok = true;
+    engine = !!out.engine;
   }, { revalidate: [...reval(id), "/admin/requests"] });
+  if (already && !res.error) redirect(`/app/requests/${id}?already=1`);
   if (!ok) return res;
+  // the processing starts now, after the response, in this process — and the independent worker picks it up anyway
+  if (engine) after(() => kick());
   redirect(`/app/requests/${id}?created=1`);
 }
 

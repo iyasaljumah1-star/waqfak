@@ -169,7 +169,9 @@ export async function computeAndPersist(tx: Tx, assessmentId: string, actor: { u
     }
   }
 
-  const newStatus = a.kind === "deep" ? (a.reviewedAt ? "published" : "under_review") : "completed";
+  // Owner's decision of 2026-11-01 (item 1): the final result of every assessment, quick or deep, is withheld until the
+  // system administrator approves it; until then it waits «under review» (a recomputation keeps an approval given).
+  const newStatus = a.reviewedAt ? "published" : "under_review";
   const respondentRole = typeof answers.P12?.value === "string" ? (answers.P12.value as string) : a.respondentRole;
   await tx.update(assessments).set({ status: newStatus, completedAt: a.completedAt ?? new Date(), ruleSetVersion: maxVersion, respondentRole, currentAxis: "done" }).where(eq(assessments.id, a.id));
 

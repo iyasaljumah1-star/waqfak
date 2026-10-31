@@ -2,7 +2,7 @@ import "dotenv/config";
 import { mkdirSync } from "node:fs";
 import { Client } from "pg";
 import { expect, test, type Browser, type Page } from "@playwright/test";
-import { demo, loginAs, signup, passWaqfData } from "./helpers";
+import { demo, loginAs, signup, passWaqfData, INTAKE_SUBMIT } from "./helpers";
 
 /**
  * Corporate nazara (Waqfak as legal-entity nazir) and account administration, end to end:
@@ -117,7 +117,7 @@ test.describe.serial("corporate nazara", () => {
     await expect(page.getByTestId("slot-svc_waqf_deed").getByText("أُرفق")).toBeVisible({ timeout: 30_000 });
     await page.getByRole("button", { name: "التالي" }).click();
     await page.getByLabel(/أقر بأن البيانات والمستندات/).check();
-    await page.getByRole("button", { name: "أرسل الطلب" }).click();
+    await page.getByRole("button", { name: INTAKE_SUBMIT }).click();
     await page.waitForURL(/\/app\/requests\/[0-9a-f-]{36}\?created=1/, { timeout: 30_000 });
     const [e] = await sql("select status, request_id from nazara_engagements where waqf_id=$1", [C()]);
     expect(e.status).toBe("intake");

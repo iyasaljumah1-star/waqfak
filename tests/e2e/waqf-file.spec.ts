@@ -1,6 +1,6 @@
 import { expect as baseExpect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
-import { demo, loginAs, uniquePhone, passWaqfData } from "./helpers";
+import { demo, loginAs, uniquePhone, passWaqfData, INTAKE_SUBMIT } from "./helpers";
 
 /** Same flow as helpers.signup, with waits sized for a busy dev server (the shared helper uses 5s URL waits). */
 async function signupSlow(page: Page, name: string) {
@@ -148,7 +148,7 @@ test.describe("waqf file & establish wizard", () => {
     await expect(page.getByTestId("slot-ownership").getByText("أُرفق")).toBeVisible({ timeout: 30_000 });
     await page.getByRole("button", { name: "التالي" }).click();
     await page.getByLabel(/أقر بأن البيانات والمستندات/).check();
-    await page.getByRole("button", { name: "أرسل الطلب" }).click();
+    await page.getByRole("button", { name: INTAKE_SUBMIT }).click();
     await page.waitForURL(/\/app\/requests\/[0-9a-f-]{36}\?created=1/);
   });
 

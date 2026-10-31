@@ -210,7 +210,7 @@ export type AssessmentListItem = {
   startedAt: Date; completedAt: Date | null; reviewedAt: Date | null; overallScore: number | null; resultStatus: string | null; maturityLevel: string | null; userId: string | null;
 };
 
-async function listWhere(tx: Tx, where: ReturnType<typeof and>) {
+async function listWhere(tx: Tx, where: ReturnType<typeof and>, reveal = false) {
   const rows = await tx
     .select({
       a: assessments, waqfName: waqfs.name, overall: assessmentResults.overallScore, rstatus: assessmentResults.status, maturity: assessmentResults.maturityLevel,
@@ -221,11 +221,15 @@ async function listWhere(tx: Tx, where: ReturnType<typeof and>) {
     .where(where)
     .orderBy(desc(assessments.startedAt))
     .limit(200);
-  return rows.map<AssessmentListItem>((r) => ({
-    id: r.a.id, number: assessmentNumber(r.a.id), kind: r.a.kind, status: r.a.status, waqfId: r.a.waqfId, waqfName: r.waqfName, waqfLabel: r.a.waqfLabel,
-    startedAt: r.a.startedAt, completedAt: r.a.completedAt, reviewedAt: r.a.reviewedAt, overallScore: r.overall === null ? null : Number(r.overall),
-    resultStatus: r.rstatus, maturityLevel: r.maturity, userId: r.a.userId,
-  }));
+  // client lists show a score only once the result is approved; the reviewers' queue shows it
+  return rows.map<AssessmentListItem>((r) => {
+    const shown = reveal || r.a.status === "published";
+    return {
+      id: r.a.id, number: assessmentNumber(r.a.id), kind: r.a.kind, status: r.a.status, waqfId: r.a.waqfId, waqfName: r.waqfName, waqfLabel: r.a.waqfLabel,
+      startedAt: r.a.startedAt, completedAt: r.a.completedAt, reviewedAt: r.a.reviewedAt, overallScore: shown && r.overall !== null ? Number(r.overall) : null,
+      resultStatus: shown ? r.rstatus : null, maturityLevel: shown ? r.maturity : null, userId: r.a.userId,
+    };
+  });
 }
 
 /** My assessments (as respondent) plus those of waqfs where I hold assessment.view. */
@@ -240,7 +244,7 @@ export async function listWaqfAssessments(tx: Tx, waqfId: string) {
 }
 
 export async function listReviewQueue(tx: Tx) {
-  return listWhere(tx, and(eq(assessments.kind, "deep"), inArray(assessments.status, ["under_review", "published", "completed"])));
+  return listWhere(tx, and(inArray(assessments.status, ["under_review", "published", "completed"])), true);
 }
 
 export async function listShares(tx: Tx, assessmentId: string) {

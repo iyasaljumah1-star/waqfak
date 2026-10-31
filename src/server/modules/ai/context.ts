@@ -1,5 +1,5 @@
 import "server-only";
-import { and, desc, eq, inArray, isNull } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import type { Tx } from "@/server/db";
 import { assessmentResults, assessments } from "@/server/db/schema";
 import type { Auth, WaqfAccess } from "@/server/authz/context";
@@ -82,7 +82,7 @@ export async function answerAssessment(tx: Tx, access: WaqfAccess): Promise<Cont
     .select({ a: assessments })
     .from(assessments)
     .innerJoin(assessmentResults, eq(assessmentResults.assessmentId, assessments.id))
-    .where(and(eq(assessments.waqfId, id), isNull(assessments.supersededBy), inArray(assessments.status, ["completed", "published", "under_review"])))
+    .where(and(eq(assessments.waqfId, id), isNull(assessments.supersededBy), eq(assessments.status, "published")))
     .orderBy(desc(assessmentResults.computedAt))
     .limit(1);
   if (!row) {

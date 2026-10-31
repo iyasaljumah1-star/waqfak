@@ -11,6 +11,8 @@ export type ResultPageData = {
 
 /** Loads the result bundle plus the viewer-specific extras (share links, waqfs for claiming). */
 export async function resultPageData(v: Viewer): Promise<ResultPageData | null> {
+  // nothing of the result before its approval, whatever page asks (the page shows the waiting notice instead)
+  if (!v.resultVisible) return null;
   const data = await withContext(v.db, async (tx) => {
     const bundle = await loadResultBundle(tx, v.row);
     if (!bundle) return null;

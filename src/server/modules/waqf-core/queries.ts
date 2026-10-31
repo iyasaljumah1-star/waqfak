@@ -39,7 +39,7 @@ export async function waqfOverview(auth: Auth, waqfId: string) {
         })
         .from(assessmentResults)
         .innerJoin(assessments, eq(assessments.id, assessmentResults.assessmentId))
-        .where(and(eq(assessments.waqfId, waqfId), isNull(assessments.supersededBy)))
+        .where(and(eq(assessments.waqfId, waqfId), isNull(assessments.supersededBy), eq(assessments.status, "published")))
         .orderBy(desc(assessmentResults.computedAt))
         .limit(1),
     ),

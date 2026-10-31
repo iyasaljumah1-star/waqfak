@@ -1,4 +1,5 @@
 export const SETTINGS: [string, unknown, string][] = [
+  ["engine.services", [], "رموز الخدمات التي يعالج المحرك طلباتها الجديدة (فارغة: لا خدمة؛ الطلبات تبقى على مسار الفريق)"],
   ["company.profile", {
     nameAr: "شركة وقفك", nameEn: "Waqfak", legalForm: "شركة ذات مسؤولية محدودة", crNumber: "", unifiedNumber: "", vatRegistration: "", vatNumber: "",
     nationalAddress: "", signatoryName: "", signatoryTitle: "", bankName: "", iban: "", phone: "", email: "", website: "waqfak.sa",
@@ -27,6 +28,8 @@ export const FEATURE_FLAGS = [
   { key: "payments.live", enabled: false, description: "الدفع الإلكتروني الحي", reason: "بانتظار حساب بوابة دفع مرخصة؛ يعمل الآن في وضع تجريبي" },
   { key: "einvoice.zatca", enabled: false, description: "الربط مع الفوترة الإلكترونية", reason: "بانتظار بيانات التسجيل لدى هيئة الزكاة والضريبة والجمارك" },
   { key: "ai.external_llm", enabled: false, description: "نموذج لغوي خارجي للمساعد", reason: "بانتظار قرار الاستضافة ومتطلبات النقل في نظام حماية البيانات الشخصية؛ يعمل الآن محرك داخلي" },
+  { key: "engine.enabled", enabled: false, description: "محرك المعالجة الآلية للطلبات (يُفعَّل لكل خدمة من إعداد engine.services)", reason: "نواة المعالجة قيد البناء والاختبار ببيانات تجريبية؛ لا تُعالج طلبات حقيقية قبل موافقة المالك" },
+  { key: "engine.llm_real_data", enabled: false, description: "إرسال بيانات الطلبات الحقيقية إلى النموذج اللغوي", reason: "لا تُرسل بيانات أوقاف أو مستندات عملاء حقيقية قبل فحص الخصوصية وموافقة المالك الصريحة؛ يُستخدم النموذج على البيانات التجريبية فقط" },
   { key: "waqf.temporary_waqf", enabled: false, description: "خيار الوقف المؤقت في معالج التأسيس", reason: "بانتظار رأي شرعي ونظامي معتمد" },
   { key: "content.english", enabled: false, description: "النسخة الإنجليزية", reason: "المرحلة الثالثة" },
   { key: "unknown_waqf.reporting", enabled: false, description: "خدمة الأوقاف المجهولة", reason: "القواعد ما زالت مشروعًا" },

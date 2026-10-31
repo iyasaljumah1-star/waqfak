@@ -18,6 +18,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const v = await resolveAssessment(id);
   if (!v) return new Response("التقرير غير موجود أو لا تملك صلاحية الوصول إليه.", { status: 404, headers: { "content-type": "text/plain; charset=utf-8" } });
   if (v.row.status === "draft") return new Response("أكمل التقييم أولًا ثم نزّل التقرير.", { status: 409, headers: { "content-type": "text/plain; charset=utf-8" } });
+  if (!v.resultVisible) return new Response("النتيجة قيد المراجعة والاعتماد، وتُتاح بعد اعتمادها.", { status: 409, headers: { "content-type": "text/plain; charset=utf-8" } });
   const { ip, userAgent } = await requestInfo();
   const bundle = await withContext(v.db, async (tx) => {
     const b = await loadResultBundle(tx, v.row);

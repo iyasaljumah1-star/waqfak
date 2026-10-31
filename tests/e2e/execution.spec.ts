@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import pg from "pg";
-import { demo, loginAs, passWaqfData } from "./helpers";
+import { demo, loginAs, passWaqfData, INTAKE_SUBMIT } from "./helpers";
 
 /**
  * Execution engine (phase 3), synthetic data only:
@@ -78,7 +78,7 @@ async function finishIntake(page: Page) {
     await page.waitForTimeout(400); // the wizard saves the step before moving on
   }
   await confirm.check();
-  await page.getByRole("button", { name: "أرسل الطلب" }).click();
+  await page.getByRole("button", { name: INTAKE_SUBMIT }).click();
   await page.waitForURL(/\?created=1/, { timeout: 30_000 });
 }
 const yesNo = (p: Page, label: RegExp, v: "نعم" | "لا") => p.getByRole("group", { name: label }).getByRole("radio", { name: v }).check();

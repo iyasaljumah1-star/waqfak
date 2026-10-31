@@ -27,6 +27,24 @@ async function signedIn(page: Page, key: string) {
  *     (lands on /app/requests/new with the service prefilled), and downloads the PDF report.
  */
 
+/**
+ * Results are withheld until the final approval (owner's decision of 2026-11-01, item 1): the owner sees a receipt, the
+ * report is refused, then the system administrator approves and the result appears.
+ */
+async function expectPendingThenApprove(page: Page, id: string) {
+  await expect(page.getByTestId("assessment-pending")).toBeVisible();
+  await expect(page.getByTestId("assessment-pending")).toContainText("تم استلام تقييمك بنجاح");
+  await expect(page.getByRole("img", { name: /الدرجة الكلية/ })).toHaveCount(0);
+  expect((await page.request.get(`/api/reports/assessment/${id}`)).status()).toBe(409);
+  const admin = await (await page.context().browser()!.newContext({ ...test.info().project.use })).newPage();
+  await signedIn(admin, "admin");
+  await admin.goto(`/admin/assessments/${id}`);
+  await admin.getByRole("button", { name: "اعتمد المراجعة وأبلغ العميل" }).click();
+  await expect(admin.getByText(/اعتمدنا المراجعة/)).toBeVisible();
+  await admin.context().close();
+  await page.reload();
+}
+
 const shot = (page: Page, name: string) =>
   page.screenshot({ path: `test-results/assessment-${name}-${test.info().project.name}.png`, fullPage: true });
 
@@ -119,6 +137,7 @@ test("anonymous visitor completes a quick assessment and sees the result", async
   // "yes" (index 0) for most → strong; "no" for every third question → some weaknesses
   await completeRunner(page, (i) => (i % 3 === 2 ? 1 : 0));
   await page.waitForURL(new RegExp(`/assessment/${id}/result$`));
+  await expectPendingThenApprove(page, id);
 
   await expect(page.getByRole("heading", { name: "نتيجة التقييم الوقفي" })).toBeVisible();
   await expect(page.getByRole("img", { name: /الدرجة الكلية \d+ من 100/ })).toBeVisible();
@@ -157,6 +176,7 @@ test("nazir assesses waqf A, converts a recommendation into a request and downlo
   // mostly negative answers → critical flags and many recommendations
   await completeRunner(page, (i, count) => (i % 4 === 0 ? 0 : count - 1));
   await page.waitForURL(new RegExp(`/app/assessments/${id}$`));
+  await expectPendingThenApprove(page, id);
 
   await expect(page.getByRole("heading", { name: "نتيجة التقييم الوقفي" })).toBeVisible();
   await expect(page.getByRole("heading", { name: /علامات حرجة/ })).toBeVisible();
@@ -206,12 +226,13 @@ test("staff reviews a deep assessment: evidence, notes, dismissal, approval", as
   const id = page.url().split("/").pop()!;
   await completeRunner(page, (i, count) => (i % 2 ? count - 1 : 0));
   await page.waitForURL(new RegExp(`/app/assessments/${id}$`));
-  await expect(page.getByText("بانتظار مراجعة مختص")).toBeVisible();
+  await expect(page.getByTestId("assessment-pending")).toBeVisible(); // nothing of the result before the approval
+  await expect(page.getByRole("img", { name: /الدرجة الكلية/ })).toHaveCount(0);
 
   const staff = await (await browser.newContext({ ...test.info().project.use })).newPage();
   await signedIn(staff, "admin");
   await staff.goto("/admin/assessments");
-  await expect(staff.getByRole("heading", { name: "التقييمات المعمّقة" })).toBeVisible();
+  await expect(staff.getByRole("heading", { name: "مراجعة التقييمات واعتمادها" })).toBeVisible();
   await staff.getByRole("link", { name: id.slice(0, 8).toUpperCase(), exact: false }).click();
   await staff.waitForURL(new RegExp(`/admin/assessments/${id}$`));
   await shot(staff, "admin-review");

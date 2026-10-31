@@ -4,6 +4,8 @@ import { notFound, redirect } from "next/navigation";
 import { resolveAssessment } from "@/server/modules/assessment/access";
 import { resultPageData } from "@/server/modules/assessment/page-data";
 import { ResultView } from "@/components/assessment/result-view";
+import { AssessmentPending } from "@/components/assessment/pending";
+import { assessmentNumber } from "@/server/modules/assessment/queries";
 
 export const metadata: Metadata = { title: "نتيجة التقييم الوقفي", robots: { index: false } };
 
@@ -12,6 +14,7 @@ export default async function PublicResult({ params }: { params: Promise<{ id: s
   const v = await resolveAssessment(id);
   if (!v) notFound();
   if (v.row.status === "draft") redirect(`/assessment/${id}`);
+  if (!v.resultVisible) return <div className="bg-stone"><div className="mx-auto max-w-6xl px-4 py-6 md:py-10"><AssessmentPending number={assessmentNumber(v.row.id)} signedIn={!!v.auth} /></div></div>;
   const data = await resultPageData(v);
   if (!data) notFound();
   return (

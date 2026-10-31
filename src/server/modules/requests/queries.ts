@@ -27,6 +27,7 @@ const listCols = {
   id: serviceRequests.id,
   number: serviceRequests.number,
   status: serviceRequests.status,
+  processingMode: serviceRequests.processingMode,
   priority: serviceRequests.priority,
   waqfId: serviceRequests.waqfId,
   waqfName: waqfs.name,
@@ -148,6 +149,9 @@ export async function assignableStaff(auth: Auth) {
 }
 
 /** Full request view. `side` decides isolation and what is visible (internal notes/items and unsent drafts are staff-only). */
+/** Events written before the «internal» flag existed that speak of an output being prepared or approved internally. */
+const LEGACY_INTERNAL_EVENT = /^(رُفع مخرج:|اعتماد ذاتي للمخرج|أُرسلت مسودة «)/;
+
 export async function requestDetail(auth: Auth, id: string, side: "client" | "staff") {
   return read(auth, async (tx) => {
     let rc;
@@ -160,7 +164,10 @@ export async function requestDetail(auth: Auth, id: string, side: "client" | "st
     const staff = side === "staff";
     const today = todayISO();
     const stages = await tx.select().from(requestStages).where(eq(requestStages.requestId, id)).orderBy(asc(requestStages.position));
-    const events = await tx.select().from(requestEvents).where(eq(requestEvents.requestId, id)).orderBy(desc(requestEvents.at));
+    // The client reads only the request's own events: team-side ones are internal (row-level policy), and events
+    // written before that flag existed that speak of output preparation are left out here as well.
+    const allEvents = await tx.select().from(requestEvents).where(eq(requestEvents.requestId, id)).orderBy(desc(requestEvents.at));
+    const events = staff ? allEvents : allEvents.filter((e) => !e.internal && !LEGACY_INTERNAL_EVENT.test(e.note ?? ""));
     const notes = await tx
       .select()
       .from(requestNotes)
@@ -170,7 +177,9 @@ export async function requestDetail(auth: Auth, id: string, side: "client" | "st
     // The client sees the work once it is released after quality review (or approved), never while in preparation.
     const released = ["awaiting_client_approval", "completed", "closed"].includes(rc.req.status);
     const dels = staff ? allDels : allDels.filter((x) => x.status === "approved" || x.status === "revision_requested" || (released && x.status !== "draft" && !x.cycleId) || !!x.releasedAt);
-    const docs = await tx.select({ id: documents.id, title: documents.title, confidentiality: documents.confidentiality, docType: documents.docType }).from(documents).where(and(eq(documents.requestId, id), isNull(documents.archivedAt)));
+    const allDocs = await tx.select({ id: documents.id, title: documents.title, confidentiality: documents.confidentiality, docType: documents.docType, approvalStatus: documents.approvalStatus, ownerUserId: documents.ownerUserId }).from(documents).where(and(eq(documents.requestId, id), isNull(documents.archivedAt)));
+    // a deliverable file not released yet is not even named to the client (its title would announce the output)
+    const docs = staff ? allDocs : allDocs.filter((x) => !(x.docType === "deliverable" && x.approvalStatus !== "approved" && x.ownerUserId !== auth.user.id));
     const cs = await contractState(tx, id);
 
     // Deficiencies register
@@ -390,12 +399,13 @@ export async function homeRequests(auth: Auth): Promise<HomeRequest[]> {
     const [items, outs] = await Promise.all([
       tx.select({ r: requestItems.requestId, status: requestItems.status, visibility: requestItems.visibility }).from(requestItems).where(inArray(requestItems.requestId, ids)),
       // output states only (never notes, versions or reviewers), for requests already visible to me above
-      asSystem(tx, () => tx.select({ r: outputs.requestId, status: outputs.status, deliverableId: outputs.deliverableId }).from(outputs).where(inArray(outputs.requestId, ids))),
+      asSystem(tx, () => tx.select({ r: outputs.requestId, status: outputs.status, documentId: outputs.documentId }).from(outputs).where(inArray(outputs.requestId, ids))),
     ]);
     return rows.map((r) => {
       const open = items.filter((i) => i.r === r.id && i.visibility === "client" && ["open", "correction_requested"].includes(i.status)).length;
-      const o = outs.filter((x) => x.r === r.id).map((x) => ({ status: x.status, delivered: !!x.deliverableId }));
-      const p = clientPhase({ status: r.status, assigned: !!r.assignedToUserId, data: null, openClientItems: open, outputs: o });
+      // «delivered» = released to the client (its file exists), not approved internally
+      const o = outs.filter((x) => x.r === r.id).map((x) => ({ status: x.status, delivered: !!x.documentId }));
+      const p = clientPhase({ status: r.status, assigned: !!r.assignedToUserId, data: null, openClientItems: open, outputs: o, engine: r.processingMode === "engine" });
       return {
         ...r, openClientItems: open, outputs: { total: o.length, delivered: o.filter((x) => x.delivered).length },
         phase: { label: p.label, next: p.next, owner: p.owner }, open: !["completed", "closed", "cancelled", "rejected"].includes(r.status),

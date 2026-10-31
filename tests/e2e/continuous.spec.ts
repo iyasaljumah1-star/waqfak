@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import pg from "pg";
-import { demo, loginAs, passWaqfData } from "./helpers";
+import { demo, loginAs, passWaqfData, INTAKE_SUBMIT } from "./helpers";
 
 /**
  * Continuous services (decision of 15 Oct 2026), synthetic data only:
@@ -133,7 +133,7 @@ test.describe.serial("continuous services", () => {
     const confirm = client.getByLabel(/أقر بأن البيانات والمستندات/);
     await advance(client, () => confirm.isVisible());
     await confirm.check();
-    await client.getByRole("button", { name: "أرسل الطلب" }).click();
+    await client.getByRole("button", { name: INTAKE_SUBMIT }).click();
     await client.waitForURL(/\?created=1/, { timeout: 30_000 });
 
     // 2) the manager starts it (operational agreement) and completes onboarding
@@ -377,7 +377,7 @@ test.describe.serial("continuous services", () => {
     const confirm = chair.getByLabel(/أقر بأن البيانات والمستندات/);
     await advance(chair, () => confirm.isVisible());
     await confirm.check();
-    await chair.getByRole("button", { name: "أرسل الطلب" }).click();
+    await chair.getByRole("button", { name: INTAKE_SUBMIT }).click();
     await chair.waitForURL(/\?created=1/, { timeout: 30_000 });
 
     const admin = await as(browser, "admin");

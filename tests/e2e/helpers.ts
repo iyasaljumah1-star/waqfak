@@ -1,5 +1,8 @@
 import { expect, type Page } from "@playwright/test";
 
+/** The intake form's submit button: its wording depends on the service (src/lib/submit-label.ts, unit-tested). */
+export const INTAKE_SUBMIT = /^(إرسال الطلب|طلب النتيجة|إرسال للاعتماد)$/;
+
 export const uniquePhone = () => `05${String(Date.now()).slice(-8)}`;
 
 /** Signs up a fresh user through the real UI (OTP shown on screen in demo mode). */

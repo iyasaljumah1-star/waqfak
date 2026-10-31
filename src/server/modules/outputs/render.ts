@@ -25,7 +25,7 @@ function block(b: OutputBlock, final: boolean): string {
       return `<${b.ordered ? "ol" : "ul"}>${b.items.map((i) => `<li>${esc(i.text)}${final ? "" : ` ${prov(i.prov)}`}</li>`).join("")}</${b.ordered ? "ol" : "ul"}>`;
     case "specialist":
       return b.text.trim()
-        ? `<p style="white-space:pre-line">${esc(b.text)}</p>`
+        ? `<p style="white-space:pre-line">${esc(b.text)}</p>${b.refs?.length ? `<p class="small muted">المراجع: ${esc(b.refs.map((r) => `[${r.n}] ${r.refCode} — ${r.locator}`).join("؛ "))}</p>` : ""}`
         : `<div class="box critical">لم يُكتب بعد: ${esc(b.prompt)}</div>`;
     case "clause":
       return `<div class="clause"><p><strong>${esc(b.n)}. ${esc(b.title)}</strong></p><p style="white-space:pre-line">${esc(b.text)}</p>${final ? "" : `<p class="small muted">${prov(b.text === b.generated ? b.prov : "specialist")}${b.refs?.length ? ` — ${esc(b.refs.map((r) => { const c = citationOf(r); return c ? `${c.refCode} ${c.location}` : r; }).join("؛ "))}` : ""}</p>`}</div>`;

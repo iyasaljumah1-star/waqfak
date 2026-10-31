@@ -30,7 +30,8 @@ export default async function SharedReport({ params }: { params: Promise<{ token
           .limit(1);
         if (!s?.assessmentId) return null;
         const [row] = await tx.select().from(assessments).where(eq(assessments.id, s.assessmentId)).limit(1);
-        if (!row || row.status === "draft") return null;
+        // a shared link shows only an approved result (owner's decision of 2026-11-01)
+        if (!row || row.status !== "published") return null;
         const bundle = await loadResultBundle(tx, row);
         if (!bundle) return null;
         await tx.update(reportShares).set({ views: sql`${reportShares.views} + 1` }).where(eq(reportShares.id, s.share.id));

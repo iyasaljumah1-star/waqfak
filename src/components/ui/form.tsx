@@ -9,7 +9,8 @@ import { buttonClass } from "./index";
 export function SubmitButton({ children, pendingText = "جارٍ الحفظ…", variant = "primary", size = "md", className, ...p }: ComponentProps<"button"> & { pendingText?: string; variant?: "primary" | "secondary" | "ghost" | "danger" | "seal"; size?: "sm" | "md" | "lg" }) {
   const { pending } = useFormStatus();
   return (
-    <button type="submit" disabled={pending || p.disabled} aria-busy={pending} className={buttonClass(variant, size, className)} {...p}>
+    // the pending state always disables the button (a second click while the first is in flight sends nothing)
+    <button type="submit" {...p} disabled={pending || p.disabled} aria-busy={pending} className={buttonClass(variant, size, className)}>
       {pending ? <Loader2 aria-hidden className="size-4 animate-spin" /> : null}
       {pending ? pendingText : children}
     </button>

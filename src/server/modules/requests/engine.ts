@@ -129,8 +129,9 @@ export async function currentPlan(tx: Tx, requestId: string, defs: RequestCtx["s
 }
 
 /** Writes a request event (and nothing else). */
-export async function logEvent(tx: Tx, r: { id: string; waqfId: string | null }, actorUserId: string, note: string, from?: string | null, to?: string | null) {
-  await tx.insert(requestEvents).values({ requestId: r.id, waqfId: r.waqfId, actorUserId, note, fromStatus: from ?? null, toStatus: to ?? null });
+/** Records an event in the request's log. `internal`: a team-side event the client never reads (row-level policy). */
+export async function logEvent(tx: Tx, r: { id: string; waqfId: string | null }, actorUserId: string, note: string, from?: string | null, to?: string | null, opts: { internal?: boolean } = {}) {
+  await tx.insert(requestEvents).values({ requestId: r.id, waqfId: r.waqfId, actorUserId, note, fromStatus: from ?? null, toStatus: to ?? null, internal: !!opts.internal });
 }
 
 export async function opsManagerIds(tx: Tx): Promise<string[]> {
@@ -162,6 +163,10 @@ export async function transition(c: ActCtx, rc: RequestCtx, input: TransitionInp
   const to = input.to;
   const t = findTransition(from, to);
   if (!t) throw new UserError(`لا يمكن نقل الطلب من «${STATUS_LABEL[from]}» إلى «${STATUS_LABEL[to]}».`);
+  // an engine-processed request moves by the engine and the final approval only: its result never goes to the client
+  // through the team's quality review or the client's approval step (owner's order of 2026-11-01)
+  if (rc.req.processingMode === "engine" && (from === "quality_review" || to === "quality_review" || to === "awaiting_client_approval" || to === "completed"))
+    throw new UserError("هذا طلب معالجة آلية: نتيجته تُعتمد من شاشة المراجعة والاعتماد لدى مدير النظام.");
   const allowed = input.system || availableTransitions(from, rc.actors, { resumeTo: rc.resumeTo }).some((x) => x.to === to);
   const outs = await outputGate(tx, rc.req.id, { excludeCycles: true });
   // Quality review by someone who prepared the work: allowed (and recorded) for a holder of direct approval, or for an

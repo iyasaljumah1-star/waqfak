@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import pg from "pg";
-import { demo, loginAs, passWaqfData } from "./helpers";
+import { demo, loginAs, passWaqfData, INTAKE_SUBMIT } from "./helpers";
 
 /**
  * Output quality order — W01 (case of OUT-000004: the client answered «no waqf after death» while the bequests table
@@ -204,7 +204,7 @@ test.describe.serial("output quality: conflicts, checks, deficiency list, stages
       await client.waitForTimeout(400);
     }
     await confirm.check();
-    await client.getByRole("button", { name: "أرسل الطلب" }).click();
+    await client.getByRole("button", { name: INTAKE_SUBMIT }).click();
     await client.waitForURL(/\?created=1/, { timeout: 30_000 });
 
     // intake → work started; the request is assigned to emp1 (test setup), who prepares the will

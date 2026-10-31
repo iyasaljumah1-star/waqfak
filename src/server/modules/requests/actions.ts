@@ -220,8 +220,13 @@ export async function addDeliverable(_: ActionState, fd: FormData): Promise<Acti
     let documentId: string | null = null;
     if (d.documentId) {
       if (!uuid.safeParse(d.documentId).success) throw new UserError("اختر وثيقة صحيحة.");
-      const [doc] = await c.tx.select({ id: documents.id }).from(documents).where(and(eq(documents.id, d.documentId), eq(documents.requestId, d.id))).limit(1);
+      const [doc] = await c.tx.select({ id: documents.id, docType: documents.docType, approvalStatus: documents.approvalStatus }).from(documents).where(and(eq(documents.id, d.documentId), eq(documents.requestId, d.id))).limit(1);
       if (!doc) throw new UserError("الوثيقة ليست من وثائق هذا الطلب.");
+      // Only a file uploaded as the request's deliverable, still internal, may become a delivery: any other document of
+      // the request may already be visible to the client, and nothing of an output is shown before its release.
+      if (doc.docType !== "deliverable") throw new UserError("اختر ملفًا رُفع بنوع «مخرج» من نموذج رفع المخرج أعلاه؛ مستندات الطلب الأخرى قد يراها العميل.");
+      if (doc.approvalStatus === "approved") throw new UserError("هذا الملف أُتيح مسبقًا، فلا يُسجَّل مخرجًا جديدًا. ارفع الملف الجديد بنوع «مخرج».");
+      if (doc.approvalStatus !== "in_review") await c.tx.update(documents).set({ approvalStatus: "in_review" }).where(eq(documents.id, doc.id));
       documentId = doc.id;
     }
     const prev = await c.tx.select({ v: deliverables.version, title: deliverables.title }).from(deliverables).where(eq(deliverables.requestId, d.id));
@@ -229,7 +234,7 @@ export async function addDeliverable(_: ActionState, fd: FormData): Promise<Acti
     const [row] = await c.tx.insert(deliverables).values({
       requestId: d.id, waqfId: rc.req.waqfId, title: d.title, documentId, version, status: "submitted", signedBy: d.signedBy || null, submittedAt: new Date(), createdBy: c.auth.user.id,
     }).returning({ id: deliverables.id });
-    await logEvent(c.tx, rc.req, c.auth.user.id, `رُفع مخرج: ${d.title} (إصدار ${version})`);
+    await logEvent(c.tx, rc.req, c.auth.user.id, `رُفع مخرج: ${d.title} (إصدار ${version})`, null, null, { internal: true });
     await audit(c.tx, { actorUserId: c.auth.user.id, action: "requests.deliverable", entityType: "deliverable", entityId: row.id, waqfId: rc.req.waqfId, ip: c.ip, userAgent: c.userAgent, after: { title: d.title, version, signedBy: d.signedBy || null } });
     return { ok: true, message: "أُضيف المخرج." };
   }, { revalidate: revalidateReq(d.id) });

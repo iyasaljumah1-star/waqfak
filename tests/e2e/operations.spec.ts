@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import pg from "pg";
-import { demo, loginAs, passWaqfData } from "./helpers";
+import { demo, loginAs, passWaqfData, INTAKE_SUBMIT } from "./helpers";
 
 /**
  * Service flows as one operating system (docs/SERVICE-FLOWS-AUDIT.md):
@@ -90,7 +90,7 @@ async function submitRequest(page: Page, service: string, waqf: string, answers:
   const confirm = page.getByLabel(/أقر بأن البيانات والمستندات/);
   for (let i = 0; i < 5 && !(await confirm.isVisible()); i++) await page.getByRole("button", { name: "التالي" }).click();
   await confirm.check();
-  await page.getByRole("button", { name: "أرسل الطلب" }).click();
+  await page.getByRole("button", { name: INTAKE_SUBMIT }).click();
   await page.waitForURL(/\?created=1/, { timeout: 30_000 });
   return id;
 }

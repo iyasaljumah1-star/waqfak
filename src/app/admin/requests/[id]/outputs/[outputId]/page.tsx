@@ -7,7 +7,7 @@ import { Checkbox, Field, Input, Textarea } from "@/components/ui/form";
 import { ActionForm } from "@/components/requests/forms";
 import { fmtDateTime } from "@/lib/utils";
 import { requireStaff } from "@/server/authz/context";
-import { approveOutput, generateOutput, returnOutput, reviseOutput, saveOutputEdits, shareDraftForPreview, submitOutput } from "@/server/modules/outputs/actions";
+import { approveOutput, generateOutput, returnOutput, reviseOutput, saveOutputEdits, submitOutput } from "@/server/modules/outputs/actions";
 import { approvalCheck, ORIGIN_LABEL, OUTPUT_STATUS_LABEL, OUTPUT_STATUS_TONE } from "@/server/modules/outputs/pure";
 import { separationFor } from "@/server/modules/approvals/policy";
 import { SectionView } from "@/components/outputs/section-view";
@@ -192,7 +192,13 @@ export default async function OutputPage({ params, searchParams }: { params: Pro
         <aside className="min-w-0 space-y-4">
           <Panel id="actions" title="الإجراءات">
             <div className="space-y-3">
-              {canDeliver && d.isCurrent && (o.status === "draft" || o.status === "returned") ? (
+              {rc.req.processingMode === "engine" ? (
+                <div className="space-y-2 text-[14px]" data-testid="engine-output-note">
+                  <p>هذا مخرج أعدّته المنصة آليًا. التعديل هنا محفوظ في سجل النسخ؛ أما إعادة التحقق والإحالة والاعتماد النهائي فمن شاشة المراجعة والاعتماد.</p>
+                  <Link href={`/admin/review/${id}`} className="font-medium text-ink underline">افتح شاشة المراجعة والاعتماد النهائي</Link>
+                </div>
+              ) : null}
+              {rc.req.processingMode !== "engine" && canDeliver && d.isCurrent && (o.status === "draft" || o.status === "returned") ? (
                 <>
                   {q.submitReasons.length ? (
                     <div data-testid="submit-blocked">
@@ -204,13 +210,9 @@ export default async function OutputPage({ params, searchParams }: { params: Pro
                   <ActionForm action={generateOutput} hidden={{ id, outputKey: o.outputKey }} submit="أعد التوليد من البيانات الحالية" size="sm" variant="secondary">
                     {current?.origin === "edited" ? <Checkbox name="confirm" label="أؤكد إعادة التوليد: تبقى النسخة الحالية في السجل، وتُنقل النصوص المكتوبة والبيانات المصححة إلى النسخة الجديدة." /> : null}
                   </ActionForm>
-                  <div className="border-t border-line pt-3" data-testid="share-preview">
-                    <ActionForm action={shareDraftForPreview} hidden={{ outputId: o.id, requestId: id }} submit="أرسل المسودة للعميل للاطلاع" size="sm" variant="secondary" />
-                    <p className="mt-1 text-[12px] text-muted">يصله نسخة العميل موسومة «للاطلاع — لم تُعتمد» مع بند لملاحظاته. لا تُعتمد المسودة بذلك.</p>
-                  </div>
                 </>
               ) : null}
-              {o.status === "in_review" && canReview ? (
+              {rc.req.processingMode !== "engine" && o.status === "in_review" && canReview ? (
                 <>
                   {approve?.ok && q.approveReasons.length ? (
                     <div data-testid="approve-blocked">
@@ -231,7 +233,7 @@ export default async function OutputPage({ params, searchParams }: { params: Pro
                   </ActionForm>
                 </>
               ) : null}
-              {o.status === "approved" && canDeliver && rc.req.status === "in_progress" ? (
+              {rc.req.processingMode !== "engine" && o.status === "approved" && canDeliver && rc.req.status === "in_progress" ? (
                 <ActionForm action={reviseOutput} hidden={{ outputId: o.id, requestId: id }} submit="افتح مراجعة جديدة" size="sm" variant="secondary">
                   <p className="text-[13px] text-muted">تبقى النسخة المعتمدة وملفها كما هما في السجل، وتُفتح نسخة عمل جديدة تُراجع وتُعتمد من جديد.</p>
                   <Field label="سبب المراجعة" name="note"><Input name="note" maxLength={2000} /></Field>

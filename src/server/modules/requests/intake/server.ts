@@ -1,4 +1,5 @@
 import "server-only";
+import { engineEnabledFor, enqueueProcessing } from "@/server/engine/queue/queue";
 import { assetRowFromFile, boardRowFromFile } from "./file-rows";
 import { and, asc, eq, inArray, isNull, notInArray, or } from "drizzle-orm";
 import type { Tx } from "@/server/db";
@@ -134,19 +135,27 @@ export async function submitDraft(c: ActCtx, rc: RequestCtx, answersRaw: unknown
   const conflict = svc.conflictRule === "none" ? { result: "passed" as const, note: null } : evaluateConflict({ rule: svc.conflictRule, waqfakRole: rc.waqf?.waqfakRole ?? null, openServiceCodes: openCodes, hasWaqf: !!rc.waqf });
   const priority = ["low", "normal", "high", "urgent"].includes(String(answers.priority)) ? String(answers.priority) : "normal";
   const now = new Date();
-  await tx.update(serviceRequests).set({
+  // engine-processed services (flag «engine.enabled» + setting «engine.services»): fixed at submission, never changed
+  const engine = svc.code !== "N01" && conflict.result !== "blocked" && (await engineEnabledFor(tx, svc.code));
+  const updated = await tx.update(serviceRequests).set({
     status: "submitted", submittedAt: now, priority, details: summaryText(form, answers),
     intake: { ...intakeOf(rc.req), preferredContact: String(answers.preferredContact ?? "platform"), formVersion: form.version, answers, docs },
     intakeFormVersion: form.version, conflictCheck: conflict.result, conflictNote: conflict.note, updatedBy: auth.user.id,
-  }).where(and(eq(serviceRequests.id, rc.req.id), eq(serviceRequests.status, "draft")));
+    processingMode: engine ? "engine" : "manual",
+  }).where(and(eq(serviceRequests.id, rc.req.id), eq(serviceRequests.status, "draft"))).returning({ id: serviceRequests.id });
+  // the row is locked by the caller; this is the last line of defence against a second submission of the same draft
+  if (!updated.length) throw new UserError("أُرسل هذا الطلب مسبقًا.");
 
   const [wf] = await tx.select().from(workflowTemplates).where(eq(workflowTemplates.code, svc.workflowTemplateCode)).limit(1);
   await createStages(tx, rc.req.id, rc.req.waqfId, wf?.stages ?? []);
-  await logEvent(tx, rc.req, auth.user.id, conflict.result === "blocked" ? "أُرسل الطلب وأُحيل إلى مدير التشغيل لمراجعة الاستقلالية" : "أُرسل الطلب مكتمل البيانات والمستندات", "draft", "submitted");
+  await logEvent(tx, rc.req, auth.user.id, conflict.result === "blocked" ? "أُرسل الطلب وأُحيل إلى مدير التشغيل لمراجعة الاستقلالية" : engine ? "أُرسل الطلب مكتمل البيانات والمستندات، وبدأت معالجته" : "أُرسل الطلب مكتمل البيانات والمستندات", "draft", "submitted");
   if (rc.req.source === "recommendation" && rc.req.sourceRef)
     await tx.update(recommendations).set({ status: "converted", serviceRequestId: rc.req.id }).where(eq(recommendations.id, rc.req.sourceRef));
-  await ensureIntakeTask(tx, rc.req, auth.user.id);
-  await ensureGapTasks(tx, rc.req, svc.code, answers, auth.user.id);
+  // the engine does the intake and the gap follow-ups itself: no task is opened for a person to do them
+  if (!engine) {
+    await ensureIntakeTask(tx, rc.req, auth.user.id);
+    await ensureGapTasks(tx, rc.req, svc.code, answers, auth.user.id);
+  }
   if (svc.code === "N01" && rc.waqf) {
     // One open nazara file per waqf: the request opens it, or is linked to the file already open (never a duplicate).
     const eng = await openEngagementTx(tx, { waqfId: rc.waqf.id, requestId: rc.req.id, actorId: auth.user.id, ip: c.ip, userAgent: c.userAgent });
@@ -161,7 +170,11 @@ export async function submitDraft(c: ActCtx, rc: RequestCtx, answersRaw: unknown
     actorUserId: auth.user.id, action: "requests.submit", entityType: "service_request", entityId: rc.req.id, waqfId: rc.req.waqfId, ip: c.ip, userAgent: c.userAgent,
     before: { status: "draft" }, after: { number: rc.req.number, service: svc.code, priority, formVersion: form.version, conflictCheck: conflict.result, documents: Object.values(docs).flat().length },
   });
+  if (engine) {
+    await enqueueProcessing(tx, { requestId: rc.req.id, waqfId: rc.req.waqfId, reason: "إرسال الطلب", requestedBy: auth.user.id });
+    return { ok: true as const, engine: true };
+  }
   for (const opsId of await opsManagerIds(tx))
     await notify(opsId, "request.status", { number: rc.req.number, status: `طلب جديد بانتظار التوزيع — ${svc.nameAr}${conflict.result === "blocked" ? " (تعارض استقلال)" : ""}` }, { waqfId: rc.req.waqfId, link: `/admin/requests/${rc.req.id}`, tx });
-  return { ok: true as const };
+  return { ok: true as const, engine: false };
 }

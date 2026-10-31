@@ -34,6 +34,8 @@ export type Viewer = {
   canPlan: boolean;
   /** Signed-in user holding the anonymous cookie of an unclaimed assessment. */
   canClaim: boolean;
+  /** The result may be shown to this viewer: approved (published), or the viewer reviews it. */
+  resultVisible: boolean;
 };
 
 export async function setAnonCookie(id: string, token: string) {
@@ -71,7 +73,7 @@ export async function resolveAssessment(id: string, tx?: Tx): Promise<Viewer | n
 
   const isOwner = !!auth && row.userId === auth.user.id;
   const viaAnon = !!token && !!row.anonTokenHash && safeEqual(sha256(token), row.anonTokenHash);
-  const isReviewer = !!auth && auth.isStaff && auth.perms.has("staff.assessment_review") && row.kind === "deep" && row.status !== "draft";
+  const isReviewer = !!auth && auth.isStaff && (auth.perms.has("staff.assessment_review") || auth.perms.has("outputs.final_approve")) && row.status !== "draft";
   const waqfView = !!waqfAccess && !waqfAccess.isBeneficiaryOnly && waqfAccess.perms.has("assessment.view");
   const waqfRun = !!waqfAccess && waqfAccess.perms.has("assessment.run");
   const canView = isOwner || viaAnon || waqfView || isReviewer;
@@ -86,6 +88,8 @@ export async function resolveAssessment(id: string, tx?: Tx): Promise<Viewer | n
     isReviewer,
     canView,
     canEdit: row.status === "draft" && (isOwner || viaAnon || waqfRun),
+    /** The result may be shown to this viewer: approved (published), or the viewer is a reviewer. */
+    resultVisible: row.status === "published" || isReviewer,
     canShare: !!auth && (isOwner || waqfRun),
     canPlan: !!row.waqfId && !!waqfAccess && (waqfAccess.perms.has("waqf.edit") || waqfRun),
     canClaim: !!auth && viaAnon && !row.userId,

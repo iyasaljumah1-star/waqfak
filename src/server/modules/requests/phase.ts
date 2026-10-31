@@ -38,9 +38,26 @@ export const PHASE_CLIENT_AR: Partial<Record<Phase, { label: string; next: strin
   ready_to_assign: { label: "قيد الإسناد والبدء لدى الفريق", next: "إسناد الطلب إلى مختص وبدء العمل" },
 };
 
+/**
+ * Engine-processed requests (owner's order of 2026-11-01): the client follows three stages — the submission, the
+ * platform's processing, the system administrator's final approval — and sees no internal step or output before it.
+ */
+export function engineClientPhase(status: string): { label: string; next: string; owner: "client" | "team" | "none" } | null {
+  switch (status) {
+    case "submitted": case "triage": case "in_progress":
+      return { label: "قيد المعالجة", next: "تعالج المنصة طلبك، ثم يراجع مدير النظام النتيجة ويعتمدها، ونشعرك حين تصبح متاحة", owner: "team" };
+    case "awaiting_client": return { label: "مطلوب منك استكمال", next: "استكمل ما طلبناه أدناه لتُستأنف معالجة طلبك", owner: "client" };
+    case "quality_review": return { label: "قيد المراجعة والاعتماد النهائي", next: "يراجع مدير النظام النتيجة ويعتمدها، ونشعرك حين تصبح متاحة", owner: "team" };
+    case "completed": case "closed": return { label: "معتمد", next: "النتيجة المعتمدة متاحة لك في هذه الصفحة", owner: "none" };
+    default: return null;
+  }
+}
+
 /** The phase as shown to the client (PURE). */
 export function clientPhase(p: PhaseInput) {
   const x = processingPhase(p);
+  const e = p.engine ? engineClientPhase(p.status) : null;
+  if (e) return { ...x, ...e };
   const c = PHASE_CLIENT_AR[x.phase];
   return c ? { ...x, ...c } : x;
 }
@@ -54,6 +71,8 @@ export type PhaseInput = {
   outputs: { status: string; delivered: boolean }[];
   /** Name of the active stage of the service's own workflow template (configured per service by the admin). */
   activeStage?: string | null;
+  /** The request is processed by the engine (service_requests.processing_mode = «engine»). */
+  engine?: boolean;
 };
 
 export function processingPhase(p: PhaseInput): { phase: Phase; label: string; owner: "client" | "team" | "manager" | "none"; next: string } {

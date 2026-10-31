@@ -1,7 +1,7 @@
 import "dotenv/config";
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import pg from "pg";
-import { demo, loginAs } from "./helpers";
+import { demo, loginAs, INTAKE_SUBMIT } from "./helpers";
 
 /**
  * Unified request page, end to end on real records:
@@ -94,9 +94,9 @@ test("the board chair requests G09 for waqf C: waqf records are shown with their
 
   await ex(page.getByRole("heading", { name: "الملاحظات والمخرجات" })).toBeVisible();
   await page.getByRole("checkbox", { name: "تقرير التقييم" }).check();
-  for (let i = 0; i < 4 && !(await page.getByRole("button", { name: "أرسل الطلب" }).isVisible()); i++) await page.getByRole("button", { name: "التالي" }).click();
+  for (let i = 0; i < 4 && !(await page.getByRole("button", { name: INTAKE_SUBMIT }).isVisible()); i++) await page.getByRole("button", { name: "التالي" }).click();
   await page.getByLabel(/أقر بأن البيانات والمستندات/).check();
-  await page.getByRole("button", { name: "أرسل الطلب" }).click();
+  await page.getByRole("button", { name: INTAKE_SUBMIT }).click();
   await page.waitForURL(/\/app\/requests\/[0-9a-f-]{36}\?created=1/);
 
   // stored answers: the evaluation only, no copy of the board records

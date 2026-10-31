@@ -142,6 +142,9 @@ export const serviceRequests = pgTable("service_requests", {
   submittedAt: timestamp({ withTimezone: true }),
   completedAt: timestamp({ withTimezone: true }),
   closedAt: timestamp({ withTimezone: true }),
+  /** «manual»: the team runs the request (every request before the engine, and services not enabled for it). «engine»:
+   *  the processing engine runs it and the system administrator gives the final approval (fixed at submission). */
+  processingMode: text().default("manual").notNull(),
   ...tracking(),
 }, (t) => [
   uniqueIndex("sr_number_uq").on(t.number),
@@ -172,6 +175,8 @@ export const requestEvents = pgTable("request_events", {
   toStatus: text(),
   note: text(),
   actorUserId: uuid(),
+  /** A team-side event (output preparation, approvals, engine steps): never read by the client (row-level policy). */
+  internal: boolean().default(false).notNull(),
   at: createdAt(),
 });
 

@@ -5,6 +5,8 @@ import { requireAuth } from "@/server/authz/context";
 import { resolveAssessment } from "@/server/modules/assessment/access";
 import { resultPageData } from "@/server/modules/assessment/page-data";
 import { ResultView } from "@/components/assessment/result-view";
+import { AssessmentPending } from "@/components/assessment/pending";
+import { assessmentNumber } from "@/server/modules/assessment/queries";
 
 export const metadata: Metadata = { title: "نتيجة التقييم" };
 
@@ -17,6 +19,7 @@ export default async function AppAssessmentResult({ params }: { params: Promise<
     if (v.canEdit) redirect(`/assessment/${id}`);
     notFound();
   }
+  if (!v.resultVisible) return <div className="mx-auto max-w-6xl"><AssessmentPending number={assessmentNumber(v.row.id)} signedIn /></div>;
   const data = await resultPageData(v);
   if (!data) notFound();
   return (

@@ -2,6 +2,7 @@
 
 import { and, desc, eq, max } from "drizzle-orm";
 import { z } from "zod";
+import { enqueueProcessing } from "@/server/engine/queue/queue";
 import { documents, requestEvents, requestItemEvents, requestItems, requestRevisions, serviceRequests } from "@/server/db/schema";
 import { asSystem } from "@/server/db/as-system";
 import { intakeOf, serviceForm } from "./intake/server";
@@ -52,6 +53,8 @@ async function releaseIfAnswered(c: ActCtx, requestId: string) {
   const items = await itemsOf(c, requestId);
   if (items.some((i) => awaitingClient(i) && i.required)) return false;
   await transition(c, rc, { to: await resumeStatus(c, requestId), note: "استكمل العميل النواقص المطلوبة", system: true });
+  // an engine-processed request resumes its processing by itself once the client has completed what was asked
+  if (rc.req.processingMode === "engine") await enqueueProcessing(c.tx, { requestId, waqfId: rc.req.waqfId, reason: "استكمل العميل ما طُلب منه", requestedBy: c.auth.user.id });
   return true;
 }
 

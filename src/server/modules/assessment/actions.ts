@@ -418,7 +418,8 @@ export async function markReviewed(_prev: ActionState, fd: FormData): Promise<Ac
       }, { waqfId: v.row.waqfId, link: `/app/assessments/${v.row.id}`, tx });
     }
     return { ok: true, message: "اعتمدنا المراجعة؛ تظهر النتيجة الآن للعميل بعلامة «روجع من مختص»." };
-  }, { perm: "staff.assessment_review", revalidate: ["/admin/assessments", `/admin/assessments/${String(fd.get("id"))}`] });
+  // the approval that releases the result to its owner is the system administrator's final approval
+  }, { perm: "outputs.final_approve", revalidate: ["/admin/assessments", `/admin/assessments/${String(fd.get("id"))}`] });
 }
 
 const EVIDENCE = ["declared", "document", "verified"] as const;

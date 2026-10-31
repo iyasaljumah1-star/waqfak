@@ -9,6 +9,7 @@ import { Badge, Button, ProgressBar } from "@/components/ui";
 import { FormMessage, SubmitButton } from "@/components/ui/form";
 import { DocumentUploader } from "@/components/documents/uploader";
 import { cn, initialState, type ActionState } from "@/lib/utils";
+import { submitLabel } from "@/lib/submit-label";
 import {
   cellVisible, checkIntake, columnOptions, docRequired, fieldRequired, intakeNeeds, intakeProgress, summarize, tableRows, validateStep, visibleDocs, visibleFields, visibleSteps,
   type Answers, type AnswerValue, type Column, type DocMap, type Field, type ServiceForm, type TableRow,
@@ -485,7 +486,9 @@ export function IntakeWizard({ requestId, form, initialAnswers, docMap, docOptio
               <span>أقر بأن البيانات والمستندات المرفقة صحيحة، وأنني مخوّل بتقديم هذا الطلب بالصفة المذكورة.</span>
             </label>
             {!staleSubmit ? <FormMessage state={sub} /> : null}
-            <SubmitButton size="lg" pendingText="جارٍ الإرسال…" disabled={busy}>أرسل الطلب</SubmitButton>
+            {/* the button acts only once every mandatory answer and document is there (the server checks again) */}
+            <SubmitButton size="lg" pendingText="جارٍ الإرسال…" disabled={busy || !(check.fieldsComplete && check.docsComplete)} data-testid="intake-submit">{submitLabel(form.code)}</SubmitButton>
+            {!(check.fieldsComplete && check.docsComplete) ? <p className="text-[13px] text-muted">يُتاح الإرسال بعد استكمال ما ورد أعلاه.</p> : null}
           </form>
         </section>
       ) : null}

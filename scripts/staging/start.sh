@@ -19,4 +19,6 @@ if [ "${SEED_DEMO:-true}" = "true" ] && [ ! -f "$DATA_DIR/.demo-seeded" ] && [ !
 fi
 # daily compliance job every 24h (first run 10 minutes after boot)
 ( sleep 600; while true; do npx tsx --conditions=react-server scripts/jobs/daily.ts >/dev/null 2>&1 || true; sleep 86400; done ) &
+# processing engine worker (drains the processing queue; idle when no service is enabled for the engine)
+( while true; do npx tsx --conditions=react-server scripts/worker.ts || true; sleep 5; done ) &
 exec node .next/standalone/server.js

@@ -39,7 +39,7 @@ export default async function ReviewQueue({ searchParams }: { searchParams: Prom
   return (
     <div className="space-y-6">
       <PageHeader
-        title="التقييمات المعمّقة"
+        title="مراجعة التقييمات واعتمادها"
         description="راجع التقييمات المعمّقة قبل اعتمادها: تحقق من الإثبات، أضف ملاحظاتك على المحاور، وعدّل التوصيات. الأقدم أولًا."
       />
       <nav aria-label="تبويبات المراجعة" className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-1">

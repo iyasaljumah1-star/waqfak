@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import pg from "pg";
-import { demo, loginAs, passWaqfData } from "./helpers";
+import { demo, loginAs, passWaqfData, INTAKE_SUBMIT } from "./helpers";
 
 /**
  * Scenario 6 of the owner's order (15 Oct 2026): the periodic nazir report (N01) and the delivery record, generated
@@ -143,7 +143,7 @@ test.describe.serial("nazir periodic report and delivery record", () => {
       await client.waitForTimeout(400);
     }
     await confirm.check();
-    await client.getByRole("button", { name: "أرسل الطلب" }).click();
+    await client.getByRole("button", { name: INTAKE_SUBMIT }).click();
     await client.waitForURL(/\?created=1/, { timeout: 30_000 });
     const [eng] = await sql<{ id: string }>("select entity_id as id from request_links where request_id = $1 and entity_type = 'nazara_engagement'", [reqId]);
     engId = eng.id;

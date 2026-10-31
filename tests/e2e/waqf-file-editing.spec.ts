@@ -2,7 +2,7 @@ import { expect as baseExpect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 import pg from "pg";
 import { readFileSync } from "node:fs";
-import { demo, loginAs, uniquePhone } from "./helpers";
+import { demo, loginAs, uniquePhone, INTAKE_SUBMIT } from "./helpers";
 
 /**
  * Orders of 2026-10-24 and 2026-10-26: a waqf file is completed and corrected after it is created — by the team's file
@@ -448,7 +448,7 @@ async function fillAndSubmit(p: Page, id: string) {
   }
   await expect(confirm, "the intake reached its review step").toBeVisible({ timeout: T });
   await confirm.check();
-  await p.getByRole("button", { name: "أرسل الطلب" }).click();
+  await p.getByRole("button", { name: INTAKE_SUBMIT }).click();
   await p.waitForURL(/\?created=1/, { timeout: T });
 }
 

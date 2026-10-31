@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { deflateRawSync } from "node:zlib";
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import pg from "pg";
-import { demo, loginAs, passWaqfData } from "./helpers";
+import { demo, loginAs, passWaqfData, INTAKE_SUBMIT } from "./helpers";
 
 /**
  * Owner's corrective order (15 Oct 2026): previews of every output at every stage, and direct approval by the system
@@ -167,7 +167,7 @@ test.describe.serial("previews of every output, and direct approval by the syste
     const confirm = client.getByLabel(/أقر بأن البيانات والمستندات/);
     await advance(client, () => confirm.isVisible());
     await confirm.check();
-    await client.getByRole("button", { name: "أرسل الطلب" }).click();
+    await client.getByRole("button", { name: INTAKE_SUBMIT }).click();
     await client.waitForURL(/\?created=1/, { timeout: 30_000 });
     expect(await status(reqId)).toBe("submitted");
     const tasksBefore = JSON.stringify(await sql("select kind, status from tasks where request_id = $1 order by kind", [reqId]));
@@ -322,7 +322,7 @@ test.describe.serial("previews of every output, and direct approval by the syste
     const confirm = client.getByLabel(/أقر بأن البيانات والمستندات/);
     await advance(client, () => confirm.isVisible());
     await confirm.check();
-    await client.getByRole("button", { name: "أرسل الطلب" }).click();
+    await client.getByRole("button", { name: INTAKE_SUBMIT }).click();
     await client.waitForURL(/\?created=1/, { timeout: 30_000 });
 
     const admin = await as(browser, "admin");

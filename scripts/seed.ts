@@ -15,6 +15,11 @@ import { CATEGORIES, PACKAGES, SERVICES, WORKFLOWS } from "../src/server/seed/da
 import { HOLIDAYS, OBLIGATIONS, PENALTIES, PENALTY_NOTE, REFERENCES, REQUIREMENTS } from "../src/server/seed/data/compliance";
 import { CONTRACT_TEMPLATES, FEATURE_FLAGS, LEGACY_NAZARA_FLAG_REASON, NOTIFICATION_TEMPLATES, SETTINGS } from "../src/server/seed/data/system";
 import { ARTICLES, FAQS, GLOSSARY } from "../src/server/seed/data/content";
+import { ENGINE_USER_ID, ENGINE_USER_NAME } from "../src/server/engine/constants";
+import { ingestSource, type KbInput } from "../src/server/engine/knowledge/ingest";
+import { readFileSync, existsSync } from "node:fs";
+import { gunzipSync } from "node:zlib";
+import path from "node:path";
 
 const pool = new Pool({ connectionString: process.env.DATABASE_OWNER_URL });
 const db = drizzle(pool, { schema: s, casing: "snake_case" });
@@ -181,14 +186,38 @@ async function seedContent() {
   }
 }
 
+/** The platform's processing account (engine/actor.ts): cannot sign in (no password, no phone number, locked), holds no
+ *  role. Its records name «المنصة — المعالجة الآلية» as their author. */
+async function seedEngineAccount() {
+  await db.insert(s.users).values({ id: ENGINE_USER_ID, phone: "system:engine", fullName: ENGINE_USER_NAME, status: "locked", isStaff: true })
+    .onConflictDoUpdate({ target: s.users.id, set: { fullName: ENGINE_USER_NAME, status: "locked", isStaff: true, passwordHash: null } });
+  await db.delete(s.userRoles).where(eq(s.userRoles.userId, ENGINE_USER_ID));
+}
+
+/** Knowledge base: the reference texts shipped with the code (data/kb), loaded once per version (engine/knowledge). */
+async function seedKnowledge() {
+  const dir = path.join(process.cwd(), "data/kb");
+  const mf = path.join(dir, "manifest.json");
+  if (!existsSync(mf)) return;
+  const items = JSON.parse(readFileSync(mf, "utf8")) as (Omit<KbInput, "text"> & { file: string })[];
+  for (const it of items) {
+    const buf = readFileSync(path.join(dir, it.file));
+    const text = (it.file.endsWith(".gz") ? gunzipSync(buf) : buf).toString("utf8");
+    const r = await ingestSource(db, { ...it, text });
+    if (r.status === "loaded") console.log(`knowledge base: ${it.refCode} ${it.version} — ${r.passages} passages (${r.quality})`);
+  }
+}
+
 async function main() {
   await seedRoles();
+  await seedEngineAccount();
   await seedAssessment();
   await seedFlagsRules();
   await seedCompliance();
   await seedServices();
   await seedSystem();
   await seedContent();
+  await seedKnowledge();
   await db.insert(s.settings).values({ key: "seed.last_run_at", value: new Date().toISOString() as never, description: "آخر تشغيل لبذر البيانات المرجعية" })
     .onConflictDoUpdate({ target: s.settings.key, set: { value: new Date().toISOString() as never } });
   await pool.end();

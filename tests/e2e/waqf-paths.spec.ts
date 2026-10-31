@@ -1,7 +1,7 @@
 import "dotenv/config";
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import pg from "pg";
-import { demo, loginAs } from "./helpers";
+import { demo, loginAs, INTAKE_SUBMIT } from "./helpers";
 
 /**
  * The two request paths, end to end on real records (the registered-waqf path — G09 on waqf C with its file's data — is
@@ -123,7 +123,7 @@ test("unregistered waqf: G09 asks the waqf's data the service needs, keeps it in
   await page.getByRole("checkbox", { name: "مراجعة السجلات والمستندات" }).check();
   await next(page);
   await page.getByRole("checkbox", { name: "تقرير التقييم" }).check();
-  for (let i = 0; i < 4 && !(await page.getByRole("button", { name: "أرسل الطلب" }).isVisible()); i++) await next(page);
+  for (let i = 0; i < 4 && !(await page.getByRole("button", { name: INTAKE_SUBMIT }).isVisible()); i++) await next(page);
 
   // completeness before sending: nothing blocks sending; the deed number and the deed are needed before work starts
   await ex(page.getByText("البيانات والمستندات المطلوبة مكتملة.")).toBeVisible();
@@ -133,7 +133,7 @@ test("unregistered waqf: G09 asks the waqf's data the service needs, keeps it in
   expect(pct).toBeGreaterThan(0);
   expect(pct).toBeLessThan(100);
   await page.getByLabel(/أقر بأن البيانات والمستندات/).check();
-  await page.getByRole("button", { name: "أرسل الطلب" }).click();
+  await page.getByRole("button", { name: INTAKE_SUBMIT }).click();
   await page.waitForURL(/\?created=1/, { timeout: 30_000 });
   reqNumber = (await page.locator("header [dir=ltr].tabular").first().innerText()).trim();
 
@@ -258,12 +258,12 @@ test("no waqf yet: T05 is offered without a waqf and asks by asset type", async 
   await group(page, /^مدة الوقف/).getByRole("radio", { name: "مؤبد" }).check();
   await page.getByLabel(/الحجم المتوقع للوقف/).selectOption("small");
   await page.getByLabel(/نوع الموقوف عليهم/).selectOption("general");
-  for (let i = 0; i < 4 && !(await page.getByRole("button", { name: "أرسل الطلب" }).isVisible()); i++) await next(page);
+  for (let i = 0; i < 4 && !(await page.getByRole("button", { name: INTAKE_SUBMIT }).isVisible()); i++) await next(page);
   // «لا أعرف» lets the request go, and is listed as needed before work starts
   await ex(page.getByTestId("needs-start")).toContainText("الملكية الحالية");
   await ex(page.getByTestId("needs-specialist")).toContainText("صاحب الصفة في التصرف");
   await page.getByLabel(/أقر بأن البيانات والمستندات/).check();
-  await page.getByRole("button", { name: "أرسل الطلب" }).click();
+  await page.getByRole("button", { name: INTAKE_SUBMIT }).click();
   await page.waitForURL(/\?created=1/, { timeout: 30_000 });
   const [r] = await sql<{ waqf_id: string | null; intake: { waqfMode: string; answers: Record<string, unknown> } }>("select waqf_id, intake from service_requests where id = $1", [id]);
   expect(r.waqf_id).toBeNull();

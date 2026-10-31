@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { expect, test, type Browser, type Locator, type Page } from "@playwright/test";
 import pg from "pg";
-import { demo, loginAs, passWaqfData } from "./helpers";
+import { demo, loginAs, passWaqfData, INTAKE_SUBMIT } from "./helpers";
 
 /**
  * The full request lifecycle on the new chain:
@@ -197,7 +197,12 @@ test.describe.serial("service request lifecycle", () => {
     await page.getByRole("button", { name: "التالي" }).click();
     await ex(page.getByText("مستند مطلوب: صك النظارة")).toBeVisible();
     await page.getByLabel(/أقر بأن البيانات والمستندات/).check();
-    await page.getByRole("button", { name: "أرسل الطلب" }).click();
+    // the button stays disabled while a required document is missing …
+    const submit = page.getByRole("button", { name: INTAKE_SUBMIT });
+    await ex(submit).toBeDisabled();
+    // … and a submission forced past it (as a crafted request would) is refused by the server
+    await submit.evaluate((b) => b.removeAttribute("disabled"));
+    await submit.click();
     await ex(page.getByText(/مستندات مطلوبة لم تُرفق: صك النظارة/)).toBeVisible();
     await ex(page.getByRole("heading", { name: "المستندات" })).toBeVisible(); // jumped back to the gap
     await upload(page.getByTestId("slot-svc_nazara_deed"), "nazara-deed.pdf");
@@ -206,7 +211,7 @@ test.describe.serial("service request lifecycle", () => {
     await ex(page.getByText("البيانات والمستندات المطلوبة مكتملة.")).toBeVisible();
     await page.screenshot({ path: `${shots}/intake-review-${info.project.name}.png`, fullPage: true });
     await page.getByLabel(/أقر بأن البيانات والمستندات/).check();
-    await page.getByRole("button", { name: "أرسل الطلب" }).click();
+    await page.getByRole("button", { name: INTAKE_SUBMIT }).click();
     await page.waitForURL(/\/app\/requests\/[0-9a-f-]{36}\?created=1/);
     reqNumber = (await page.locator("header [dir=ltr].tabular").first().innerText()).trim();
     expect(reqNumber).toMatch(/^REQ-\d+/);
@@ -232,7 +237,7 @@ test.describe.serial("service request lifecycle", () => {
     await page.getByRole("checkbox", { name: "الحوكمة والنظارة" }).check(); // C01 v2: focus areas are required
     await page.getByRole("button", { name: /المراجعة والإرسال/ }).click();
     await page.getByLabel(/أقر بأن البيانات والمستندات/).check();
-    await page.getByRole("button", { name: "أرسل الطلب" }).click();
+    await page.getByRole("button", { name: INTAKE_SUBMIT }).click();
     await page.waitForURL(/\?created=1/);
   });
 

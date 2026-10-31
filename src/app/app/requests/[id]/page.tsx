@@ -9,7 +9,9 @@ import {
   ConflictBadge, ContractPaper, EventList, IntakeSummaryView, NextActionBanner, NotesThread, PartiesList, PRIORITY_LABEL, QuoteDocument, RequestStates, SlaBadge,
   StageTimeline, StatusBadge,
 } from "@/components/requests/bits";
-import { RatingForm, SignContractForm, TransitionPanel } from "@/components/requests/forms";
+import { ActionForm, RatingForm, SignContractForm, TransitionPanel } from "@/components/requests/forms";
+import { Field, Textarea } from "@/components/ui/form";
+import { requestCorrection } from "@/server/engine/review/actions";
 import { AnswerItemForm, NoteFormWithAttachment, QuoteResponseForm } from "@/components/requests/commerce";
 import { fmtBoth, fmtDate, fmtDateTime, fmtSAR } from "@/lib/utils";
 import { requireAuth } from "@/server/authz/context";
@@ -38,9 +40,9 @@ import { LEGAL_DRAFT_NOTICE } from "@/server/modules/outputs/render";
 
 export const metadata: Metadata = { title: "تفاصيل الطلب" };
 
-export default async function RequestPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ created?: string; signed?: string; existing?: string }> }) {
+export default async function RequestPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ created?: string; signed?: string; existing?: string; already?: string }> }) {
   const { id } = await params;
-  const { created, signed, existing } = await searchParams;
+  const { created, signed, existing, already } = await searchParams;
   const auth = await requireAuth({ next: `/app/requests/${id}` });
   const d = await requestDetail(auth, id, "client");
   if (!d) notFound();
@@ -67,6 +69,7 @@ export default async function RequestPage({ params, searchParams }: { params: Pr
     status: r.status, assigned: !!r.assignedToUserId,
     data: cws ? { requiredMissing: cws.analysis.summary.required - cws.analysis.summary.requiredValid + cws.needs.start.length, gaps: cws.analysis.summary.gaps, conflicts: 0 } : null,
     openClientItems: openItems.length, outputs: outStates, activeStage: stages.find((s) => s.status === "active")?.name ?? null,
+    engine: r.processingMode === "engine",
   }) : null;
 
   return (
@@ -84,7 +87,15 @@ export default async function RequestPage({ params, searchParams }: { params: Pr
         </Alert>
       ) : null}
       {existing ? <div data-testid="existing-request"><Alert tone="info" title="لهذا الوقف طلب مفتوح للخدمة نفسها">فتحنا لك الطلب القائم بدل إنشاء طلب مكرر؛ تابع منه، أو راسل الفريق إن كانت حاجتك مختلفة.</Alert></div> : null}
-      {created ? <Alert tone="ok" title={`أُرسل طلبك ${r.number}`}>وصلنا الطلب ببياناته ومستنداته. يتابعه الآن مدير التشغيل بإسناده إلى مختص، وستجد الخطوة التالية ومن عليه أعلى هذه الصفحة دائمًا.</Alert> : null}
+      {created && r.processingMode === "engine" ? (
+        <div data-testid="submitted-confirmation">
+          <Alert tone="ok" title="تم إرسال طلبك بنجاح ✓">
+            <p>تم تسجيل طلبك برقم: <span dir="ltr" className="font-semibold tabular">{r.number}</span></p>
+            <p className="mt-1">سيتم معالجة طلبك وإشعارك عند اكتمال المراجعة والاعتماد النهائي.</p>
+          </Alert>
+        </div>
+      ) : created ? <Alert tone="ok" title={`أُرسل طلبك ${r.number}`}>وصلنا الطلب ببياناته ومستنداته. يتابعه الآن مدير التشغيل بإسناده إلى مختص، وستجد الخطوة التالية ومن عليه أعلى هذه الصفحة دائمًا.</Alert> : null}
+      {already ? <div data-testid="already-submitted"><Alert tone="info" title={`أُرسل هذا الطلب سابقًا برقم ${r.number}`}>لم يُنشأ طلب جديد ولم يُكرر شيء. تابع حالة طلبك من هذه الصفحة.</Alert></div> : null}
       {signed && d.contract.stage ? <Alert tone="ok" title="سُجّل توقيعك">حُفظ توقيعك مع بصمة نص العقد. {d.contract.executed ? "نفذ العقد بتوقيع جميع الأطراف، ونسخته الموقّعة متاحة أدناه." : "يُستكمل العقد بتوقيع بقية الأطراف."}</Alert> : null}
       {r.conflictCheck === "blocked" ? (
         <Alert tone="critical" title="الطلب قيد مراجعة الاستقلالية">
@@ -102,7 +113,7 @@ export default async function RequestPage({ params, searchParams }: { params: Pr
       {r.status === "rejected" && r.rejectReason ? <Alert tone="critical" title="رُفض الطلب">{r.rejectReason}</Alert> : null}
       {r.status === "cancelled" ? <Alert tone="neutral" title="أُلغي الطلب">{r.cancelReason}</Alert> : null}
 
-      {r.status !== "draft" ? <NextActionBanner next={d.next} viewer="client" /> : null}
+      {r.status !== "draft" && r.processingMode !== "engine" ? <NextActionBanner next={d.next} viewer="client" /> : null}
       {phase ? (
         <p className="rounded-lg border border-line bg-surface-2/50 px-4 py-2 text-[14px]" data-testid="client-phase" data-phase={phase.phase}>
           <span className="font-semibold">مرحلة الطلب: {phase.label}</span> {phase.owner === "none" ? null : <> — الخطوة التالية: {phase.next} ({phase.owner === "client" ? "عليك" : "على فريق وقفك"})</>}
@@ -111,6 +122,15 @@ export default async function RequestPage({ params, searchParams }: { params: Pr
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
         <div className="min-w-0 space-y-4">
+          {r.processingMode === "engine" && ["completed", "closed"].includes(r.status) ? (
+            <Panel id="correction" title="طلب تصحيح على النتيجة المعتمدة" description="إن وجدت خطأ في الوثيقة المعتمدة فاذكره هنا؛ يراجعه مدير النظام، ولا تتغير الوثيقة إلا بنسخة جديدة معتمدة.">
+              <div data-testid="correction-form">
+                <ActionForm action={requestCorrection} hidden={{ id: r.id }} submit="أرسل طلب التصحيح" variant="secondary">
+                  <Field label="ما الذي يحتاج إلى تصحيح؟" name="details"><Textarea name="details" rows={3} /></Field>
+                </ActionForm>
+              </div>
+            </Panel>
+          ) : null}
           {/* Deficiencies and queries */}
           {d.items.length ? (
             <Panel id="items" title="النواقص والاستفسارات" description={openItems.length ? `${openItems.length} بانتظار ردك. أجب عن كل بند على حدة.` : "لا بنود بانتظار ردك."}>
@@ -252,14 +272,14 @@ export default async function RequestPage({ params, searchParams }: { params: Pr
               ) : null}
               <ul className="divide-y divide-line">
                 {deliverables.filter((x) => x.status !== "draft").map((x) => (
-                  <li key={x.id} className="flex flex-col gap-1 py-3 sm:flex-row sm:items-center sm:justify-between">
+                  <li key={x.id} data-testid="deliverable" className="flex flex-col gap-1 py-3 sm:flex-row sm:items-center sm:justify-between">
                     <div className="min-w-0">
                       <p className="flex items-center gap-2 font-medium"><FileCheck2 aria-hidden className="size-4 text-muted" />{x.title} <span className="text-[13px] font-normal text-muted">(إصدار {x.version})</span></p>
                       {x.signedBy ? <p className="text-[13px] text-muted">موقّع من: {x.signedBy}</p> : null}
                       {x.revisionNote ? <p className="text-[13px] text-fine">ملاحظة التعديل: {x.revisionNote}</p> : null}
                     </div>
                     <div className="flex items-center gap-2">
-                      <Badge tone={x.status === "approved" || x.releasedAt ? "ok" : x.status === "revision_requested" ? "fine" : "info"} icon={false}>{x.releasedAt ? `تسليم دوري — ${x.releasedAt.toISOString().slice(0, 10)}` : x.status === "approved" ? "معتمد" : x.status === "revision_requested" ? "طُلب تعديله" : "بانتظار اعتمادك"}</Badge>
+                      <Badge tone={x.status === "approved" || x.releasedAt ? "ok" : x.status === "revision_requested" ? "fine" : "info"} icon={false}>{r.processingMode === "engine" && x.status === "approved" ? "معتمد" : x.releasedAt ? `تسليم دوري — ${x.releasedAt.toISOString().slice(0, 10)}` : x.status === "approved" ? "معتمد" : x.status === "revision_requested" ? "طُلب تعديله" : "بانتظار اعتمادك"}</Badge>
                       {x.documentId ? <a href={`/api/files/${x.documentId}?disposition=inline`} target="_blank" rel="noopener" className="text-sm text-ink underline">معاينة</a> : null}
                     </div>
                   </li>
