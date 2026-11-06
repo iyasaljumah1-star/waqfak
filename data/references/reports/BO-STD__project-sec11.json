@@ -1,0 +1,812 @@
+{
+  "refId": "BO-STD",
+  "official": {
+    "url": "https://digitalcms.awqaf.gov.sa/sites/default/files/2025-12/%D9%85%D8%B9%D8%A7%D9%8A%D9%8A%D8%B1%20%D8%A7%D9%84%D9%85%D8%B3%D8%AA%D9%81%D9%8A%D8%AF%20%D8%A7%D9%84%D8%AD%D9%82%D9%8A%D9%82%D9%8A%20--%20%D8%A7%D9%84%D9%86%D8%B3%D8%AE%D8%A9%20%D8%A7%D9%84%D9%85%D9%8F%D8%B9%D8%AA%D9%85%D8%AF%D8%A9.pdf",
+    "sha256": "1d644011c7a38af03f0b6d26d5c64077a67af33a7fa6a6f3e587e2e39ea99973",
+    "retrievedAt": "2026-11-06T00:00:00Z",
+    "via": "relay_scrape",
+    "directConfirmed": false
+  },
+  "candidate": {
+    "label": "ملف المشروع (قراءة ضوئية)",
+    "path": "BO-STD/project-sec11.txt",
+    "origin": "«معايير المستفيد الحقيقي النسخة المُعتمدة.pdf» كما استُخرج في مراجعة 2026-11-04",
+    "sha256": "55c4e9adf8b51789db22a3e268d6329a63dcb560a5eeca5666d0075cee708a17"
+  },
+  "ranAt": "2026-11-06",
+  "result": {
+    "outcome": "substantive_difference",
+    "articlesOfficial": 10,
+    "articlesCandidate": 10,
+    "counts": {
+      "identical": 1,
+      "editorial_only": 0,
+      "substantive_difference": 2,
+      "extraction_defective": 7,
+      "unverifiable": 0,
+      "repealed_or_superseded": 0
+    },
+    "articles": [
+      {
+        "article": 1,
+        "outcome": "extraction_defective",
+        "located": "heading",
+        "coverage": 0.877,
+        "headingMatches": true,
+        "officialParagraphs": [],
+        "candidateParagraphs": [],
+        "differences": [
+          {
+            "locator": "م1",
+            "class": "presumed_substantive",
+            "reason": "عبارة ساقطة من النسخة",
+            "official": "أ",
+            "candidate": "",
+            "impact": "سقوط جزء من الحكم؛ تُعامل كمؤثرة حتى المراجعة"
+          },
+          {
+            "locator": "م1",
+            "class": "ocr",
+            "reason": "رأس صفحة أو أرقام صفحات أُدرجت في النص عند الاستخراج",
+            "official": "11",
+            "candidate": "1",
+            "impact": "لا أثر في المعنى، لكن النص المستخرج غير صالح للاقتباس كما هو"
+          },
+          {
+            "locator": "م1",
+            "class": "editorial",
+            "reason": "التاريخ نفسه بترتيب أو صيغة مختلفة",
+            "official": "26/02/1437",
+            "candidate": "26/02 1437",
+            "impact": "لا أثر في المعنى"
+          },
+          {
+            "locator": "م1",
+            "class": "ocr",
+            "reason": "خطأ في حرف أو حرفين (قراءة ضوئية)",
+            "official": "الأولى",
+            "candidate": "الأوى",
+            "impact": "على الأرجح لا يغيّر المعنى، لكن الكلمة في النسخة خاطئة"
+          },
+          {
+            "locator": "م1",
+            "class": "presumed_substantive",
+            "reason": "عبارة ساقطة من النسخة",
+            "official": "ب",
+            "candidate": "",
+            "impact": "سقوط جزء من الحكم؛ تُعامل كمؤثرة حتى المراجعة"
+          },
+          {
+            "locator": "م1",
+            "class": "ocr",
+            "reason": "خطأ في حرف أو حرفين (قراءة ضوئية)",
+            "official": "المحددة",
+            "candidate": "الفحددة",
+            "impact": "على الأرجح لا يغيّر المعنى، لكن الكلمة في النسخة خاطئة"
+          },
+          {
+            "locator": "م1",
+            "class": "ocr",
+            "reason": "خطأ في حرف أو حرفين (قراءة ضوئية)",
+            "official": "المبينة",
+            "candidate": "الفبينة",
+            "impact": "على الأرجح لا يغيّر المعنى، لكن الكلمة في النسخة خاطئة"
+          },
+          {
+            "locator": "م1",
+            "class": "presumed_substantive",
+            "reason": "عبارة مختلفة",
+            "official": "الهيئة العامة للأوقاف الهيئة لائحة تنظيم أعمال النظارة اللائحة معايير",
+            "candidate": "معابير",
+            "impact": "صياغة مختلفة لم يثبت تكافؤها؛ تُعامل كمؤثرة حتى المراجعة"
+          },
+          {
+            "locator": "م1",
+            "class": "presumed_substantive",
+            "reason": "عبارة مختلفة",
+            "official": "المعايير",
+            "candidate": "المةة",
+            "impact": "صياغة مختلفة لم يثبت تكافؤها؛ تُعامل كمؤثرة حتى المراجعة"
+          },
+          {
+            "locator": "م1",
+            "class": "ocr",
+            "reason": "رأس صفحة أو أرقام صفحات أُدرجت في النص عند الاستخراج",
+            "official": "",
+            "candidate": "1",
+            "impact": "لا أثر في المعنى، لكن النص المستخرج غير صالح للاقتباس كما هو"
+          },
+          {
+            "locator": "م1",
+            "class": "presumed_substantive",
+            "reason": "عبارة ساقطة من النسخة",
+            "official": "الوقف المستفيد",
+            "candidate": "",
+            "impact": "سقوط جزء من الحكم؛ تُعامل كمؤثرة حتى المراجعة"
+          },
+          {
+            "locator": "م1",
+            "class": "presumed_substantive",
+            "reason": "عبارة زائدة في النسخة ليست في النص الرسمي",
+            "official": "",
+            "candidate": "الوقف",
+            "impact": "إضافة إلى النص النظامي؛ تُعامل كمؤثرة حتى المراجعة"
+          },
+          {
+            "locator": "م1",
+            "class": "ocr",
+            "reason": "حروف مشوهة أو لاتينية أو أرقام ملتصقة بالحروف في النسخة",
+            "official": "السيطرة",
+            "candidate": "معايير المستفيد الحقيقي من الأوقاف 4 صفحة 5 اوقاى 4 ل الام",
+            "impact": "النص المستخرج تالف في هذا الموضع ولا يصلح للاقتباس"
+          }
+        ]
+      },
+      {
+        "article": 2,
+        "outcome": "extraction_defective",
+        "located": "heading",
+        "coverage": 0.982,
+        "headingMatches": false,
+        "officialParagraphs": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "candidateParagraphs": [
+          1,
+          2
+        ],
+        "differences": [
+          {
+            "locator": "م2",
+            "class": "ocr",
+            "reason": "خطأ في حرف أو حرفين (قراءة ضوئية)",
+            "official": "المعايير",
+            "candidate": "المعابير",
+            "impact": "على الأرجح لا يغيّر المعنى، لكن الكلمة في النسخة خاطئة"
+          },
+          {
+            "locator": "م2",
+            "class": "ocr",
+            "reason": "ترقيم الفقرات مختلف: الفقرات 3، 4، 5 لم تُتعرف في النسخة",
+            "official": "1، 2، 3، 4، 5",
+            "candidate": "1، 2",
+            "impact": "بنية المادة في النسخة لا تطابق الرسمي؛ الإحالة إلى الفقرة غير موثوقة"
+          }
+        ]
+      },
+      {
+        "article": 3,
+        "outcome": "extraction_defective",
+        "located": "heading",
+        "coverage": 1,
+        "headingMatches": true,
+        "officialParagraphs": [],
+        "candidateParagraphs": [],
+        "differences": [
+          {
+            "locator": "م3",
+            "class": "ocr",
+            "reason": "حروف مشوهة أو لاتينية أو أرقام ملتصقة بالحروف في النسخة",
+            "official": "",
+            "candidate": "معايير المستفيد الحقيقي من الأوقاف 5 صفحة 6 اوقاى عم الام",
+            "impact": "النص المستخرج تالف في هذا الموضع ولا يصلح للاقتباس"
+          }
+        ]
+      },
+      {
+        "article": 4,
+        "outcome": "extraction_defective",
+        "located": "heading",
+        "coverage": 0.884,
+        "headingMatches": true,
+        "officialParagraphs": [
+          1,
+          2
+        ],
+        "candidateParagraphs": [
+          1,
+          2
+        ],
+        "differences": [
+          {
+            "locator": "م4/ف1",
+            "class": "editorial",
+            "reason": "اختلاف في الفصل بين الكلمات فقط",
+            "official": "يعد كل",
+            "candidate": "يعدكل",
+            "impact": "لا أثر في المعنى"
+          },
+          {
+            "locator": "م4/ف1",
+            "class": "ocr",
+            "reason": "كلمة مبتورة في النسخة",
+            "official": "مستفيداً",
+            "candidate": "مستفيد",
+            "impact": "النص المستخرج ناقص في هذا الموضع ولا يصلح للاقتباس"
+          },
+          {
+            "locator": "م4/ف1",
+            "class": "ocr",
+            "reason": "كلمة مبتورة في النسخة",
+            "official": "أيأ",
+            "candidate": "أي",
+            "impact": "النص المستخرج ناقص في هذا الموضع ولا يصلح للاقتباس"
+          },
+          {
+            "locator": "م4/ف1",
+            "class": "ocr",
+            "reason": "خطأ في حرف أو حرفين (قراءة ضوئية)",
+            "official": "يأتي",
+            "candidate": "يأني",
+            "impact": "على الأرجح لا يغيّر المعنى، لكن الكلمة في النسخة خاطئة"
+          },
+          {
+            "locator": "م4/ف2",
+            "class": "ocr",
+            "reason": "كلمة مبتورة في النسخة",
+            "official": "شخصاً",
+            "candidate": "شخص",
+            "impact": "النص المستخرج ناقص في هذا الموضع ولا يصلح للاقتباس"
+          },
+          {
+            "locator": "م4/ف2",
+            "class": "presumed_substantive",
+            "reason": "عبارة مختلفة",
+            "official": "إدارته بحسب الأحوال المستفيد",
+            "candidate": "إذارته يحب الأحوان الم تفي",
+            "impact": "صياغة مختلفة لم يثبت تكافؤها؛ تُعامل كمؤثرة حتى المراجعة"
+          },
+          {
+            "locator": "م4/ف2",
+            "class": "presumed_substantive",
+            "reason": "عبارة زائدة في النسخة ليست في النص الرسمي",
+            "official": "",
+            "candidate": "لكا ار",
+            "impact": "إضافة إلى النص النظامي؛ تُعامل كمؤثرة حتى المراجعة"
+          }
+        ]
+      },
+      {
+        "article": 5,
+        "outcome": "extraction_defective",
+        "located": "heading",
+        "coverage": 0.898,
+        "headingMatches": true,
+        "officialParagraphs": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "candidateParagraphs": [
+          1
+        ],
+        "differences": [
+          {
+            "locator": "م5/ف1",
+            "class": "presumed_substantive",
+            "reason": "عبارة مختلفة",
+            "official": "بها",
+            "candidate": "بهاء",
+            "impact": "صياغة مختلفة لم يثبت تكافؤها؛ تُعامل كمؤثرة حتى المراجعة"
+          },
+          {
+            "locator": "م5/ف1",
+            "class": "ocr",
+            "reason": "كلمة مبتورة في النسخة",
+            "official": "أدنى",
+            "candidate": "أدن",
+            "impact": "النص المستخرج ناقص في هذا الموضع ولا يصلح للاقتباس"
+          },
+          {
+            "locator": "م5/ف1/أ",
+            "class": "presumed_substantive",
+            "reason": "عبارة ساقطة من النسخة",
+            "official": "أ",
+            "candidate": "",
+            "impact": "سقوط جزء من الحكم؛ تُعامل كمؤثرة حتى المراجعة"
+          },
+          {
+            "locator": "م5/ف1/أ",
+            "class": "ocr",
+            "reason": "خطأ في حرف أو حرفين (قراءة ضوئية)",
+            "official": "كامل",
+            "candidate": "كاملة",
+            "impact": "على الأرجح لا يغيّر المعنى، لكن الكلمة في النسخة خاطئة"
+          },
+          {
+            "locator": "م5/ف1/ج",
+            "class": "ocr",
+            "reason": "خطأ في حرف أو حرفين (قراءة ضوئية)",
+            "official": "التي",
+            "candidate": "القي",
+            "impact": "على الأرجح لا يغيّر المعنى، لكن الكلمة في النسخة خاطئة"
+          },
+          {
+            "locator": "م5/ف1/هـ",
+            "class": "ocr",
+            "reason": "حروف مشوهة أو لاتينية أو أرقام ملتصقة بالحروف في النسخة",
+            "official": "",
+            "candidate": "معايير المستفيد الحقيقي من الأوقاف 6 صفحة 7 اوقاى عم الام",
+            "impact": "النص المستخرج تالف في هذا الموضع ولا يصلح للاقتباس"
+          },
+          {
+            "locator": "م5/ف2",
+            "class": "ocr",
+            "reason": "خطأ في حرف أو حرفين (قراءة ضوئية)",
+            "official": "شخصاً اعتبارياً",
+            "candidate": "شخصه اعتباريًاء",
+            "impact": "على الأرجح لا يغيّر المعنى، لكن الكلمة في النسخة خاطئة"
+          },
+          {
+            "locator": "م5/ف2",
+            "class": "ocr",
+            "reason": "خطأ في حرف أو حرفين (قراءة ضوئية)",
+            "official": "بالحصول",
+            "candidate": "بالحيصول",
+            "impact": "على الأرجح لا يغيّر المعنى، لكن الكلمة في النسخة خاطئة"
+          },
+          {
+            "locator": "م5/ف2",
+            "class": "ocr",
+            "reason": "خطأ في حرف أو حرفين (قراءة ضوئية)",
+            "official": "المنصوص عليها",
+            "candidate": "المتصوص علبها",
+            "impact": "على الأرجح لا يغيّر المعنى، لكن الكلمة في النسخة خاطئة"
+          },
+          {
+            "locator": "م5/ف2",
+            "class": "editorial",
+            "reason": "اختلاف في الفصل بين الكلمات فقط",
+            "official": "الفقرة",
+            "candidate": "الفقر ة",
+            "impact": "لا أثر في المعنى"
+          },
+          {
+            "locator": "م5/ف2",
+            "class": "presumed_substantive",
+            "reason": "عبارة مختلفة",
+            "official": "المادة والاحتفاظ بها",
+            "candidate": "اي",
+            "impact": "صياغة مختلفة لم يثبت تكافؤها؛ تُعامل كمؤثرة حتى المراجعة"
+          },
+          {
+            "locator": "م5/ف2",
+            "class": "presumed_substantive",
+            "reason": "عبارة ساقطة من النسخة",
+            "official": "طبيعي",
+            "candidate": "",
+            "impact": "سقوط جزء من الحكم؛ تُعامل كمؤثرة حتى المراجعة"
+          },
+          {
+            "locator": "م5/ف2",
+            "class": "ocr",
+            "reason": "كلمة مبتورة في النسخة",
+            "official": "مستفيداً",
+            "candidate": "مستفيد",
+            "impact": "النص المستخرج ناقص في هذا الموضع ولا يصلح للاقتباس"
+          },
+          {
+            "locator": "م5/ف2",
+            "class": "ocr",
+            "reason": "مقاطع ليست كلمات من النص الرسمي (تشويه قراءة ضوئية)",
+            "official": "بيانات الشخص الاعتباري الآتية",
+            "candidate": "طيعم خض الا وق يه الفقر",
+            "impact": "النص المستخرج تالف في هذا الموضع ولا يصلح للاقتباس"
+          },
+          {
+            "locator": "م5/ف2/ب",
+            "class": "ocr",
+            "reason": "خطأ في حرف أو حرفين (قراءة ضوئية)",
+            "official": "الوطني",
+            "candidate": "الوطي",
+            "impact": "على الأرجح لا يغيّر المعنى، لكن الكلمة في النسخة خاطئة"
+          },
+          {
+            "locator": "م5/ف3",
+            "class": "presumed_substantive",
+            "reason": "عبارة مختلفة",
+            "official": "الآتي",
+            "candidate": "الآنّ",
+            "impact": "صياغة مختلفة لم يثبت تكافؤها؛ تُعامل كمؤثرة حتى المراجعة"
+          },
+          {
+            "locator": "م5/ف3/ب",
+            "class": "ocr",
+            "reason": "خطأ في حرف أو حرفين (قراءة ضوئية)",
+            "official": "الوطني",
+            "candidate": "الوطي",
+            "impact": "على الأرجح لا يغيّر المعنى، لكن الكلمة في النسخة خاطئة"
+          },
+          {
+            "locator": "م5/ف4",
+            "class": "ocr",
+            "reason": "خطأ في حرف أو حرفين (قراءة ضوئية)",
+            "official": "التي صرفت",
+            "candidate": "القي ضرفت",
+            "impact": "على الأرجح لا يغيّر المعنى، لكن الكلمة في النسخة خاطئة"
+          },
+          {
+            "locator": "م5/ف5",
+            "class": "presumed_substantive",
+            "reason": "عبارة مختلفة",
+            "official": "بها",
+            "candidate": "بهاء",
+            "impact": "صياغة مختلفة لم يثبت تكافؤها؛ تُعامل كمؤثرة حتى المراجعة"
+          },
+          {
+            "locator": "م5/ف5",
+            "class": "ocr",
+            "reason": "حروف مشوهة أو لاتينية أو أرقام ملتصقة بالحروف في النسخة",
+            "official": "",
+            "candidate": "معايير المستفيد الحقيقي من الأوقاف 7 صفحة 8 اوقاى عم الام",
+            "impact": "النص المستخرج تالف في هذا الموضع ولا يصلح للاقتباس"
+          },
+          {
+            "locator": "م5",
+            "class": "ocr",
+            "reason": "ترقيم الفقرات مختلف: الفقرات 2، 3، 4، 5 لم تُتعرف في النسخة",
+            "official": "1، 2، 3، 4، 5",
+            "candidate": "1",
+            "impact": "بنية المادة في النسخة لا تطابق الرسمي؛ الإحالة إلى الفقرة غير موثوقة"
+          }
+        ]
+      },
+      {
+        "article": 6,
+        "outcome": "extraction_defective",
+        "located": "heading",
+        "coverage": 0.333,
+        "headingMatches": true,
+        "officialParagraphs": [],
+        "candidateParagraphs": [
+          1,
+          2,
+          3,
+          4
+        ],
+        "differences": [
+          {
+            "locator": "م6/«والأهمية المخاطر في الاعتبار يؤخذ مستوى»",
+            "class": "presumed_substantive",
+            "reason": "تعريف ساقط من النسخة",
+            "official": "عند المستفيد بيانات التحقق الحقيقي, من",
+            "candidate": "",
+            "impact": "سقوط تعريف مصطلح نظامي؛ يغيّر نطاق تطبيق الأحكام المحيلة إليه"
+          },
+          {
+            "locator": "م6/«وصرامة نطاق إجراءات على التحقق يتعين GUI‏»",
+            "class": "presumed_substantive",
+            "reason": "تعريف ساقط من النسخة",
+            "official": "لتحديد وذلك الجوهرية يمثلهاء GUI‏ تطبيقها. الناظر",
+            "candidate": "",
+            "impact": "سقوط تعريف مصطلح نظامي؛ يغيّر نطاق تطبيق الأحكام المحيلة إليه"
+          },
+          {
+            "locator": "م6",
+            "class": "ocr",
+            "reason": "جدول التعريفات مفكك في النسخة: 1 من 3 تعريفًا ليس بجوار مصطلحه",
+            "official": "3 مصطلحًا",
+            "candidate": "",
+            "impact": "نص التعريفات موجود لكن النسخة لا تبين أي تعريف لأي مصطلح؛ لا يصلح الاستشهاد بها"
+          },
+          {
+            "locator": "م6",
+            "class": "presumed_substantive",
+            "reason": "عبارة ساقطة من النسخة",
+            "official": "المادة البيانات الهيئة عليها والمعلومات في المنصوص بجميع : الناظر يلتزم بتزويد",
+            "candidate": "",
+            "impact": "سقوط جزء من النص؛ يُعامل كمؤثر حتى المراجعة"
+          },
+          {
+            "locator": "م6",
+            "class": "presumed_substantive",
+            "reason": "عبارة ساقطة من النسخة",
+            "official": "الهيئة, طلب فور سنوي, بشكل ذلك يتم أو تغيير أي حدوث وبعد : أن على قد يطرأ عليها.",
+            "candidate": "",
+            "impact": "سقوط جزء من النص؛ يُعامل كمؤثر حتى المراجعة"
+          },
+          {
+            "locator": "م6",
+            "class": "presumed_substantive",
+            "reason": "عبارة ساقطة من النسخة",
+            "official": "فائي، بأي معلومات ذات صلة",
+            "candidate": "",
+            "impact": "سقوط جزء من النص؛ يُعامل كمؤثر حتى المراجعة"
+          },
+          {
+            "locator": "م6",
+            "class": "presumed_substantive",
+            "reason": "عبارة ساقطة من النسخة",
+            "official": "The image contains the number \"8\".",
+            "candidate": "",
+            "impact": "سقوط جزء من النص؛ يُعامل كمؤثر حتى المراجعة"
+          }
+        ]
+      },
+      {
+        "article": 7,
+        "outcome": "substantive_difference",
+        "located": "heading",
+        "coverage": 0.946,
+        "headingMatches": true,
+        "officialParagraphs": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "candidateParagraphs": [],
+        "differences": [
+          {
+            "locator": "م7/ف1",
+            "class": "presumed_substantive",
+            "reason": "عبارة مختلفة",
+            "official": "1",
+            "candidate": "0.1",
+            "impact": "صياغة مختلفة لم يثبت تكافؤها؛ تُعامل كمؤثرة حتى المراجعة"
+          },
+          {
+            "locator": "م7/ف1/ب",
+            "class": "presumed_substantive",
+            "reason": "عبارة مختلفة",
+            "official": "بصفته ناظرً",
+            "candidate": "رصفته زاظ",
+            "impact": "صياغة مختلفة لم يثبت تكافؤها؛ تُعامل كمؤثرة حتى المراجعة"
+          },
+          {
+            "locator": "م7/ف1/ج",
+            "class": "ocr",
+            "reason": "خطأ في حرف أو حرفين (قراءة ضوئية)",
+            "official": "تحتفظ",
+            "candidate": "قحتفظ",
+            "impact": "على الأرجح لا يغيّر المعنى، لكن الكلمة في النسخة خاطئة"
+          },
+          {
+            "locator": "م7/ف3",
+            "class": "ocr",
+            "reason": "رأس صفحة أو أرقام صفحات أُدرجت في النص عند الاستخراج",
+            "official": "3",
+            "candidate": "203",
+            "impact": "لا أثر في المعنى، لكن النص المستخرج غير صالح للاقتباس كما هو"
+          },
+          {
+            "locator": "م7/ف3",
+            "class": "presumed_substantive",
+            "reason": "عبارة مختلفة",
+            "official": "هذه المعايير",
+            "candidate": "هذ المعابيير",
+            "impact": "صياغة مختلفة لم يثبت تكافؤها؛ تُعامل كمؤثرة حتى المراجعة"
+          },
+          {
+            "locator": "م7/ف4",
+            "class": "ocr",
+            "reason": "حروف مشوهة أو لاتينية أو أرقام ملتصقة بالحروف في النسخة",
+            "official": "",
+            "candidate": "م",
+            "impact": "النص المستخرج تالف في هذا الموضع ولا يصلح للاقتباس"
+          },
+          {
+            "locator": "م7/ف4",
+            "class": "presumed_substantive",
+            "reason": "عبارة مختلفة",
+            "official": "فوري 5",
+            "candidate": "دوري 65",
+            "impact": "صياغة مختلفة لم يثبت تكافؤها؛ تُعامل كمؤثرة حتى المراجعة"
+          },
+          {
+            "locator": "م7/ف5",
+            "class": "ocr",
+            "reason": "حروف مشوهة أو لاتينية أو أرقام ملتصقة بالحروف في النسخة",
+            "official": "",
+            "candidate": "معايير المستفيد الحقيقي من الأوقاف 9 صفحة 10 اوقاى 4 ل الام",
+            "impact": "النص المستخرج تالف في هذا الموضع ولا يصلح للاقتباس"
+          },
+          {
+            "locator": "م7",
+            "class": "ocr",
+            "reason": "ترقيم الفقرات مختلف: الفقرات 1، 2، 3، 4، 5 لم تُتعرف في النسخة",
+            "official": "1، 2، 3، 4، 5",
+            "candidate": "",
+            "impact": "بنية المادة في النسخة لا تطابق الرسمي؛ الإحالة إلى الفقرة غير موثوقة"
+          }
+        ]
+      },
+      {
+        "article": 8,
+        "outcome": "extraction_defective",
+        "located": "heading",
+        "coverage": 0.979,
+        "headingMatches": true,
+        "officialParagraphs": [
+          1,
+          2
+        ],
+        "candidateParagraphs": [
+          1
+        ],
+        "differences": [
+          {
+            "locator": "م8/ف1",
+            "class": "ocr",
+            "reason": "خطأ في حرف أو حرفين (قراءة ضوئية)",
+            "official": "يسمح",
+            "candidate": "بسمح",
+            "impact": "على الأرجح لا يغيّر المعنى، لكن الكلمة في النسخة خاطئة"
+          },
+          {
+            "locator": "م8/ف2",
+            "class": "editorial",
+            "reason": "اختلاف في الفصل بين الكلمات فقط",
+            "official": "يجوز للأوقاف",
+            "candidate": "يجوزللأوقاف",
+            "impact": "لا أثر في المعنى"
+          },
+          {
+            "locator": "م8",
+            "class": "ocr",
+            "reason": "ترقيم الفقرات مختلف: الفقرات 2 لم تُتعرف في النسخة",
+            "official": "1، 2",
+            "candidate": "1",
+            "impact": "بنية المادة في النسخة لا تطابق الرسمي؛ الإحالة إلى الفقرة غير موثوقة"
+          }
+        ]
+      },
+      {
+        "article": 9,
+        "outcome": "identical",
+        "located": "heading",
+        "coverage": 1,
+        "headingMatches": true,
+        "officialParagraphs": [],
+        "candidateParagraphs": [],
+        "differences": []
+      },
+      {
+        "article": 10,
+        "outcome": "substantive_difference",
+        "located": "heading",
+        "coverage": 0.903,
+        "headingMatches": false,
+        "officialParagraphs": [],
+        "candidateParagraphs": [],
+        "differences": [
+          {
+            "locator": "م10",
+            "class": "ocr",
+            "reason": "حروف مشوهة أو لاتينية أو أرقام ملتصقة بالحروف في النسخة",
+            "official": "10 10 10 أوقاف AWGAF",
+            "candidate": "معايير المستفيد الحقيقي من الأوقاف 2 صفحة 3 اوقاى 4 ل الام",
+            "impact": "النص المستخرج تالف في هذا الموضع ولا يصلح للاقتباس"
+          },
+          {
+            "locator": "م10",
+            "class": "presumed_substantive",
+            "reason": "عبارة مختلفة",
+            "official": "J",
+            "candidate": "إلى",
+            "impact": "صياغة مختلفة لم يثبت تكافؤها؛ تُعامل كمؤثرة حتى المراجعة"
+          },
+          {
+            "locator": "م10",
+            "class": "presumed_substantive",
+            "reason": "عبارة مختلفة",
+            "official": "dug",
+            "candidate": "الهيئة",
+            "impact": "صياغة مختلفة لم يثبت تكافؤها؛ تُعامل كمؤثرة حتى المراجعة"
+          },
+          {
+            "locator": "م10",
+            "class": "ocr",
+            "reason": "حروف مشوهة أو لاتينية أو أرقام ملتصقة بالحروف في النسخة",
+            "official": "11/0",
+            "candidate": "م 11",
+            "impact": "النص المستخرج تالف في هذا الموضع ولا يصلح للاقتباس"
+          },
+          {
+            "locator": "م10",
+            "class": "presumed_substantive",
+            "reason": "عبارة ساقطة من النسخة",
+            "official": "ه",
+            "candidate": "",
+            "impact": "سقوط جزء من الحكم؛ تُعامل كمؤثرة حتى المراجعة"
+          },
+          {
+            "locator": "م10",
+            "class": "ocr",
+            "reason": "خطأ في حرف أو حرفين (قراءة ضوئية)",
+            "official": "وتطويرها",
+            "candidate": "وتطويرهاء",
+            "impact": "على الأرجح لا يغيّر المعنى، لكن الكلمة في النسخة خاطئة"
+          },
+          {
+            "locator": "م10",
+            "class": "ocr",
+            "reason": "كلمة مبتورة في النسخة",
+            "official": "واقفيهاء",
+            "candidate": "واقفيها",
+            "impact": "النص المستخرج ناقص في هذا الموضع ولا يصلح للاقتباس"
+          },
+          {
+            "locator": "م10",
+            "class": "presumed_substantive",
+            "reason": "عبارة مختلفة",
+            "official": "1569",
+            "candidate": "وؤق",
+            "impact": "صياغة مختلفة لم يثبت تكافؤها؛ تُعامل كمؤثرة حتى المراجعة"
+          },
+          {
+            "locator": "م10",
+            "class": "presumed_substantive",
+            "reason": "عبارة مختلفة",
+            "official": "Opis",
+            "candidate": "تشرف",
+            "impact": "صياغة مختلفة لم يثبت تكافؤها؛ تُعامل كمؤثرة حتى المراجعة"
+          },
+          {
+            "locator": "م10",
+            "class": "presumed_substantive",
+            "reason": "عبارة مختلفة",
+            "official": "Bg",
+            "candidate": "والقي",
+            "impact": "صياغة مختلفة لم يثبت تكافؤها؛ تُعامل كمؤثرة حتى المراجعة"
+          },
+          {
+            "locator": "م10",
+            "class": "presumed_substantive",
+            "reason": "عبارة مختلفة",
+            "official": "gil",
+            "candidate": "السابع",
+            "impact": "صياغة مختلفة لم يثبت تكافؤها؛ تُعامل كمؤثرة حتى المراجعة"
+          },
+          {
+            "locator": "م10",
+            "class": "presumed_substantive",
+            "reason": "عبارة مختلفة",
+            "official": "FATE",
+            "candidate": "5871",
+            "impact": "صياغة مختلفة لم يثبت تكافؤها؛ تُعامل كمؤثرة حتى المراجعة"
+          },
+          {
+            "locator": "م10",
+            "class": "presumed_substantive",
+            "reason": "عبارة مختلفة",
+            "official": "tc FATF",
+            "candidate": "2875 في",
+            "impact": "صياغة مختلفة لم يثبت تكافؤها؛ تُعامل كمؤثرة حتى المراجعة"
+          },
+          {
+            "locator": "م10",
+            "class": "presumed_substantive",
+            "reason": "عبارة زائدة في النسخة ليست في النص الرسمي",
+            "official": "",
+            "candidate": "عليه أصدرت الهيئة",
+            "impact": "إضافة إلى النص النظامي؛ تُعامل كمؤثرة حتى المراجعة"
+          },
+          {
+            "locator": "م10",
+            "class": "ocr",
+            "reason": "حروف مشوهة أو لاتينية أو أرقام ملتصقة بالحروف في النسخة",
+            "official": "",
+            "candidate": "معايير المستفيد الحقيقي من الأوقاف 3 صفحة 4 اوقاى 4 الام",
+            "impact": "النص المستخرج تالف في هذا الموضع ولا يصلح للاقتباس"
+          }
+        ]
+      }
+    ],
+    "extraArticles": [],
+    "officialIssues": [
+      "ترتيب المواد في الملف غير متسلسل عند المادة 1"
+    ],
+    "candidateIssues": [
+      "ترتيب المواد في الملف غير متسلسل عند المادة 1"
+    ],
+    "candidateHasPresentationForms": false
+  }
+}
