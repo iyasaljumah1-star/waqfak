@@ -1,4 +1,3 @@
-import { PRACTICE_GATED_LICENSES } from "@/server/modules/nazara/licence";
 /**
  * Recommendation engine (pure, deterministic, explainable).
  * Facts → (rules) → Needs → Services → prioritized Action Plan in 3 waves.
@@ -112,9 +111,7 @@ export function runRules(rules: Rule[], facts: Facts, services: ServiceInfo[], c
         removed.push({ code, why: "استقلال المراجعة: لا يراجع القوائم من يديرها أو يمسك دفاترها؛ يُعيَّن مراجع مستقل." });
         continue;
       }
-      // a licence that gates only the start of practice (corporate nazara, N01) does not withdraw the service: the request,
-      // the study and the appointment application go ahead (owner's order 2026-11-06, N01)
-      if (s.requiresLicenseKey && !ctx.activeLicenses.includes(s.requiresLicenseKey) && !PRACTICE_GATED_LICENSES.has(s.requiresLicenseKey)) {
+      if (s.requiresLicenseKey && !ctx.activeLicenses.includes(s.requiresLicenseKey)) {
         removed.push({ code, why: "تتطلب ترخيصًا لم يُسجّل بعد في المنصة." });
         continue;
       }

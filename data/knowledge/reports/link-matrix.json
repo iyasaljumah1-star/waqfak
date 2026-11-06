@@ -1,5 +1,5 @@
 {
- "ranAt": "2026-11-06T15:20:42.684Z",
+ "ranAt": "2026-11-06T16:16:00.682Z",
  "rows": [
   {
    "refCode": "NAZARA-REG",
@@ -244,12 +244,12 @@
    "registryId": "PRT",
    "inProject": true,
    "extracted": true,
-   "extraction": "text_layer+ocr",
+   "extraction": "ocr+text_layer",
    "verified": "لا — طبقة نص الملف دون مقابلة بالصفحات",
    "inKb": true,
    "units": 8,
    "retrievable": true,
-   "probe": "3/3",
+   "probe": "2/3",
    "services": [
     "I06",
     "T07"
@@ -339,7 +339,7 @@
     "W04"
    ],
    "linked": true,
-   "tested": false,
+   "tested": true,
    "approved": false,
    "quality": "good",
    "superseded": ""
@@ -660,7 +660,7 @@
    "extraction": "text_layer",
    "verified": "لا — نص OCR أو خلل ترتيب الحروف",
    "inKb": true,
-   "units": 944,
+   "units": 749,
    "retrievable": true,
    "probe": "3/3",
    "services": [
@@ -689,7 +689,7 @@
    "extraction": "text_layer",
    "verified": "لا — نص OCR أو خلل ترتيب الحروف",
    "inKb": true,
-   "units": 294,
+   "units": 489,
    "retrievable": true,
    "probe": "3/3",
    "services": [
@@ -709,7 +709,7 @@
    "registryId": null,
    "inProject": true,
    "extracted": true,
-   "extraction": "ocr+text_layer",
+   "extraction": "text_layer+ocr",
    "verified": "لا — طبقة نص الملف دون مقابلة بالصفحات",
    "inKb": true,
    "units": 264,

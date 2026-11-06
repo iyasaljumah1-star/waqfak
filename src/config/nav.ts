@@ -63,6 +63,7 @@ export const ADMIN_NAV: NavItem[] = [
   { href: "/admin/compliance", label: "محرك الامتثال", icon: "Scale", perm: "admin.compliance" },
   { href: "/admin/traceability", label: "سجل تتبع المتطلبات", icon: "Route", perm: "admin.compliance" },
   { href: "/admin/content", label: "المحتوى والمكتبة", icon: "BookOpen", perm: "admin.content" },
+  { href: "/admin/knowledge", label: "مراجعة قاعدة المعرفة", icon: "ClipboardCheck", perm: "knowledge.review.legal" },
   { href: "/admin/users", label: "المستخدمون والأدوار", icon: "UsersRound", perm: "admin.users" },
   { href: "/admin/finance", label: "الفواتير والمدفوعات", icon: "Receipt", perm: "admin.finance" },
   { href: "/admin/notifications", label: "الإشعارات والرسائل", icon: "Bell", perm: "admin.notifications" },
