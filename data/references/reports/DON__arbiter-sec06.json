@@ -1,0 +1,273 @@
+{
+  "refId": "DON",
+  "official": {
+    "url": "https://www.uqn.gov.sa/details?p=27532",
+    "sha256": "bd5402a9c6d318144bab1abf794feced9567eba9078d99564c1b65885e286554",
+    "retrievedAt": "2026-11-06T00:00:00Z",
+    "via": "relay_scrape",
+    "directConfirmed": false
+  },
+  "candidate": {
+    "label": "النص المصحح (البوابة الميسرة، مصدر ثانوي)",
+    "path": "DON/arbiter-sec06.txt",
+    "origin": "law.arbiter.sa كما حُفظ في مراجعة 2026-11-04",
+    "sha256": "fb0c0e7bcac422dc7f01a18ee24e11fb3f5514f6308157edf9e388ac8a9088a1"
+  },
+  "ranAt": "2026-11-06",
+  "result": {
+    "outcome": "substantive_difference",
+    "articlesOfficial": 12,
+    "articlesCandidate": 12,
+    "counts": {
+      "identical": 7,
+      "editorial_only": 0,
+      "substantive_difference": 2,
+      "extraction_defective": 3,
+      "unverifiable": 0,
+      "repealed_or_superseded": 0
+    },
+    "articles": [
+      {
+        "article": 1,
+        "outcome": "identical",
+        "located": "heading",
+        "coverage": 1,
+        "headingMatches": true,
+        "officialParagraphs": [],
+        "candidateParagraphs": [],
+        "differences": []
+      },
+      {
+        "article": 2,
+        "outcome": "identical",
+        "located": "heading",
+        "coverage": 1,
+        "headingMatches": true,
+        "officialParagraphs": [],
+        "candidateParagraphs": [],
+        "differences": []
+      },
+      {
+        "article": 3,
+        "outcome": "substantive_difference",
+        "located": "heading",
+        "coverage": 0.997,
+        "headingMatches": true,
+        "officialParagraphs": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9
+        ],
+        "candidateParagraphs": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9
+        ],
+        "differences": [
+          {
+            "locator": "م3/ف8/ج",
+            "class": "substantive",
+            "reason": "علامة النسبة المئوية مختلفة",
+            "official": "10%",
+            "candidate": "10",
+            "impact": "يغيّر القيمة من نسبة مئوية إلى عدد مطلق أو العكس"
+          }
+        ]
+      },
+      {
+        "article": 4,
+        "outcome": "substantive_difference",
+        "located": "heading",
+        "coverage": 1,
+        "headingMatches": true,
+        "officialParagraphs": [
+          1,
+          2,
+          3,
+          4
+        ],
+        "candidateParagraphs": [
+          1,
+          2,
+          3,
+          4
+        ],
+        "differences": [
+          {
+            "locator": "م4/ف1",
+            "class": "presumed_substantive",
+            "reason": "عبارة زائدة في النسخة ليست في النص الرسمي",
+            "official": "",
+            "candidate": "من تاريخ صدور الترخيص",
+            "impact": "إضافة إلى النص النظامي؛ تُعامل كمؤثرة حتى المراجعة"
+          }
+        ]
+      },
+      {
+        "article": 5,
+        "outcome": "identical",
+        "located": "heading",
+        "coverage": 1,
+        "headingMatches": true,
+        "officialParagraphs": [],
+        "candidateParagraphs": [],
+        "differences": []
+      },
+      {
+        "article": 6,
+        "outcome": "identical",
+        "located": "heading",
+        "coverage": 1,
+        "headingMatches": true,
+        "officialParagraphs": [
+          1,
+          2
+        ],
+        "candidateParagraphs": [
+          1,
+          2
+        ],
+        "differences": []
+      },
+      {
+        "article": 7,
+        "outcome": "extraction_defective",
+        "located": "heading",
+        "coverage": 0.993,
+        "headingMatches": true,
+        "officialParagraphs": [
+          1,
+          2,
+          3,
+          4
+        ],
+        "candidateParagraphs": [
+          1,
+          2,
+          3,
+          4
+        ],
+        "differences": [
+          {
+            "locator": "م7/ف4",
+            "class": "ocr",
+            "reason": "خطأ في حرف أو حرفين (قراءة ضوئية)",
+            "official": "المحددة",
+            "candidate": "لمحددة",
+            "impact": "على الأرجح لا يغيّر المعنى، لكن الكلمة في النسخة خاطئة"
+          }
+        ]
+      },
+      {
+        "article": 8,
+        "outcome": "extraction_defective",
+        "located": "heading",
+        "coverage": 0.994,
+        "headingMatches": true,
+        "officialParagraphs": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7
+        ],
+        "candidateParagraphs": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7
+        ],
+        "differences": [
+          {
+            "locator": "م8/ف4",
+            "class": "ocr",
+            "reason": "كلمة مبتورة في النسخة",
+            "official": "مؤيداً",
+            "candidate": "مؤيدٍ",
+            "impact": "النص المستخرج ناقص في هذا الموضع ولا يصلح للاقتباس"
+          }
+        ]
+      },
+      {
+        "article": 9,
+        "outcome": "identical",
+        "located": "heading",
+        "coverage": 1,
+        "headingMatches": true,
+        "officialParagraphs": [],
+        "candidateParagraphs": [],
+        "differences": []
+      },
+      {
+        "article": 10,
+        "outcome": "identical",
+        "located": "heading",
+        "coverage": 1,
+        "headingMatches": true,
+        "officialParagraphs": [
+          1,
+          2,
+          3,
+          4
+        ],
+        "candidateParagraphs": [
+          1,
+          2,
+          3,
+          4
+        ],
+        "differences": []
+      },
+      {
+        "article": 11,
+        "outcome": "extraction_defective",
+        "located": "heading",
+        "coverage": 0.983,
+        "headingMatches": true,
+        "officialParagraphs": [],
+        "candidateParagraphs": [],
+        "differences": [
+          {
+            "locator": "م11",
+            "class": "ocr",
+            "reason": "خطأ في حرف أو حرفين (قراءة ضوئية)",
+            "official": "تسجيله",
+            "candidate": "تسجليه",
+            "impact": "على الأرجح لا يغيّر المعنى، لكن الكلمة في النسخة خاطئة"
+          }
+        ]
+      },
+      {
+        "article": 12,
+        "outcome": "identical",
+        "located": "heading",
+        "coverage": 1,
+        "headingMatches": true,
+        "officialParagraphs": [],
+        "candidateParagraphs": [],
+        "differences": []
+      }
+    ],
+    "extraArticles": [],
+    "officialIssues": [],
+    "candidateIssues": [],
+    "candidateHasPresentationForms": false
+  }
+}

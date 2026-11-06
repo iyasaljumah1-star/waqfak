@@ -1,0 +1,664 @@
+{
+  "refId": "PRD",
+  "official": {
+    "url": "https://www.uqn.gov.sa/decisions-and-regulations/4001176",
+    "sha256": "d6273209635238cac814381b1f4bb64a57e0870b6fde68e4152ce5d32aeb00db",
+    "retrievedAt": "2026-11-06T00:00:00Z",
+    "via": "relay_scrape",
+    "directConfirmed": false
+  },
+  "candidate": {
+    "label": "النص المصحح (البوابة الميسرة، مصدر ثانوي)",
+    "path": "PRD/arbiter-sec09.txt",
+    "origin": "law.arbiter.sa كما حُفظ في مراجعة 2026-11-04",
+    "sha256": "23fe4c5254bb37d5a14a04d6998b2b6ccc53325d9e338c51084253e87068f5cb"
+  },
+  "ranAt": "2026-11-06",
+  "result": {
+    "outcome": "extraction_defective",
+    "articlesOfficial": 37,
+    "articlesCandidate": 37,
+    "counts": {
+      "identical": 29,
+      "editorial_only": 1,
+      "substantive_difference": 0,
+      "extraction_defective": 7,
+      "unverifiable": 0,
+      "repealed_or_superseded": 0
+    },
+    "articles": [
+      {
+        "article": 1,
+        "outcome": "extraction_defective",
+        "located": "heading",
+        "coverage": 1,
+        "headingMatches": true,
+        "officialParagraphs": [
+          1,
+          2
+        ],
+        "candidateParagraphs": [
+          1,
+          2
+        ],
+        "differences": [
+          {
+            "locator": "م1",
+            "class": "ocr",
+            "reason": "جدول التعريفات مفكك في النسخة: 6 من 12 تعريفًا ليس بجوار مصطلحه",
+            "official": "12 مصطلحًا",
+            "candidate": "",
+            "impact": "نص التعريفات موجود لكن النسخة لا تبين أي تعريف لأي مصطلح؛ لا يصلح الاستشهاد بها"
+          }
+        ]
+      },
+      {
+        "article": 2,
+        "outcome": "extraction_defective",
+        "located": "heading",
+        "coverage": 0.515,
+        "headingMatches": true,
+        "officialParagraphs": [
+          1,
+          2
+        ],
+        "candidateParagraphs": [
+          1,
+          2
+        ],
+        "differences": [
+          {
+            "locator": "م2/ف2",
+            "class": "ocr",
+            "reason": "نص مبدَّل الموضع بين أجزاء النسخة",
+            "official": "دمج القطاع الوقفي في التنمية الاقتصادية وفقًا لمستهدفات الهيئة العامة للأوقاف المستمدة من رؤية المملكة 2030",
+            "candidate": "مقدمي الطلبات والمصرح لهم وواقفي المنتجات الاستثمارية الوقفية ونظارها",
+            "impact": "الحكم غير مفقود لكن موضعه في النسخة خاطئ؛ لا يصلح الاستشهاد بالنسخة في هذا الموضع"
+          }
+        ]
+      },
+      {
+        "article": 3,
+        "outcome": "extraction_defective",
+        "located": "heading",
+        "coverage": 0.545,
+        "headingMatches": true,
+        "officialParagraphs": [
+          1,
+          2
+        ],
+        "candidateParagraphs": [
+          1
+        ],
+        "differences": [
+          {
+            "locator": "م3/ف2",
+            "class": "ocr",
+            "reason": "نص المادة موجود في موضع آخر من النسخة",
+            "official": "2 مقدمي الطلبات والمصرح لهم وواقفي المنتجات الاستثمارية الوقفية ونظّارها",
+            "candidate": "",
+            "impact": "الحكم غير مفقود لكن موضعه في النسخة خاطئ؛ لا يصلح الاستشهاد بالنسخة في هذا الموضع"
+          },
+          {
+            "locator": "م3",
+            "class": "ocr",
+            "reason": "ترقيم الفقرات مختلف: الفقرات 2 لم تُتعرف في النسخة",
+            "official": "1، 2",
+            "candidate": "1",
+            "impact": "بنية المادة في النسخة لا تطابق الرسمي؛ الإحالة إلى الفقرة غير موثوقة"
+          }
+        ]
+      },
+      {
+        "article": 4,
+        "outcome": "editorial_only",
+        "located": "heading",
+        "coverage": 1,
+        "headingMatches": true,
+        "officialParagraphs": [],
+        "candidateParagraphs": [],
+        "differences": [
+          {
+            "locator": "م4",
+            "class": "editorial",
+            "reason": "اختلاف في الفصل بين الكلمات فقط",
+            "official": "أن تُضمّن",
+            "candidate": "أنتُضمن",
+            "impact": "لا أثر في المعنى"
+          }
+        ]
+      },
+      {
+        "article": 5,
+        "outcome": "identical",
+        "located": "heading",
+        "coverage": 1,
+        "headingMatches": true,
+        "officialParagraphs": [],
+        "candidateParagraphs": [],
+        "differences": []
+      },
+      {
+        "article": 6,
+        "outcome": "extraction_defective",
+        "located": "heading",
+        "coverage": 1,
+        "headingMatches": true,
+        "officialParagraphs": [],
+        "candidateParagraphs": [
+          2
+        ],
+        "differences": [
+          {
+            "locator": "م6",
+            "class": "ocr",
+            "reason": "نص من موضع آخر أُقحم هنا في النسخة",
+            "official": "",
+            "candidate": "02 يعد الملحق الوقفي جزءًا لا يتجزأ من مستندات المنتج الاستثماري الوقفي وهو المرجع الرئيس في تحديد الأحكام الوقفية الخاصة به",
+            "impact": "الحكم غير مفقود لكن موضعه في النسخة خاطئ؛ لا يصلح الاستشهاد بالنسخة في هذا الموضع"
+          }
+        ]
+      },
+      {
+        "article": 7,
+        "outcome": "extraction_defective",
+        "located": "heading",
+        "coverage": 0.588,
+        "headingMatches": true,
+        "officialParagraphs": [
+          1,
+          2
+        ],
+        "candidateParagraphs": [
+          1
+        ],
+        "differences": [
+          {
+            "locator": "م7/ف1",
+            "class": "editorial",
+            "reason": "اختلاف في الفصل بين الكلمات فقط",
+            "official": "وفقًا لأحكام",
+            "candidate": "وفقًالأحكام",
+            "impact": "لا أثر في المعنى"
+          },
+          {
+            "locator": "م7/ف2",
+            "class": "ocr",
+            "reason": "نص المادة موجود في موضع آخر من النسخة",
+            "official": "2 يُعد الملحق الوقفي جزءًا لا يتجزأ من مستندات المنتج الاستثماري الوقفي وهو المرجع الرئيس في تحديد الأحكام الوقفية الخاصة به",
+            "candidate": "",
+            "impact": "الحكم غير مفقود لكن موضعه في النسخة خاطئ؛ لا يصلح الاستشهاد بالنسخة في هذا الموضع"
+          },
+          {
+            "locator": "م7",
+            "class": "ocr",
+            "reason": "ترقيم الفقرات مختلف: الفقرات 2 لم تُتعرف في النسخة",
+            "official": "1، 2",
+            "candidate": "1",
+            "impact": "بنية المادة في النسخة لا تطابق الرسمي؛ الإحالة إلى الفقرة غير موثوقة"
+          }
+        ]
+      },
+      {
+        "article": 8,
+        "outcome": "identical",
+        "located": "heading",
+        "coverage": 1,
+        "headingMatches": true,
+        "officialParagraphs": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ],
+        "candidateParagraphs": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ],
+        "differences": []
+      },
+      {
+        "article": 9,
+        "outcome": "identical",
+        "located": "heading",
+        "coverage": 1,
+        "headingMatches": true,
+        "officialParagraphs": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "candidateParagraphs": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "differences": []
+      },
+      {
+        "article": 10,
+        "outcome": "identical",
+        "located": "heading",
+        "coverage": 1,
+        "headingMatches": true,
+        "officialParagraphs": [
+          1,
+          2,
+          3,
+          4
+        ],
+        "candidateParagraphs": [
+          1,
+          2,
+          3,
+          4
+        ],
+        "differences": []
+      },
+      {
+        "article": 11,
+        "outcome": "identical",
+        "located": "heading",
+        "coverage": 1,
+        "headingMatches": true,
+        "officialParagraphs": [
+          1,
+          2,
+          3
+        ],
+        "candidateParagraphs": [
+          1,
+          2,
+          3
+        ],
+        "differences": []
+      },
+      {
+        "article": 12,
+        "outcome": "identical",
+        "located": "heading",
+        "coverage": 1,
+        "headingMatches": true,
+        "officialParagraphs": [],
+        "candidateParagraphs": [],
+        "differences": []
+      },
+      {
+        "article": 13,
+        "outcome": "identical",
+        "located": "heading",
+        "coverage": 1,
+        "headingMatches": true,
+        "officialParagraphs": [
+          1,
+          2
+        ],
+        "candidateParagraphs": [
+          1,
+          2
+        ],
+        "differences": []
+      },
+      {
+        "article": 14,
+        "outcome": "identical",
+        "located": "heading",
+        "coverage": 1,
+        "headingMatches": true,
+        "officialParagraphs": [
+          1,
+          2,
+          3
+        ],
+        "candidateParagraphs": [
+          1,
+          2,
+          3
+        ],
+        "differences": []
+      },
+      {
+        "article": 15,
+        "outcome": "identical",
+        "located": "heading",
+        "coverage": 1,
+        "headingMatches": true,
+        "officialParagraphs": [],
+        "candidateParagraphs": [],
+        "differences": []
+      },
+      {
+        "article": 16,
+        "outcome": "identical",
+        "located": "heading",
+        "coverage": 1,
+        "headingMatches": true,
+        "officialParagraphs": [],
+        "candidateParagraphs": [],
+        "differences": []
+      },
+      {
+        "article": 17,
+        "outcome": "identical",
+        "located": "heading",
+        "coverage": 1,
+        "headingMatches": true,
+        "officialParagraphs": [],
+        "candidateParagraphs": [],
+        "differences": []
+      },
+      {
+        "article": 18,
+        "outcome": "identical",
+        "located": "heading",
+        "coverage": 1,
+        "headingMatches": true,
+        "officialParagraphs": [],
+        "candidateParagraphs": [],
+        "differences": []
+      },
+      {
+        "article": 19,
+        "outcome": "identical",
+        "located": "heading",
+        "coverage": 1,
+        "headingMatches": true,
+        "officialParagraphs": [],
+        "candidateParagraphs": [],
+        "differences": []
+      },
+      {
+        "article": 20,
+        "outcome": "identical",
+        "located": "heading",
+        "coverage": 1,
+        "headingMatches": true,
+        "officialParagraphs": [],
+        "candidateParagraphs": [],
+        "differences": []
+      },
+      {
+        "article": 21,
+        "outcome": "identical",
+        "located": "heading",
+        "coverage": 1,
+        "headingMatches": true,
+        "officialParagraphs": [],
+        "candidateParagraphs": [],
+        "differences": []
+      },
+      {
+        "article": 22,
+        "outcome": "identical",
+        "located": "heading",
+        "coverage": 1,
+        "headingMatches": true,
+        "officialParagraphs": [
+          1,
+          2
+        ],
+        "candidateParagraphs": [
+          1,
+          2
+        ],
+        "differences": []
+      },
+      {
+        "article": 23,
+        "outcome": "identical",
+        "located": "heading",
+        "coverage": 1,
+        "headingMatches": true,
+        "officialParagraphs": [
+          1,
+          2
+        ],
+        "candidateParagraphs": [
+          1,
+          2
+        ],
+        "differences": []
+      },
+      {
+        "article": 24,
+        "outcome": "identical",
+        "located": "heading",
+        "coverage": 1,
+        "headingMatches": true,
+        "officialParagraphs": [
+          1,
+          2,
+          3
+        ],
+        "candidateParagraphs": [
+          1,
+          2,
+          3
+        ],
+        "differences": []
+      },
+      {
+        "article": 25,
+        "outcome": "extraction_defective",
+        "located": "heading",
+        "coverage": 0.857,
+        "headingMatches": true,
+        "officialParagraphs": [
+          1,
+          2,
+          3,
+          4
+        ],
+        "candidateParagraphs": [
+          1,
+          2,
+          3,
+          4
+        ],
+        "differences": [
+          {
+            "locator": "م25",
+            "class": "ocr",
+            "reason": "نص منقول داخل المادة مع تشوه في الاستخراج (الأرقام نفسها)",
+            "official": "الوقفي الآتي 1 بيان ما إذا كان الصندوق سينشئ",
+            "candidate": "",
+            "impact": "الحكم غير مفقود لكن النسخة مشوهة في هذا الموضع؛ لا يصلح الاستشهاد بها"
+          },
+          {
+            "locator": "م25/ف1",
+            "class": "ocr",
+            "reason": "نص منقول داخل المادة مع تشوه في الاستخراج (الأرقام نفسها)",
+            "official": "",
+            "candidate": "الوقفي الآتي 1 بيان ما إذا كان الصندوق سين",
+            "impact": "الحكم غير مفقود لكن النسخة مشوهة في هذا الموضع؛ لا يصلح الاستشهاد بها"
+          }
+        ]
+      },
+      {
+        "article": 26,
+        "outcome": "extraction_defective",
+        "located": "heading",
+        "coverage": 1,
+        "headingMatches": true,
+        "officialParagraphs": [],
+        "candidateParagraphs": [],
+        "differences": [
+          {
+            "locator": "م26",
+            "class": "ocr",
+            "reason": "نص من موضع آخر أُقحم هنا في النسخة",
+            "official": "",
+            "candidate": "مع مراعاة ما نصت عليه المادة",
+            "impact": "الحكم غير مفقود لكن موضعه في النسخة خاطئ؛ لا يصلح الاستشهاد بالنسخة في هذا الموضع"
+          }
+        ]
+      },
+      {
+        "article": 27,
+        "outcome": "identical",
+        "located": "heading",
+        "coverage": 1,
+        "headingMatches": true,
+        "officialParagraphs": [
+          1,
+          2,
+          3
+        ],
+        "candidateParagraphs": [
+          1,
+          2,
+          3
+        ],
+        "differences": []
+      },
+      {
+        "article": 28,
+        "outcome": "identical",
+        "located": "heading",
+        "coverage": 1,
+        "headingMatches": true,
+        "officialParagraphs": [
+          1
+        ],
+        "candidateParagraphs": [
+          1
+        ],
+        "differences": []
+      },
+      {
+        "article": 29,
+        "outcome": "identical",
+        "located": "heading",
+        "coverage": 1,
+        "headingMatches": true,
+        "officialParagraphs": [
+          1,
+          2
+        ],
+        "candidateParagraphs": [
+          1,
+          2
+        ],
+        "differences": []
+      },
+      {
+        "article": 30,
+        "outcome": "identical",
+        "located": "heading",
+        "coverage": 1,
+        "headingMatches": true,
+        "officialParagraphs": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ],
+        "candidateParagraphs": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ],
+        "differences": []
+      },
+      {
+        "article": 31,
+        "outcome": "identical",
+        "located": "heading",
+        "coverage": 1,
+        "headingMatches": true,
+        "officialParagraphs": [
+          1,
+          2
+        ],
+        "candidateParagraphs": [
+          1,
+          2
+        ],
+        "differences": []
+      },
+      {
+        "article": 32,
+        "outcome": "identical",
+        "located": "heading",
+        "coverage": 1,
+        "headingMatches": true,
+        "officialParagraphs": [],
+        "candidateParagraphs": [],
+        "differences": []
+      },
+      {
+        "article": 33,
+        "outcome": "identical",
+        "located": "heading",
+        "coverage": 1,
+        "headingMatches": true,
+        "officialParagraphs": [],
+        "candidateParagraphs": [],
+        "differences": []
+      },
+      {
+        "article": 34,
+        "outcome": "identical",
+        "located": "heading",
+        "coverage": 1,
+        "headingMatches": true,
+        "officialParagraphs": [],
+        "candidateParagraphs": [],
+        "differences": []
+      },
+      {
+        "article": 35,
+        "outcome": "identical",
+        "located": "heading",
+        "coverage": 1,
+        "headingMatches": true,
+        "officialParagraphs": [],
+        "candidateParagraphs": [],
+        "differences": []
+      },
+      {
+        "article": 36,
+        "outcome": "identical",
+        "located": "heading",
+        "coverage": 1,
+        "headingMatches": true,
+        "officialParagraphs": [],
+        "candidateParagraphs": [],
+        "differences": []
+      },
+      {
+        "article": 37,
+        "outcome": "identical",
+        "located": "heading",
+        "coverage": 1,
+        "headingMatches": true,
+        "officialParagraphs": [],
+        "candidateParagraphs": [],
+        "differences": []
+      }
+    ],
+    "extraArticles": [],
+    "officialIssues": [],
+    "candidateIssues": [],
+    "candidateHasPresentationForms": false
+  }
+}

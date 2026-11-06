@@ -388,3 +388,34 @@ CREATE POLICY staff_insert ON request_field_states AS RESTRICTIVE FOR INSERT TO 
 DROP POLICY IF EXISTS staff_update ON request_field_states;
 CREATE POLICY staff_update ON request_field_states AS RESTRICTIVE FOR UPDATE TO waqfak_app USING (app_current_user() IS NULL OR app_is_staff()) WITH CHECK (app_current_user() IS NULL OR app_is_staff());
 REVOKE DELETE, TRUNCATE ON request_field_states FROM waqfak_app;
+
+-- ───────────── Reference registry (phase 1): system context only; history append-only ─────────────
+-- Nothing in the running application reads these tables yet. Reads and writes need the system/global context.
+DO $$
+DECLARE t text;
+BEGIN
+  FOREACH t IN ARRAY ARRAY['ref_sources','ref_versions','ref_version_confirmations','ref_units','ref_match_runs','ref_match_reviews','ref_fetch_attempts'] LOOP
+    EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
+    EXECUTE format('DROP POLICY IF EXISTS ref_system_only ON %I', t);
+    EXECUTE format('CREATE POLICY ref_system_only ON %I FOR ALL TO waqfak_app USING (app_has_global_access()) WITH CHECK (app_has_global_access())', t);
+  END LOOP;
+END $$;
+
+-- A stored text, its units, comparisons, reviews and retrieval attempts are never changed or removed, by anyone:
+-- the trigger also binds the owner role, unlike a revoked privilege.
+CREATE OR REPLACE FUNCTION ref_append_only() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  RAISE EXCEPTION 'append-only table %: % refused', TG_TABLE_NAME, TG_OP USING ERRCODE = 'insufficient_privilege';
+END $$;
+
+DO $$
+DECLARE t text;
+BEGIN
+  FOREACH t IN ARRAY ARRAY['ref_versions','ref_version_confirmations','ref_units','ref_match_runs','ref_match_reviews','ref_fetch_attempts'] LOOP
+    EXECUTE format('DROP TRIGGER IF EXISTS ref_append_only ON %I', t);
+    EXECUTE format('CREATE TRIGGER ref_append_only BEFORE UPDATE OR DELETE ON %I FOR EACH ROW EXECUTE FUNCTION ref_append_only()', t);
+    EXECUTE format('DROP TRIGGER IF EXISTS ref_no_truncate ON %I', t);
+    EXECUTE format('CREATE TRIGGER ref_no_truncate BEFORE TRUNCATE ON %I FOR EACH STATEMENT EXECUTE FUNCTION ref_append_only()', t);
+    EXECUTE format('REVOKE UPDATE, DELETE, TRUNCATE ON %I FROM waqfak_app', t);
+  END LOOP;
+END $$;
