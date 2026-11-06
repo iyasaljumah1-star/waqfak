@@ -52,7 +52,6 @@
     "ETEC-NAFS",
     "GASTAT-HEALTH-EST-2024",
     "GASTAT-LFS",
-    "GASTAT-USE-POLICY",
     "HRSD-OPENDATA",
     "MOH-YEARBOOK",
     "NAZARA-REG",
@@ -151,6 +150,7 @@
    "kbSources": [
     "ASSETS-GUIDE",
     "FQH-INSAF",
+    "FQH-INSAF-B21609",
     "FUNDS-INSTR",
     "INVEST-GUIDE",
     "PORTFOLIO-REG",
@@ -760,8 +760,10 @@
     "BOOK-MAYSAR",
     "CMA-SBR",
     "FQH-INSAF",
+    "FQH-INSAF-B21609",
     "FQH-IQNA",
     "FQH-KASHSHAF",
+    "FQH-KASHSHAF-B21642",
     "INVEST-GUIDE",
     "INVEST-RULES",
     "NAZARA-REG",
@@ -797,6 +799,7 @@
     "ASSETS-GUIDE",
     "BOOK-MAYSAR",
     "FQH-KASHSHAF",
+    "FQH-KASHSHAF-B21642",
     "INVEST-GUIDE",
     "INVEST-RULES",
     "NAZARA-REG"
@@ -815,8 +818,10 @@
    "kbSources": [
     "BOOK-MAYSAR",
     "FQH-INSAF",
+    "FQH-INSAF-B21609",
     "FQH-IQNA",
     "FQH-KASHSHAF",
+    "FQH-KASHSHAF-B21642",
     "NAZARA-REG",
     "PENALTIES"
    ],
@@ -902,8 +907,10 @@
    "kbSources": [
     "BOOK-MAYSAR",
     "FQH-INSAF",
+    "FQH-INSAF-B21609",
     "FQH-IQNA",
     "FQH-KASHSHAF",
+    "FQH-KASHSHAF-B21642",
     "NAZARA-REG"
    ],
    "citableNow": [],
@@ -1008,8 +1015,10 @@
    "kbSources": [
     "BOOK-MAYSAR",
     "FQH-INSAF",
+    "FQH-INSAF-B21609",
     "FQH-IQNA",
     "FQH-KASHSHAF",
+    "FQH-KASHSHAF-B21642",
     "FQH-MUGHNI",
     "FQH-MUMTI",
     "FQH-SHARH-MUNTAHA",
@@ -1071,6 +1080,7 @@
     "BOOK-MAYSAR",
     "CMA-SBR",
     "FQH-KASHSHAF",
+    "FQH-KASHSHAF-B21642",
     "INVEST-GUIDE",
     "NAZARA-REG"
    ],

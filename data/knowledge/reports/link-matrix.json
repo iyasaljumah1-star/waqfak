@@ -1,5 +1,5 @@
 {
- "ranAt": "2026-11-06T14:52:00.254Z",
+ "ranAt": "2026-11-06T15:08:25.111Z",
  "rows": [
   {
    "refCode": "NAZARA-REG",
@@ -244,12 +244,12 @@
    "registryId": "PRT",
    "inProject": true,
    "extracted": true,
-   "extraction": "ocr+text_layer",
+   "extraction": "text_layer+ocr",
    "verified": "لا — طبقة نص الملف دون مقابلة بالصفحات",
    "inKb": true,
    "units": 8,
    "retrievable": true,
-   "probe": "2/3",
+   "probe": "3/3",
    "services": [
     "I06",
     "T07"
@@ -593,7 +593,7 @@
    "registryId": null,
    "inProject": true,
    "extracted": true,
-   "extraction": "ocr+text_layer",
+   "extraction": "text_layer+ocr",
    "verified": "لا — طبقة نص الملف دون مقابلة بالصفحات",
    "inKb": true,
    "units": 14,
@@ -662,7 +662,7 @@
    "inKb": true,
    "units": 944,
    "retrievable": true,
-   "probe": "2/2",
+   "probe": "3/3",
    "services": [
     "C08",
     "C12",
@@ -674,7 +674,7 @@
     "W05"
    ],
    "linked": true,
-   "tested": true,
+   "tested": false,
    "approved": false,
    "quality": "degraded",
    "superseded": ""
@@ -709,7 +709,7 @@
    "registryId": null,
    "inProject": true,
    "extracted": true,
-   "extraction": "text_layer+ocr",
+   "extraction": "ocr+text_layer",
    "verified": "لا — طبقة نص الملف دون مقابلة بالصفحات",
    "inKb": true,
    "units": 264,
@@ -789,7 +789,33 @@
    "extraction": "verified_quote",
    "verified": "اقتباسات تحقق منها المختص على الصفحة أو المصدر",
    "inKb": true,
-   "units": 7,
+   "units": 6,
+   "retrievable": true,
+   "probe": "3/3",
+   "services": [
+    "C07",
+    "I01",
+    "I04",
+    "I09",
+    "T07"
+   ],
+   "linked": true,
+   "tested": false,
+   "approved": false,
+   "quality": "good",
+   "superseded": ""
+  },
+  {
+   "refCode": "FQH-INSAF-B21609",
+   "title": "الإنصاف في معرفة الراجح من الخلاف (مع المقنع والشرح الكبير) — Turath 21609",
+   "kind": "classical_fiqh",
+   "registryId": null,
+   "inProject": false,
+   "extracted": true,
+   "extraction": "verified_quote",
+   "verified": "اقتباسات تحقق منها المختص على الصفحة أو المصدر",
+   "inKb": true,
+   "units": 1,
    "retrievable": true,
    "probe": "3/3",
    "services": [
@@ -815,7 +841,34 @@
    "extraction": "verified_quote",
    "verified": "اقتباسات تحقق منها المختص على الصفحة أو المصدر",
    "inKb": true,
-   "units": 15,
+   "units": 12,
+   "retrievable": true,
+   "probe": "3/3",
+   "services": [
+    "C07",
+    "C10",
+    "I01",
+    "I03",
+    "I04",
+    "I09"
+   ],
+   "linked": true,
+   "tested": false,
+   "approved": false,
+   "quality": "good",
+   "superseded": ""
+  },
+  {
+   "refCode": "FQH-KASHSHAF-B21642",
+   "title": "كشاف القناع عن متن الإقناع — Turath 21642",
+   "kind": "classical_fiqh",
+   "registryId": null,
+   "inProject": false,
+   "extracted": true,
+   "extraction": "verified_quote",
+   "verified": "اقتباسات تحقق منها المختص على الصفحة أو المصدر",
+   "inKb": true,
+   "units": 3,
    "retrievable": true,
    "probe": "3/3",
    "services": [
@@ -873,7 +926,7 @@
    "linked": true,
    "tested": false,
    "approved": false,
-   "quality": "good",
+   "quality": "degraded",
    "superseded": ""
   },
   {
@@ -910,7 +963,7 @@
   {
    "refCode": "SOCPA-NPO-QA",
    "title": "استفسارات حول معايير المنشآت غير الهادفة للربح (61، 76، 85، 95، 96، 107، 118، 120، 127)",
-   "kind": "official_instruction",
+   "kind": "professional_standard",
    "registryId": null,
    "inProject": false,
    "extracted": true,
@@ -937,7 +990,7 @@
   {
    "refCode": "SOCPA-NPCO-OPINION-2025",
    "title": "إطار التقرير المالي المناسب للشركات غير الربحية المؤسسة وفقاً لنظام الشركات وتقريرها عن الهبات والوصايا والأوقاف",
-   "kind": "official_instruction",
+   "kind": "professional_standard",
    "registryId": null,
    "inProject": false,
    "extracted": true,
@@ -1010,7 +1063,7 @@
    "linked": true,
    "tested": false,
    "approved": false,
-   "quality": "good",
+   "quality": "degraded",
    "superseded": ""
   },
   {
@@ -1035,7 +1088,7 @@
    "linked": true,
    "tested": false,
    "approved": false,
-   "quality": "good",
+   "quality": "degraded",
    "superseded": ""
   },
   {
@@ -1060,7 +1113,7 @@
    "linked": true,
    "tested": false,
    "approved": false,
-   "quality": "good",
+   "quality": "degraded",
    "superseded": ""
   },
   {
@@ -1080,7 +1133,7 @@
     "T02"
    ],
    "linked": true,
-   "tested": true,
+   "tested": false,
    "approved": false,
    "quality": "good",
    "superseded": ""
@@ -1095,7 +1148,7 @@
    "extraction": "verified_quote",
    "verified": "اقتباسات تحقق منها المختص على الصفحة أو المصدر",
    "inKb": true,
-   "units": 3,
+   "units": 2,
    "retrievable": true,
    "probe": "3/3",
    "services": [
@@ -1111,28 +1164,6 @@
    "refCode": "GASTAT-HEALTH-EST-2024",
    "title": "إحصاءات المنشآت والقوى العاملة الصحية — تقرير المنهجية والجودة 4.0 (سنة الإسناد 2024)",
    "kind": "statistical_source",
-   "registryId": null,
-   "inProject": false,
-   "extracted": true,
-   "extraction": "verified_quote",
-   "verified": "اقتباسات تحقق منها المختص على الصفحة أو المصدر",
-   "inKb": true,
-   "units": 1,
-   "retrievable": true,
-   "probe": "3/3",
-   "services": [
-    "T02"
-   ],
-   "linked": true,
-   "tested": false,
-   "approved": false,
-   "quality": "good",
-   "superseded": ""
-  },
-  {
-   "refCode": "GASTAT-USE-POLICY",
-   "title": "سياسة الاستخدام — الهيئة العامة للإحصاء (البند 1.2.2)",
-   "kind": "official_instruction",
    "registryId": null,
    "inProject": false,
    "extracted": true,

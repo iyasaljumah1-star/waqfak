@@ -69,7 +69,10 @@
     "T09",
     "W03",
     "W05"
-   ]
+   ],
+   "reviewRole": null,
+   "blockedPages": [],
+   "quality": null
   },
   {
    "refCode": "PRODUCTS-REG",
@@ -92,7 +95,10 @@
     "I07",
     "T05",
     "T07"
-   ]
+   ],
+   "reviewRole": null,
+   "blockedPages": [],
+   "quality": null
   },
   {
    "refCode": "DONATIONS-REG",
@@ -109,7 +115,10 @@
    "note": "النص من لقطة السجل؛ الاستشهاد بمادة منه يقرره حارس الاستشهاد في محرك المراجع.",
    "services": [
     "T08"
-   ]
+   ],
+   "reviewRole": null,
+   "blockedPages": [],
+   "quality": null
   },
   {
    "refCode": "REVIVAL-REG",
@@ -127,7 +136,10 @@
    "services": [
     "N01",
     "N09"
-   ]
+   ],
+   "reviewRole": null,
+   "blockedPages": [],
+   "quality": null
   },
   {
    "refCode": "BO-STD",
@@ -148,7 +160,10 @@
     "G10",
     "N01",
     "N08"
-   ]
+   ],
+   "reviewRole": null,
+   "blockedPages": [],
+   "quality": null
   },
   {
    "refCode": "GAA-LAW",
@@ -172,7 +187,10 @@
     "T03",
     "T04",
     "T06"
-   ]
+   ],
+   "reviewRole": null,
+   "blockedPages": [],
+   "quality": null
   },
   {
    "refCode": "PENALTIES",
@@ -202,7 +220,10 @@
     "G06",
     "I04",
     "N01"
-   ]
+   ],
+   "reviewRole": null,
+   "blockedPages": [],
+   "quality": null
   },
   {
    "refCode": "PORTFOLIO-REG",
@@ -221,7 +242,10 @@
    "services": [
     "I06",
     "T07"
-   ]
+   ],
+   "reviewRole": null,
+   "blockedPages": [],
+   "quality": null
   },
   {
    "refCode": "FUNDS-INSTR",
@@ -239,7 +263,10 @@
    "repealedFrom": "PRD",
    "services": [
     "T07"
-   ]
+   ],
+   "reviewRole": null,
+   "blockedPages": [],
+   "quality": null
   },
   {
    "refCode": "REPORTING-RULES",
@@ -255,7 +282,10 @@
    "text": "texts/REPORTING-RULES.json.gz",
    "note": "حلت محلها لائحة إحياء الأوقاف (م30/2).",
    "repealedFrom": "IHY",
-   "services": []
+   "services": [],
+   "reviewRole": null,
+   "blockedPages": [],
+   "quality": null
   },
   {
    "refCode": "GOV-PRINCIPLES",
@@ -293,7 +323,10 @@
     "N05",
     "N07",
     "W04"
-   ]
+   ],
+   "reviewRole": null,
+   "blockedPages": [],
+   "quality": null
   },
   {
    "refCode": "NAZIR-GUIDE",
@@ -322,7 +355,10 @@
     "N07",
     "N08",
     "T06"
-   ]
+   ],
+   "reviewRole": null,
+   "blockedPages": [],
+   "quality": null
   },
   {
    "refCode": "DRAFTING-GUIDE",
@@ -350,7 +386,10 @@
     "T04",
     "W01",
     "W03"
-   ]
+   ],
+   "reviewRole": null,
+   "blockedPages": [],
+   "quality": null
   },
   {
    "refCode": "WAQIF-GUIDE",
@@ -376,7 +415,10 @@
     "T01",
     "W01",
     "W02"
-   ]
+   ],
+   "reviewRole": null,
+   "blockedPages": [],
+   "quality": null
   },
   {
    "refCode": "Q100",
@@ -409,7 +451,10 @@
     "W01",
     "W03",
     "W05"
-   ]
+   ],
+   "reviewRole": null,
+   "blockedPages": [],
+   "quality": null
   },
   {
    "refCode": "ASSETS-GUIDE",
@@ -433,7 +478,10 @@
     "T01",
     "T05",
     "T07"
-   ]
+   ],
+   "reviewRole": "investment",
+   "blockedPages": [],
+   "quality": null
   },
   {
    "refCode": "INVEST-GUIDE",
@@ -460,7 +508,10 @@
     "I08",
     "T05",
     "T07"
-   ]
+   ],
+   "reviewRole": "investment",
+   "blockedPages": [],
+   "quality": null
   },
   {
    "refCode": "INVEST-RULES",
@@ -480,7 +531,10 @@
     "I01",
     "I03",
     "I07"
-   ]
+   ],
+   "reviewRole": "investment",
+   "blockedPages": [],
+   "quality": null
   },
   {
    "refCode": "REG-USER-GUIDE",
@@ -503,7 +557,10 @@
     "N06",
     "N08",
     "T06"
-   ]
+   ],
+   "reviewRole": null,
+   "blockedPages": [],
+   "quality": null
   },
   {
    "refCode": "WAQF-TYPES-GUIDE",
@@ -523,7 +580,10 @@
     "T01",
     "T02",
     "T03"
-   ]
+   ],
+   "reviewRole": null,
+   "blockedPages": [],
+   "quality": null
   },
   {
    "refCode": "QUALITY-POLICY",
@@ -539,7 +599,10 @@
    "text": "texts/QUALITY-POLICY.json.gz",
    "note": "سياسة داخلية للهيئة؛ لا تُربط بخدمة.",
    "repealedFrom": null,
-   "services": []
+   "services": [],
+   "reviewRole": null,
+   "blockedPages": [],
+   "quality": null
   },
   {
    "refCode": "ANNUAL-REPORT-2024",
@@ -555,7 +618,10 @@
    "text": "texts/ANNUAL-REPORT-2024.json.gz",
    "note": "تقرير رسمي؛ أرقامه لعام 2024.",
    "repealedFrom": null,
-   "services": []
+   "services": [],
+   "reviewRole": "data",
+   "blockedPages": [],
+   "quality": null
   },
   {
    "refCode": "CIVIL-TX",
@@ -579,7 +645,10 @@
     "T03",
     "T04",
     "W05"
-   ]
+   ],
+   "reviewRole": null,
+   "blockedPages": [],
+   "quality": null
   },
   {
    "refCode": "COMPANIES",
@@ -597,7 +666,10 @@
    "services": [
     "N01",
     "T09"
-   ]
+   ],
+   "reviewRole": null,
+   "blockedPages": [],
+   "quality": null
   },
   {
    "refCode": "BOOK-MAYSAR",
@@ -619,7 +691,16 @@
     "I03",
     "I04",
     "I09"
-   ]
+   ],
+   "reviewRole": "sharia",
+   "blockedPages": [
+    "86",
+    "101",
+    "110",
+    "212",
+    "213"
+   ],
+   "quality": null
   },
   {
    "refCode": "ACC-STUDY",
@@ -642,7 +723,10 @@
     "F03",
     "F05",
     "F06"
-   ]
+   ],
+   "reviewRole": "accounting",
+   "blockedPages": [],
+   "quality": null
   },
   {
    "refCode": "FQH-SHARH-MUNTAHA",
@@ -656,10 +740,13 @@
    "originSha256": "ff98766ce714f3eeb486a6fc1539e23e1cabb3a42343d4790a1c0dde1e322b4f",
    "textForm": "quotes",
    "text": "texts/FQH-SHARH-MUNTAHA.json.gz",
-   "note": "اقتباسات تحقق منها المختص (مكتمل ومتحقق منه): get_book 21693؛ get_page 1073 (ج2 ص425)؛ search_turath لصفحات ج2: 398، 401، 406، 407، 411، 414، 415، 417، 426.",
    "services": [
     "C07"
-   ]
+   ],
+   "reviewRole": "sharia",
+   "quality": null,
+   "note": "اقتباسات تحقق منها المختص (مكتمل ومتحقق منه)؛ لم تُقابل بالمطبوع: get_book 21693؛ get_page 1073 (ج2 ص425)؛ search_turath لصفحات ج2: 398، 401، 406، 407، 411، 414، 415، 417، 426.",
+   "blockedPages": []
   },
   {
    "refCode": "FQH-INSAF",
@@ -670,17 +757,44 @@
    "issuer": "علاء الدين المرداوي (ت 885هـ)",
    "version": "تحقيق د. عبدالله التركي ود. عبدالفتاح الحلو، هجر للطباعة والنشر، القاهرة، ط1 1415هـ/1995م، 30 جزءًا؛ Turath book_id 19228؛ «ترقيم الكتاب موافق للمطبوع»؛ النسخة الرقمية اقتصرت على المقنع والإنصاف دون الشرح الكبير",
    "origin": "https://app.turath.io/book/19228",
-   "originSha256": "0246a91aabaddf4669c8d12d6bebb3762e6aa9ef3579ed53a763bd2bb8e3410c",
+   "originSha256": "cf370665f6b1aefa787d6b889e31508aa8563c3259071f6988c47bafb111bd0b",
    "textForm": "quotes",
    "text": "texts/FQH-INSAF.json.gz",
-   "note": "اقتباسات تحقق منها المختص (مكتمل ومتحقق منه): get_book 19228؛ get_page 7895-7896 (ج16 ص522-523)؛ search_turath لصفحات ج16: 377، 378، 443، 445، 449، 450، 452، 460، 528. صفحات الإنصاف تبدأ بسطر نقاط يمثل موضع المقنع في المطبوع.",
    "services": [
     "C07",
     "I01",
     "I04",
     "I09",
     "T07"
-   ]
+   ],
+   "reviewRole": "sharia",
+   "quality": null,
+   "note": "اقتباسات تحقق منها المختص (مكتمل ومتحقق منه)؛ لم تُقابل بالمطبوع: get_book 19228؛ get_page 7895-7896 (ج16 ص522-523)؛ search_turath لصفحات ج16: 377، 378، 443، 445، 449، 450، 452، 460، 528. صفحات الإنصاف تبدأ بسطر نقاط يمثل موضع المقنع في المطبوع.",
+   "blockedPages": []
+  },
+  {
+   "refCode": "FQH-INSAF-B21609",
+   "registryId": null,
+   "registrySnapshot": null,
+   "refKind": "classical_fiqh",
+   "title": "الإنصاف في معرفة الراجح من الخلاف (مع المقنع والشرح الكبير) — Turath 21609",
+   "issuer": "علاء الدين المرداوي (ت 885هـ)",
+   "version": "طبعة Turath رقم 21609 (غير الطبعة المعتمدة في مسار الفقه)",
+   "origin": "https://app.turath.io/book/19228",
+   "originSha256": "bf35ecfd14ebb306ab596c65527d90424443c4c06c5050bb78728bfd605b3240",
+   "textForm": "quotes",
+   "text": "texts/FQH-INSAF-B21609.json.gz",
+   "services": [
+    "C07",
+    "I01",
+    "I04",
+    "I09",
+    "T07"
+   ],
+   "reviewRole": "sharia",
+   "quality": null,
+   "note": "اقتباسات تحقق منها المختص (مكتمل ومتحقق منه)؛ لم تُقابل بالمطبوع: get_book 19228؛ get_page 7895-7896 (ج16 ص522-523)؛ search_turath لصفحات ج16: 377، 378، 443، 445، 449، 450، 452، 460، 528. صفحات الإنصاف تبدأ بسطر نقاط يمثل موضع المقنع في المطبوع.",
+   "blockedPages": []
   },
   {
    "refCode": "FQH-KASHSHAF",
@@ -691,10 +805,9 @@
    "issuer": "منصور بن يونس البهوتي (ت 1051هـ)",
    "version": "تحقيق لجنة متخصصة في وزارة العدل، الناشر وزارة العدل بالمملكة، ط1 (1421-1429هـ = 2000-2008م)، 15 جزءًا؛ Turath book_id 622، «ترقيم الكتاب موافق للمطبوع»",
    "origin": "https://app.turath.io/book/622",
-   "originSha256": "f600d514e1eb4d880a317e0b66bb5881b33398c7adf061a480ace2a2af0d6fdf",
+   "originSha256": "5b3531f0c4cd6477c16bb83005fbf7811ddea6ea2b5f77da914668c10f27c130",
    "textForm": "quotes",
    "text": "texts/FQH-KASHSHAF.json.gz",
-   "note": "اقتباسات تحقق منها المختص (مكتمل ومتحقق منه): get_book 622 (بيانات الطبعة)؛ search_turath/get_page لصفحات ج10: 15، 31، 32، 41، 46، 49، 55، 59، 61، 64، 65، 66، 67، 89، 106، 108، 111. النص الرقمي مُدخل إدخالًا جديدًا بحسب بيان Turath، والحواشي مدمجة في النص المسترجع بأرقامها.",
    "services": [
     "C07",
     "C10",
@@ -702,7 +815,36 @@
     "I03",
     "I04",
     "I09"
-   ]
+   ],
+   "reviewRole": "sharia",
+   "quality": null,
+   "note": "اقتباسات تحقق منها المختص (مكتمل ومتحقق منه)؛ لم تُقابل بالمطبوع: get_book 622 (بيانات الطبعة)؛ search_turath/get_page لصفحات ج10: 15، 31، 32، 41، 46، 49، 55، 59، 61، 64، 65، 66، 67، 89، 106، 108، 111. النص الرقمي مُدخل إدخالًا جديدًا بحسب بيان Turath، والحواشي مدمجة في النص المسترجع بأرقامها.",
+   "blockedPages": []
+  },
+  {
+   "refCode": "FQH-KASHSHAF-B21642",
+   "registryId": null,
+   "registrySnapshot": null,
+   "refKind": "classical_fiqh",
+   "title": "كشاف القناع عن متن الإقناع — Turath 21642",
+   "issuer": "منصور بن يونس البهوتي (ت 1051هـ)",
+   "version": "طبعة Turath رقم 21642 (غير الطبعة المعتمدة في مسار الفقه)",
+   "origin": "https://app.turath.io/book/622",
+   "originSha256": "83f9a7fbb93e5ae691a5498b7c632496020ad399aece0da52f53f180006245ae",
+   "textForm": "quotes",
+   "text": "texts/FQH-KASHSHAF-B21642.json.gz",
+   "services": [
+    "C07",
+    "C10",
+    "I01",
+    "I03",
+    "I04",
+    "I09"
+   ],
+   "reviewRole": "sharia",
+   "quality": null,
+   "note": "اقتباسات تحقق منها المختص (مكتمل ومتحقق منه)؛ لم تُقابل بالمطبوع: get_book 622 (بيانات الطبعة)؛ search_turath/get_page لصفحات ج10: 15، 31، 32، 41، 46، 49، 55، 59، 61، 64، 65، 66، 67، 89، 106، 108، 111. النص الرقمي مُدخل إدخالًا جديدًا بحسب بيان Turath، والحواشي مدمجة في النص المسترجع بأرقامها.",
+   "blockedPages": []
   },
   {
    "refCode": "FQH-MUGHNI",
@@ -716,10 +858,13 @@
    "originSha256": "3e8c499cfbaa7b7e1cd8eeeb60edda05dba9b1c5d0c4d06bea3251f90af3c697",
    "textForm": "quotes",
    "text": "texts/FQH-MUGHNI.json.gz",
-   "note": "اقتباسات تحقق منها المختص (مكتمل ومتحقق منه): get_book 6910؛ search_turath لصفحات ج8: 186، 213، 220، 233، 234.",
    "services": [
     "C07"
-   ]
+   ],
+   "reviewRole": "sharia",
+   "quality": null,
+   "note": "اقتباسات تحقق منها المختص (مكتمل ومتحقق منه)؛ لم تُقابل بالمطبوع: get_book 6910؛ search_turath لصفحات ج8: 186، 213، 220، 233، 234.",
+   "blockedPages": []
   },
   {
    "refCode": "FQH-MUMTI",
@@ -733,10 +878,13 @@
    "originSha256": "f77a0d27b0193d8bce14c5cdebdd7c9053c227b0c53e652b6fb2c924567f0572",
    "textForm": "quotes",
    "text": "texts/FQH-MUMTI.json.gz",
-   "note": "اقتباسات تحقق منها المختص (مكتمل جزئياً): get_book 10649؛ search_turath ج11 ص34.",
    "services": [
     "C07"
-   ]
+   ],
+   "reviewRole": "sharia",
+   "quality": "degraded",
+   "note": "اقتباسات تحقق منها المختص (مكتمل جزئياً)؛ لا يُقتبس حرفياً قبل استكمال التحقق؛ لم تُقابل بالمطبوع: get_book 10649؛ search_turath ج11 ص34.",
+   "blockedPages": []
   },
   {
    "refCode": "SOCPA-NPO-2025",
@@ -750,7 +898,6 @@
    "originSha256": "063613c5542e39c098c0a1717f88b203557f22758fd0e34ef80949355cc3dc18",
    "textForm": "quotes",
    "text": "texts/SOCPA-NPO-2025.json.gz",
-   "note": "اقتباسات تحقق منها المختص (مكتمل ومتحقق منه): firecrawl relay للصفحة والملف 2.pdf (23 ص)",
    "services": [
     "C05",
     "C06",
@@ -762,13 +909,17 @@
     "F06",
     "F07",
     "F08"
-   ]
+   ],
+   "reviewRole": "accounting",
+   "quality": null,
+   "note": "اقتباسات تحقق منها المختص (مكتمل ومتحقق منه)؛ لم تُقابل بالمطبوع: firecrawl relay للصفحة والملف 2.pdf (23 ص)",
+   "blockedPages": []
   },
   {
    "refCode": "SOCPA-NPO-QA",
    "registryId": null,
    "registrySnapshot": null,
-   "refKind": "official_instruction",
+   "refKind": "professional_standard",
    "title": "استفسارات حول معايير المنشآت غير الهادفة للربح (61، 76، 85، 95، 96، 107، 118، 120، 127)",
    "issuer": "سوكبا",
    "version": "صفحة الاستفسارات",
@@ -776,7 +927,6 @@
    "originSha256": "7bc78f1dd955eaaa8f374f7963c85f823e310c2037c41954db9dae88fc8f92c7",
    "textForm": "quotes",
    "text": "texts/SOCPA-NPO-QA.json.gz",
-   "note": "اقتباسات تحقق منها المختص (مكتمل ومتحقق منه): firecrawl relay النص الكامل للأجوبة",
    "services": [
     "C09",
     "F01",
@@ -784,13 +934,17 @@
     "F03",
     "F05",
     "F06"
-   ]
+   ],
+   "reviewRole": "accounting",
+   "quality": null,
+   "note": "اقتباسات تحقق منها المختص (مكتمل ومتحقق منه)؛ لم تُقابل بالمطبوع: firecrawl relay النص الكامل للأجوبة",
+   "blockedPages": []
   },
   {
    "refCode": "SOCPA-NPCO-OPINION-2025",
    "registryId": null,
    "registrySnapshot": null,
-   "refKind": "official_instruction",
+   "refKind": "professional_standard",
    "title": "إطار التقرير المالي المناسب للشركات غير الربحية المؤسسة وفقاً لنظام الشركات وتقريرها عن الهبات والوصايا والأوقاف",
    "issuer": "سوكبا – مجلس معايير المحاسبة (رأي فني)",
    "version": "—",
@@ -798,7 +952,6 @@
    "originSha256": "52a597d0d6fa7f4328b92e84e0fa312ad35e1ea90f620de720ddcc984e1f628f",
    "textForm": "quotes",
    "text": "texts/SOCPA-NPCO-OPINION-2025.json.gz",
-   "note": "اقتباسات تحقق منها المختص (مكتمل ومتحقق منه): firecrawl relay directQuote + خبر سوكبا 2025-10-21",
    "services": [
     "C08",
     "C09",
@@ -806,7 +959,11 @@
     "F03",
     "F05",
     "F06"
-   ]
+   ],
+   "reviewRole": "accounting",
+   "quality": null,
+   "note": "اقتباسات تحقق منها المختص (مكتمل ومتحقق منه)؛ لم تُقابل بالمطبوع: firecrawl relay directQuote + خبر سوكبا 2025-10-21",
+   "blockedPages": []
   },
   {
    "refCode": "COMPANIES-LAW-ART17",
@@ -820,12 +977,15 @@
    "originSha256": "67c976b1313a6889b47c70a19a36346cb9885d80a5cc475bc717936c583761d5",
    "textForm": "quotes",
    "text": "texts/COMPANIES-LAW-ART17.json.gz",
-   "note": "اقتباسات تحقق منها المختص (مكتمل ومتحقق منه): نص الملف بعد تطبيع NFKC",
    "services": [
     "C08",
     "C09",
     "F02"
-   ]
+   ],
+   "reviewRole": "accounting",
+   "quality": null,
+   "note": "اقتباسات تحقق منها المختص (مكتمل ومتحقق منه)؛ لم تُقابل بالمطبوع: نص الملف بعد تطبيع NFKC",
+   "blockedPages": []
   },
   {
    "refCode": "AAOIFI-FAS37",
@@ -839,7 +999,6 @@
    "originSha256": "6dba7316ad48203307b60063dc1ce887b36d25597d2d2644926f46d4bd104b03",
    "textForm": "quotes",
    "text": "texts/AAOIFI-FAS37.json.gz",
-   "note": "اقتباسات تحقق منها المختص (مكتمل جزئياً): صفحة أيوفي CIS (Effective January 1, 2022)؛ إعلان الإصدار؛ إعلان اعتماد المجلس 22-23 يونيو 2020؛ النص الكامل للأعضاء فقط — لم يُقرأ",
    "services": [
     "C05",
     "C09",
@@ -848,7 +1007,11 @@
     "F05",
     "F06",
     "F08"
-   ]
+   ],
+   "reviewRole": "accounting",
+   "quality": "degraded",
+   "note": "اقتباسات تحقق منها المختص (مكتمل جزئياً)؛ لا يُقتبس حرفياً قبل استكمال التحقق؛ لم تُقابل بالمطبوع: صفحة أيوفي CIS (Effective January 1, 2022)؛ إعلان الإصدار؛ إعلان اعتماد المجلس 22-23 يونيو 2020؛ النص الكامل للأعضاء فقط — لم يُقرأ",
+   "blockedPages": []
   },
   {
    "refCode": "CMA-SBR",
@@ -862,13 +1025,16 @@
    "originSha256": "ff69c925584a408b316560492738fc6585fc2e0ec154045ee432825e119e10c3",
    "textForm": "quotes",
    "text": "texts/CMA-SBR.json.gz",
-   "note": "اقتباسات تحقق منها المختص (مكتمل جزئياً): نص م2 وم3 وم5 عبر get_provision (law.arbiter.sa، ثانوي)؛ صفحة اللوائح التنفيذية في cma.gov.sa (relay) لإثبات الاسم والإدراج.",
    "services": [
     "C10",
     "I01",
     "I05",
     "I07"
-   ]
+   ],
+   "reviewRole": "investment",
+   "quality": "degraded",
+   "note": "اقتباسات تحقق منها المختص (مكتمل جزئياً)؛ لا يُقتبس حرفياً قبل استكمال التحقق؛ لم تُقابل بالمطبوع: نص م2 وم3 وم5 عبر get_provision (law.arbiter.sa، ثانوي)؛ صفحة اللوائح التنفيذية في cma.gov.sa (relay) لإثبات الاسم والإدراج.",
+   "blockedPages": []
   },
   {
    "refCode": "FQH-IQNA",
@@ -882,13 +1048,16 @@
    "originSha256": "2273bd6b11222bee12bfa37e14a81911ebd545c679238fd9dea3f66b71ed2f50",
    "textForm": "quotes",
    "text": "texts/FQH-IQNA.json.gz",
-   "note": "اقتباسات تحقق منها المختص (مكتمل جزئياً): get_book 7360؛ search_turath ج3 ص27.",
    "services": [
     "C07",
     "I01",
     "I04",
     "I09"
-   ]
+   ],
+   "reviewRole": "sharia",
+   "quality": "degraded",
+   "note": "اقتباسات تحقق منها المختص (مكتمل جزئياً)؛ لا يُقتبس حرفياً قبل استكمال التحقق؛ لم تُقابل بالمطبوع: get_book 7360؛ search_turath ج3 ص27.",
+   "blockedPages": []
   },
   {
    "refCode": "SPA-CENSUS-2023",
@@ -902,10 +1071,13 @@
    "originSha256": "953016b56b76f7cac71089470874706be99fd231d7970b666aa4e3faaece9b01",
    "textForm": "quotes",
    "text": "texts/SPA-CENSUS-2023.json.gz",
-   "note": "اقتباسات تحقق منها المختص (مكتمل ومتحقق منه): فُتح النص الكامل للخبر relay (Firecrawl scrape/search) 2026-11-06",
    "services": [
     "T02"
-   ]
+   ],
+   "reviewRole": "data",
+   "quality": null,
+   "note": "اقتباسات تحقق منها المختص (مكتمل ومتحقق منه)؛ لم تُقابل بالمطبوع: فُتح النص الكامل للخبر relay (Firecrawl scrape/search) 2026-11-06",
+   "blockedPages": []
   },
   {
    "refCode": "GASTAT-LFS",
@@ -916,13 +1088,16 @@
    "issuer": "الهيئة العامة للإحصاء",
    "version": "أحدث نشرة فُتح خبرها: الربع الأول 2025 (29-06-2025)؛ ظهر في فهرس البحث جدول «مؤشرات احصاءات سوق العمل ... الربع الأول 2026»",
    "origin": "https://stats.gov.sa/ar/w/news/56",
-   "originSha256": "79349d67e6ce3f71f61b199b87bfb6f7ec194b3bfc6eb7cabfc1a5a7a5d45e98",
+   "originSha256": "c526d058d301f6937d850b147e9683892ec2f3acc955360ac676f344aff07ce9",
    "textForm": "quotes",
    "text": "texts/GASTAT-LFS.json.gz",
-   "note": "اقتباسات تحقق منها المختص (مكتمل جزئياً): فُتح خبر نشرة الربع الأول 2025 كاملاً، وفُتح تقرير المنهجية والجودة 4.0 (https://www.stats.gov.sa/w/methodology-and-quality-report-for-labor-market-statistics) وفيه أن العينة ممثلة للـ13 منطقة إدارية وأن حجمها 97,019 مسكناً. relay (Firecrawl scrape/search) 2026-11-06",
    "services": [
     "T02"
-   ]
+   ],
+   "reviewRole": "data",
+   "quality": null,
+   "note": "اقتباسات تحقق منها المختص (مكتمل جزئياً)؛ لم تُقابل بالمطبوع: فُتح خبر نشرة الربع الأول 2025 كاملاً، وفُتح تقرير المنهجية والجودة 4.0 (https://www.stats.gov.sa/w/methodology-and-quality-report-for-labor-market-statistics) وفيه أن العينة ممثلة للـ13 منطقة إدارية وأن حجمها 97,019 مسكناً. relay (Firecraw",
+   "blockedPages": []
   },
   {
    "refCode": "GASTAT-HEALTH-EST-2024",
@@ -936,27 +1111,13 @@
    "originSha256": "886738f2527b521395a6cde85744a1cffd6a1e3c7b86f13a026411255399c143",
    "textForm": "quotes",
    "text": "texts/GASTAT-HEALTH-EST-2024.json.gz",
-   "note": "اقتباسات تحقق منها المختص (مكتمل ومتحقق منه): فُتح التقرير؛ يسرد جداول بالمنطقة الإدارية (المستشفيات، الأسرّة، مراكز الرعاية الأولية، الصيدليات) ومصادرها السجلات الإدارية لوزارة الصحة والهيئة السعودية للتخصصات الصحية وجهات أخرى. relay (Firecrawl scrape/search) 2026-11-06 (استخراج موجّه)",
    "services": [
     "T02"
-   ]
-  },
-  {
-   "refCode": "GASTAT-USE-POLICY",
-   "registryId": null,
-   "registrySnapshot": null,
-   "refKind": "official_instruction",
-   "title": "سياسة الاستخدام — الهيئة العامة للإحصاء (البند 1.2.2)",
-   "issuer": "الهيئة العامة للإحصاء",
-   "version": "غير متاح",
-   "origin": "https://www.stats.gov.sa/en/use-policy",
-   "originSha256": "b6a5de8f4315f5c499665d6f39b61a99ae6717392b67cc39f81250be8925fa0a",
-   "textForm": "quotes",
-   "text": "texts/GASTAT-USE-POLICY.json.gz",
-   "note": "اقتباسات تحقق منها المختص (مكتمل ومتحقق منه): فُتحت الصفحة واستُخرج البند 1.2.2 relay (Firecrawl scrape/search) 2026-11-06 (استخراج موجّه)",
-   "services": [
-    "T02"
-   ]
+   ],
+   "reviewRole": "data",
+   "quality": null,
+   "note": "اقتباسات تحقق منها المختص (مكتمل ومتحقق منه)؛ لم تُقابل بالمطبوع: فُتح التقرير؛ يسرد جداول بالمنطقة الإدارية (المستشفيات، الأسرّة، مراكز الرعاية الأولية، الصيدليات) ومصادرها السجلات الإدارية لوزارة الصحة والهيئة السعودية للتخصصات الصحية وجهات أخرى. relay (Firecrawl scrape/search) 2026-11-06 (استخراج موجّه",
+   "blockedPages": []
   },
   {
    "refCode": "MOH-YEARBOOK",
@@ -970,10 +1131,13 @@
    "originSha256": "d1a8e207b634e892a7ac27c5cb4076903a60aa4b389aa2d798cc003e73519164",
    "textForm": "quotes",
    "text": "texts/MOH-YEARBOOK.json.gz",
-   "note": "اقتباسات تحقق منها المختص (مكتمل جزئياً): فُتحت صفحة الكتاب الإحصائي وظهرت روابط الملفات وتواريخها؛ لم يُفتح ملف Excel. relay (Firecrawl scrape/search) 2026-11-06",
    "services": [
     "T02"
-   ]
+   ],
+   "reviewRole": "data",
+   "quality": null,
+   "note": "اقتباسات تحقق منها المختص (مكتمل جزئياً)؛ لم تُقابل بالمطبوع: فُتحت صفحة الكتاب الإحصائي وظهرت روابط الملفات وتواريخها؛ لم يُفتح ملف Excel. relay (Firecrawl scrape/search) 2026-11-06",
+   "blockedPages": []
   },
   {
    "refCode": "HRSD-OPENDATA",
@@ -987,10 +1151,13 @@
    "originSha256": "0b2ae45097133a23ef9fe73c1c4c25e22c2eed4017bf7c539562a5212cabd37b",
    "textForm": "quotes",
    "text": "texts/HRSD-OPENDATA.json.gz",
-   "note": "اقتباسات تحقق منها المختص (مكتمل جزئياً): فُتحت القائمة كاملة؛ تشمل: المستفيدين من الرعاية المنزلية لذوي الإعاقة (ربعي)، كبار السن المستفيدين من دور الرعاية الاجتماعية (ربعي/سنوي)، مراكز ضيافة الأطفال حسب المناطق، مراكز الرعاية النهارية، مراكز التنمية، فروع ومكاتب الضمان الاجتماعي 2025، الجمعيات التعاونية حسب المنطقة، العاملين في القطاع الخ",
    "services": [
     "T02"
-   ]
+   ],
+   "reviewRole": "data",
+   "quality": null,
+   "note": "اقتباسات تحقق منها المختص (مكتمل جزئياً)؛ لم تُقابل بالمطبوع: فُتحت القائمة كاملة؛ تشمل: المستفيدين من الرعاية المنزلية لذوي الإعاقة (ربعي)، كبار السن المستفيدين من دور الرعاية الاجتماعية (ربعي/سنوي)، مراكز ضيافة الأطفال حسب المناطق، مراكز الرعاية النهارية، مراكز التنمية، فروع ومكاتب الضمان الاجتماعي ",
+   "blockedPages": []
   },
   {
    "refCode": "NCNP-DIRECTORY",
@@ -1004,10 +1171,13 @@
    "originSha256": "380f320f064eb933c2d2dd953aa3ad4d7c04b53af9bbb4b920a0e34cd89d7372",
    "textForm": "quotes",
    "text": "texts/NCNP-DIRECTORY.json.gz",
-   "note": "اقتباسات تحقق منها المختص (مكتمل جزئياً): فُتحت الصفحة: «الكيانات ( 8227 )»، والحقول: نوع الكيان، جهة الإشراف، التصنيف النوعي، التصنيف الفرعي، المنطقة، درجة الحوكمة 2024. لا يظهر خيار تنزيل أو API. وفُتحت نتيجة https://index.nawa.ncnp.gov.sa/entities (مرشحات نوع الكيان والمحافظة والجهة الإشرافية). relay (Firecrawl scrape/search) 2026-11-06",
    "services": [
     "T02"
-   ]
+   ],
+   "reviewRole": "data",
+   "quality": null,
+   "note": "اقتباسات تحقق منها المختص (مكتمل جزئياً)؛ لم تُقابل بالمطبوع: فُتحت الصفحة: «الكيانات ( 8227 )»، والحقول: نوع الكيان، جهة الإشراف، التصنيف النوعي، التصنيف الفرعي، المنطقة، درجة الحوكمة 2024. لا يظهر خيار تنزيل أو API. وفُتحت نتيجة https://index.nawa.ncnp.gov.sa/entities (مرشحات نوع الكيان والمحافظة وا",
+   "blockedPages": []
   },
   {
    "refCode": "NCNP-STATS",
@@ -1021,10 +1191,13 @@
    "originSha256": "65beeb76f28d2f9bc21b796370c0464305eb3b05e586e42737815c4118c4415f",
    "textForm": "quotes",
    "text": "texts/NCNP-STATS.json.gz",
-   "note": "اقتباسات تحقق منها المختص (مكتمل جزئياً): فُتح نص الصفحة؛ التوزيع الجغرافي منشور صورةً (لم تُقرأ قيمها). relay (Firecrawl scrape/search) 2026-11-06",
    "services": [
     "T02"
-   ]
+   ],
+   "reviewRole": "data",
+   "quality": null,
+   "note": "اقتباسات تحقق منها المختص (مكتمل جزئياً)؛ لم تُقابل بالمطبوع: فُتح نص الصفحة؛ التوزيع الجغرافي منشور صورةً (لم تُقرأ قيمها). relay (Firecrawl scrape/search) 2026-11-06",
+   "blockedPages": []
   },
   {
    "refCode": "V2030-HOUSING",
@@ -1038,10 +1211,13 @@
    "originSha256": "94afde051288d0196f012c60ff3de77a5f8040bcb32cffeaf46398487ce9041b",
    "textForm": "quotes",
    "text": "texts/V2030-HOUSING.json.gz",
-   "note": "اقتباسات تحقق منها المختص (مكتمل ومتحقق منه): فُتح نص الصفحة. relay (Firecrawl scrape/search) 2026-11-06",
    "services": [
     "T02"
-   ]
+   ],
+   "reviewRole": "data",
+   "quality": null,
+   "note": "اقتباسات تحقق منها المختص (مكتمل ومتحقق منه)؛ لم تُقابل بالمطبوع: فُتح نص الصفحة. relay (Firecrawl scrape/search) 2026-11-06",
+   "blockedPages": []
   },
   {
    "refCode": "ETEC-NAFS",
@@ -1055,10 +1231,13 @@
    "originSha256": "5bcb84dc81ebe609d5bece7cb69d60cc5a78f5c50ec73c30f94d14ff1809d6fd",
    "textForm": "quotes",
    "text": "texts/ETEC-NAFS.json.gz",
-   "note": "اقتباسات تحقق منها المختص (غير منطبق): فُتحت الصفحة: النتائج تُرسل بطاقة أداء لكل مدرسة وتُتاح لأولياء الأمور عبر تطبيق «مستقبلهم». relay (Firecrawl scrape/search) 2026-11-06",
    "services": [
     "T02"
-   ]
+   ],
+   "reviewRole": "data",
+   "quality": null,
+   "note": "اقتباسات تحقق منها المختص (غير منطبق)؛ لم تُقابل بالمطبوع: فُتحت الصفحة: النتائج تُرسل بطاقة أداء لكل مدرسة وتُتاح لأولياء الأمور عبر تطبيق «مستقبلهم». relay (Firecrawl scrape/search) 2026-11-06",
+   "blockedPages": []
   }
  ]
 }

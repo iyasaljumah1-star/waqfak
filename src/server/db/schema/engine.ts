@@ -1,4 +1,5 @@
-import { date, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { check, date, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { users } from "./identity";
 import { sql } from "drizzle-orm";
 import { createdAt, id } from "./_common";
 
@@ -134,12 +135,25 @@ export const kbSources = pgTable("kb_sources", {
 export const kbSourceReviews = pgTable("kb_source_reviews", {
   id: id(),
   sourceId: uuid().notNull().references(() => kbSources.id),
-  reviewerUserId: uuid().notNull(),
+  /**
+   * The passage reviewed, when the review is of one passage (a page compared with its image, a paragraph with the
+   * printed edition). A passage taken from a file's text layer is citable only after such a review; a review without
+   * a passage covers the source as a whole (its attribution, edition and nature).
+   */
+  chunkId: uuid().references(() => kbChunks.id),
+  reviewerUserId: uuid().notNull().references(() => users.id),
+  /** The reviewer's field; the policy accepts a review only from the field the source's kind requires. */
+  reviewerRole: text().notNull(), // sharia | accounting | legal | data | investment
   decision: text().notNull(), // accepted | rejected
   /** What was checked: «النص مطابق لصفحات الطبعة المذكورة»، «النسبة إلى الجهة صحيحة». */
   note: text().notNull(),
   at: createdAt(),
-}, (t) => [index("kbsr_source_idx").on(t.sourceId, t.at)]);
+}, (t) => [
+  index("kbsr_source_idx").on(t.sourceId, t.at),
+  check("kbsr_decision_ck", sql`${t.decision} in ('accepted', 'rejected')`),
+  check("kbsr_role_ck", sql`${t.reviewerRole} in ('sharia', 'accounting', 'legal', 'data', 'investment')`),
+  check("kbsr_note_ck", sql`length(trim(${t.note})) >= 10`),
+]);
 
 /** A passage of a source (an article, a question, a principle or a page), kept verbatim with its locator. */
 export const kbChunks = pgTable("kb_chunks", {

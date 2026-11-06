@@ -41,7 +41,10 @@ const BINDING: Partial<Record<RefKind, string>> = { statute: "binding", regulati
 const CHUNK_KIND = (k: RefKind) => (BINDING[k] ? "statute" : k === "classical_fiqh" || k === "contemporary_book" || k === "academic_study" ? "interpretation" : "guidance");
 
 export async function ingestUnits(db: AnyDb, x: SourceInput): Promise<{ status: "loaded" | "unchanged"; units: number }> {
-  const sha = createHash("sha256").update(`units-1\n${x.originSha256}\n${x.units.map((u) => `${u.locator}\u0001${u.text}`).join("\u0002")}`).digest("hex");
+  // what the policy reads is part of the fingerprint: a change of kind, services, registry link, quality or review
+  // metadata is a new version, never an edit of the current row (the database forbids editing it)
+  const facts = JSON.stringify([x.refKind, [...x.services].sort(), x.registryId ?? null, x.textQuality, x.effectiveOn ?? null, x.repealedOn ?? null, x.meta ?? {}]);
+  const sha = createHash("sha256").update(`units-2\n${x.originSha256}\n${facts}\n${x.units.map((u) => `${u.locator}\u0001${u.textOrigin}\u0001${u.text}`).join("\u0002")}`).digest("hex");
   const [existing] = await db.select({ id: s.kbSources.id, n: s.kbSources.chunkCount }).from(s.kbSources).where(and(eq(s.kbSources.refCode, x.refCode), eq(s.kbSources.version, x.version), eq(s.kbSources.sha256, sha))).limit(1);
   if (existing) return { status: "unchanged", units: existing.n };
   await db.transaction(async (tx) => {

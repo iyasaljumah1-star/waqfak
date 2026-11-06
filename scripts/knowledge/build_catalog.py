@@ -10,7 +10,7 @@ Services come from the per-service basis of 2026-11-04 (data/references/impact) 
 
 Usage: python3 -I scripts/knowledge/build_catalog.py <kb2_dir>
 """
-import gzip, hashlib, json, os, sys
+import gzip, hashlib, json, os, re, sys
 from collections import defaultdict
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -56,8 +56,18 @@ def write_text(code, payload):
 catalog = []
 
 
+ROLE = {"BOOK-MAYSAR": "sharia", "ACC-STUDY": "accounting", "INVEST-GUIDE": "investment", "INVEST-RULES": "investment", "ASSETS-GUIDE": "investment",
+        "ANNUAL-REPORT-2024": "data"}
+# pages of «الميسّر» a specialist showed to contradict the Hanbali school or attribute to it loosely (fiqh report §10.3,
+# investment report §3); they are never cited
+BLOCKED = {"BOOK-MAYSAR": ["86", "101", "110", "212", "213"]}
+
+
 def add(**e):
     e.setdefault("services", sorted(services.get(e["refCode"], set())))
+    e.setdefault("reviewRole", ROLE.get(e["refCode"]))
+    e.setdefault("blockedPages", BLOCKED.get(e["refCode"], []))
+    e.setdefault("quality", None)
     e["services"] = sorted(set(e["services"]))
     catalog.append(e)
 
@@ -123,29 +133,62 @@ for code, f, kind, title, issuer, svc, note in [
 # D. specialists' verified quotations (sources not already held as official text)
 SKIP = {"NZR-ART15", "NZR", "PRD", "NZR-SNAP", "IHY-SNAP", "NZR-ART9", "GAA-PENALTIES-NZR", "BOOK-MAYSAR", "ACC-STUDY-MAHDI-2023", "GAA-GOV-PRINCIPLES",
         "GAA-FAQ-109", "GAA-NAZIR-SHORT-GUIDE", "GAA-IRG-NPO", "GAA-INV-GUIDE", "GAA-ASSET-GUIDE"}
+# corrections after the independent review: SOCPA's answers and opinion interpret a professional standard; GASTAT's
+# use policy is a data licence — none of them is a binding instruction
+KIND_FIX = {"SOCPA-NPO-QA": "professional_standard", "SOCPA-NPCO-OPINION-2025": "professional_standard", "GASTAT-USE-POLICY": "statistical_source"}
+TRACK_ROLE = {"fiqh": "sharia", "accounting": "accounting", "investment": "investment", "t02": "data"}
 refs, quotes = {}, defaultdict(list)
 for track in ("fiqh", "accounting", "investment", "t02"):
     for r in json.load(open(os.path.join(KB2, "refs", track + ".json"), encoding="utf8")):
-        cur = refs.setdefault(r["id"], dict(r, services=list(r.get("services", []))))
+        cur = refs.setdefault(r["id"], dict(r, services=list(r.get("services", [])), _track=track))
         cur["services"] = sorted(set(cur["services"]) | set(r.get("services", [])))
+        cur.setdefault("_editions", {})[track] = r.get("edition") or ""
     for p in json.load(open(os.path.join(KB2, "passages", track + ".json"), encoding="utf8")):
-        quotes[p["refId"]].append(p)
+        quotes[p["refId"]].append(dict(p, _track=track))
     for kind in ("refs", "passages"):
         src = os.path.join(KB2, kind, track + ".json")
         open(os.path.join(OUT, "specialist", f"{kind}-{track}.json"), "w", encoding="utf8").write(open(src, encoding="utf8").read())
 open(os.path.join(OUT, "specialist", "refs-t02-method.json"), "w", encoding="utf8").write(open(os.path.join(KB2, "refs", "t02-method.json"), encoding="utf8").read())
+
+BOOK_ID = re.compile(r"book(?:_id)?\s*(\d{2,6})")
+dropped = []
 for rid, qs in quotes.items():
     if rid in SKIP or rid not in refs:
         continue
     r = refs[rid]
-    seen, uniq = set(), []
+    kind = KIND_FIX.get(rid, r["kind"])
+    # a classical book's quotations are grouped by the Turath book (edition) they were read in: one edition, one source
+    groups = defaultdict(list)
     for q in qs:
-        if q["quote"] not in seen:
-            seen.add(q["quote"])
-            uniq.append({"locator": q["locator"], "quote": q["quote"], "verifiedHow": q.get("verifiedHow", ""), "topic": q.get("topic")})
-    add(refCode=rid, registryId=None, registrySnapshot=None, refKind=r["kind"], title=r["title"], issuer=r.get("authorOrIssuer"), version=r.get("edition") or "غير محدد",
-        origin=r.get("sourceUrl") or "تحقق المختص", originSha256=hashlib.sha256(json.dumps(uniq, ensure_ascii=False).encode()).hexdigest(), textForm="quotes",
-        text=write_text(rid, {"quotes": uniq}), note=f"اقتباسات تحقق منها المختص ({r.get('classification', '')}): {r.get('verification', '')[:300]}", services=r["services"])
+        if "re-check" in (q.get("verifiedHow") or ""):
+            dropped.append(f"{rid} {q['locator']}: marked for re-checking")
+            continue
+        m = BOOK_ID.search(q.get("verifiedHow") or "")
+        key = m.group(1) if (kind == "classical_fiqh" and m) else ""
+        if kind == "classical_fiqh" and not m:
+            dropped.append(f"{rid} {q['locator']}: no Turath book id, edition unknown")
+            continue
+        groups[key].append(q)
+    home = BOOK_ID.search(r.get("edition") or "") or BOOK_ID.search(r.get("sourceUrl") or "") or re.search(r"/book/(\d+)", r.get("sourceUrl") or "")
+    home_id = home.group(1) if home else ""
+    for key, qs2 in groups.items():
+        seen, uniq = set(), []
+        for q in qs2:
+            if q["quote"] not in seen:
+                seen.add(q["quote"])
+                uniq.append({"locator": q["locator"], "quote": q["quote"], "verifiedHow": q.get("verifiedHow", ""), "topic": q.get("topic")})
+        code = rid if (not key or key == home_id) else f"{rid}-B{key}"
+        other = code != rid
+        edition = (r.get("edition") or "غير محدد") if not other else f"طبعة Turath رقم {key} (غير الطبعة المعتمدة في مسار الفقه)"
+        # for text sources the specialist's class is about the text's verification; for the T02 data sources it is about
+        # the data's coverage (e.g. no sub-regional figures), not the accuracy of the quoted passage
+        partial = r["_track"] != "t02" and r.get("classification", "") in ("مكتمل جزئياً", "غير متحقق")
+        add(refCode=code, registryId=None, registrySnapshot=None, refKind=kind, title=r["title"] + (f" — Turath {key}" if other else ""), issuer=r.get("authorOrIssuer"),
+            version=edition, origin=r.get("sourceUrl") or "تحقق المختص", originSha256=hashlib.sha256(json.dumps(uniq, ensure_ascii=False).encode()).hexdigest(), textForm="quotes",
+            text=write_text(code, {"quotes": uniq}), services=r["services"], reviewRole=("sharia" if kind in ("classical_fiqh", "contemporary_book") else TRACK_ROLE[r["_track"]]),
+            quality=("degraded" if partial else None),
+            note=f"اقتباسات تحقق منها المختص ({r.get('classification', '')}){'؛ لا يُقتبس حرفياً قبل استكمال التحقق' if partial else ''}؛ لم تُقابل بالمطبوع: {r.get('verification', '')[:240]}")
 
 json.dump({"builtAt": "2026-11-06", "sources": catalog}, open(os.path.join(OUT, "catalog.json"), "w", encoding="utf8"), ensure_ascii=False, indent=1)
+print("dropped:", dropped)
 print(len(catalog), "sources;", sum(1 for c in catalog if c["services"]), "linked to services")

@@ -24,6 +24,9 @@ import { engineAuth } from "../actor";
 import { ENGINE_VERSION } from "../constants";
 import { retrieve, readyRefCodes } from "@/server/knowledge/retrieve";
 import { KIND_AR } from "@/server/knowledge/policy";
+
+/** Outputs whose sections state what the rules require: a guide, a study or a book cannot be their only basis. */
+const BINDING_PROFILES: ReadonlySet<string> = new Set(["legal_review", "legal_package", "nazara_study", "aml_program", "ops_package", "investment_policy", "deed_draft"]);
 import { dataClassOf, maskFacts, modelAllowed } from "../llm/guard";
 import { llmProvider } from "../llm/provider";
 import { PROMPT_VERSION, type LlmSource } from "../llm/types";
@@ -247,7 +250,7 @@ export async function processRequest(job: ClaimedJob): Promise<RunOutcome> {
             const refCodes = w.refCodes?.length ? w.refCodes : PROFILE_REFS[def.profile] ?? [];
             const analysisDef = TEMPLATES[def.profile].analysis.find((a) => `analysis:${a.key}` === sec.key);
             // the single retrieval route: only passages the citation policy authorises reach the model as sources
-            const kb = await retrieve(tx, { question: `${rc.service.nameAr} ${sec.title} ${analysisDef?.prompt ?? ""} ${w.query ?? ""}`, service: rc.service.code, asOf: new Date().toISOString().slice(0, 10), refCodes, limit: 4 });
+            const kb = await retrieve(tx, { question: `${rc.service.nameAr} ${sec.title} ${analysisDef?.prompt ?? ""} ${w.query ?? ""}`, service: rc.service.code, asOf: new Date().toISOString().slice(0, 10), refCodes, needBinding: BINDING_PROFILES.has(def.profile), limit: 4 });
             const hits = kb.citable.map((r) => r.hit);
             for (const h of hits) if (!used.some((u) => u.code === h.refCode && u.version === h.version)) used.push({ code: h.refCode, version: h.version });
             const sources: LlmSource[] = hits.map((h, i) => ({ n: i + 1, chunkId: h.chunkId, refCode: h.refCode, locator: `${KIND_AR[h.refKind]} — ${h.locator}`, text: h.text }));

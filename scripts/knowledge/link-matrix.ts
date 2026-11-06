@@ -41,10 +41,10 @@ async function main() {
         if (words.length < 5) continue;
         const mid = Math.max(0, Math.floor(words.length / 2) - 5);
         probes++;
-        const r = await retrieve(tx as never, { question: words.slice(mid, mid + 10).join(" "), service: null, asOf: TODAY, historical: false, limit: 6 });
+        const r = await retrieve(tx as never, { question: words.slice(mid, mid + 10).join(" "), service: "*", asOf: TODAY, historical: false, limit: 6 });
         if (r.results.some((x) => x.hit.refCode === e.refCode)) found++;
       }
-      const any = await retrieve(tx as never, { question: e.title, service: null, asOf: TODAY, refCodes: [e.refCode], limit: 3 });
+      const any = await retrieve(tx as never, { question: e.title, service: "*", asOf: TODAY, refCodes: [e.refCode], limit: 3 });
       const citableNow = any.results.some((x) => x.decision.citable);
       // the knowledge base holds the official snapshot of these; the project also holds a copy of the file
       const PROJECT_COPY: Record<string, string> = { "NAZARA-REG": "تنظيم أعمال النظارة.pdf", "PRODUCTS-REG": "List of Waqf Investment Products_1.pdf", "DONATIONS-REG": "regulationsforestablishingendowmentsthroughcollectingdonations.pdf", "BO-STD": "معايير المستفيد الحقيقي  النسخة المُعتمدة.pdf" };

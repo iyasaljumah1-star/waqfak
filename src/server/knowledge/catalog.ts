@@ -29,6 +29,10 @@ export type CatalogEntry = {
   note: string;
   services: string[];
   repealedFrom?: string | null;
+  reviewRole?: string | null;
+  blockedPages?: string[];
+  /** Quality set by the catalog (a specialist's partial verification), overriding the measured one when lower. */
+  quality?: "good" | "degraded" | "unreadable" | null;
 };
 
 export const KNOWLEDGE_DIR = path.join(process.cwd(), "data", "knowledge");
@@ -43,7 +47,14 @@ export function unitsOf(e: CatalogEntry, dir = KNOWLEDGE_DIR): { units: Unit[]; 
     let units = statuteUnits(payload.text ?? "");
     // a text with the known letter-order defect («املادة») is not parsed by the registry's segmenter: engine-core's
     // splitter, which reads that form, gives article passages (no paragraph locators)
-    if (!units.length) units = splitPassages(payload.text ?? "").map((p) => ({ locator: p.articleNo ? `م${p.articleNo}` : p.locator, articleNo: p.articleNo, paragraphNo: null, pageFile: null, pagePrinted: null, text: p.text, textOrigin: "text_layer" as const }));
+    if (!units.length) {
+      const ps = splitPassages(payload.text ?? "");
+      // article numbers are trusted only when they form a unique sequence; compound ordinals in a reordered text
+      // («الثامنة عرشة بعد السبعامئة») are misread, so a non-unique numbering gives sequential passages without numbers
+      const nums = ps.map((p) => p.articleNo).filter((n): n is number => n !== null);
+      const trusted = nums.length > 0 && new Set(nums).size === nums.length;
+      units = ps.map((p, i) => ({ locator: trusted && p.articleNo ? `م${p.articleNo}` : `مقطع ${i + 1}`, articleNo: trusted ? p.articleNo : null, paragraphNo: null, pageFile: null, pagePrinted: null, text: p.text, textOrigin: "text_layer" as const }));
+    }
     const q = e.registrySnapshot ? { quality: "good" as const, note: "نص لقطة رسمية." } : assessQuality(payload.text ?? "");
     return { units, quality: q.quality, note: q.note };
   }
@@ -64,6 +75,9 @@ function datesOf(e: CatalogEntry): { effectiveOn: string | null; repealedOn: str
   return { effectiveOn, repealedOn };
 }
 
+const ORDER = ["good", "degraded", "unreadable"] as const;
+const worse = (a: (typeof ORDER)[number], b?: (typeof ORDER)[number] | null) => (b && ORDER.indexOf(b) > ORDER.indexOf(a) ? b : a);
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function ingestCatalog(db: NodePgDatabase<any>, entries = loadCatalog(), dir = KNOWLEDGE_DIR) {
   const out: { refCode: string; status: string; units: number; quality: string }[] = [];
@@ -72,8 +86,8 @@ export async function ingestCatalog(db: NodePgDatabase<any>, entries = loadCatal
     const d = datesOf(e);
     const input: SourceInput = {
       refCode: e.refCode, version: e.version, title: e.title, issuer: e.issuer, refKind: e.refKind, registryId: e.registryId, registrySnapshot: e.registrySnapshot,
-      effectiveOn: d.effectiveOn, repealedOn: d.repealedOn, services: e.services, origin: e.origin, originSha256: e.originSha256, textQuality: u.quality,
-      qualityNote: `${u.note} ${e.note}`.trim(), units: u.units, meta: { textForm: e.textForm },
+      effectiveOn: d.effectiveOn, repealedOn: d.repealedOn, services: e.services, origin: e.origin, originSha256: e.originSha256, textQuality: worse(u.quality, e.quality),
+      qualityNote: `${u.note} ${e.note}`.trim(), units: u.units, meta: { textForm: e.textForm, reviewRole: e.reviewRole ?? null, blockedPages: e.blockedPages ?? [] },
     };
     const r = await ingestUnits(db, input);
     out.push({ refCode: e.refCode, status: r.status, units: r.units, quality: u.quality });

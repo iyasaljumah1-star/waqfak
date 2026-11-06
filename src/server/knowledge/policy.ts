@@ -1,18 +1,24 @@
 /**
  * Citation policy of the unified knowledge engine (PURE, unit-tested). One place decides whether a retrieved passage may
- * be cited, applies to the service and the date, and how it must be labelled. engine-core and any other caller get
- * passages only through retrieve() (knowledge/retrieve.ts), which applies this policy: there is no second route.
+ * be cited, applies to the service and the date, is relevant to the question, and how it must be labelled. engine-core
+ * and any other caller get passages only through retrieve() (knowledge/retrieve.ts), which applies this policy.
  *
  * Rules:
  *  1. A registry instrument (statute, regulation, official instruction) is citable only when the reference engine's
- *     guard (references/citation.ts) authorises the exact article or paragraph: in force on the date, stored from an
- *     official host, compared, and the comparison accepted by an authorised person.
- *  2. Any other source (book, study, guide, standard, dataset) is citable only after an accepted human review of that
- *     source (kb_source_reviews) and when its extracted text is of good quality. It is cited with its own kind; it is
- *     never presented as a binding text.
- *  3. A source not linked to the service is not applicable and is not returned as a basis.
- *  4. A source superseded or repealed before the date is not used for a current question (historical questions only).
- *  5. When nothing citable remains, the answer is «insufficient references» — the caller must not generate.
+ *     guard (references/citation.ts) authorises the exact article or paragraph — in force on the date, stored from an
+ *     official host, compared, the comparison accepted by an authorised person — AND the knowledge-base passage holds
+ *     that same text. What is cited is the guard's text, never the passage's own copy.
+ *  2. Any other source (book, study, guide, standard, dataset) is citable only after an accepted review of the source by
+ *     a reviewer of the field its kind requires; a passage taken from a file's text layer additionally needs an accepted
+ *     review of that passage (compared with its page); a passage obtained by OCR is never cited. It is cited with its own
+ *     kind; it is never presented as binding.
+ *  3. A source not linked to the service is not applicable. A passage that does not cover the question is not relevant.
+ *  4. A source superseded or repealed before the date is not used for a current question; for a historical question
+ *     it is labelled as an earlier version.
+ *  5. A question on the position of the Hanbali school is answered only from classical Hanbali books: a contemporary
+ *     book or a study is not a source for attributing a view to the school.
+ *  6. A passage blocked by a specialist's finding (e.g. a page shown to contradict the school) is never cited.
+ *  7. When nothing citable remains, the answer is «insufficient references» — the caller must not generate.
  */
 import type { CitationResult } from "@/server/references/citation";
 
@@ -39,6 +45,16 @@ export const KIND_AR: Record<RefKind, string> = {
 /** Kinds whose text binds by itself. Everything else is guidance, scholarship, professional practice or data. */
 export const BINDING_KINDS: ReadonlySet<RefKind> = new Set(["statute", "regulation", "official_instruction"]);
 
+export type ReviewRole = "sharia" | "accounting" | "legal" | "data" | "investment";
+/** The field a source's reviewer must belong to, unless the catalog names one for the source. */
+export const DEFAULT_REVIEW_ROLE: Record<RefKind, ReviewRole> = {
+  statute: "legal", regulation: "legal", official_instruction: "legal", official_guide: "legal", professional_standard: "accounting",
+  classical_fiqh: "sharia", contemporary_book: "sharia", academic_study: "legal", statistical_source: "data", dataset: "data", unclassified: "legal",
+};
+
+/** Share of the question's content words a passage must contain to count as relevant (the assistant uses 0.5). */
+export const MIN_COVERAGE = 0.5;
+
 export type Hit = {
   chunkId: string;
   refCode: string;
@@ -52,79 +68,118 @@ export type Hit = {
   pageFile: number | null;
   pagePrinted: string | null;
   text: string;
+  textOrigin: string;
   quality: string;
   services: string[];
   publishedOn: string | null;
   effectiveOn: string | null;
   repealedOn: string | null;
   superseded: boolean;
+  /** Blocked by a specialist's finding recorded in the catalog. */
+  blocked: boolean;
+  reviewRole: ReviewRole;
+  /** Share of the question's content words found in the passage (1 for an article named in the question). */
+  coverage: number;
   score: number;
 };
 
 export type Refusal =
-  | "not_applicable" // not linked to the service
-  | "out_of_date" // superseded or repealed on the date
+  | "not_applicable"
+  | "not_relevant"
+  | "out_of_date"
   | "not_yet_effective"
-  | "registry_refused" // the reference guard refused (detail says why)
-  | "not_reviewed" // non-registry source without an accepted review
+  | "registry_refused"
+  | "text_mismatch" // knowledge-base passage differs from the text the guard authorised
+  | "blocked_passage"
+  | "not_school_source"
+  | "ocr_text"
+  | "degraded_text"
+  | "not_reviewed"
+  | "passage_not_reviewed"
   | "review_rejected"
-  | "degraded_text" // extracted text unreliable (OCR or reordered letters)
-  | "unclassified"; // kind unknown: never cited
+  | "unclassified";
 
 export const REFUSAL_AR: Record<Refusal, string> = {
   not_applicable: "المرجع غير مربوط بهذه الخدمة",
+  not_relevant: "المقطع لا يغطي السؤال",
   out_of_date: "النص منسوخ أو ملغى أو حلت محله نسخة أحدث في التاريخ المطلوب",
   not_yet_effective: "النص لم يكن نافذًا في التاريخ المطلوب",
   registry_refused: "حارس الاستشهاد رفض المادة",
-  not_reviewed: "المرجع لم يراجعه مختص ولم يُعتمد للاستشهاد",
-  review_rejected: "المراجعة البشرية رفضت المرجع",
-  degraded_text: "النص المستخرج غير موثوق (OCR أو خلل ترتيب الحروف)",
+  text_mismatch: "نص المقطع في قاعدة المعرفة لا يطابق النص الرسمي المعتمد",
+  blocked_passage: "المقطع محجوب بملاحظة مختص (ثبت خطؤه)",
+  not_school_source: "الكتاب المعاصر أو الدراسة ليس مصدرًا لنسبة قول إلى المذهب",
+  ocr_text: "النص بالتعرف الضوئي لا يُستشهد به",
+  degraded_text: "النص المستخرج غير موثوق",
+  not_reviewed: "المرجع لم يراجعه مختص من مجاله ولم يُعتمد للاستشهاد",
+  passage_not_reviewed: "المقطع مستخرج من الملف ولم يُقابل بصفحته",
+  review_rejected: "المراجعة البشرية رفضت المرجع أو المقطع",
   unclassified: "نوع المرجع غير محدد",
 };
 
 export type Decision = { citable: true; label: string; binding: boolean } | { citable: false; refusal: Refusal; detail: string };
 
-export type SourceReview = { decision: "accepted" | "rejected"; at: string };
+export type SourceReview = { decision: "accepted" | "rejected"; at: string; role: ReviewRole; chunkId: string | null };
+
+const no = (refusal: Refusal, detail: string): Decision => ({ citable: false, refusal, detail });
 
 /** A label that states the source's nature next to every citation. */
-export function citationLabel(h: Pick<Hit, "refKind" | "title" | "locator" | "version">): string {
-  return `${KIND_AR[h.refKind]}: ${h.title} — ${h.locator} (${h.version})`;
+export function citationLabel(h: Pick<Hit, "refKind" | "title" | "locator" | "version" | "superseded">): string {
+  return `${KIND_AR[h.refKind]}: ${h.title} — ${h.locator} (${h.version})${h.superseded ? " — نسخة سابقة" : ""}`;
 }
 
-export function decide(
-  h: Hit,
-  ctx: { service: string | null; asOf: string; historical?: boolean },
-  evidence: { registry?: CitationResult | null; reviews?: SourceReview[] },
-): Decision {
-  if (ctx.service && !h.services.includes(ctx.service)) return { citable: false, refusal: "not_applicable", detail: `${h.refCode} غير مربوط بالخدمة ${ctx.service}` };
+/** A question asking for the position of the Hanbali school. */
+export const SCHOOL_QUESTION = /المذهب|الحنابلة|الحنبلي|عند أحمد|الإمام أحمد|مذهب أحمد/;
+
+export type DecideContext = { service: string; asOf: string; historical?: boolean; schoolQuestion?: boolean };
+export type DecideEvidence = { registry?: CitationResult | null; registryTextMatches?: boolean; reviews?: SourceReview[] };
+
+export function decide(h: Hit, ctx: DecideContext, evidence: DecideEvidence): Decision {
+  if (ctx.service !== "*" && !h.services.includes(ctx.service)) return no("not_applicable", `${h.refCode} غير مربوط بالخدمة ${ctx.service}`);
   if (!ctx.historical) {
-    if (h.superseded) return { citable: false, refusal: "out_of_date", detail: `${h.refCode} ${h.version}: نسخة سابقة` };
-    if (h.repealedOn && h.repealedOn <= ctx.asOf) return { citable: false, refusal: "out_of_date", detail: `${h.refCode}: لم يعد ساريًا منذ ${h.repealedOn}` };
+    if (h.superseded) return no("out_of_date", `${h.refCode} ${h.version}: نسخة سابقة`);
+    if (h.repealedOn && h.repealedOn <= ctx.asOf) return no("out_of_date", `${h.refCode}: لم يعد ساريًا منذ ${h.repealedOn}`);
   }
-  if (h.effectiveOn && h.effectiveOn > ctx.asOf) return { citable: false, refusal: "not_yet_effective", detail: `${h.refCode}: يسري من ${h.effectiveOn}` };
-  if (h.refKind === "unclassified") return { citable: false, refusal: "unclassified", detail: h.refCode };
+  if (h.effectiveOn && h.effectiveOn > ctx.asOf) return no("not_yet_effective", `${h.refCode}: يسري من ${h.effectiveOn}`);
+  if (h.coverage < MIN_COVERAGE) return no("not_relevant", `${h.refCode} ${h.locator}: يغطي ${Math.round(h.coverage * 100)}٪ من كلمات السؤال`);
+  if (h.refKind === "unclassified") return no("unclassified", h.refCode);
+  if (h.blocked) return no("blocked_passage", `${h.refCode} ${h.locator}`);
   if (BINDING_KINDS.has(h.refKind) || h.registryId) {
     const r = evidence.registry;
-    if (!r) return { citable: false, refusal: "registry_refused", detail: `${h.refCode}: لا قرار من حارس الاستشهاد (المادة غير محددة أو المرجع غير مسجل)` };
-    if (!r.ok) return { citable: false, refusal: "registry_refused", detail: r.detail };
+    if (!r) return no("registry_refused", `${h.refCode}: لا قرار من حارس الاستشهاد (المادة غير محددة أو المرجع غير مسجل)`);
+    if (!r.ok) return no("registry_refused", r.detail);
+    if (!evidence.registryTextMatches) return no("text_mismatch", `${h.refCode} ${h.locator}`);
     return { citable: true, label: citationLabel(h), binding: BINDING_KINDS.has(h.refKind) };
   }
-  if (h.quality !== "good") return { citable: false, refusal: "degraded_text", detail: `${h.refCode}: جودة النص «${h.quality}»` };
-  const latest = [...(evidence.reviews ?? [])].sort((a, b) => b.at.localeCompare(a.at))[0];
-  if (!latest) return { citable: false, refusal: "not_reviewed", detail: h.refCode };
-  if (latest.decision !== "accepted") return { citable: false, refusal: "review_rejected", detail: h.refCode };
+  if (ctx.schoolQuestion && h.refKind !== "classical_fiqh") return no("not_school_source", `${KIND_AR[h.refKind]}: ${h.refCode}`);
+  if (h.textOrigin === "ocr") return no("ocr_text", `${h.refCode} ${h.locator}`);
+  if (h.quality !== "good") return no("degraded_text", `${h.refCode}: جودة النص «${h.quality}»`);
+  const mine = (evidence.reviews ?? []).filter((r) => r.role === h.reviewRole).sort((a, b) => b.at.localeCompare(a.at));
+  const source = mine.filter((r) => r.chunkId === null)[0];
+  if (!source) return no("not_reviewed", `${h.refCode} (مراجع ${h.reviewRole})`);
+  if (source.decision !== "accepted") return no("review_rejected", h.refCode);
+  if (h.textOrigin === "text_layer") {
+    const passage = mine.filter((r) => r.chunkId === h.chunkId)[0];
+    if (!passage) return no("passage_not_reviewed", `${h.refCode} ${h.locator}`);
+    if (passage.decision !== "accepted") return no("review_rejected", `${h.refCode} ${h.locator}`);
+  }
   return { citable: true, label: citationLabel(h), binding: false };
 }
 
 export type Sufficiency = { sufficient: true } | { sufficient: false; reason: string };
 
-/** Enough to answer: at least one citable passage, and a binding one when the question needs a binding basis. */
-export function sufficiency(decided: { hit: Hit; decision: Decision }[], need: { binding: boolean }): Sufficiency {
+/**
+ * Enough to answer: at least one citable passage; a binding one when the question needs a binding basis; a classical
+ * Hanbali one when it asks for the school's position. A question naming an article that does not exist is never
+ * answered from other articles.
+ */
+export function sufficiency(decided: { hit: Hit; decision: Decision }[], need: { binding: boolean; school?: boolean; missingArticle?: string | null }): Sufficiency {
+  if (need.missingArticle) return { sufficient: false, reason: `المراجع غير كافية: ${need.missingArticle} غير موجودة في النص المحفوظ.` };
   const ok = decided.filter((d) => d.decision.citable);
   if (!ok.length) {
     const why = [...new Set(decided.filter((d) => !d.decision.citable).map((d) => REFUSAL_AR[(d.decision as { refusal: Refusal }).refusal]))];
     return { sufficient: false, reason: decided.length ? `المراجع غير كافية: لا مقطع قابل للاستشهاد (${why.join("؛ ")}).` : "المراجع غير كافية: لم يُعثر على نص ذي صلة في قاعدة المعرفة." };
   }
   if (need.binding && !ok.some((d) => d.decision.citable && d.decision.binding)) return { sufficient: false, reason: "المراجع غير كافية: لا نص نظامي ملزم قابل للاستشهاد؛ المراجع الإرشادية أو العلمية لا تقوم مقامه." };
+  if (need.school && !ok.some((d) => d.hit.refKind === "classical_fiqh")) return { sufficient: false, reason: "المراجع غير كافية: لا نص من كتب المذهب الحنبلي الأصلية قابل للاستشهاد." };
   return { sufficient: true };
 }

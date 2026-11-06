@@ -439,3 +439,23 @@ CREATE TRIGGER ref_append_only BEFORE UPDATE OR DELETE ON kb_source_reviews FOR 
 DROP TRIGGER IF EXISTS ref_no_truncate ON kb_source_reviews;
 CREATE TRIGGER ref_no_truncate BEFORE TRUNCATE ON kb_source_reviews FOR EACH STATEMENT EXECUTE FUNCTION ref_append_only();
 REVOKE UPDATE, DELETE, TRUNCATE ON kb_source_reviews FROM waqfak_app;
+
+-- Hardening after the independent review (2026-11-06): what the engine cites is never edited in place. A passage is
+-- never updated or deleted; a source row may only be marked superseded (and keep engine-core's legacy status column);
+-- any other correction is a new version. Binds the owner role too (trigger, not a privilege).
+CREATE OR REPLACE FUNCTION kb_source_guard() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    RAISE EXCEPTION 'kb_sources: delete refused (sources are kept; a new version supersedes them)' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  IF (to_jsonb(NEW) - 'superseded_at' - 'verification_status') IS DISTINCT FROM (to_jsonb(OLD) - 'superseded_at' - 'verification_status') THEN
+    RAISE EXCEPTION 'kb_sources: only superseded_at may change; load a new version instead' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS kb_source_guard ON kb_sources;
+CREATE TRIGGER kb_source_guard BEFORE UPDATE OR DELETE ON kb_sources FOR EACH ROW EXECUTE FUNCTION kb_source_guard();
+DROP TRIGGER IF EXISTS ref_append_only ON kb_chunks;
+CREATE TRIGGER ref_append_only BEFORE UPDATE OR DELETE ON kb_chunks FOR EACH ROW EXECUTE FUNCTION ref_append_only();
+DROP TRIGGER IF EXISTS ref_no_truncate ON kb_chunks;
+CREATE TRIGGER ref_no_truncate BEFORE TRUNCATE ON kb_chunks FOR EACH STATEMENT EXECUTE FUNCTION ref_append_only();

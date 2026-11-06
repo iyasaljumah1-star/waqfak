@@ -58,11 +58,11 @@ describe.skipIf(!enabled)("unified knowledge engine (dedicated test database)", 
 
   it("the knowledge base holds every catalog source with units", async () => {
     const n = await rolledBack(async (tx) => (await tx.execute(sql`select count(distinct ref_code)::int as n, count(*) filter (where superseded_at is null)::int as cur from kb_sources`)).rows[0] as { n: number; cur: number });
-    expect(n.n).toBeGreaterThanOrEqual(48);
-    expect(n.cur).toBe(48);
+    expect(n.n).toBeGreaterThanOrEqual(49);
+    expect(n.cur).toBe(49);
   });
 
-  for (const id of ["1a", "1b", "2", "3", "4", "5", "6a", "6b", "7", "8", "9a", "9b", "10", "11", "12", "13"]) {
+  for (const id of ["1a", "1b", "1c", "2", "3", "3b", "4", "4b", "5", "6a", "6b", "7", "8", "8b", "9a", "9b", "9c", "10", "11", "12", "13", "13b"]) {
     it(`case ${id}`, async () => {
       const c = cases.CASES.find((x) => x.id === id)!;
       const row = await rolledBack((tx) => cases.runCase(tx, c));
@@ -77,6 +77,7 @@ describe.skipIf(!enabled)("unified knowledge engine (dedicated test database)", 
       const ready = await ke.readyRefCodes(tx, ["NAZARA-REG"], "2026-11-06");
       expect(ready.has("NAZARA-REG")).toBe(false);
       const r = await ke.retrieve(tx, { question: "المادة 16 استثمار الوقف", service: "I01", asOf: "2026-11-06", refCodes: ["NAZARA-REG"] });
+      expect(r.results.length).toBeGreaterThan(0);
       expect(r.citable).toEqual([]);
     });
   });
@@ -97,12 +98,37 @@ describe.skipIf(!enabled)("unified knowledge engine (dedicated test database)", 
       const rows = await tx.select().from(schema.kbSources).where(eq(schema.kbSources.refCode, "SYN-KE"));
       expect(rows).toHaveLength(2);
       expect(rows.filter((r) => r.supersededAt === null)).toHaveLength(1);
-      await cases.reviewSource(tx, "SYN-KE");
+      await cases.reviewSource(tx, "SYN-KE", { passages: "all" });
       const r = await ke.retrieve(tx, { question: "حوكمة الوقف الاصطناعي", service: "C01", asOf: "2026-11-06", refCodes: ["SYN-KE"] });
       expect(r.results.map((x) => x.hit.text)).toEqual(["نص مصحح عن حوكمة الوقف الاصطناعي"]);
       const hist = await ke.retrieve(tx, { question: "حوكمة الوقف الاصطناعي", service: "C01", asOf: "2026-11-06", refCodes: ["SYN-KE"], historical: true });
       expect(hist.results.length).toBe(2);
     });
+  });
+
+  it("what the engine cites is never edited in place, even in the system context", async () => {
+    const msg = (e: unknown) => String((e as Error & { cause?: Error })?.cause?.message ?? e);
+    const a = await rolledBack(async (tx) => { await tx.execute(sql`update kb_chunks set text = 'نص معدل' where true`); }).catch((e) => e);
+    expect(msg(a)).toMatch(/append-only/);
+    const b = await rolledBack(async (tx) => { await tx.execute(sql`update kb_sources set services = '{Z99}' where ref_code = 'INVEST-RULES'`); }).catch((e) => e);
+    expect(msg(b)).toMatch(/only superseded_at may change/);
+    const c = await rolledBack(async (tx) => { await tx.execute(sql`delete from kb_sources where ref_code = 'Q100'`); }).catch((e) => e);
+    expect(msg(c)).toMatch(/delete refused/);
+  });
+
+  it("a source review must name a real user, a known field and a decision", async () => {
+    const msg = (e: unknown) => String((e as Error & { cause?: Error })?.cause?.message ?? e);
+    const e1 = await rolledBack(async (tx) => {
+      const [s] = await tx.select({ id: schema.kbSources.id }).from(schema.kbSources).limit(1);
+      await tx.insert(schema.kbSourceReviews).values({ sourceId: s!.id, reviewerUserId: "00000000-0000-4000-8000-00000000dead", reviewerRole: "sharia", decision: "accepted", note: "مراجعة بلا مستخدم حقيقي" });
+    }).catch((e) => e);
+    expect(msg(e1)).toMatch(/foreign key/);
+    const e2 = await rolledBack(async (tx) => {
+      await cases.reviewSource(tx, "Q100");
+      const [s] = await tx.select({ id: schema.kbSources.id }).from(schema.kbSources).limit(1);
+      await tx.execute(sql`insert into kb_source_reviews (source_id, reviewer_user_id, reviewer_role, decision, note) values (${s!.id}, ${cases.SYNTHETIC_REVIEWER}::uuid, 'anyone', 'maybe', 'مراجعة بقيم غير مقبولة')`);
+    }).catch((e) => e);
+    expect(msg(e2)).toMatch(/check constraint/);
   });
 
   it("source reviews are append-only, and a user session cannot write the knowledge base", async () => {
