@@ -8,7 +8,7 @@ import { articleNumber, normForSearch } from "@/server/engine/knowledge/pure";
 import { cite } from "@/server/references/citation";
 import { OFFICIAL_HOSTS, CITABLE_OUTCOMES } from "@/server/references/types";
 import { REGISTRY, getEntry, statusAt } from "@/server/references/registry";
-import { decide, SCHOOL_QUESTION, sufficiency, DEFAULT_REVIEW_ROLE, type Decision, type Hit, type RefKind, type ReviewRole, type SourceReview, type Sufficiency } from "./policy";
+import { decide, SCHOOL_QUESTION, sufficiency, DEFAULT_REVIEW_ROLE, MIN_COVERAGE, type Decision, type Hit, type RefKind, type ReviewRole, type SourceReview, type Sufficiency } from "./policy";
 import { loadVersionStore } from "./store";
 import { auditedReviewIds } from "./review";
 
@@ -91,7 +91,8 @@ async function authorisedReviews(tx: Tx, sourceIds: string[]) {
 
 /** Article (and paragraph) named in a question, if any. */
 export function namedArticle(q: string): { article: number; paragraph: number | null } | null {
-  const m = q.match(/(?:^|\s)م\s?(\d{1,3})(?:\s?\/\s?ف\s?(\d{1,2}))?/) ?? q.match(/المادة\s*\(?\s*(\d{1,3})\s*\)?(?:[^\d]{0,12}الفقرة\s*\(?\s*(\d{1,2}))?/);
+  // a number is an article number only when it stands alone («م 2025» is a year, not article 202: review Q3)
+  const m = q.match(/(?:^|\s)م\s?(\d{1,3})(?!\d)(?:\s?\/\s?ف\s?(\d{1,2})(?!\d))?/) ?? q.match(/المادة\s*\(?\s*(\d{1,3})(?!\d)\s*\)?(?:[^\d]{0,12}الفقرة\s*\(?\s*(\d{1,2})(?!\d))?/);
   if (m) return { article: Number(m[1]), paragraph: m[2] ? Number(m[2]) : null };
   const w = q.match(/المادة\s+((?:ال[ء-ي]+)(?:\s+و?ال[ء-ي]+){0,3}(?:\s+بعد\s+ال[ء-ي]+)?)/);
   if (w) {
@@ -107,23 +108,33 @@ const SCHOOL_WORDS = new Set(tokenize("المذهب الحنابلة الحنب�
 
 /** Window (in content words) within which the question's words must stand together to count (review N2/P1e). */
 export const COVERAGE_WINDOW = 40;
+/** Beyond this many content words a question is a request's text: the bar is measured against its heaviest words. */
+export const LONG_QUESTION = 12;
 
 /**
- * Relevance of a passage to a question: the idf-weighted share of the question's content words that the passage holds
- * TOGETHER, within one window of COVERAGE_WINDOW content words. Words that only name the source, and words naming the
- * school, are left out. Common waqf words («وقف», «ناظر», «حكم») weigh little; a rare word found far from the others
- * (a country named in a list, the matter asked about in another chapter) does not make the passage cover the question.
+ * Relevance of a passage to a question, in [0, 1] (MIN_COVERAGE = 0.5 to count). Measured within one window of
+ * COVERAGE_WINDOW content words of the passage, so that the words must stand together:
+ *  - the idf-weighted share of the question's words (common waqf words — «وقف», «ناظر», «حكم» — weigh little), and
+ *  - the plain count: both words of a two-word question, two of three, three of four, half of a longer one
+ *    (a single rare word is not enough);
+ * the lower of the two counts. A question of one content word defines no matter (0). A short question holding a word
+ * that no reference contains at all («ألمانيا», «المريخ») asks what the knowledge base does not hold (0). A long
+ * question (a request's text) is measured against its LONG_QUESTION heaviest words, so its length does not starve it.
+ * Words that only name the source, and words naming the school, are left out.
  */
 export function coverageOf(question: string, r: { tokens: Set<string>; seq?: string[]; titleTokens: Set<string> }, df?: Map<string, number>, n = 1, window = COVERAGE_WINDOW): number {
   const words = [...new Set(tokenize(question))].filter((w) => !r.titleTokens.has(w) && !SCHOOL_WORDS.has(w));
-  if (!words.length) return 0;
+  if (words.length < 2) return 0;
+  const long = words.length > LONG_QUESTION;
+  // a very short question with a word no reference contains («معدل البطالة في ألمانيا»): the knowledge base does not
+  // hold what it asks (N2-b). Longer questions keep the ordinary measure (the stemmer is crude; a verb form may be absent)
+  if (df && words.length <= 3 && words.some((w) => w.length >= 3 && !df.has(w))) return 0;
   const idf = (w: string) => Math.log(1 + n / Math.max(1, df?.get(w) ?? 0.5));
   const weight = new Map(words.map((w) => [w, idf(w)]));
-  const total = [...weight.values()].reduce((a, b) => a + b, 0);
+  const heaviest = [...weight.values()].sort((a, b) => b - a);
+  const total = (long ? heaviest.slice(0, LONG_QUESTION) : heaviest).reduce((a, b) => a + b, 0);
+  const countTotal = long ? LONG_QUESTION : words.length;
   const seq = r.seq ?? [...r.tokens];
-  // best window: slide over the passage, counting each question word once. Two shares must both reach the bar, so
-  // neither a single rare word (a country named in a list) nor the common waqf words alone make a passage relevant:
-  // the idf-weighted share of the question's words, and the plain share of them (P1e)
   let best = 0;
   const count = new Map<string, number>();
   let got = 0;
@@ -140,7 +151,10 @@ export function coverageOf(question: string, r: { tokens: Set<string>; seq?: str
       count.set(seq[out], c);
       if (!c) { got -= weight.get(seq[out])!; gotN--; }
     }
-    const share = Math.min(total ? got / total : 0, gotN / words.length);
+    // plain count: both words of a two-word question, two of three, three of four, else half of them
+    const need = countTotal <= 2 ? countTotal : countTotal <= 4 ? countTotal - 1 : Math.ceil(countTotal * MIN_COVERAGE);
+    const plain = gotN >= need ? 1 : (gotN / need) * (MIN_COVERAGE - 0.01);
+    const share = Math.min(1, total ? got / total : 0, plain);
     if (share > best) best = share;
   }
   return best;
@@ -169,6 +183,11 @@ function validityOn(c: Cache, picked: Row[], asOf: string): Map<string, Pick<Hit
     }
     // the next start among the other versions; an undated sibling makes the end unknowable
     if (all.some(([v, st]) => v !== r.version && !st)) {
+      out.set(r.chunkId, { validFrom: from, validTo: null, validity: "unknown" });
+      continue;
+    }
+    // two versions starting the same day: which one was in force cannot be told (review H3)
+    if (all.some(([v, st]) => v !== r.version && st === from)) {
       out.set(r.chunkId, { validFrom: from, validTo: null, validity: "unknown" });
       continue;
     }
@@ -244,6 +263,10 @@ export async function retrieve(tx: Tx, q: RetrieveQuery): Promise<RetrieveResult
           hit.text = `المادة ${row.articleNo}${d.heading ? `: ${d.heading}` : ""}\n${d.text}`;
           hit.title = d.refName;
           hit.locator = d.locator;
+          hit.version = d.versionLabel;
+          // relevance measured on the text that is passed on, not on the knowledge base's copy (review R6)
+          const toks = tokenize(hit.text);
+          if (!namedUnits?.has(row.chunkId)) hit.coverage = coverageOf(q.question, { tokens: new Set(toks), seq: toks, titleTokens: row.titleTokens }, c.df, c.rows.size);
           hit.validFrom = d.effectiveFrom;
           hit.provenance = "guard";
         }
@@ -257,6 +280,11 @@ export async function retrieve(tx: Tx, q: RetrieveQuery): Promise<RetrieveResult
   });
   const rank = (r: Retrieved) => ({ null: 0, not_applicable: 3, not_relevant: 2 } as Record<string, number>)[String(refusalOf(r.decision))] ?? 1;
   const ordered = [...results].sort((a, b) => rank(a) - rank(b) || b.hit.score - a.hit.score).slice(0, limit);
+  // a contemporary book is auxiliary: a passage of it is passed on only beside a citable classical fiqh passage
+  // (owner's order: never the sole basis for attributing a ruling; independent review A2)
+  if (!results.some((r) => r.decision.citable && r.hit.refKind === "classical_fiqh")) {
+    for (const r of results) if (r.decision.citable && r.hit.refKind === "contemporary_book") r.decision = { citable: false, refusal: "auxiliary_alone", detail: `${r.hit.refCode} ${r.hit.locator}: مرجع مساعد بلا نص من كتب الفقه الأصلية` };
+  }
   const basis = namedUnits ? ordered.filter((r) => namedUnits!.has(r.hit.chunkId)) : ordered;
   const citable = missingArticle ? [] : basis.filter((r) => r.decision.citable);
   return { results: ordered, citable, sufficiency: sufficiency(basis, { binding: !!q.needBinding, school: needSchool, missingArticle }) };
@@ -290,7 +318,8 @@ export async function readyRefCodes(tx: Tx, refCodes: string[], asOf: string): P
         /* not official */
       }
       if (!(OFFICIAL_HOSTS as readonly string[]).includes(host)) continue;
-      const ok = store.matchRuns(v.id).some((r) => store.reviews(r.id).some((x) => x.decision === "accepted") && Object.values(r.perArticle).some((o) => CITABLE_OUTCOMES.has(o)));
+      const latest = (id: string) => store.reviews(id).sort((a, b) => b.at.localeCompare(a.at))[0];
+      const ok = store.matchRuns(v.id).some((r) => latest(r.id)?.decision === "accepted" && Object.values(r.perArticle).some((o) => CITABLE_OUTCOMES.has(o)));
       if (ok) ready.add(s.refCode);
       continue;
     }

@@ -542,9 +542,86 @@ DROP POLICY IF EXISTS ref_review_insert ON ref_match_reviews;
 CREATE POLICY ref_review_insert ON ref_match_reviews FOR INSERT TO waqfak_app WITH CHECK (reviewer_user_id = app_current_user() AND app_is_staff());
 
 -- Read-time proof that a review was audited (the engine reads in the system context; audit_logs is not exposed).
-CREATE OR REPLACE FUNCTION knowledge_audited_reviews(kind text, ids uuid[]) RETURNS SETOF uuid LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
-  SELECT DISTINCT a.entity_id::uuid FROM audit_logs a
+DROP FUNCTION IF EXISTS knowledge_audited_reviews(text, uuid[]);
+-- returns the audit entries themselves, so that the reader recomputes each entry's hash (a forged entry fails: R1d)
+CREATE OR REPLACE FUNCTION knowledge_audited_reviews(kind text, ids uuid[])
+  RETURNS TABLE (id bigint, at timestamptz, actor_user_id uuid, action text, entity_type text, entity_id text, waqf_id uuid, before jsonb, after jsonb, prev_hash text, hash text, actor_roles text[])
+  LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
+  SELECT a.id, a.at, a.actor_user_id, a.action, a.entity_type, a.entity_id, a.waqf_id, a.before, a.after, a.prev_hash, a.hash, a.actor_roles FROM audit_logs a
   WHERE a.action = 'knowledge.review.recorded' AND a.entity_type = kind AND a.entity_id = ANY (SELECT x::text FROM unnest(ids) x)
 $$;
 REVOKE ALL ON FUNCTION knowledge_audited_reviews(text, uuid[]) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION knowledge_audited_reviews(text, uuid[]) TO waqfak_app;
+
+-- Independent review, round 4 (2026-11-06).
+-- R5: a review concerns the current version of a source, and a passage of that same source.
+CREATE OR REPLACE FUNCTION kb_review_target() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM kb_sources s WHERE s.id = NEW.source_id AND s.superseded_at IS NULL) THEN
+    RAISE EXCEPTION 'kb_source_reviews: the source is not current (review the current version)' USING ERRCODE = 'check_violation';
+  END IF;
+  IF NEW.chunk_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM kb_chunks c WHERE c.id = NEW.chunk_id AND c.source_id = NEW.source_id) THEN
+    RAISE EXCEPTION 'kb_source_reviews: the passage is not of this source' USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS kb_review_target ON kb_source_reviews;
+CREATE TRIGGER kb_review_target BEFORE INSERT ON kb_source_reviews FOR EACH ROW EXECUTE FUNCTION kb_review_target();
+
+-- R1d: the audit trail is one chain. Every entry must name, as its previous hash, the hash of the entry before it
+-- (writers hold advisory lock 724501): an entry inserted out of the chain is refused, so a forged entry cannot sit
+-- beside the chain unseen — and the verifier recomputes every hash.
+CREATE OR REPLACE FUNCTION audit_chain_link() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE last text;
+BEGIN
+  SELECT hash INTO last FROM audit_logs ORDER BY id DESC LIMIT 1;
+  IF NEW.prev_hash IS DISTINCT FROM coalesce(last, 'GENESIS') THEN
+    RAISE EXCEPTION 'audit_logs: entry does not continue the chain (prev_hash %, last %)', NEW.prev_hash, coalesce(last, 'GENESIS') USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS audit_chain_link ON audit_logs;
+CREATE TRIGGER audit_chain_link BEFORE INSERT ON audit_logs FOR EACH ROW EXECUTE FUNCTION audit_chain_link();
+
+-- R4b: from a user session, roles and role permissions change only by a holder of «admin.roles», and no one gives
+-- themselves a reviewer's permission (a reviewer is named by someone else). The system context (seed) is unaffected.
+CREATE OR REPLACE FUNCTION app_holds(perm text) RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
+  SELECT EXISTS (SELECT 1 FROM user_roles ur JOIN role_permissions rp ON rp.role_id = ur.role_id JOIN permissions p ON p.id = rp.permission_id
+                 JOIN users u ON u.id = ur.user_id
+                 WHERE ur.user_id = app_current_user() AND p.key = perm AND u.status = 'active')
+$$;
+REVOKE ALL ON FUNCTION app_holds(text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION app_holds(text) TO waqfak_app;
+
+CREATE OR REPLACE FUNCTION user_roles_guard() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE r record;
+BEGIN
+  IF app_current_user() IS NULL THEN RETURN coalesce(NEW, OLD); END IF;
+  IF NOT app_holds('admin.roles') THEN
+    RAISE EXCEPTION 'user_roles: changing roles needs admin.roles' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  IF TG_OP <> 'DELETE' THEN
+    r := NEW;
+    IF r.user_id = app_current_user() AND EXISTS (SELECT 1 FROM role_permissions rp JOIN permissions p ON p.id = rp.permission_id WHERE rp.role_id = r.role_id AND p.key LIKE 'knowledge.review.%') THEN
+      RAISE EXCEPTION 'user_roles: no one gives themselves a reviewer role' USING ERRCODE = 'insufficient_privilege';
+    END IF;
+  END IF;
+  RETURN coalesce(NEW, OLD);
+END $$;
+DROP TRIGGER IF EXISTS user_roles_guard ON user_roles;
+CREATE TRIGGER user_roles_guard BEFORE INSERT OR UPDATE OR DELETE ON user_roles FOR EACH ROW EXECUTE FUNCTION user_roles_guard();
+
+CREATE OR REPLACE FUNCTION role_permissions_guard() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+  IF app_current_user() IS NULL THEN RETURN coalesce(NEW, OLD); END IF;
+  IF NOT app_holds('admin.roles') THEN
+    RAISE EXCEPTION 'role_permissions: changing permissions needs admin.roles' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  IF TG_OP <> 'DELETE' AND EXISTS (SELECT 1 FROM permissions p WHERE p.id = NEW.permission_id AND p.key LIKE 'knowledge.review.%')
+     AND EXISTS (SELECT 1 FROM user_roles ur WHERE ur.role_id = NEW.role_id AND ur.user_id = app_current_user()) THEN
+    RAISE EXCEPTION 'role_permissions: no one gives a reviewer permission to a role they hold' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  RETURN coalesce(NEW, OLD);
+END $$;
+DROP TRIGGER IF EXISTS role_permissions_guard ON role_permissions;
+CREATE TRIGGER role_permissions_guard BEFORE INSERT OR UPDATE OR DELETE ON role_permissions FOR EACH ROW EXECUTE FUNCTION role_permissions_guard();

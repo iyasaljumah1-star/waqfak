@@ -109,6 +109,7 @@ export type Refusal =
   | "passage_not_reviewed"
   | "review_rejected"
   | "unknown_validity"
+  | "auxiliary_alone"
   | "unclassified";
 
 export const REFUSAL_AR: Record<Refusal, string> = {
@@ -125,6 +126,7 @@ export const REFUSAL_AR: Record<Refusal, string> = {
   not_reviewed: "المرجع لم يراجعه مختص من مجاله ولم يُعتمد للاستشهاد",
   passage_not_reviewed: "المقطع مستخرج من الملف ولم يُقابل بصفحته",
   review_rejected: "المراجعة البشرية رفضت المرجع أو المقطع",
+  auxiliary_alone: "مرجع مساعد (كتاب معاصر) لا يُستند إليه دون نص من كتب الفقه الأصلية",
   unknown_validity: "تاريخ سريان هذه النسخة غير معروف، فلا يُعرف النص النافذ في التاريخ المطلوب",
   unclassified: "نوع المرجع غير محدد",
 };
@@ -153,7 +155,10 @@ export function decide(h: Hit, ctx: DecideContext, evidence: DecideEvidence): De
   if (!ctx.historical) {
     if (h.superseded) return no("out_of_date", `${h.refCode} ${h.version}: نسخة سابقة`);
     if (h.repealedOn && h.repealedOn <= ctx.asOf) return no("out_of_date", `${h.refCode}: لم يعد ساريًا منذ ${h.repealedOn}`);
-  } else if (!h.registryId) {
+  } else if (h.registryId) {
+    // a registry instrument repealed on or before the date is not cited for it, even historically (review H1)
+    if (h.repealedOn && h.repealedOn <= ctx.asOf) return no("out_of_date", `${h.refCode}: لم يعد ساريًا منذ ${h.repealedOn}`);
+  } else {
     // a registry instrument's version on the date is chosen by the guard; any other source by its own dates (review B10)
     if (h.validity === "unknown" || !h.validity) return no("unknown_validity", `${h.refCode} ${h.version}`);
     if (h.validity === "earlier") return no("out_of_date", `${h.refCode} ${h.version}: انتهى سريانها في ${h.validTo}`);

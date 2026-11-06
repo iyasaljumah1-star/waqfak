@@ -187,16 +187,18 @@ describe("the pipeline's retrieval question (knowledge/question.ts)", () => {
 });
 
 describe("the public assistant and regulatory questions (review B11)", () => {
-  it("asks the knowledge engine for a question about what a regulation or the fiqh provides, before any library answer or model", async () => {
+  it("asks the knowledge engine's policy for every general question, and no model composes an answer from the library (A1)", async () => {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const fs = require("node:fs") as typeof import("node:fs");
     const { isRegulatoryQuestion } = await import("../src/server/modules/ai/regulatory");
     for (const q of ["ما نص المادة 16 من لائحة تنظيم أعمال النظارة؟", "هل يجوز استبدال الوقف؟", "ما الغرامة على تأخر تسجيل الوقف؟", "ما رأي الحنابلة في وقف المشاع؟"]) expect(isRegulatoryQuestion(q), q).toBe(true);
-    for (const q of ["ما التزامات وقفي القادمة؟", "اعرض ملخص التقييم", "ما الوثائق الناقصة؟"]) expect(isRegulatoryQuestion(q), q).toBe(false);
     const engine = fs.readFileSync("src/server/modules/ai/engine.ts", "utf8");
-    const at = engine.indexOf("isRegulatoryQuestion(question)");
-    expect(at).toBeGreaterThan(0);
-    expect(at).toBeLessThan(engine.indexOf("externalAnswer(question"));
+    const body = engine.slice(engine.indexOf("async function knowledgeAnswer"), engine.indexOf("const HELP_BLOCKS"));
+    // the policy is asked first and unconditionally; the library is labelled explanatory; no external composition
+    expect(body.indexOf("await regulatoryBasis(question)")).toBeGreaterThan(0);
+    expect(body.indexOf("await regulatoryBasis(question)")).toBeLessThan(body.indexOf("isRegulatoryQuestion(question)"));
+    expect(body).toContain("وليست سندًا نظاميًا أو شرعيًا");
+    expect(engine).not.toMatch(/externalAnswer\(/);
     expect(fs.readFileSync("src/server/modules/ai/corpus.ts", "utf8")).not.toContain('"مرجع نظامي"');
   });
 });

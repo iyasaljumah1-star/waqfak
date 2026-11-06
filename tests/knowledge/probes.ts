@@ -30,10 +30,10 @@ const insufficient = (r: RetrieveResult) => !r.sufficiency.sufficient && r.citab
 const NZR = (tx: Tx) => acceptRegistry(tx, "NZR", "NZR/uqn-p18926", [8, 16], "2022-02-04");
 const OFFICIAL_16_3 = "3- مراعاة أن يكون الاستثمار في إطار الحد المقبول للمخاطر، وأن يكون عائده مجدياً مقارنة بمخاطره، وعدم تعريض الوقف لمخاطر عالية.";
 
-async function reNZR(tx: Tx, text: string, over: { title?: string; locator?: string; articleNo?: number; paragraphNo?: number } = {}) {
+async function reNZR(tx: Tx, text: string, over: { title?: string; version?: string; locator?: string; articleNo?: number; paragraphNo?: number } = {}) {
   const e = loadCatalog().find((x) => x.refCode === "NAZARA-REG")!;
   const units = unitsOf(e).units.map((u) => (u.locator === (over.locator ?? "م16/ف3") ? { ...u, text, articleNo: over.articleNo ?? u.articleNo, paragraphNo: over.paragraphNo ?? u.paragraphNo } : u));
-  await ingestUnits(tx as never, { refCode: "NAZARA-REG", version: "نسخة معدلة (مجس)", title: over.title ?? e.title, issuer: e.issuer, refKind: "regulation", registryId: "NZR", registrySnapshot: e.registrySnapshot, services: e.services, origin: "مجس", originSha256: `probe-${text.length}-${over.title ?? ""}`, textQuality: "good", qualityNote: "", units });
+  await ingestUnits(tx as never, { refCode: "NAZARA-REG", version: over.version ?? "نسخة معدلة (مجس)", title: over.title ?? e.title, issuer: e.issuer, refKind: "regulation", registryId: "NZR", registrySnapshot: e.registrySnapshot, services: e.services, origin: "مجس", originSha256: `probe-${text.length}-${over.title ?? ""}`, textQuality: "good", qualityNote: "", units });
 }
 const Q163 = q("ما نص المادة 16 الفقرة 3 من لائحة تنظيم أعمال النظارة؟", { service: "I01", refCodes: ["NAZARA-REG"], needBinding: true });
 
@@ -59,6 +59,188 @@ const legit: [string, string, string, RegExp, RegExp][] = [
   ["L3", "كم بلغ معدل البطالة بين السعوديين في الربع الأول من عام 2025؟", "T02", /^GASTAT-LFS$/, /6\.3%/],
   ["L4", "ما الإفصاحات المطلوبة عن المساهمات المقدمة من الواقف في القوائم المالية للأوقاف؟", "F05", /^SOCPA-NPO-2025$/, /المساهمات المقدمة من الواقف/],
   ["L5", "هل يصح وقف الدراهم والدنانير عند الحنابلة؟", "C07", /^FQH-/, /الدراهم|الأثمان/],
+];
+
+
+const LFS_Q = q("كم بلغ معدل البطالة بين السعوديين في الربع الأول من عام 2025؟", { service: "T02", refCodes: ["GASTAT-LFS"] });
+const lfsId = async (tx: Tx) => (await tx.select({ id: kbSources.id }).from(kbSources).where(and(eq(kbSources.refCode, "GASTAT-LFS"), isNull(kbSources.supersededAt))).limit(1))[0]!.id;
+const attempt = async (tx: Tx, fn: () => Promise<unknown>) => {
+  await tx.execute(sql`savepoint att`);
+  try {
+    await fn();
+    await tx.execute(sql`release savepoint att`);
+    return "ACCEPTED";
+  } catch (e) {
+    await tx.execute(sql`rollback to savepoint att`);
+    await tx.execute(sql`select set_config('app.user_id', '', true)`);
+    return String((e as { cause?: { message?: string } }).cause?.message ?? (e as Error).message).slice(0, 120);
+  }
+};
+/** Questions the fourth round of the independent review got through (N2-b). */
+const offTopic = ["معدل البطالة في ألمانيا", "الصين", "الذهب", "السيارة", "شروط الواقف في اليابان", "تسجيل الوقف لدى الهيئة في كندا", "مخاطر عالية في القيادة الرياضية", "هل يجب على الناظر أن يطبخ الطعام للمستفيدين يوم الجمعة؟"];
+
+/** Probes added after the fourth round of the independent review (report qa-round4). */
+const ROUND4: Probe[] = [
+  {
+    id: "R3b", finding: "R3b", title: "قبول مطابقة نظامية ثم رفض لاحق من المراجع نفسه", criterion: "الرفض اللاحق يُسقط الاستشهاد",
+    run: async (tx) => {
+      const { recordComparisonReview } = await import("../../src/server/knowledge/review");
+      const runId = await NZR(tx);
+      const before = (await retrieve(tx, Q163)).citable.length;
+      await tx.execute(sql`select pg_sleep(0.01)`);
+      await asUser(tx, TEST_REVIEWER, () => recordComparisonReview(tx, { userId: TEST_REVIEWER }, { runId, decision: "rejected", note: "مجس: رفض لاحق بعد القبول" }));
+      const after = (await retrieve(tx, Q163)).citable.length;
+      return { pass: before > 0 && after === 0, output: { before, after } };
+    },
+  },
+  {
+    id: "R1d", finding: "R1d", title: "مراجعة بإدراج مباشر مع قيد تدقيق مزور (بصمة عشوائية)", criterion: "يُرفض القيد المزور إن لم يكمل السلسلة؛ وإن أكملها كشفه المتحقق «مكسورًا»",
+    run: async (tx) => {
+      await testReviewer(tx, TEST_REVIEWER, ["data"]);
+      const sid = await lfsId(tx);
+      const rid = "11111111-1111-4111-8111-111111111113";
+      const offChain = await attempt(tx, () => asUser(tx, TEST_REVIEWER, async () => {
+        await tx.execute(sql`insert into kb_source_reviews (id, source_id, reviewer_user_id, reviewer_role, decision, note) values (${rid}::uuid, ${sid}::uuid, ${TEST_REVIEWER}::uuid, 'data', 'accepted', 'مجس: إدراج مباشر')`);
+        await tx.execute(sql`insert into audit_logs (actor_user_id, action, entity_type, entity_id, after, prev_hash, hash) values (${TEST_REVIEWER}::uuid, 'knowledge.review.recorded', 'kb_source_review', ${rid}, '{"decision":"accepted"}'::jsonb, 'forged-prev', ${"e".repeat(64)})`);
+      }));
+      const linked = await attempt(tx, () => asUser(tx, TEST_REVIEWER, async () => {
+        await tx.execute(sql`insert into kb_source_reviews (id, source_id, reviewer_user_id, reviewer_role, decision, note) values (${rid}::uuid, ${sid}::uuid, ${TEST_REVIEWER}::uuid, 'data', 'accepted', 'مجس: إدراج مباشر')`);
+        const prev = ((await tx.execute(sql`select app_audit_last_hash() h`)).rows[0] as { h: string | null }).h ?? "GENESIS";
+        await tx.execute(sql`insert into audit_logs (actor_user_id, action, entity_type, entity_id, after, prev_hash, hash, at) values (${TEST_REVIEWER}::uuid, 'knowledge.review.recorded', 'kb_source_review', ${rid}, '{"decision":"accepted","role":"data","textSha256":"none"}'::jsonb, ${prev}, ${"e".repeat(64)}, now())`);
+      }));
+      const { createChainVerifier } = await import("../../src/server/modules/admin/audit/chain");
+      const rows = (await tx.execute(sql`select * from audit_logs order by id`)).rows as Record<string, unknown>[];
+      const v = createChainVerifier();
+      for (const r of rows) v.push({ id: Number(r.id), at: new Date(r.at as string), actorUserId: r.actor_user_id as string | null, action: r.action as string, entityType: r.entity_type as string, entityId: r.entity_id as string | null, waqfId: r.waqf_id as string | null, before: r.before, after: r.after, prevHash: r.prev_hash as string | null, hash: r.hash as string, actorRoles: r.actor_roles as string[] | null } as never);
+      const report = v.report() as { broken?: unknown[]; brokenCount?: number } & Record<string, unknown>;
+      const brokenIds = JSON.stringify(report).includes(String(rows.find((r) => r.entity_id === rid)?.id ?? "x"));
+      // the linked forgery may be stored, but a review whose audit hash does not recompute never counts
+      const citable = linked === "ACCEPTED" ? (await retrieve(tx, LFS_Q)).citable.length : 0;
+      return { pass: offChain !== "ACCEPTED" && citable === 0, output: { offChain, linked, citableAfterLinkedForgery: citable, verifierFlagsForgedRow: brokenIds, verifier: JSON.stringify(report).slice(0, 300) } };
+    },
+  },
+  {
+    id: "R4b", finding: "R4b", title: "موظف بلا أدوار يمنح نفسه دور مراجع من جلسته", criterion: "يُرفض المنح، ولا مراجعة، ولا استشهاد",
+    run: async (tx) => {
+      const U = "00000000-0000-4000-8000-0000000aa0b2";
+      await testReviewer(tx, U, []);
+      await tx.execute(sql`select set_config('app.global_access', 'off', true)`);
+      const grant = await attempt(tx, () => asUser(tx, U, () => tx.execute(sql`insert into user_roles (user_id, role_id) select ${U}::uuid, id from roles where key = 'reviewer_data'`)));
+      const perm = await attempt(tx, () => asUser(tx, U, () => tx.execute(sql`insert into role_permissions (role_id, permission_id) select r.id, p.id from roles r, permissions p where r.key = 'viewer' and p.key = 'knowledge.review.data'`)));
+      await tx.execute(sql`select set_config('app.global_access', 'on', true)`);
+      const r = await retrieve(tx, LFS_Q);
+      return { pass: grant !== "ACCEPTED" && perm !== "ACCEPTED" && r.citable.length === 0, output: { selfGrant: grant, rolePermission: perm, citable: r.citable.length } };
+    },
+  },
+  {
+    id: "R5", finding: "R5", title: "مراجعة نسخة مستبدلة، ومقطع من مصدر آخر", criterion: "ترفضهما قاعدة البيانات",
+    run: async (tx) => {
+      await testReviewer(tx);
+      const old = (await tx.execute(sql`select id from kb_sources where superseded_at is not null limit 1`)).rows[0] as { id: string } | undefined;
+      const sid = await lfsId(tx);
+      const other = (await tx.execute(sql`select c.id from kb_chunks c join kb_sources s on s.id = c.source_id where s.ref_code = 'Q100' and s.superseded_at is null limit 1`)).rows[0] as { id: string };
+      const superseded = old ? await attempt(tx, () => asUser(tx, TEST_REVIEWER, () => tx.execute(sql`insert into kb_source_reviews (source_id, reviewer_user_id, reviewer_role, decision, note) values (${old.id}::uuid, ${TEST_REVIEWER}::uuid, 'legal', 'accepted', 'مجس: نسخة مستبدلة')`))) : "no superseded row";
+      const foreign = await attempt(tx, () => asUser(tx, TEST_REVIEWER, () => tx.execute(sql`insert into kb_source_reviews (source_id, chunk_id, reviewer_user_id, reviewer_role, decision, note) values (${sid}::uuid, ${other.id}::uuid, ${TEST_REVIEWER}::uuid, 'data', 'accepted', 'مجس: مقطع من مصدر آخر')`)));
+      return { pass: superseded !== "ACCEPTED" && foreign !== "ACCEPTED", output: { superseded, foreign } };
+    },
+  },
+  {
+    id: "R6", finding: "R6", title: "نسخة المقطع = نص الحارس + كلمات «المريخ»", criterion: "الصلة تُقاس على نص الحارس: السؤال العبثي غير كافٍ",
+    run: async (tx) => {
+      await NZR(tx);
+      await reNZR(tx, `المادة 16: استثمار الوقف\n${OFFICIAL_16_3} وقف الناظر على كوكب المريخ وأجرة الناظر في مركبة فضائية`);
+      const r = await retrieve(tx, q("ما حكم وقف الناظر على كوكب المريخ؟", { service: "I01", refCodes: ["NAZARA-REG"] }));
+      return { pass: insufficient(r), output: brief(r) };
+    },
+  },
+  {
+    id: "R6b", finding: "R6b", title: "وسم إصدار مزور في صف المصدر", criterion: "الإصدار في الإحالة هو إصدار الحارس",
+    run: async (tx) => {
+      await NZR(tx);
+      await reNZR(tx, `المادة 16: استثمار الوقف\n${OFFICIAL_16_3}`, { version: "النسخة الرسمية المعدلة بقرار 1447 (مزورة)" });
+      const r = await retrieve(tx, Q163);
+      return { pass: r.citable.length > 0 && r.citable.every((x) => !x.hit.version.includes("مزورة") && !(x.decision as { label: string }).label.includes("مزورة")), output: { label: r.citable.map((x) => (x.decision as { label: string }).label), version: r.citable.map((x) => x.hit.version) } };
+    },
+  },
+  {
+    id: "H1", finding: "H1", title: "سؤال تاريخي عن لائحة ملغاة في تاريخ بعد إلغائها (الحارس)", criterion: "يرفض الحارس: لا نص نافذ في ذلك التاريخ",
+    run: async () => {
+      const { cite } = await import("../../src/server/references/citation");
+      const { REGISTRY } = await import("../../src/server/references/registry");
+      const { InMemoryVersionStore } = await import("../../src/server/references/versions");
+      const { loadManifest, versionFromSnapshot } = await import("../../src/server/references/snapshots");
+      const store = new InMemoryVersionStore();
+      const v = { ...versionFromSnapshot(loadManifest().find((m) => m.id === "NZR/uqn-p18926")!, "2022-11-18", "مجس"), refId: "PRT", id: "PRT@probe" };
+      store.addVersion(v);
+      store.addMatchRun({ id: "run1", versionId: v.id, candidateLabel: "مجس", candidateSha256: v.source.sha256, outcome: "identical", perArticle: { م8: "identical" }, ranAt: "2026-01-01T00:00:00Z" } as never);
+      store.addReview({ runId: "run1", decision: "accepted", reviewer: "مجس", at: "2026-01-02T00:00:00Z" } as never);
+      const after = cite(REGISTRY, store, { refId: "PRT", article: 8, paragraph: 1, asOf: "2026-11-06", historical: true });
+      const before = cite(REGISTRY, store, { refId: "PRT", article: 8, paragraph: 1, asOf: "2025-01-01", historical: true });
+      return { pass: !after.ok && before.ok, output: { afterRepeal: after.ok ? "ok" : after.refusal, beforeRepeal: before.ok ? "ok" : before.refusal } };
+    },
+  },
+  {
+    id: "H3", finding: "H3", title: "نسختان تبدآن في اليوم نفسه", criterion: "لا تُستعمل أي منهما لسؤال تاريخي",
+    run: async (tx) => {
+      const base = { refCode: "SYN-SAME", title: "دليل اصطناعي", issuer: null, refKind: "official_guide" as const, services: ["C01"], origin: "مجس", textQuality: "good" as const, qualityNote: "" };
+      const u = (t: string) => [{ locator: "س1", articleNo: null, paragraphNo: null, pageFile: null, pagePrinted: null, text: t, textOrigin: "verified_quote" as const }];
+      await ingestUnits(tx as never, { ...base, version: "أ", effectiveOn: "2024-01-01", originSha256: "a", units: u("مدة حفظ سجلات الوقف الاصطناعي في الدليل الاصطناعي خمس سنوات.") });
+      await reviewSource(tx, "SYN-SAME");
+      await ingestUnits(tx as never, { ...base, version: "ب", effectiveOn: "2024-01-01", originSha256: "b", units: u("مدة حفظ سجلات الوقف الاصطناعي في الدليل الاصطناعي عشر سنوات.") });
+      await reviewSource(tx, "SYN-SAME");
+      const r = await retrieve(tx, q("ما مدة حفظ سجلات الوقف الاصطناعي في الدليل الاصطناعي؟", { service: "C01", asOf: "2025-06-01", refCodes: ["SYN-SAME"], historical: true }));
+      return { pass: r.citable.length === 0, output: brief(r) };
+    },
+  },
+  {
+    id: "Q3", finding: "Q3", title: "«م 2025» في السؤال", criterion: "لا يُقرأ رقم مادة",
+    run: async () => {
+      const { namedArticle } = await import("../../src/server/knowledge/retrieve");
+      const a = namedArticle("ما الجديد في تسجيل الأوقاف لعام م 2025؟");
+      const b = namedArticle("ما نص م16/ف3؟");
+      return { pass: a === null && b?.article === 16 && b.paragraph === 3, output: { year: a, article: b } };
+    },
+  },
+  {
+    id: "N2b", finding: "N2-b", title: "أسئلة خارج الموضوع نجحت في الجولة الرابعة", criterion: "كلها «المراجع غير كافية» بعد مراجعة كل شيء",
+    run: async (tx) => {
+      await NZR(tx); await reviewEverything(tx);
+      const out: string[] = [];
+      for (const t of offTopic) {
+        const r = await retrieve(tx, q(t));
+        out.push(`${r.sufficiency.sufficient ? "SUFFICIENT" : "insufficient"} | ${t}${r.citable[0] ? ` | ${r.citable[0].hit.refCode} ${r.citable[0].hit.locator}` : ""}`);
+      }
+      // known limit, reported not asserted: «أجرة الناظر بالعملات الرقمية» — «أجرة» and «الناظر» with the common
+      // «عمل» stand together in the passage on the nazir's fee; a lexical measure cannot tell the currency is off-topic
+      // and «ما مدة تسجيل السيارة لدى الهيئة؟» — three of its four words are the matter of the nazir guide's page on
+      // the registration period with the authority
+      const limits: string[] = [];
+      for (const t of ["أجرة الناظر بالعملات الرقمية", "ما مدة تسجيل السيارة لدى الهيئة؟"]) {
+        const lim = await retrieve(tx, q(t));
+        limits.push(`${lim.sufficiency.sufficient ? "SUFFICIENT" : "insufficient"} | ${t}${lim.citable[0] ? ` | ${lim.citable[0].hit.refCode} ${lim.citable[0].hit.locator}` : ""}`);
+      }
+      return { pass: out.every((x) => x.startsWith("insufficient")), output: { asserted: out, knownLimits: limits } };
+    },
+  },
+  {
+    id: "N2c", finding: "N2-c", title: "نص طلب حقيقي طويل (≈400 حرف) يقتبس م16/ف3", criterion: "كافٍ: م16/ف3 بنص الحارس",
+    run: async (tx) => {
+      await NZR(tx);
+      const { sectionQuestion, matterOf } = await import("../../src/server/knowledge/question");
+      const matter = matterOf({ details: "السلام عليكم، نحن نظار وقف عائلي يملك عمارتين تجاريتين في الرياض، ونرغب في إعداد سياسة استثمار للوقف. نريد أن يكون الاستثمار في إطار الحد المقبول للمخاطر، وأن يكون عائده مجدياً مقارنة بمخاطره، وعدم تعريض الوقف لمخاطر عالية، مع مراعاة عمارة العقار الموقوف وصيانته قبل توزيع الغلة على المستحقين، فما الذي تنص عليه اللائحة في ذلك؟" }, (x) => x);
+      const r = await retrieve(tx, { question: sectionQuestion({ serviceName: "سياسة الاستثمار الوقفية", sectionTitle: "التحليل", matter }), service: "I01", asOf: T, refCodes: ["NAZARA-REG"], limit: 4 });
+      return { pass: r.sufficiency.sufficient && r.citable.some((x) => x.hit.locator === "م16/ف3"), output: brief(r) };
+    },
+  },
+  {
+    id: "A2b", finding: "A2", title: "«الميسّر» بجانب مقطع غير فقهي لسؤال فقهي (بيع الوقف إذا تعطلت منافعه)", criterion: "لا يُمرَّر «الميسّر» إلا بجانب نص من كتب الفقه الأصلية",
+    run: async (tx) => {
+      await reviewEverything(tx);
+      const r = await retrieve(tx, q("ما حكم بيع الوقف إذا تعطلت منافعه؟", { service: "*" }));
+      const maysar = r.citable.filter((x) => x.hit.refKind === "contemporary_book");
+      return { pass: maysar.length === 0 || r.citable.some((x) => x.hit.refKind === "classical_fiqh"), output: brief(r) };
+    },
+  },
 ];
 
 export const PROBES: Probe[] = [
@@ -149,7 +331,7 @@ export const PROBES: Probe[] = [
   },
   {
     id: "P6b", finding: "B4", title: "صفحة من طبقة النص بمراجعة المصدر وحدها", criterion: "passage_not_reviewed",
-    run: async (tx) => { await reviewSource(tx, "ASSETS-GUIDE"); const r = await retrieve(tx, q("ما الأصول التي يمكن وقفها من المنقولات؟", { service: "T05", refCodes: ["ASSETS-GUIDE"] })); return { pass: insufficient(r) && r.results.some((x) => (x.decision as { refusal?: string }).refusal === "passage_not_reviewed"), output: brief(r) }; },
+    run: async (tx) => { await reviewSource(tx, "ASSETS-GUIDE"); const r = await retrieve(tx, q("ما المقصود بالمنقولات التي يمكن وقفها وما مزاياها؟", { service: "T05", refCodes: ["ASSETS-GUIDE"] })); return { pass: insufficient(r) && r.results.some((x) => (x.decision as { refusal?: string }).refusal === "passage_not_reviewed"), output: brief(r) }; },
   },
   {
     id: "P6c", finding: "N3/B5", title: "مستخدم بلا دور ومقفل يسجل مراجعة، وإدراج مباشر من سياق النظام", criterion: "تُرفض كلتاهما، ولا يصير المصدر قابلاً للاستشهاد",
@@ -262,6 +444,7 @@ export const PROBES: Probe[] = [
     id: "A3", finding: "B11", title: "المساعد العام: سؤال عبثي بعد مراجعة كل شيء", criterion: "«المراجع غير كافية»",
     run: async (tx) => { await reviewEverything(tx); const b = await regulatoryBasisIn(tx, "ما حكم وقف الناظر على كوكب المريخ؟", T); return { pass: !b.sufficient, output: b }; },
   },
+  ...ROUND4,
 ];
 
 /**

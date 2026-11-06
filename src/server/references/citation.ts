@@ -59,7 +59,9 @@ export function cite(registry: RegistryEntry[], store: VersionStore, req: Citati
   const status = statusAt(entry, req.asOf);
   if (status === "unknown" || status === "draft") return refuse("status_unknown", `${entry.officialName} في ${req.asOf}`);
   const inForce = status === "in_force" || status === "in_force_amended";
-  if (!inForce && !(req.historical && (status === "repealed" || status === "historical"))) return refuse("not_in_force", `${entry.officialName}: ${status} في ${req.asOf}`);
+  // a historical question asks for the text in force ON the date: an instrument already repealed on that date has none
+  // (independent review H1); only an instrument recorded as historical without dates keeps the former allowance
+  if (!inForce && !(req.historical && status === "historical")) return refuse("not_in_force", `${entry.officialName}: ${status} في ${req.asOf}`);
 
   const version = store.versionAt(entry.id, req.asOf);
   if (!version || !version.effectiveFrom) return refuse("no_version_for_date", `${entry.officialName} في ${req.asOf}`);
@@ -78,10 +80,11 @@ export function cite(registry: RegistryEntry[], store: VersionStore, req: Citati
   const runs = store.matchRuns(version.id);
   if (!runs.length) return refuse("not_compared", version.label);
   const articleKey = `م${req.article}`;
-  // The latest accepted run decides; an unreviewed run never authorises a citation.
+  // The latest accepted run decides; an unreviewed run never authorises a citation. A run's standing is its LATEST
+  // review: an acceptance later withdrawn by a rejection no longer authorises anything (independent review R3b).
   const reviewed = runs
-    .map((r) => ({ r, rev: store.reviews(r.id).filter((x) => x.decision === "accepted").sort((a, b) => b.at.localeCompare(a.at))[0] }))
-    .filter((x) => x.rev)
+    .map((r) => ({ r, rev: store.reviews(r.id).sort((a, b) => b.at.localeCompare(a.at))[0] }))
+    .filter((x) => x.rev && x.rev.decision === "accepted")
     .sort((a, b) => b.rev!.at.localeCompare(a.rev!.at));
   if (!reviewed.length) return refuse("not_reviewed", version.label);
   const { r: run, rev } = reviewed[0]!;

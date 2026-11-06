@@ -1,5 +1,5 @@
 {
- "ranAt": "2026-11-06T16:16:00.682Z",
+ "ranAt": "2026-11-06T16:47:52.315Z",
  "rows": [
   {
    "refCode": "NAZARA-REG",
@@ -244,12 +244,12 @@
    "registryId": "PRT",
    "inProject": true,
    "extracted": true,
-   "extraction": "ocr+text_layer",
+   "extraction": "text_layer+ocr",
    "verified": "لا — طبقة نص الملف دون مقابلة بالصفحات",
    "inKb": true,
    "units": 8,
    "retrievable": true,
-   "probe": "2/3",
+   "probe": "3/3",
    "services": [
     "I06",
     "T07"

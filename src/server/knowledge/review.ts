@@ -3,7 +3,8 @@ import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { Tx } from "@/server/db";
 import { kbChunks, kbSourceReviews, kbSources } from "@/server/db/schema";
 import { refMatchReviews, refMatchRuns, refSources, refVersions } from "@/server/db/schema/references";
-import { audit } from "@/server/lib/audit";
+import { audit, canonical } from "@/server/lib/audit";
+import { rowHash } from "@/server/modules/admin/audit/chain";
 import { sha256 } from "@/server/lib/crypto";
 import { DEFAULT_REVIEW_ROLE, type RefKind, type ReviewRole } from "./policy";
 
@@ -82,14 +83,24 @@ export async function recordComparisonReview(tx: Tx, actor: { userId: string; ip
   return { id: row.id };
 }
 
-/** Which of these reviews have their audit entry (the read-time proof; see security.sql knowledge_audited_reviews). */
+/**
+ * Which of these reviews have a genuine audit entry: by the reviewer, and whose hash recomputes (lib/audit.ts writes
+ * it canonically), so that an entry inserted by hand with an invented hash does not count (independent review R1d).
+ */
 export async function auditedReviewIds(tx: Tx, kind: "kb_source_review" | "ref_match_review", ids: string[]): Promise<Set<string>> {
   if (!ids.length) return new Set();
-  const r = await tx.execute<{ id: string }>(sql`select knowledge_audited_reviews(${kind}, ${sql.raw(`array[${ids.map((x) => `'${x.replace(/[^0-9a-f-]/gi, "")}'::uuid`).join(",")}]`)}) as id`);
-  return new Set(r.rows.map((x) => x.id));
+  const r = await tx.execute<{ id: string; at: Date | string; actor_user_id: string | null; action: string; entity_type: string; entity_id: string; waqf_id: string | null; before: unknown; after: unknown; prev_hash: string | null; hash: string; actor_roles: string[] | null }>(
+    sql`select * from knowledge_audited_reviews(${kind}, ${sql.raw(`array[${ids.map((x) => `'${x.replace(/[^0-9a-f-]/gi, "")}'::uuid`).join(",")}]`)})`,
+  );
+  const ok = new Set<string>();
+  for (const a of r.rows) {
+    const row = { id: Number(a.id), at: new Date(a.at), actorUserId: a.actor_user_id, action: a.action, entityType: a.entity_type, entityId: a.entity_id, waqfId: a.waqf_id, before: a.before, after: a.after, prevHash: a.prev_hash, hash: a.hash, actorRoles: a.actor_roles };
+    if (rowHash(row, canonical) === a.hash) ok.add(a.entity_id);
+  }
+  return ok;
 }
 
-export type QueueItem = { sourceId: string; chunkId: string | null; refCode: string; title: string; refKind: string; version: string; role: ReviewRole; locator: string | null; textOrigin: string | null; reason: string; services: string[] };
+export type QueueItem = { sourceId: string; chunkId: string | null; excerpt?: string | null; refCode: string; title: string; refKind: string; version: string; role: ReviewRole; locator: string | null; textOrigin: string | null; reason: string; services: string[] };
 
 /**
  * What needs a human review before it can be cited, and why: each current source with no accepted review by its field,
@@ -115,12 +126,12 @@ export async function reviewQueue(tx: Tx, opts: { refCodes?: string[]; passages?
     const mine = reviews.filter((r) => r.sourceId === s.id && r.reviewerRole === role);
     if (!mine.some((r) => r.chunkId === null && r.decision === "accepted")) out.push({ ...base, chunkId: null, locator: null, textOrigin: null, reason: `لا مراجعة مقبولة للمصدر من «${REVIEW_ROLE_AR[role]}».` });
     if (opts.passages) {
-      const chunks = await tx.select({ id: kbChunks.id, locator: kbChunks.locator, origin: kbChunks.textOrigin, page: kbChunks.pagePrinted }).from(kbChunks).where(eq(kbChunks.sourceId, s.id));
+      const chunks = await tx.select({ id: kbChunks.id, locator: kbChunks.locator, origin: kbChunks.textOrigin, page: kbChunks.pagePrinted, text: kbChunks.text }).from(kbChunks).where(eq(kbChunks.sourceId, s.id));
       const blocked = ((s.meta ?? {}) as { blockedPages?: string[] }).blockedPages ?? [];
       for (const c of chunks) {
         if (c.page && blocked.includes(c.page)) out.push({ ...base, chunkId: c.id, locator: c.locator, textOrigin: c.origin, reason: "محجوب بملاحظة مختص: لا يُستشهد به." });
         else if (c.origin === "ocr") out.push({ ...base, chunkId: c.id, locator: c.locator, textOrigin: c.origin, reason: "نص بالتعرف الضوئي: لا يُستشهد به؛ يلزم نص سليم للصفحة." });
-        else if (c.origin === "text_layer" && !mine.some((r) => r.chunkId === c.id && r.decision === "accepted")) out.push({ ...base, chunkId: c.id, locator: c.locator, textOrigin: c.origin, reason: "مستخرج من طبقة نص الملف: يلزم مقابلته بصورة الصفحة ومراجعته." });
+        else if (c.origin === "text_layer" && !mine.some((r) => r.chunkId === c.id && r.decision === "accepted")) out.push({ ...base, chunkId: c.id, excerpt: c.text.slice(0, 600), locator: c.locator, textOrigin: c.origin, reason: "مستخرج من طبقة نص الملف: يلزم مقابلته بصورة الصفحة ومراجعته." });
       }
     }
   }

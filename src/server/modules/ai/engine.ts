@@ -8,7 +8,6 @@ import { rateLimit } from "@/server/lib/rate-limit";
 import { UserError } from "../_shared";
 import { getIndex } from "./corpus";
 import { answerAssessment, answerMissingDocuments, answerObligations, answerRequests, type ContextAnswer } from "./context";
-import { externalAnswer, externalEnabled } from "./external";
 import { isRegulatoryQuestion, regulatoryBasis } from "./regulatory";
 import { classifyIntent } from "./intents";
 import { classifyRefusal, maskPII } from "./safety";
@@ -31,52 +30,38 @@ function blocksToText(blocks: AnswerBlock[]): string {
 }
 
 /**
- * Retrieval over the published knowledge base; returns null when nothing is relevant enough. A question about what a
- * regulation or the fiqh provides is answered from the knowledge engine and its citation policy only (regulatory.ts):
- * the library's explanatory material is never presented as that basis.
+ * A general question. The basis of any answer about what a regulation or the fiqh provides comes ONLY from the knowledge
+ * engine and its citation policy (regulatory.ts) — and since telling such a question apart by its wording is not
+ * reliable (independent review A1: 12 of 20 regulatory questions were missed by keywords), the policy is asked for
+ * EVERY general question:
+ *  - a sufficient, citable basis: the answer quotes it, with the policy's label;
+ *  - otherwise the library's material may be shown, labelled as explanatory and never as a regulatory or sharia basis;
+ *    and no model composes an answer from it (a composed answer reads as a ruling). A question recognised as asking
+ *    for a ruling or a text says «المراجع غير كافية» first.
+ * Returns null when nothing is relevant enough.
  */
 async function knowledgeAnswer(question: string): Promise<(ContextAnswer & { provider: "local" | "external"; model: string | null }) | null> {
   const index = await getIndex();
   const hits = index.search(question, { limit: 6 }).filter((h) => h.coverage >= MIN_COVERAGE);
-  if (isRegulatoryQuestion(question)) {
-    const basis = await regulatoryBasis(question).catch(() => ({ sufficient: false as const, reason: "المراجع غير كافية: تعذر البحث في قاعدة المعرفة." }));
-    if (basis.sufficient) {
-      const citations: Citation[] = basis.quotes.map((q, i) => ({ n: i + 1, kind: "reference", title: q.label, href: "/regulations", label: q.refCode, snippet: q.text.slice(0, 300) }));
-      const blocks: AnswerBlock[] = [{ type: "p", text: "هذا ما تنص عليه المراجع المعتمدة للاستشهاد في قاعدة المعرفة:" }];
-      for (const [i, q] of basis.quotes.entries()) blocks.push({ type: "quote", text: q.text, cite: i + 1 });
-      blocks.push({ type: "p", text: "هذا نقل للنص لا رأي في حالتك؛ وللرأي المهني اطلب استشارة موقّعة." });
-      return { provider: "local", model: null, citations, blocks };
-    }
-    // no citable basis: say so; library material may follow, labelled as explanatory, and no model composes an answer
-    const blocks: AnswerBlock[] = [{ type: "p", text: `لم أجد في قاعدة المعرفة نصًا نظاميًا أو شرعيًا معتمدًا للاستشهاد يجيب عن سؤالك (${basis.reason.replace(/^المراجع غير كافية:\s*/, "المراجع غير كافية: ")}).` }];
-    const picked = hits.slice(0, 3);
-    const citations: Citation[] = picked.map((h, i) => ({ n: i + 1, kind: h.doc.kind, title: h.doc.title, href: h.doc.href, label: h.doc.label, snippet: h.passage }));
-    if (picked.length) {
-      blocks.push({ type: "p", text: "مواد تعريفية منشورة في المنصة قد تفيدك، وليست سندًا نظاميًا أو شرعيًا:" });
-      blocks.push({ type: "list", items: citations.map((c) => ({ text: c.title, href: c.href, meta: c.label, cite: c.n })) });
-    }
-    blocks.push({ type: "p", text: "للرأي في حالتك اطلب استشارة موقّعة." });
+  const basis = await regulatoryBasis(question).catch(() => ({ sufficient: false as const, reason: "المراجع غير كافية: تعذر البحث في قاعدة المعرفة." }));
+  if (basis.sufficient) {
+    const citations: Citation[] = basis.quotes.map((q, i) => ({ n: i + 1, kind: "reference", title: q.label, href: "/regulations", label: q.refCode, snippet: q.text.slice(0, 300) }));
+    const blocks: AnswerBlock[] = [{ type: "p", text: "هذا ما تنص عليه المراجع المعتمدة للاستشهاد في قاعدة المعرفة:" }];
+    for (const [i, q] of basis.quotes.entries()) blocks.push({ type: "quote", text: q.text, cite: i + 1 });
+    blocks.push({ type: "p", text: "هذا نقل للنص لا رأي في حالتك؛ وللرأي المهني اطلب استشارة موقّعة." });
     return { provider: "local", model: null, citations, blocks };
   }
-  if (!hits.length) return null;
-  const topScore = hits[0].score;
-  const picked = hits.filter((h, i) => i === 0 || h.score >= topScore * 0.45).slice(0, 3);
+  const regulatory = isRegulatoryQuestion(question);
+  if (!hits.length && !regulatory) return null;
+  const blocks: AnswerBlock[] = [];
+  if (regulatory) blocks.push({ type: "p", text: `لم أجد في قاعدة المعرفة نصًا نظاميًا أو شرعيًا معتمدًا للاستشهاد يجيب عن سؤالك (${basis.reason}).` });
+  const picked = hits.slice(0, 3);
   const citations: Citation[] = picked.map((h, i) => ({ n: i + 1, kind: h.doc.kind, title: h.doc.title, href: h.doc.href, label: h.doc.label, snippet: h.passage }));
-
-  if (await externalEnabled()) {
-    const ext = await externalAnswer(question, picked.map((h, i) => ({ n: i + 1, title: h.doc.title, text: h.passage })));
-    if (ext) {
-      return {
-        provider: "external",
-        model: ext.model,
-        citations,
-        blocks: [{ type: "p", text: ext.text }, ...picked.map((h, i): AnswerBlock => ({ type: "quote", text: h.passage, cite: i + 1 }))],
-      };
-    }
-  }
-  const blocks: AnswerBlock[] = [{ type: "p", text: picked.length > 1 ? "هذا ما تقوله المصادر المنشورة في المنصة عن سؤالك:" : "هذا ما يقوله المصدر المنشور في المنصة عن سؤالك:" }];
-  for (const [i, h] of picked.entries()) blocks.push({ type: "quote", text: h.passage, cite: i + 1 });
-  blocks.push({ type: "p", text: "اقرأ المصدر كاملًا قبل أي قرار، فالاقتباس جزء منه فقط." });
+  if (picked.length) {
+    blocks.push({ type: "p", text: "مواد تعريفية منشورة في المنصة قد تفيدك، وليست سندًا نظاميًا أو شرعيًا:" });
+    for (const [i, h] of picked.entries()) blocks.push({ type: "quote", text: h.passage, cite: i + 1 });
+    blocks.push({ type: "p", text: "اقرأ المصدر كاملًا قبل أي قرار، فالاقتباس جزء منه فقط؛ وللرأي في حالتك اطلب استشارة موقّعة." });
+  } else blocks.push({ type: "p", text: "للرأي في حالتك اطلب استشارة موقّعة." });
   return { provider: "local", model: null, citations, blocks };
 }
 

@@ -419,7 +419,8 @@ export const CASES: Case[] = [
     query: { question: "ما اللجان المتفرعة من مجلس النظارة في الوقف المؤسسي؟", service: "*", asOf: TODAY, refCodes: ["BOOK-MAYSAR"] },
     expected: "يُسترجع «الميسّر» مرجعًا مساعدًا، ولا يُعدّ وحده سندًا كافيًا",
     setup: (tx) => reviewSource(tx, "BOOK-MAYSAR", { passages: "all" }),
-    judge: (r) => (r.citable.some((x) => x.hit.refCode === "BOOK-MAYSAR") && !r.sufficiency.sufficient && /مرجع مساعد/.test((r.sufficiency as { reason?: string }).reason ?? "") ? null : `الكفاية ${r.sufficiency.sufficient}`),
+    // the book's passage is retrieved and refused as auxiliary without a classical fiqh text; nothing is passed on
+    judge: (r) => (r.citable.length === 0 && !r.sufficiency.sufficient && r.results.some((x) => x.hit.refCode === "BOOK-MAYSAR" && refusal(x.decision) === "auxiliary_alone") ? null : `الكفاية ${r.sufficiency.sufficient}`),
   },
   {
     id: "14e", category: "14. صفحات «الميسّر» التي رصد المختصون خطأها محجوبة (B8)",

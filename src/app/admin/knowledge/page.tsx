@@ -48,6 +48,7 @@ export default async function KnowledgeReviewAdmin({ searchParams }: { searchPar
                 {!ref ? <Link href={`/admin/knowledge?ref=${encodeURIComponent(q.refCode)}`} className="text-[13px] underline">المقاطع</Link> : null}
               </div>
               <p className="mt-1 text-[13px] text-muted">{q.reason}</p>
+              {q.excerpt ? <details className="mt-1"><summary className="cursor-pointer text-[13px]">نص المقطع كما في قاعدة المعرفة (قابله بصورة الصفحة)</summary><p className="mt-1 whitespace-pre-wrap text-[14px] leading-7">{q.excerpt}</p></details> : null}
               <p dir="ltr" className="mt-1 text-[12px] text-muted">source {q.sourceId}{q.chunkId ? ` · passage ${q.chunkId}` : ""}</p>
             </li>
           ))}
