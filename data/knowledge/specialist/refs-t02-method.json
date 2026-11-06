@@ -1,0 +1,479 @@
+{
+ "version": "t02-method-2026-11-06",
+ "service": "T02",
+ "dataClasses": [
+  {
+   "id": "official_published",
+   "label": "بيانات رسمية منشورة",
+   "rank": 1,
+   "requires": [
+    "sourceId",
+    "sourceUrl",
+    "refPeriod",
+    "geoScope",
+    "retrievedAt"
+   ]
+  },
+  {
+   "id": "official_provided",
+   "label": "بيانات رسمية مقدمة من جهة مختصة",
+   "rank": 2,
+   "requires": [
+    "providerEntity",
+    "letterOrRequestRef",
+    "refPeriod",
+    "geoScope",
+    "receivedAt"
+   ],
+   "note": "لا تُنشر خارج غرض الطلب إلا بإذن الجهة"
+  },
+  {
+   "id": "academic",
+   "label": "بيانات بحثية أو أكاديمية",
+   "rank": 3,
+   "requires": [
+    "citation",
+    "refPeriod",
+    "geoScope",
+    "method"
+   ]
+  },
+  {
+   "id": "field",
+   "label": "بيانات ميدانية",
+   "rank": 4,
+   "requires": [
+    "instrument",
+    "sampleSize",
+    "samplingMethod",
+    "fieldDates",
+    "geoScope",
+    "marginOfErrorOrNote"
+   ],
+   "note": "مجمّعة فقط، بلا بيانات شخصية"
+  },
+  {
+   "id": "estimate_assumption",
+   "label": "بيانات تقديرية أو افتراضات تحليلية",
+   "rank": 5,
+   "requires": [
+    "formula",
+    "inputs",
+    "rationale",
+    "author"
+   ],
+   "note": "لا تُرقّى إلى حقيقة ولا تُعرض بلا وسم"
+  }
+ ],
+ "geoLevels": [
+  "country",
+  "region",
+  "governorate",
+  "city",
+  "district"
+ ],
+ "indicators": [
+  {
+   "id": "POP_TOTAL",
+   "label": "عدد السكان",
+   "field": "all",
+   "unit": "نسمة",
+   "sourceIds": [
+    "GASTAT-CENSUS-2022",
+    "KAPSARC-POP-GOV-2022"
+   ],
+   "granularity": "governorate",
+   "minFreshnessYears": 5,
+   "note": "وسم إلزامي: تعداد 2022"
+  },
+  {
+   "id": "POP_NATIONAL_EST",
+   "label": "التقدير السكاني الوطني",
+   "field": "all",
+   "unit": "نسمة",
+   "sourceIds": [
+    "GASTAT-POPEST-2024"
+   ],
+   "granularity": "country",
+   "minFreshnessYears": 2
+  },
+  {
+   "id": "POP_AGE_SEX",
+   "label": "السكان حسب الفئة العمرية والجنس",
+   "field": "all",
+   "unit": "نسمة/نسبة",
+   "sourceIds": [
+    "GASTAT-CENSUS-2022",
+    "KAPSARC-POP-GOV-2022"
+   ],
+   "granularity": "governorate",
+   "minFreshnessYears": 5
+  },
+  {
+   "id": "TARGET_GROUP_SIZE",
+   "label": "حجم الفئة المستهدفة (مثلاً الأيتام أو 60+ أو الأطفال)",
+   "field": "all",
+   "unit": "نسمة",
+   "sourceIds": [
+    "GASTAT-CENSUS-2022",
+    "GASTAT-ELDERLY"
+   ],
+   "granularity": "region",
+   "minFreshnessYears": 5,
+   "note": "إن لم يتوفر للفئة رقم رسمي يُعرض «غير متاح» ولا يُشتق من الإجمالي إلا بوسم تقديري"
+  },
+  {
+   "id": "HH_COUNT_SIZE",
+   "label": "عدد الأسر ومتوسط حجمها",
+   "field": "family",
+   "unit": "أسرة/فرد",
+   "sourceIds": [
+    "GASTAT-CENSUS-2022"
+   ],
+   "granularity": "governorate",
+   "minFreshnessYears": 5
+  },
+  {
+   "id": "UNEMP_RATE",
+   "label": "معدل البطالة",
+   "field": "economic_empowerment",
+   "unit": "%",
+   "sourceIds": [
+    "GASTAT-LFS"
+   ],
+   "granularity": "country",
+   "minFreshnessYears": 1,
+   "note": "التفصيل بالمنطقة غير متحقق؛ لا يُطبّق المعدل الوطني على منطقة"
+  },
+  {
+   "id": "LFPR",
+   "label": "معدل المشاركة في القوى العاملة",
+   "field": "economic_empowerment",
+   "unit": "%",
+   "sourceIds": [
+    "GASTAT-LFS"
+   ],
+   "granularity": "country",
+   "minFreshnessYears": 1
+  },
+  {
+   "id": "PRIV_EMPLOYED_REGION",
+   "label": "العاملون في القطاع الخاص حسب المنطقة والجنس والجنسية",
+   "field": "economic_empowerment",
+   "unit": "عامل",
+   "sourceIds": [
+    "HRSD-OPENDATA"
+   ],
+   "granularity": "region",
+   "minFreshnessYears": 1
+  },
+  {
+   "id": "HH_INCOME_EXP",
+   "label": "دخل الأسرة وإنفاقها",
+   "field": "poverty_family",
+   "unit": "ريال/شهر",
+   "sourceIds": [
+    "GASTAT-HIES-2023"
+   ],
+   "granularity": "unverified",
+   "minFreshnessYears": 6
+  },
+  {
+   "id": "SOCSEC_BENEF_REGION",
+   "label": "مستفيدو الضمان الاجتماعي المطور حسب المنطقة",
+   "field": "poverty_family",
+   "unit": "أسرة/فرد",
+   "sourceIds": [],
+   "granularity": "region",
+   "minFreshnessYears": 2,
+   "note": "غير متاح في المصادر التي تمت مراجعتها — يُطلب رسمياً (official_provided)"
+  },
+  {
+   "id": "DISAB_PREV",
+   "label": "انتشار الإعاقة",
+   "field": "disability",
+   "unit": "%",
+   "sourceIds": [
+    "GASTAT-DISAB-2023",
+    "GASTAT-CENSUS-2022"
+   ],
+   "granularity": "unverified",
+   "minFreshnessYears": 5
+  },
+  {
+   "id": "DISAB_HOMECARE_BENEF",
+   "label": "المستفيدون من الرعاية المنزلية لذوي الإعاقة",
+   "field": "disability",
+   "unit": "مستفيد",
+   "sourceIds": [
+    "HRSD-OPENDATA"
+   ],
+   "granularity": "unverified",
+   "minFreshnessYears": 1
+  },
+  {
+   "id": "ELDERLY_60_REGION",
+   "label": "الأفراد 60 سنة فأكثر حسب المنطقة",
+   "field": "elderly",
+   "unit": "نسمة",
+   "sourceIds": [
+    "GASTAT-ELDERLY",
+    "GASTAT-CENSUS-2022"
+   ],
+   "granularity": "region",
+   "minFreshnessYears": 5
+  },
+  {
+   "id": "ELDERLY_CARE_BENEF",
+   "label": "كبار السن المستفيدون من دور الرعاية الاجتماعية",
+   "field": "elderly",
+   "unit": "مستفيد",
+   "sourceIds": [
+    "HRSD-OPENDATA"
+   ],
+   "granularity": "unverified",
+   "minFreshnessYears": 1
+  },
+  {
+   "id": "HOSP_BEDS_PER_10K",
+   "label": "أسرّة المستشفيات لكل 10 آلاف نسمة",
+   "field": "health",
+   "unit": "سرير/10000",
+   "sourceIds": [
+    "GASTAT-HEALTH-EST-2024"
+   ],
+   "granularity": "region",
+   "minFreshnessYears": 2
+  },
+  {
+   "id": "PHC_PER_10K",
+   "label": "مراكز الرعاية الأولية والمجمعات الطبية لكل 10 آلاف نسمة",
+   "field": "health",
+   "unit": "مركز/10000",
+   "sourceIds": [
+    "GASTAT-HEALTH-EST-2024",
+    "MOH-YEARBOOK"
+   ],
+   "granularity": "region",
+   "minFreshnessYears": 2
+  },
+  {
+   "id": "STUDENTS_SCHOOLS",
+   "label": "الطلاب والمدارس والمعلمون",
+   "field": "education",
+   "unit": "عدد",
+   "sourceIds": [
+    "MOE-OPENDATA"
+   ],
+   "granularity": "education_directorate",
+   "minFreshnessYears": 2
+  },
+  {
+   "id": "LITERACY",
+   "label": "مؤشر معرفة القراءة والكتابة",
+   "field": "education",
+   "unit": "%",
+   "sourceIds": [
+    "MOE-OPENDATA"
+   ],
+   "granularity": "country",
+   "minFreshnessYears": 2
+  },
+  {
+   "id": "CHILDCARE_CENTERS",
+   "label": "مراكز ضيافة الأطفال/الرعاية النهارية حسب المنطقة",
+   "field": "family",
+   "unit": "مركز",
+   "sourceIds": [
+    "HRSD-OPENDATA"
+   ],
+   "granularity": "region",
+   "minFreshnessYears": 1
+  },
+  {
+   "id": "HOME_OWNERSHIP",
+   "label": "نسبة تملك الأسر السعودية للمساكن",
+   "field": "housing",
+   "unit": "%",
+   "sourceIds": [
+    "V2030-HOUSING"
+   ],
+   "granularity": "country",
+   "minFreshnessYears": 2
+  },
+  {
+   "id": "HOUSING_CONDITIONS",
+   "label": "المساكن وخصائصها",
+   "field": "housing",
+   "unit": "مسكن",
+   "sourceIds": [
+    "GASTAT-CENSUS-2022"
+   ],
+   "granularity": "region",
+   "minFreshnessYears": 5
+  },
+  {
+   "id": "NPO_COUNT",
+   "label": "عدد الكيانات غير الربحية حسب المنطقة والتصنيف",
+   "field": "supply",
+   "unit": "كيان",
+   "sourceIds": [
+    "NCNP-DIRECTORY",
+    "NCNP-STATS"
+   ],
+   "granularity": "region",
+   "minFreshnessYears": 1,
+   "note": "مؤشر عرض لا يقيس حجم الخدمة"
+  },
+  {
+   "id": "NPO_PER_100K",
+   "label": "الكيانات غير الربحية في المجال لكل 100 ألف من الفئة المستهدفة",
+   "field": "supply",
+   "unit": "كيان/100000",
+   "sourceIds": [
+    "NCNP-DIRECTORY",
+    "GASTAT-CENSUS-2022"
+   ],
+   "granularity": "region",
+   "minFreshnessYears": 1,
+   "derived": true,
+   "dataClass": "estimate_assumption",
+   "note": "مشتق؛ يُعرض مع البسط والمقام وتاريخ كل منهما"
+  },
+  {
+   "id": "LOCAL_SERVICE_INVENTORY",
+   "label": "حصر البرامج والخدمات القائمة للفئة في النطاق",
+   "field": "supply",
+   "unit": "برنامج/طاقة استيعابية",
+   "sourceIds": [],
+   "granularity": "city",
+   "minFreshnessYears": 1,
+   "dataClass": "field",
+   "note": "إدخال يدوي أو دراسة ميدانية"
+  },
+  {
+   "id": "FIELD_NEED_SURVEY",
+   "label": "مسح احتياج ميداني/مقابلات مع جهات محلية",
+   "field": "all",
+   "unit": "حسب الأداة",
+   "sourceIds": [],
+   "granularity": "city",
+   "minFreshnessYears": 1,
+   "dataClass": "field"
+  }
+ ],
+ "collection": {
+  "automatic": [
+   "KAPSARC-POP-GOV-2022 (API/تصدير)",
+   "GASTAT xlsx المنشورة (تنزيل دوري مع بصمة الملف)",
+   "MOH-YEARBOOK xlsx",
+   "HRSD-OPENDATA عبر open.data.gov.sa (بعد التحقق من الوصول والترخيص)"
+  ],
+  "manual": [
+   "NCNP-DIRECTORY (لا تنزيل/API ظاهر)",
+   "NCNP-STATS (قيم داخل صور)",
+   "MOE لوحة تفاعلية",
+   "GASTAT-DB تطبيق تفاعلي"
+  ],
+  "officialRequest": [
+   "مستفيدو الضمان الاجتماعي حسب المنطقة/المحافظة (HRSD)",
+   "نتائج نافس المجمعة (ETEC)",
+   "بيانات الجمعيات عن طاقتها الاستيعابية وقوائم الانتظار"
+  ],
+  "field": [
+   "حصر الخدمات المحلية",
+   "قياس الاحتياج على مستوى الحي/المدينة",
+   "آراء الجهات المحلية والمستفيدين المحتملين (مجمّعة)"
+  ]
+ },
+ "comparisonCriteria": [
+  {
+   "id": "need_magnitude",
+   "label": "حجم الاحتياج (عدد الفئة × شدة المؤشر)",
+   "defaultWeight": 0.3
+  },
+  {
+   "id": "service_gap",
+   "label": "الفجوة بين الاحتياج والخدمات القائمة",
+   "defaultWeight": 0.25
+  },
+  {
+   "id": "founder_alignment",
+   "label": "قرب المصرف من مقاصد الواقف داخل المسموح",
+   "defaultWeight": 0.15
+  },
+  {
+   "id": "sustainability",
+   "label": "قابلية الاستدامة بغلة الوقف المتوقعة",
+   "defaultWeight": 0.15
+  },
+  {
+   "id": "measurability",
+   "label": "قابلية قياس الأثر",
+   "defaultWeight": 0.1
+  },
+  {
+   "id": "partner_availability",
+   "label": "وجود جهات منفذة مرخصة في النطاق",
+   "defaultWeight": 0.05
+  }
+ ],
+ "rules": [
+  {
+   "id": "R1",
+   "rule": "كل قيمة رقمية تحمل: sourceId، sourceUrl أو مرجع الطلب، refPeriod، geoScope، dataClass، retrievedAt. القيمة الناقصة لأي منها لا تُعرض."
+  },
+  {
+   "id": "R2",
+   "rule": "لا رقم بلا مصدر. عند غياب البيان يُكتب «غير متاح في المصادر التي تمت مراجعتها» مع ذكر ما رُوجع."
+  },
+  {
+   "id": "R3",
+   "rule": "الحداثة: إذا تجاوز عمر refPeriod قيمة minFreshnessYears يوسم «قديم» ويُذكر عامه، ويُمنع وصفه بالحالي أو استعماله وحده أساساً لتوصية حاسمة."
+  },
+  {
+   "id": "R4",
+   "rule": "عدم تطابق النطاق: لا تُنقل قيمة وطنية أو إقليمية إلى نطاق أصغر على أنها حقيقة؛ يُسمح فقط كتقدير موسوم estimate_assumption مع المعادلة."
+  },
+  {
+   "id": "R5",
+   "rule": "الافتراضات لا تُرقّى: أي ناتج يدخل فيه estimate_assumption يرث الوسم، ولا تُصاغ منه عبارة جازمة."
+  },
+  {
+   "id": "R6",
+   "rule": "شرط الواقف أولاً: candidatePurposes = permittedPurposes(deed) ∩ purposesInField. إذا كان الشرط معيناً لا يُقترح ولا يُرتّب أي مصرف خارجه؛ يُعرض كيف ينطبق الاحتياج داخل المصارف المسموحة فقط (لائحة النظارة م9/1 وم9/3). غموض الشرط ⇒ تعليق والإحالة إلى تفسير الواقف أو الجهة المختصة."
+  },
+  {
+   "id": "R7",
+   "rule": "المشروعية: كون المصرف جهة بر مباحة شرعاً يقرره المراجع الشرعي البشري لا النظام؛ النظام يعرض القائمة للاعتماد."
+  },
+  {
+   "id": "R8",
+   "rule": "الكفاية: توصية مرجّحة تتطلب لكل مصرف مرشح ≥2 مؤشر احتياج و≥1 مؤشر عرض من الفئتين official_published/official_provided، حديثة (R3)، وبنطاق يساوي نطاق الدراسة أو أوسع بدرجة واحدة؛ وإلا تُخرج «مؤشرات أولية — لا توصية حاسمة» مع قائمة البيانات الناقصة."
+  },
+  {
+   "id": "R9",
+   "rule": "المصادر الثانوية (مرايا مثل KAPSARC، مواقع إخبارية، دراسات) لا تحل محل الأصل؛ تُطابق مع الهيئة قبل الاعتماد، وإلا تُصنّف بحسب حقيقتها."
+  },
+  {
+   "id": "R10",
+   "rule": "معايير المقارنة وأوزانها مُعلنة في المخرج وقابلة للتعديل، ويُعرض تحليل حساسية (تغيير كل وزن ±0.1) ويُذكر إن تغيّر الترتيب."
+  },
+  {
+   "id": "R11",
+   "rule": "مستوى الثقة: high إذا تحققت R8 لكل المرشحين وكل المؤشرات حديثة وبنطاق الدراسة؛ medium إذا تحققت R8 مع نطاق أوسع بدرجة أو مؤشر قديم واحد؛ low ما عدا ذلك (ولا توصية حاسمة عند low)."
+  },
+  {
+   "id": "R12",
+   "rule": "الخصوصية: لا تُجمع ولا تُخزن بيانات شخصية؛ البيانات الميدانية مجمّعة، وتُحجب الخلايا التي تقل عن 10 أشخاص."
+  },
+  {
+   "id": "R13",
+   "rule": "الترخيص: يُذكر مصدر كل بيان وتُبيَّن التعديلات (سياسة استخدام الهيئة 1.2.2)؛ المصادر غير معلومة الترخيص تُستعمل داخلياً للتحليل مع الإسناد حتى يُتحقق."
+  },
+  {
+   "id": "R14",
+   "rule": "اعتماد بشري: لا تُسلَّم الدراسة قبل مراجعة محلل ومراجع شرعي، ويُسجَّل اسم المعتمد وتاريخه."
+  }
+ ]
+}

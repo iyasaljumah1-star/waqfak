@@ -1,0 +1,494 @@
+[
+ {
+  "id": "GASTAT-CENSUS-2022",
+  "title": "تعداد السعودية 2022 — النتائج (السكان، الأسر، المساكن، الصحة والإعاقة، المناطق الإدارية)",
+  "authorOrIssuer": "الهيئة العامة للإحصاء",
+  "kind": "statistical_source",
+  "binding": "data",
+  "edition": "تعداد 2022 (العد الفعلي مايو–يونيو 2022؛ إعلان النتائج الأولى 31 مايو 2023)",
+  "date": "2023-05-31",
+  "status": "أحدث تعداد منشور (الخامس) — لا يوجد تعداد أحدث في المصادر التي تمت مراجعتها",
+  "scope": "المملكة؛ المنطقة الإدارية؛ المحافظة (عبر جداول التعداد ومرآة KAPSARC)",
+  "sourceUrl": "https://www.stats.gov.sa/statistics?index=119025&subindex=127380",
+  "verification": "فُتحت صفحة فئات الإحصاءات في stats.gov.sa وظهر قسم «إحصاءات تعداد السعودية ٢٠٢٢» بفروعه (السكان، الأسر المعيشية، السكن والمساكن، عرض معلومات المناطق الإدارية، الصحة والإعاقة). بوابة portal.saudicensus.sa وsaudicensus.sa تعذّر الوصول إليهما (فشل DNS عبر الوسيط). relay (Firecrawl scrape/search) 2026-11-06",
+  "classification": "مكتمل جزئياً",
+  "services": [
+   "T02"
+  ],
+  "topics": [
+   "population",
+   "age_sex",
+   "households",
+   "housing",
+   "disability",
+   "region",
+   "governorate"
+  ],
+  "notes": "الجداول التفصيلية بالمحافظة لم تُفتح من المصدر الرسمي مباشرة؛ المتاح للتحقق مرآة KAPSARC (مصدرها الهيئة). لا تُعرض أرقام التعداد على أنها حالية لعام 2026؛ تُوسم «تعداد 2022»."
+ },
+ {
+  "id": "SPA-CENSUS-2023",
+  "title": "Saudi Arabia Census Shows Total Population of 32.2 Million, of Which 18.8 Million are Saudis",
+  "authorOrIssuer": "وكالة الأنباء السعودية (نقلاً عن الهيئة العامة للإحصاء)",
+  "kind": "statistical_source",
+  "binding": "data",
+  "edition": "خبر رسمي",
+  "date": "2023-05-31",
+  "status": "منشور",
+  "scope": "المملكة",
+  "sourceUrl": "https://www.spa.gov.sa/en/66f006e99cg",
+  "verification": "فُتح النص الكامل للخبر relay (Firecrawl scrape/search) 2026-11-06",
+  "classification": "مكتمل ومتحقق منه",
+  "services": [
+   "T02"
+  ],
+  "topics": [
+   "population",
+   "census"
+  ],
+  "notes": "مصدر إعلان رسمي ثانوي (واس) للأرقام الوطنية فقط."
+ },
+ {
+  "id": "GASTAT-POPEST-2024",
+  "title": "نشرة التقديرات السكانية 2024",
+  "authorOrIssuer": "الهيئة العامة للإحصاء",
+  "kind": "statistical_source",
+  "binding": "data",
+  "edition": "2024",
+  "date": "غير متاح في المصادر التي تمت مراجعتها",
+  "status": "منشور (الرقم الرئيس ظاهر على الصفحة الرئيسية)",
+  "scope": "المملكة (التفصيل بالمنطقة غير متحقق)",
+  "sourceUrl": "https://www.stats.gov.sa/en/",
+  "verification": "الصفحة الرئيسية للهيئة تعرض الرقم 35,300,280 ووسمه «Population Estimates Publication 2024» (الوسم مستخرج آلياً عبر الوسيط؛ الرقم ظاهر في نص الصفحة). relay (Firecrawl scrape/search) 2026-11-06",
+  "classification": "مكتمل جزئياً",
+  "services": [
+   "T02"
+  ],
+  "topics": [
+   "population",
+   "estimates"
+  ],
+  "notes": "لم يُفتح ملف النشرة؛ لا يُعرف هل يتضمن تفصيلاً بالمنطقة."
+ },
+ {
+  "id": "GASTAT-LFS",
+  "title": "إحصاءات سوق العمل (مسح القوى العاملة) — نشرة ربعية",
+  "authorOrIssuer": "الهيئة العامة للإحصاء",
+  "kind": "statistical_source",
+  "binding": "data",
+  "edition": "أحدث نشرة فُتح خبرها: الربع الأول 2025 (29-06-2025)؛ ظهر في فهرس البحث جدول «مؤشرات احصاءات سوق العمل ... الربع الأول 2026»",
+  "date": "2025-06-29",
+  "status": "دوري ربعي، ساري",
+  "scope": "المملكة؛ العينة ممثلة للمناطق الـ13 (نشر النتائج بالمنطقة غير متحقق)",
+  "sourceUrl": "https://stats.gov.sa/ar/w/news/56",
+  "verification": "فُتح خبر نشرة الربع الأول 2025 كاملاً، وفُتح تقرير المنهجية والجودة 4.0 (https://www.stats.gov.sa/w/methodology-and-quality-report-for-labor-market-statistics) وفيه أن العينة ممثلة للـ13 منطقة إدارية وأن حجمها 97,019 مسكناً. relay (Firecrawl scrape/search) 2026-11-06",
+  "classification": "مكتمل جزئياً",
+  "services": [
+   "T02"
+  ],
+  "topics": [
+   "unemployment",
+   "labour_force",
+   "economic_empowerment"
+  ],
+  "notes": "رقم الربع الأول 2026 ورد في مصدر ثانوي (أرقام) فقط ولم يُفتح من الهيئة؛ لا يُستخدم."
+ },
+ {
+  "id": "GASTAT-HIES-2023",
+  "title": "نشرة إحصاءات الدخل والإنفاق الاستهلاكي للأسرة لعام 2023",
+  "authorOrIssuer": "الهيئة العامة للإحصاء",
+  "kind": "statistical_source",
+  "binding": "data",
+  "edition": "2023 (ملفات xlsx)",
+  "date": "غير متاح في المصادر التي تمت مراجعتها",
+  "status": "منشور",
+  "scope": "غير متحقق (المملكة على الأقل)",
+  "sourceUrl": null,
+  "verification": "ظهر العنوان واسم الملف «Publication tables of Household Income and Consumption Expenditure Survey 2023_2.xlsx» في نتائج فهرس البحث داخل stats.gov.sa فقط؛ لم تُفتح الجداول.",
+  "classification": "غير متحقق",
+  "services": [
+   "T02"
+  ],
+  "topics": [
+   "income",
+   "expenditure",
+   "living_conditions"
+  ],
+  "notes": "مقتطف بحث داخل الموقع يذكر أن المسح يُنفذ كل 5 سنوات — لم يُتحقق منه في صفحة."
+ },
+ {
+  "id": "GASTAT-DISAB-2023",
+  "title": "نشرة إحصاءات الإعاقة لعام 2023",
+  "authorOrIssuer": "الهيئة العامة للإحصاء",
+  "kind": "statistical_source",
+  "binding": "data",
+  "edition": "2023 (xlsx + PDF عربي)",
+  "date": "غير متاح (ظهر 2023-05-31 بجوار اسم الملف في مقتطف البحث دون تأكيد أنه تاريخ النشر)",
+  "status": "منشور",
+  "scope": "غير متحقق",
+  "sourceUrl": null,
+  "verification": "ظهر في نتائج فهرس بحث المنشورات في stats.gov.sa فقط؛ لم يُفتح الملف. وقسم «إحصاءات الإعاقة» و«إحصاءات الصحة والإعاقة» (التعداد) ظاهران في صفحة فئات الإحصاءات.",
+  "classification": "غير متحقق",
+  "services": [
+   "T02"
+  ],
+  "topics": [
+   "disability"
+  ],
+  "notes": "خبر قديم عن «مسح ذوي الإعاقة» يذكر تصدر منطقة الرياض — لم يُفتح نصه ولا تاريخه."
+ },
+ {
+  "id": "GASTAT-ELDERLY",
+  "title": "إحصاءات كبار السن (جداول)",
+  "authorOrIssuer": "الهيئة العامة للإحصاء",
+  "kind": "statistical_source",
+  "binding": "data",
+  "edition": "غير متاح",
+  "date": "غير متاح",
+  "status": "غير معروف",
+  "scope": "المنطقة الإدارية (حسب عنوان الجدول 1)",
+  "sourceUrl": null,
+  "verification": "مقتطف فهرس بحث stats.gov.sa: «جداول إحصاءات كبار السن ... 1 التوزيع العددي للافراد (60 عاما فاكثر) حسب الجنس والجنسية ... و المنطقة الإدارية». لم يُفتح.",
+  "classification": "غير متحقق",
+  "services": [
+   "T02"
+  ],
+  "topics": [
+   "elderly"
+  ],
+  "notes": ""
+ },
+ {
+  "id": "GASTAT-HEALTH-EST-2024",
+  "title": "إحصاءات المنشآت والقوى العاملة الصحية — تقرير المنهجية والجودة 4.0 (سنة الإسناد 2024)",
+  "authorOrIssuer": "الهيئة العامة للإحصاء",
+  "kind": "statistical_source",
+  "binding": "data",
+  "edition": "4.0",
+  "date": "سنة الإسناد 2024",
+  "status": "دوري سنوي",
+  "scope": "13 منطقة إدارية",
+  "sourceUrl": "https://stats.gov.sa/w/methodology-and-quality-report-for-healthcare-establishments-and-workforce-statistics",
+  "verification": "فُتح التقرير؛ يسرد جداول بالمنطقة الإدارية (المستشفيات، الأسرّة، مراكز الرعاية الأولية، الصيدليات) ومصادرها السجلات الإدارية لوزارة الصحة والهيئة السعودية للتخصصات الصحية وجهات أخرى. relay (Firecrawl scrape/search) 2026-11-06 (استخراج موجّه)",
+  "classification": "مكتمل ومتحقق منه",
+  "services": [
+   "T02"
+  ],
+  "topics": [
+   "health",
+   "facilities",
+   "density"
+  ],
+  "notes": "أنسب مصدر رسمي لكثافة الخدمات الصحية بالمنطقة."
+ },
+ {
+  "id": "GASTAT-USE-POLICY",
+  "title": "سياسة الاستخدام — الهيئة العامة للإحصاء (البند 1.2.2)",
+  "authorOrIssuer": "الهيئة العامة للإحصاء",
+  "kind": "official_instruction",
+  "binding": "guidance",
+  "edition": "غير متاح",
+  "date": "غير متاح",
+  "status": "منشورة على الموقع",
+  "scope": "بيانات موقع الهيئة",
+  "sourceUrl": "https://www.stats.gov.sa/en/use-policy",
+  "verification": "فُتحت الصفحة واستُخرج البند 1.2.2 relay (Firecrawl scrape/search) 2026-11-06 (استخراج موجّه)",
+  "classification": "مكتمل ومتحقق منه",
+  "services": [
+   "T02"
+  ],
+  "topics": [
+   "licence",
+   "attribution"
+  ],
+  "notes": "يسمح بإعادة الاستخدام ولو تجارياً بشرط ذكر الهيئة مصدراً رسمياً وبيان أي تعديل."
+ },
+ {
+  "id": "GASTAT-DB",
+  "title": "قاعدة البيانات الإحصائية (Build Reports)",
+  "authorOrIssuer": "الهيئة العامة للإحصاء",
+  "kind": "dataset",
+  "binding": "data",
+  "edition": "—",
+  "date": "—",
+  "status": "الصفحة تعمل",
+  "scope": "غير متحقق",
+  "sourceUrl": "https://database.stats.gov.sa/Build_Reports/main/home?locale=en",
+  "verification": "فُتحت الصفحة لكنها تطبيق تفاعلي لم يُعرض محتواه عبر الوسيط؛ لم يتحقق وجود واجهة API أو صيغ التصدير.",
+  "classification": "غير متحقق",
+  "services": [
+   "T02"
+  ],
+  "topics": [
+   "database",
+   "api"
+  ],
+  "notes": "يحتاج فحصاً يدوياً بالمتصفح."
+ },
+ {
+  "id": "GASTAT-NPO-2024",
+  "title": "إحصاءات منظمات القطاع غير الربحي لعام 2024",
+  "authorOrIssuer": "الهيئة العامة للإحصاء",
+  "kind": "statistical_source",
+  "binding": "data",
+  "edition": "2024",
+  "date": "2025-12-03 (تاريخ منشور حساب الهيئة)",
+  "status": "منشور",
+  "scope": "غير متحقق",
+  "sourceUrl": null,
+  "verification": "ظهر إعلان النشر في حسابات الهيئة على X وInstagram ضمن نتائج البحث؛ وصفحة الفئات تذكر «إحصاءات منظمات القطاع غير الربحي». لم تُفتح النشرة.",
+  "classification": "غير متحقق",
+  "services": [
+   "T02"
+  ],
+  "topics": [
+   "nonprofit"
+  ],
+  "notes": "إحصاءات اقتصادية للقطاع (إنفاق/إيرادات) وليست سجل خدمات."
+ },
+ {
+  "id": "MOH-YEARBOOK",
+  "title": "الكتاب الإحصائي السنوي — وزارة الصحة",
+  "authorOrIssuer": "وزارة الصحة",
+  "kind": "statistical_source",
+  "binding": "data",
+  "edition": "2024 (Excel، تاريخ الملف 2025-10-20)؛ 2023 (PDF وExcel)",
+  "date": "2025-10-20",
+  "status": "أحدث إصدار ظاهر 2024",
+  "scope": "غير متحقق داخل الملف (يُتوقع تفصيل بالمنطقة الصحية)",
+  "sourceUrl": "https://www.moh.gov.sa/ministry/statistics/book/pages/default.aspx",
+  "verification": "فُتحت صفحة الكتاب الإحصائي وظهرت روابط الملفات وتواريخها؛ لم يُفتح ملف Excel. relay (Firecrawl scrape/search) 2026-11-06",
+  "classification": "مكتمل جزئياً",
+  "services": [
+   "T02"
+  ],
+  "topics": [
+   "health",
+   "facilities"
+  ],
+  "notes": "رابط الملف: https://www.moh.gov.sa/Ministry/Statistics/book/Documents/Statistical-Yearbook-2024.xlsx"
+ },
+ {
+  "id": "HRSD-OPENDATA",
+  "title": "مكتبة البيانات المفتوحة — وزارة الموارد البشرية والتنمية الاجتماعية",
+  "authorOrIssuer": "وزارة الموارد البشرية والتنمية الاجتماعية",
+  "kind": "dataset",
+  "binding": "data",
+  "edition": "قائمة 160 مجموعة",
+  "date": "مجموعات حتى الربع الثاني 2026",
+  "status": "محدثة ربعياً/سنوياً بحسب المجموعة",
+  "scope": "المنطقة الإدارية لبعض المجموعات",
+  "sourceUrl": "https://www.hrsd.gov.sa/knowledge-centre/data-and-statistics/open-data/758917",
+  "verification": "فُتحت القائمة كاملة؛ تشمل: المستفيدين من الرعاية المنزلية لذوي الإعاقة (ربعي)، كبار السن المستفيدين من دور الرعاية الاجتماعية (ربعي/سنوي)، مراكز ضيافة الأطفال حسب المناطق، مراكز الرعاية النهارية، مراكز التنمية، فروع ومكاتب الضمان الاجتماعي 2025، الجمعيات التعاونية حسب المنطقة، العاملين في القطاع الخاص حسب المنطقة. الروابط تحيل إلى open.data.gov.sa الذي تعذر فتحه. relay (Firecrawl scrape/search) 2026-11-06",
+  "classification": "مكتمل جزئياً",
+  "services": [
+   "T02"
+  ],
+  "topics": [
+   "social",
+   "disability",
+   "elderly",
+   "childcare",
+   "employment"
+  ],
+  "notes": "لم تظهر مجموعة لأعداد مستفيدي الضمان الاجتماعي المطور حسب المنطقة — غير متاح في المصادر التي تمت مراجعتها."
+ },
+ {
+  "id": "HRSD-SOCSEC-SERVICE",
+  "title": "نظام الضمان الاجتماعي المطور — بطاقة الخدمة",
+  "authorOrIssuer": "وزارة الموارد البشرية والتنمية الاجتماعية",
+  "kind": "official_instruction",
+  "binding": "guidance",
+  "edition": "تاريخ إصدار الخدمة 1443/05/28 = 2022-01-01",
+  "date": "2022-01-01",
+  "status": "خدمة قائمة",
+  "scope": "المملكة",
+  "sourceUrl": "https://www.hrsd.gov.sa/ministry-services/services/%D9%86%D8%B8%D8%A7%D9%85-%D8%A7%D9%84%D8%B6%D9%85%D8%A7%D9%86-%D8%A7%D9%84%D8%A7%D8%AC%D8%AA%D9%85%D8%A7%D8%B9%D9%8A-%D8%A7%D9%84%D9%85%D8%B7%D9%88%D8%B1",
+  "verification": "فُتحت بطاقة الخدمة. relay (Firecrawl scrape/search) 2026-11-06",
+  "classification": "غير منطبق",
+  "services": [
+   "T02"
+  ],
+  "topics": [
+   "social_security"
+  ],
+  "notes": "وصف خدمة وليست بيانات احتياج؛ تُذكر لبيان أن بيانات المستفيدين تتطلب طلباً رسمياً من الوزارة."
+ },
+ {
+  "id": "NODP",
+  "title": "المنصة الوطنية للبيانات المفتوحة open.data.gov.sa",
+  "authorOrIssuer": "هيئة الحكومة الرقمية / الجهات الناشرة",
+  "kind": "dataset",
+  "binding": "data",
+  "edition": "—",
+  "date": "—",
+  "status": "غير معروف",
+  "scope": "بحسب المجموعة",
+  "sourceUrl": null,
+  "verification": "محاولات الفتح (open.data.gov.sa وod.data.gov.sa) فشلت عبر الوسيط (ERR_TUNNEL_CONNECTION_FAILED). وجودها مؤكد بإحالات صفحات الهيئة والوزارات.",
+  "classification": "غير متحقق",
+  "services": [
+   "T02"
+  ],
+  "topics": [
+   "open_data",
+   "api",
+   "licence"
+  ],
+  "notes": "الترخيص وواجهات API غير متحققة."
+ },
+ {
+  "id": "MOE-OPENDATA",
+  "title": "البيانات المفتوحة ومركز البيانات والإحصاء — وزارة التعليم",
+  "authorOrIssuer": "وزارة التعليم",
+  "kind": "dataset",
+  "binding": "data",
+  "edition": "217 مجموعة (الصفحة الإنجليزية)",
+  "date": "آخر تحديث للمركز 1448/04/03هـ",
+  "status": "قائم",
+  "scope": "المنطقة الإدارية وإدارة التعليم (لوحة إحصاءات التعليم العام؛ أحدث عام 1446)؛ مؤشرات وطنية سنوية",
+  "sourceUrl": "https://www.moe.gov.sa/en/knowledgecenter/dataandstats/Pages/opendata.aspx",
+  "verification": "فُتحت صفحة البيانات المفتوحة (تذكر مؤشر الأمية ومتوسط سنوات الدراسة ومعدل الالتحاق الإجمالي وطلاب ذوي الإعاقة في التعليم العالي — سنوياً) وصفحة «إحصائيات عامة - التعليم العام» https://www.moe.gov.sa/ar/services/data-and-statistics-center/publicedustat (مرشحات: العام 1437–1446، المنطقة الإدارية، إدارة التعليم). relay (Firecrawl scrape/search) 2026-11-06",
+  "classification": "مكتمل جزئياً",
+  "services": [
+   "T02"
+  ],
+  "topics": [
+   "education"
+  ],
+  "notes": "القيم نفسها لم تُعرض عبر الوسيط (لوحة تفاعلية)."
+ },
+ {
+  "id": "ETEC-NAFS",
+  "title": "الاختبارات الوطنية «نافس»",
+  "authorOrIssuer": "هيئة تقويم التعليم والتدريب",
+  "kind": "statistical_source",
+  "binding": "data",
+  "edition": "2026",
+  "date": "تطبيق أبريل 2026",
+  "status": "قائم",
+  "scope": "المدرسة/إدارة التعليم — غير منشور للعموم",
+  "sourceUrl": "https://etec.gov.sa/ar/programs/nafs",
+  "verification": "فُتحت الصفحة: النتائج تُرسل بطاقة أداء لكل مدرسة وتُتاح لأولياء الأمور عبر تطبيق «مستقبلهم». relay (Firecrawl scrape/search) 2026-11-06",
+  "classification": "غير منطبق",
+  "services": [
+   "T02"
+  ],
+  "topics": [
+   "education_quality"
+  ],
+  "notes": "غير قابل للجمع الآلي العام؛ يحتاج طلباً رسمياً."
+ },
+ {
+  "id": "NCNP-DIRECTORY",
+  "title": "دليل الكيانات — المركز الوطني لتنمية القطاع غير الربحي",
+  "authorOrIssuer": "المركز الوطني لتنمية القطاع غير الربحي",
+  "kind": "dataset",
+  "binding": "data",
+  "edition": "v5",
+  "date": "نسخة مخزنة 2026-11-05",
+  "status": "قائم",
+  "scope": "المنطقة (حقل لكل كيان)؛ دليل آخر index.nawa.ncnp.gov.sa يعرض مرشحات بالمحافظة/المدينة والجهة الإشرافية",
+  "sourceUrl": "https://es.ncnp.gov.sa/v5/nonprofits",
+  "verification": "فُتحت الصفحة: «الكيانات ( 8227 )»، والحقول: نوع الكيان، جهة الإشراف، التصنيف النوعي، التصنيف الفرعي، المنطقة، درجة الحوكمة 2024. لا يظهر خيار تنزيل أو API. وفُتحت نتيجة https://index.nawa.ncnp.gov.sa/entities (مرشحات نوع الكيان والمحافظة والجهة الإشرافية). relay (Firecrawl scrape/search) 2026-11-06",
+  "classification": "مكتمل جزئياً",
+  "services": [
+   "T02"
+  ],
+  "topics": [
+   "nonprofit",
+   "supply",
+   "map"
+  ],
+  "notes": "العدد يشمل جهات خارج نطاق الخدمة المباشرة؛ لا يبيّن حجم الخدمات أو المستفيدين. شروط إعادة الاستخدام غير متاحة."
+ },
+ {
+  "id": "NCNP-STATS",
+  "title": "إحصائيات المركز للأبحاث والدراسات",
+  "authorOrIssuer": "المركز الوطني لتنمية القطاع غير الربحي",
+  "kind": "statistical_source",
+  "binding": "data",
+  "edition": "—",
+  "date": "آخر تحديث سبتمبر 2024",
+  "status": "منشور",
+  "scope": "المنطقة (رسم بياني)",
+  "sourceUrl": "https://ncnp.gov.sa/ar/pages/%D8%A5%D8%AD%D8%B5%D8%A7%D8%A6%D9%8A%D8%A7%D8%AA-%D8%A7%D9%84%D9%85%D8%B1%D9%83%D8%B2-%D9%84%D9%84%D8%A3%D8%A8%D8%AD%D8%A7%D8%AB-%D9%88%D8%A7%D9%84%D8%AF%D8%B1%D8%A7%D8%B3%D8%A7%D8%AA",
+  "verification": "فُتح نص الصفحة؛ التوزيع الجغرافي منشور صورةً (لم تُقرأ قيمها). relay (Firecrawl scrape/search) 2026-11-06",
+  "classification": "مكتمل جزئياً",
+  "services": [
+   "T02"
+  ],
+  "topics": [
+   "nonprofit",
+   "region"
+  ],
+  "notes": "القيم داخل صور — إدخال يدوي مع مراجعة."
+ },
+ {
+  "id": "V2030-HOUSING",
+  "title": "برنامج الإسكان — صفحة رؤية السعودية 2030",
+  "authorOrIssuer": "رؤية السعودية 2030",
+  "kind": "statistical_source",
+  "binding": "data",
+  "edition": "—",
+  "date": "الرقم «حتى نهاية عام 2025»",
+  "status": "منشور",
+  "scope": "المملكة",
+  "sourceUrl": "https://www.vision2030.gov.sa/ar/explore/programs/housing-program",
+  "verification": "فُتح نص الصفحة. relay (Firecrawl scrape/search) 2026-11-06",
+  "classification": "مكتمل ومتحقق منه",
+  "services": [
+   "T02"
+  ],
+  "topics": [
+   "housing"
+  ],
+  "notes": "لا تفصيل بالمنطقة؛ إحصاءات المساكن بالمنطقة متاحة في التعداد 2022. صندوق التنمية العقارية/سكني: لم يُعثر على بيانات منشورة بالمنطقة."
+ },
+ {
+  "id": "KAPSARC-POP-GOV-2022",
+  "title": "Population by Detailed Age, Gender, Governorate, Nationality and Region",
+  "authorOrIssuer": "KAPSARC Data Portal (المصدر: الهيئة العامة للإحصاء)",
+  "kind": "dataset",
+  "binding": "data",
+  "edition": "Temporal 2022",
+  "date": "آخر تعديل 2026-04-30",
+  "status": "متاح",
+  "scope": "المنطقة والمحافظة",
+  "sourceUrl": "https://datasource.kapsarc.org/explore/assets/population-by-detailed-age-gender-governorate-nationality-and-region/",
+  "verification": "فُتحت صفحة المجموعة: تصدير وواجهة API ومنشئها الهيئة العامة للإحصاء. relay (Firecrawl scrape/search) 2026-11-06",
+  "classification": "مكتمل ومتحقق منه",
+  "services": [
+   "T02"
+  ],
+  "topics": [
+   "population",
+   "age_sex",
+   "governorate",
+   "api"
+  ],
+  "notes": "مرآة ثانوية: تُستخدم للجمع الآلي مع مطابقة إجمالي المنطقة بجداول الهيئة قبل الاعتماد. الترخيص غير ظاهر في الصفحة المفتوحة."
+ },
+ {
+  "id": "NZR-ART9",
+  "title": "لائحة تنظيم أعمال النظارة — المادة التاسعة (تنفيذ شروط الواقف)",
+  "authorOrIssuer": "الهيئة العامة للأوقاف (منشورة في أم القرى)",
+  "kind": "regulation",
+  "binding": "binding",
+  "edition": "1443-7-03 / 2022-02-04",
+  "date": "2022-02-04",
+  "status": "نافذة بحسب سجل المراجع الداخلي",
+  "scope": "النظّار",
+  "sourceUrl": null,
+  "localFile": "/home/claude/waqfak/data/references/snapshots/NZR/uqn-p18926.md",
+  "verification": "قُرئ النص من اللقطة المحفوظة من أم القرى (uqn p=18926) في مستودع المراجع.",
+  "classification": "مكتمل ومتحقق منه",
+  "services": [
+   "T02"
+  ],
+  "topics": [
+   "founder_condition"
+  ],
+  "notes": "أساس قاعدة «عدم اقتراح مصرف يخالف شرط الواقف»."
+ }
+]

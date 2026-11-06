@@ -22,7 +22,8 @@ import { readVersionPlain } from "@/server/modules/documents/core";
 import { extractText } from "@/server/modules/ai/extract";
 import { engineAuth } from "../actor";
 import { ENGINE_VERSION } from "../constants";
-import { searchKb, currentSources, type KbHit } from "../knowledge/search";
+import { retrieve, readyRefCodes } from "@/server/knowledge/retrieve";
+import { KIND_AR } from "@/server/knowledge/policy";
 import { dataClassOf, maskFacts, modelAllowed } from "../llm/guard";
 import { llmProvider } from "../llm/provider";
 import { PROMPT_VERSION, type LlmSource } from "../llm/types";
@@ -133,8 +134,9 @@ export async function processRequest(job: ClaimedJob): Promise<RunOutcome> {
       }
       const packs = packsFor(rulePacks(), rc.service.code);
       const essential = [...new Set(packs.flatMap((p) => p.essentialRefs ?? []))];
-      const present = await currentSources(tx, essential);
-      const missingRefs = essential.filter((c) => !present.some((s) => s.refCode === c && s.textQuality === "good" && s.verificationStatus === "verified"));
+      // an essential reference counts only when the knowledge engine's policy lets it be cited now (unified engine)
+      const ready = await readyRefCodes(tx, essential, new Date().toISOString().slice(0, 10));
+      const missingRefs = essential.filter((c) => !ready.has(c));
       const facts = {
         service: { code: rc.service.code, pricing: rc.service.pricingModel },
         request: { number: rc.req.number, hasWaqf: !!rc.req.waqfId, conflict: rc.req.conflictCheck },
@@ -244,10 +246,17 @@ export async function processRequest(job: ClaimedJob): Promise<RunOutcome> {
             if (!allowed.ok) { problems.push(`${sec.title}: لم يُكتب — ${allowed.reason}`); sectionLog.push({ section: sec.title, by: "none", reason: allowed.reason }); continue; }
             const refCodes = w.refCodes?.length ? w.refCodes : PROFILE_REFS[def.profile] ?? [];
             const analysisDef = TEMPLATES[def.profile].analysis.find((a) => `analysis:${a.key}` === sec.key);
-            const hits: KbHit[] = await searchKb(tx, `${rc.service.nameAr} ${sec.title} ${analysisDef?.prompt ?? ""} ${w.query ?? ""}`, { refCodes, limit: 4 });
+            // the single retrieval route: only passages the citation policy authorises reach the model as sources
+            const kb = await retrieve(tx, { question: `${rc.service.nameAr} ${sec.title} ${analysisDef?.prompt ?? ""} ${w.query ?? ""}`, service: rc.service.code, asOf: new Date().toISOString().slice(0, 10), refCodes, limit: 4 });
+            const hits = kb.citable.map((r) => r.hit);
             for (const h of hits) if (!used.some((u) => u.code === h.refCode && u.version === h.version)) used.push({ code: h.refCode, version: h.version });
-            const sources: LlmSource[] = hits.map((h, i) => ({ n: i + 1, chunkId: h.chunkId, refCode: h.refCode, locator: h.locator, text: h.text }));
-            if (w.requireCitation && !sources.length) { problems.push(`${sec.title}: لا مقطع في قاعدة المعرفة من المراجع ${refCodes.join("، ") || "—"} يستند إليه النص.`); continue; }
+            const sources: LlmSource[] = hits.map((h, i) => ({ n: i + 1, chunkId: h.chunkId, refCode: h.refCode, locator: `${KIND_AR[h.refKind]} — ${h.locator}`, text: h.text }));
+            if (w.requireCitation && !kb.sufficiency.sufficient) {
+              const why = kb.sufficiency.reason;
+              problems.push(`${sec.title}: ${why}`);
+              sectionLog.push({ section: sec.title, by: "none", reason: why, refused: kb.results.filter((r) => !r.decision.citable).map((r) => `${r.hit.refCode} ${r.hit.locator}: ${(r.decision as { detail: string }).detail}`) });
+              continue;
+            }
             modelCalls++;
             const result = await provider.analyze({
               section: { key: sec.key, title: sec.title, instruction: analysisDef?.prompt ?? b.prompt }, service: { code: rc.service.code, name: rc.service.nameAr },
@@ -255,8 +264,6 @@ export async function processRequest(job: ClaimedJob): Promise<RunOutcome> {
             });
             if (!result) { problems.push(`${sec.title}: لم يُرجع النموذج نصًا صالحًا.`); continue; }
             const chk = checkSection({ text: result.text, citations: result.citations, sources, sourceArticles: new Map(hits.map((h, i) => [i + 1, h.articleNo])), requireCitation: !!w.requireCitation });
-            const degraded = hits.filter((h, i) => result.citations.includes(i + 1) && (h.quality !== "good" || h.verification !== "verified"));
-            if (degraded.length) warnings.push(`${sec.title}: يستند إلى مقطع من مرجع نصه المستخرج معيب أو غير موثق (${[...new Set(degraded.map((d) => d.refCode))].join("، ")}): يُراجع على النص الرسمي.`);
             warnings.push(...chk.warnings.map((x) => `${sec.title}: ${x}`));
             if (!chk.ok) { problems.push(...chk.problems.map((x) => `${sec.title}: ${x}`)); sectionLog.push({ section: sec.title, by: provider.id, rejected: chk.problems }); continue; }
             const cited = new Set([...result.citations, ...[...result.text.matchAll(/\[(\d{1,3})\]/g)].map((m) => Number(m[1]))]);

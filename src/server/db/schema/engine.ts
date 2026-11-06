@@ -104,7 +104,42 @@ export const kbSources = pgTable("kb_sources", {
   chunkCount: integer().default(0).notNull(),
   ingestedAt: createdAt(),
   supersededAt: timestamp({ withTimezone: true }),
-}, (t) => [uniqueIndex("kbs_ref_version_uq").on(t.refCode, t.version)]);
+  /**
+   * Unified knowledge engine (2026-11-06). What the source is — never inferred from its being attached to the project:
+   * statute | regulation | official_instruction | official_guide | professional_standard | classical_fiqh |
+   * contemporary_book | academic_study | statistical_source | dataset | unclassified.
+   */
+  refKind: text().default("unclassified").notNull(),
+  /** Id in the reference registry (the references module, registry.ts) when the source is a registered instrument. */
+  registryId: text(),
+  /** Snapshot id in data/references/manifest.json when the text is an official snapshot. */
+  registrySnapshot: text(),
+  edition: text(),
+  publishedOn: date(),
+  /** Date from which the text no longer applies (repealed or replaced); null while it applies. */
+  repealedOn: date(),
+  /** Services this source may be used for (empty: none until linked). */
+  services: text().array().default(sql`'{}'::text[]`).notNull(),
+  meta: jsonb().default(sql`'{}'::jsonb`).notNull(),
+}, (t) => [
+  // a corrected text of the same version is a new row (the earlier one is superseded, never deleted)
+  uniqueIndex("kbs_ref_version_sha_uq").on(t.refCode, t.version, t.sha256),
+  index("kbs_ref_idx").on(t.refCode),
+]);
+
+/**
+ * Human review of a non-registry source (book, study, guide): the only way such a source becomes citable. Append-only
+ * (trigger in security.sql). Registry instruments are reviewed in ref_match_reviews instead.
+ */
+export const kbSourceReviews = pgTable("kb_source_reviews", {
+  id: id(),
+  sourceId: uuid().notNull().references(() => kbSources.id),
+  reviewerUserId: uuid().notNull(),
+  decision: text().notNull(), // accepted | rejected
+  /** What was checked: «النص مطابق لصفحات الطبعة المذكورة»، «النسبة إلى الجهة صحيحة». */
+  note: text().notNull(),
+  at: createdAt(),
+}, (t) => [index("kbsr_source_idx").on(t.sourceId, t.at)]);
 
 /** A passage of a source (an article, a question, a principle or a page), kept verbatim with its locator. */
 export const kbChunks = pgTable("kb_chunks", {
@@ -120,4 +155,10 @@ export const kbChunks = pgTable("kb_chunks", {
   /** Normalized text used for search only (never shown or quoted). */
   norm: text().notNull(),
   sha256: text().notNull(),
+  /** Paragraph within the article (statutes), and the page in the file / as printed (books, guides, studies). */
+  paragraphNo: integer(),
+  pageFile: integer(),
+  pagePrinted: text(),
+  /** How the passage text was obtained: official_text | text_layer | ocr | verified_quote. */
+  textOrigin: text().default("text_layer").notNull(),
 }, (t) => [index("kbc_source_idx").on(t.sourceId, t.seq)]);

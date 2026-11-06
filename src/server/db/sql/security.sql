@@ -419,3 +419,23 @@ BEGIN
     EXECUTE format('REVOKE UPDATE, DELETE, TRUNCATE ON %I FROM waqfak_app', t);
   END LOOP;
 END $$;
+
+-- ───────────── Unified knowledge engine (2026-11-06): knowledge base read by the team, written by the system ─────────────
+-- Reference texts carry no waqf data, but what the engine cites must not be altered from a user session: only the system
+-- context (ingestion, the engine) writes; staff and the system read. Reviews of a source are append-only.
+DO $$
+DECLARE t text;
+BEGIN
+  FOREACH t IN ARRAY ARRAY['kb_sources','kb_chunks','kb_source_reviews'] LOOP
+    EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
+    EXECUTE format('DROP POLICY IF EXISTS kb_read ON %I', t);
+    EXECUTE format('CREATE POLICY kb_read ON %I FOR SELECT TO waqfak_app USING (app_has_global_access() OR app_current_user() IS NULL OR app_is_staff())', t);
+    EXECUTE format('DROP POLICY IF EXISTS kb_write ON %I', t);
+    EXECUTE format('CREATE POLICY kb_write ON %I FOR ALL TO waqfak_app USING (app_has_global_access()) WITH CHECK (app_has_global_access())', t);
+  END LOOP;
+END $$;
+DROP TRIGGER IF EXISTS ref_append_only ON kb_source_reviews;
+CREATE TRIGGER ref_append_only BEFORE UPDATE OR DELETE ON kb_source_reviews FOR EACH ROW EXECUTE FUNCTION ref_append_only();
+DROP TRIGGER IF EXISTS ref_no_truncate ON kb_source_reviews;
+CREATE TRIGGER ref_no_truncate BEFORE TRUNCATE ON kb_source_reviews FOR EACH STATEMENT EXECUTE FUNCTION ref_append_only();
+REVOKE UPDATE, DELETE, TRUNCATE ON kb_source_reviews FROM waqfak_app;

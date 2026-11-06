@@ -1,0 +1,507 @@
+[
+ {
+  "id": "ACC-STUDY-MAHDI-2023",
+  "title": "المعايير المحاسبية للوقف – دراسة مقارنة",
+  "authorOrIssuer": "د. بشير حزام صالح مهدي (مجلة الوقف، العدد 1)",
+  "kind": "academic_study",
+  "binding": "scholarly",
+  "edition": "العدد (1) رمضان 1444هـ - أبريل 2023م؛ DOI 10.59723/AWQ001/03",
+  "date": "2023-04",
+  "status": "unknown — بحث منشور؛ يعتمد على نسخة سوكبا 2012 التي حُدّثت 2025",
+  "scope": "مقارنة AAOIFI FAS 37 بمعايير سوكبا للمنشآت غير الهادفة للربح",
+  "sourceUrl": null,
+  "localFile": "/home/claude/kb2/src/acc-study.pdf",
+  "verification": "قراءة كاملة 41 صفحة بـ pdftotext؛ الاقتباسات روجعت على صور الصفحات 15،16،18،19،22،24،30،31 (المطبوعة = الملف+70)",
+  "classification": "مكتمل ومتحقق منه",
+  "services": [
+   "F02",
+   "F03",
+   "F05",
+   "F06",
+   "C09",
+   "F01",
+   "C05"
+  ],
+  "topics": [
+   "FAS37",
+   "SOCPA-NPO",
+   "مقارنة",
+   "غلة الوقف",
+   "عين الوقف"
+  ],
+  "notes": "بحث أكاديمي لا يُستشهد به على الإلزام"
+ },
+ {
+  "id": "AAOIFI-FAS37",
+  "title": "FAS 37 Financial Reporting by Waqf Institutions / معيار المحاسبة المالية 37 التقرير المالي للمؤسسات الوقفية",
+  "authorOrIssuer": "هيئة المحاسبة والمراجعة للمؤسسات المالية الإسلامية (أيوفي)",
+  "kind": "professional_standard",
+  "binding": "professional",
+  "edition": "الإصدار الأول (إنجليزي ديسمبر 2020، ثم عربي)",
+  "date": "2020-12 (سريان 2022-01-01)",
+  "status": "in force لدى أيوفي (غير موسوم Superseded في قائمة cis.aaoifi.com/ar/?p=381)؛ غير معتمد في المملكة",
+  "scope": "Waqfs and similar institutions الملتزمة بالشريعة",
+  "sourceUrl": "https://cis.aaoifi.com/ru/?p=1641",
+  "localFile": null,
+  "verification": "صفحة أيوفي CIS (Effective January 1, 2022)؛ إعلان الإصدار؛ إعلان اعتماد المجلس 22-23 يونيو 2020؛ النص الكامل للأعضاء فقط — لم يُقرأ",
+  "classification": "مكتمل جزئياً",
+  "services": [
+   "F02",
+   "F03",
+   "F05",
+   "F06",
+   "C09",
+   "C05",
+   "F08"
+  ],
+  "topics": [
+   "FAS37",
+   "قائمة الغلة",
+   "قائمة أداء الخدمة"
+  ],
+  "notes": "مرجع مكمل اختياري فقط"
+ },
+ {
+  "id": "AAOIFI-ADOPTION",
+  "title": "Adoption of AAOIFI Standards",
+  "authorOrIssuer": "أيوفي",
+  "kind": "dataset",
+  "binding": "data",
+  "edition": "صفحة الموقع",
+  "date": "اطلاع 2026-11-06",
+  "status": "in force (صفحة حالية)",
+  "scope": "قائمة الدول المتبنية لمعايير أيوفي المحاسبية — المملكة غير مدرجة",
+  "sourceUrl": "https://aaoifi.com/adoption-of-aaoifi-standards/?lang=en",
+  "localFile": null,
+  "verification": "firecrawl relay directQuote",
+  "classification": "مكتمل ومتحقق منه",
+  "services": [
+   "F02",
+   "F03",
+   "F05",
+   "F06",
+   "C09"
+  ],
+  "topics": [
+   "إلزامية أيوفي"
+  ],
+  "notes": "via: relay"
+ },
+ {
+  "id": "SOCPA-NPO-2025",
+  "title": "المعايير المحاسبية للمنشآت غير الهادفة للربح – المحدث (العرض والإفصاح، بيان الأهداف والمفاهيم، التبرعات)",
+  "authorOrIssuer": "الهيئة السعودية للمراجعين والمحاسبين – مجلس معايير المحاسبة",
+  "kind": "professional_standard",
+  "binding": "professional",
+  "edition": "تعديل معتمد في الاجتماع الثامن جمادى الأولى 1445هـ/نوفمبر 2023",
+  "date": "2023-11 (سريان للفترات من 2025-01-01)",
+  "status": "in force — صفحة سوكبا 2514 (آخر تعديل 28 يونيو 2026)",
+  "scope": "القوائم المالية ذات الغرض العام للمنشآت غير الهادفة للربح بصرف النظر عن حجمها وطبيعتها؛ قسم 4-2-3 للأوقاف",
+  "sourceUrl": "https://socpa.org.sa/Socpa/Professional-standards/Accounting-standards/2514.aspx",
+  "localFile": null,
+  "verification": "firecrawl relay للصفحة والملف 2.pdf (23 ص)",
+  "classification": "مكتمل ومتحقق منه",
+  "services": [
+   "F02",
+   "F03",
+   "F05",
+   "F06",
+   "C09",
+   "F04",
+   "F07",
+   "F08",
+   "C05",
+   "C06"
+  ],
+  "topics": [
+   "SOCPA-NPO",
+   "صافي أصول الأوقاف",
+   "الإفصاح عن الأوقاف"
+  ],
+  "notes": "يحيل الإثبات والقياس إلى IFRS for SMEs أو النسخة الكاملة"
+ },
+ {
+  "id": "SOCPA-NPO-2012",
+  "title": "المعايير المحاسبية للمنشآت غير الهادفة للربح (المصدرة عام 2012م)",
+  "authorOrIssuer": "سوكبا",
+  "kind": "professional_standard",
+  "binding": "professional",
+  "edition": "2012",
+  "date": "2012",
+  "status": "superseded للفترات من 2025-01-01 بالنسخة المحدثة",
+  "scope": "المنشآت غير الهادفة للربح",
+  "sourceUrl": "https://socpa.org.sa/Socpa/Professional-standards/Accounting-standards/3155/Non-profitable-organizations.aspx?lang=ar-sa",
+  "localFile": null,
+  "verification": "ظهور الصفحة في نتائج البحث بعنوانها؛ مقارنة بصفحة المحدث",
+  "classification": "مكتمل جزئياً",
+  "services": [
+   "F02",
+   "F03",
+   "F05",
+   "F06",
+   "C09"
+  ],
+  "topics": [
+   "SOCPA-NPO"
+  ],
+  "notes": "الصفحة لم تُفتح كاملة"
+ },
+ {
+  "id": "SOCPA-FRAMEWORK-1440",
+  "title": "توضيح لجنة معايير المحاسبة بشأن إطار التقرير المناسب للجهات الحكومية والمنشآت غير الهادفة للربح (تعميم 22119/2019)",
+  "authorOrIssuer": "سوكبا",
+  "kind": "official_instruction",
+  "binding": "professional",
+  "edition": "—",
+  "date": "1440/05/07هـ (2019/01/13)",
+  "status": "in force — منشور ضمن توضيحات المجلس",
+  "scope": "تحديد إطار التقرير للمنشآت غير الملزمة بقوائم غرض عام",
+  "sourceUrl": "https://socpa.org.sa/getattachment/Socpa/Professional-standards/Accounting-standards/Technical-standards-and-mechanisms-that-comple/012.pdf.aspx?lang=ar-SA",
+  "localFile": null,
+  "verification": "firecrawl relay نص الملف؛ الرقم والتاريخ من الدراسة ص86 ومن manielaw (ثانوي)",
+  "classification": "مكتمل ومتحقق منه",
+  "services": [
+   "F02",
+   "F03",
+   "F05",
+   "F06",
+   "C09"
+  ],
+  "topics": [
+   "إطار التقرير"
+  ],
+  "notes": ""
+ },
+ {
+  "id": "SOCPA-WAQF-CLAR-1436",
+  "title": "المعايير المحاسبية الواجبة التطبيق على الأوقاف والمنشآت التجارية التي تستثمر فيها",
+  "authorOrIssuer": "سوكبا – توضيحات مجلس معايير المحاسبة",
+  "kind": "official_instruction",
+  "binding": "professional",
+  "edition": "—",
+  "date": "1436/7/9هـ (2015/4/28م)",
+  "status": "unknown — منشور حالياً؛ صدر قبل التحول للمعايير الدولية",
+  "scope": "الوقف ذو الشخصية الاعتبارية وشركاته",
+  "sourceUrl": "https://socpa.org.sa/getattachment/Socpa/Professional-standards/Accounting-standards/Technical-standards-and-mechanisms-that-comple/08.pdf.aspx?lang=ar-SA",
+  "localFile": null,
+  "verification": "الطبقة النصية معكوسة؛ المعنى أعيد تركيبه ولم يُقتبس حرفياً",
+  "classification": "مكتمل جزئياً",
+  "services": [
+   "F02",
+   "F03",
+   "F05",
+   "F06",
+   "C09"
+  ],
+  "topics": [
+   "الوقف وحدة محاسبية",
+   "التوحيد"
+  ],
+  "notes": "لا تُستخدم اقتباسات حرفية منه"
+ },
+ {
+  "id": "SOCPA-NPO-QA",
+  "title": "استفسارات حول معايير المنشآت غير الهادفة للربح (61، 76، 85، 95، 96، 107، 118، 120، 127)",
+  "authorOrIssuer": "سوكبا",
+  "kind": "official_instruction",
+  "binding": "professional",
+  "edition": "صفحة الاستفسارات",
+  "date": "آخر تعديل الصفحة 19 يناير 2026",
+  "status": "in force — «جزء لا يتجزأ من المعايير المعتمدة» حسب صفحة الاستفسارات",
+  "scope": "تفسيرات تطبيقية منها الغلة والاستهلاك وتسمية الإطار",
+  "sourceUrl": "https://socpa.org.sa/Sites/Support/54/625.aspx",
+  "localFile": null,
+  "verification": "firecrawl relay النص الكامل للأجوبة",
+  "classification": "مكتمل ومتحقق منه",
+  "services": [
+   "F02",
+   "F03",
+   "F05",
+   "F06",
+   "C09",
+   "F01"
+  ],
+  "topics": [
+   "غلة الوقف",
+   "استهلاك أصول الأوقاف",
+   "تسمية الإطار"
+  ],
+  "notes": ""
+ },
+ {
+  "id": "SOCPA-NPCO-OPINION-2025",
+  "title": "إطار التقرير المالي المناسب للشركات غير الربحية المؤسسة وفقاً لنظام الشركات وتقريرها عن الهبات والوصايا والأوقاف",
+  "authorOrIssuer": "سوكبا – مجلس معايير المحاسبة (رأي فني)",
+  "kind": "official_instruction",
+  "binding": "professional",
+  "edition": "—",
+  "date": "1447/03/29هـ (2025/09/21)",
+  "status": "in force",
+  "scope": "الشركات غير الربحية وفق نظام الشركات",
+  "sourceUrl": "https://socpa.org.sa/getattachment/Socpa/Professional-standards/Accounting-standards/Technical-standards-and-mechanisms-that-comple/21-09-2025.pdf.aspx?lang=ar-SA",
+  "localFile": null,
+  "verification": "firecrawl relay directQuote + خبر سوكبا 2025-10-21",
+  "classification": "مكتمل ومتحقق منه",
+  "services": [
+   "F02",
+   "F03",
+   "F05",
+   "F06",
+   "C09",
+   "C08"
+  ],
+  "topics": [
+   "الشركة غير الربحية",
+   "توحيد الوقف"
+  ],
+  "notes": ""
+ },
+ {
+  "id": "NZR-ART15",
+  "title": "لائحة تنظيم أعمال النظارة – المادة الخامسة عشرة (الإدارة المالية)",
+  "authorOrIssuer": "مجلس إدارة الهيئة العامة للأوقاف (قرار 31/1/18/43)",
+  "kind": "regulation",
+  "binding": "binding",
+  "edition": "منشورة 1443/07/03هـ",
+  "date": "2022-02-04",
+  "status": "in force (السجل registry.ts)",
+  "scope": "كل الأوقاف بحسب الحجم",
+  "sourceUrl": "https://uqn.gov.sa/?p=18926",
+  "localFile": "/home/claude/waqfak/data/references/snapshots/NZR/uqn-p18926.md",
+  "verification": "لقطة الجريدة الرسمية",
+  "classification": "مكتمل ومتحقق منه",
+  "services": [
+   "F02",
+   "F03",
+   "F05",
+   "F06",
+   "C09",
+   "F04",
+   "F07",
+   "C03"
+  ],
+  "topics": [
+   "قوائم مالية مدققة",
+   "بيان مالي سنوي"
+  ],
+  "notes": "لا تسمي إطاراً محاسبياً"
+ },
+ {
+  "id": "GAA-FAQ-109",
+  "title": "الأسئلة الشائعة — الهيئة العامة للأوقاف",
+  "authorOrIssuer": "الهيئة العامة للأوقاف",
+  "kind": "official_guide",
+  "binding": "guidance",
+  "edition": "لقطة",
+  "date": "لقطة محلية",
+  "status": "unknown",
+  "scope": "البيانات والقوائم المالية حسب الحجم",
+  "sourceUrl": null,
+  "localFile": "/home/claude/waqfak/data/references/snapshots/NZR-LIC/awqaf-faq-109.md",
+  "verification": "بحث نصي في اللقطة (المصدر https://awqaf.gov.sa/ar/help/faq/109 — لم يُفتح في هذه الجلسة)",
+  "classification": "مكتمل ومتحقق منه",
+  "services": [
+   "F02",
+   "F03",
+   "F05",
+   "F06",
+   "C09",
+   "F07"
+  ],
+  "topics": [
+   "البيان المالي",
+   "المنصة"
+  ],
+  "notes": "لا يذكر إطاراً محاسبياً"
+ },
+ {
+  "id": "GAA-GOV-PRINCIPLES",
+  "title": "مبادئ حوكمة الأوقاف",
+  "authorOrIssuer": "الهيئة العامة للأوقاف (اعتماد 47/1/15/ت)",
+  "kind": "official_guide",
+  "binding": "guidance",
+  "edition": "1447/06/13هـ، نشر 2025/12/26",
+  "date": "2025-12-26",
+  "status": "in force (ممارسات موصى بها)",
+  "scope": "كل الأوقاف",
+  "sourceUrl": null,
+  "localFile": "/home/claude/kb2/project/governance-principles.pdf",
+  "verification": "نص مطبّع NFKC + صورة الصفحة 19 (المطبوعة 18)",
+  "classification": "مكتمل ومتحقق منه",
+  "services": [
+   "F06",
+   "C05",
+   "C09"
+  ],
+  "topics": [
+   "مراجع خارجي",
+   "التقارير المالية"
+  ],
+  "notes": "لا تسمي إطاراً محاسبياً"
+ },
+ {
+  "id": "GAA-PENALTIES-NZR",
+  "title": "جدول المخالفات والجزاءات للائحة تنظيم أعمال النظارة",
+  "authorOrIssuer": "الهيئة العامة للأوقاف",
+  "kind": "regulation",
+  "binding": "binding",
+  "edition": "15 جمادى الآخرة 1446هـ",
+  "date": "1446-06-15",
+  "status": "unknown — لم يُتحقق من سريانه في هذا المسار",
+  "scope": "المخالفات المالية 6-1 إلى 6-6",
+  "sourceUrl": null,
+  "localFile": "/home/claude/kb2/project/penalties-table.pdf",
+  "verification": "صورة الصفحة 8",
+  "classification": "مكتمل جزئياً",
+  "services": [
+   "F05",
+   "F06",
+   "C03"
+  ],
+  "topics": [
+   "جزاءات"
+  ],
+  "notes": ""
+ },
+ {
+  "id": "GAA-NAZIR-SHORT-GUIDE",
+  "title": "الدليل المختصر لمهمات ومسؤوليات ناظر الوقف",
+  "authorOrIssuer": "الهيئة العامة للأوقاف – قطاع الشؤون التنظيمية",
+  "kind": "official_guide",
+  "binding": "guidance",
+  "edition": "—",
+  "date": "unknown",
+  "status": "unknown",
+  "scope": "مسؤوليات الناظر",
+  "sourceUrl": null,
+  "localFile": "/home/claude/kb2/project/nazir-short-guide.pdf",
+  "verification": "صورة الصفحة 8",
+  "classification": "مكتمل ومتحقق منه",
+  "services": [
+   "F05",
+   "F06"
+  ],
+  "topics": [
+   "التقارير المالية بحسب الحجم"
+  ],
+  "notes": ""
+ },
+ {
+  "id": "COMPANIES-LAW-ART17",
+  "title": "نظام الشركات – المادة 17/2 والمواد 185-194 (الشركة غير الربحية)",
+  "authorOrIssuer": "نظام الشركات",
+  "kind": "statute",
+  "binding": "binding",
+  "edition": "نسخة محدثة 1446/9/1هـ",
+  "date": "1446-09-01 (تاريخ النسخة)",
+  "status": "in force",
+  "scope": "كل الشركات بما فيها غير الربحية",
+  "sourceUrl": null,
+  "localFile": "/home/claude/kb2/project/companies-law.txt",
+  "verification": "نص الملف بعد تطبيع NFKC",
+  "classification": "مكتمل ومتحقق منه",
+  "services": [
+   "F02",
+   "C08",
+   "C09"
+  ],
+  "topics": [
+   "الشركة غير الربحية"
+  ],
+  "notes": ""
+ },
+ {
+  "id": "CIVIL-TRANS-ART17",
+  "title": "نظام المعاملات المدنية – المادة 17 (الأشخاص ذوو الصفة الاعتبارية)",
+  "authorOrIssuer": "نظام المعاملات المدنية",
+  "kind": "statute",
+  "binding": "binding",
+  "edition": "نسخة 1445/5/1هـ",
+  "date": "1445-05-01 (تاريخ النسخة)",
+  "status": "in force",
+  "scope": "الأوقاف أشخاص اعتبارية",
+  "sourceUrl": null,
+  "localFile": "/home/claude/kb2/project/civil-transactions.txt",
+  "verification": "نص الملف بعد تطبيع NFKC",
+  "classification": "مكتمل ومتحقق منه",
+  "services": [
+   "F02",
+   "F09"
+  ],
+  "topics": [
+   "الشخصية الاعتبارية"
+  ],
+  "notes": ""
+ },
+ {
+  "id": "CMA-IFR-ART11",
+  "title": "لائحة صناديق الاستثمار – المادة 11 (القوائم المالية) والمادة 55 (الصناديق الوقفية)",
+  "authorOrIssuer": "هيئة السوق المالية",
+  "kind": "regulation",
+  "binding": "binding",
+  "edition": "معدلة بقرار المجلس 54 لعام 1447",
+  "date": "1447",
+  "status": "unknown — نص رسمي لم يُفتح",
+  "scope": "صناديق الاستثمار ومنها الوقفية",
+  "sourceUrl": null,
+  "localFile": null,
+  "verification": "مصادر ثانوية فقط: eastlaws.com و law.arbiter.sa (مقتطف)",
+  "classification": "مكتمل جزئياً",
+  "services": [
+   "F06",
+   "C10"
+  ],
+  "topics": [
+   "صندوق وقفي"
+  ],
+  "notes": "يجب فتح نص cma.gov.sa"
+ },
+ {
+  "id": "NCNP-UNIFIED-COA",
+  "title": "الدليل المحاسبي الموحد (للجمعيات الأهلية)",
+  "authorOrIssuer": "المركز الوطني لتنمية القطاع غير الربحي",
+  "kind": "official_guide",
+  "binding": "guidance",
+  "edition": "ملف 2019",
+  "date": "آخر تعديل الصفحة 21/05/2023",
+  "status": "unknown",
+  "scope": "الجمعيات الأهلية",
+  "sourceUrl": "https://ncnp.gov.sa/ar/evidence-procedures/%D8%A7%D9%84%D8%AF%D9%84%D9%8A%D9%84-%D8%A7%D9%84%D9%85%D8%AD%D8%A7%D8%B3%D8%A8%D9%8A-%D8%A7%D9%84%D9%85%D9%88%D8%AD%D8%AF",
+  "localFile": null,
+  "verification": "firecrawl relay للصفحة",
+  "classification": "مكتمل جزئياً",
+  "services": [
+   "F02"
+  ],
+  "topics": [
+   "دليل حسابات"
+  ],
+  "notes": ""
+ },
+ {
+  "id": "IFRS-PROFILE-KSA",
+  "title": "IFRS jurisdiction profile – Saudi Arabia",
+  "authorOrIssuer": "IFRS Foundation",
+  "kind": "dataset",
+  "binding": "data",
+  "edition": "last updated 28 July 2022",
+  "date": "2022-07-28",
+  "status": "unknown (قد يكون حُدّث)",
+  "scope": "استخدام IFRS وIFRS for SMEs في المملكة",
+  "sourceUrl": "https://www.ifrs.org/content/dam/ifrs/publications/jurisdictions/pdf-profiles/saudi-arabia-ifrs-profile.pdf",
+  "localFile": null,
+  "verification": "WebFetch",
+  "classification": "مكتمل ومتحقق منه",
+  "services": [
+   "F02",
+   "F03",
+   "F05",
+   "F06",
+   "C09"
+  ],
+  "topics": [
+   "IFRS"
+  ],
+  "notes": "لا يذكر أيوفي ولا المنشآت غير الربحية"
+ }
+]

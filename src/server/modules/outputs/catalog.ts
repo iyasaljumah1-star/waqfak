@@ -277,18 +277,22 @@ export const TEMPLATES: Record<Profile, ProfileTemplate> = {
 };
 
 /** Reference codes (regulatory_references) each profile rests on, in addition to the service form's own sources. */
+/**
+ * References searched per output profile. Listing a reference here does not make it a basis: retrieve() (knowledge
+ * engine) still applies the citation policy — service link, date, kind, verification and review — to every passage.
+ */
 export const PROFILE_REFS: Record<Profile, string[]> = {
-  sharia_memo: ["DRAFTING-GUIDE", "WAQIF-GUIDE", "Q100"],
-  sharia_opinion: ["NAZARA-REG", "Q100"],
+  sharia_memo: ["DRAFTING-GUIDE", "WAQIF-GUIDE", "Q100", "FQH-KASHSHAF", "FQH-SHARH-MUNTAHA", "FQH-INSAF", "FQH-MUGHNI", "FQH-IQNA", "BOOK-MAYSAR"],
+  sharia_opinion: ["NAZARA-REG", "REVIVAL-REG", "Q100", "FQH-KASHSHAF", "FQH-SHARH-MUNTAHA", "FQH-INSAF", "FQH-MUGHNI", "FQH-IQNA", "BOOK-MAYSAR"],
   will_text: ["Q100", "WAQIF-GUIDE"],
   deed_draft: ["DRAFTING-GUIDE", "Q100", "CIVIL-TX"],
   legal_review: ["NAZARA-REG", "Q100", "CIVIL-TX"],
   legal_package: ["NAZARA-REG", "REG-USER-GUIDE"],
-  finance_report: ["NAZARA-REG", "NAZIR-GUIDE", "GOV-PRINCIPLES"],
-  finance_opinion: ["NAZARA-REG", "GOV-PRINCIPLES"],
-  investment_policy: ["PORTFOLIO-REG", "INVEST-GUIDE", "INVEST-RULES", "WAQIF-GUIDE"],
+  finance_report: ["NAZARA-REG", "NAZIR-GUIDE", "GOV-PRINCIPLES", "SOCPA-NPO-2025", "SOCPA-NPO-QA", "AAOIFI-FAS37", "ACC-STUDY"],
+  finance_opinion: ["NAZARA-REG", "GOV-PRINCIPLES", "SOCPA-NPO-2025", "SOCPA-NPO-QA", "SOCPA-NPCO-OPINION-2025", "AAOIFI-FAS37", "ACC-STUDY"],
+  investment_policy: ["NAZARA-REG", "PRODUCTS-REG", "PORTFOLIO-REG", "INVEST-GUIDE", "INVEST-RULES", "WAQIF-GUIDE", "FQH-KASHSHAF", "FQH-INSAF", "BOOK-MAYSAR"],
   investment_assets: ["ASSETS-GUIDE", "INVEST-GUIDE", "PRODUCTS-REG"],
-  investment_opinion: ["INVEST-GUIDE", "INVEST-RULES", "ASSETS-GUIDE"],
+  investment_opinion: ["NAZARA-REG", "PRODUCTS-REG", "INVEST-GUIDE", "INVEST-RULES", "ASSETS-GUIDE", "CMA-SBR", "FQH-KASHSHAF", "FQH-INSAF"],
   governance_package: ["GOV-PRINCIPLES", "NAZIR-GUIDE", "NAZARA-REG"],
   ops_package: ["NAZARA-REG", "REG-USER-GUIDE", "NAZIR-GUIDE"],
   nazara_study: ["NAZARA-REG", "NAZIR-GUIDE", "BO-STD", "PENALTIES"],

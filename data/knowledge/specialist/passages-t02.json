@@ -1,0 +1,178 @@
+[
+ {
+  "refId": "SPA-CENSUS-2023",
+  "locator": "خبر واس 31 مايو 2023، الفقرة 1",
+  "quote": "Riyadh, May 31, 2023, SPA -- The General Authority for Statistics (GASTAT) announced today the first results of the Kingdom’s 2022 census, which puts the population of Saudi Arabia at 32,175,224 million. Of the total number, Saudis make up 18.8 million (58.4%), while non-Saudis, 13.4 million, constitute 41.6% of the population.",
+  "verifiedHow": "official page https://www.spa.gov.sa/en/66f006e99cg (relay)",
+  "topic": "population_total_census2022",
+  "services": [
+   "T02"
+  ],
+  "question": "كم بلغ عدد سكان المملكة في تعداد 2022 ومتى أُعلن؟"
+ },
+ {
+  "refId": "SPA-CENSUS-2023",
+  "locator": "خبر واس 31 مايو 2023، الفقرة 2",
+  "quote": "The census also shows that the Kingdom has a young population, with the median age of 29 and a population of Saudis under 30 making up 63% of the total.",
+  "verifiedHow": "official page https://www.spa.gov.sa/en/66f006e99cg (relay)",
+  "topic": "age_structure",
+  "services": [
+   "T02"
+  ],
+  "question": "ما الوسيط العمري للسكان في تعداد 2022؟"
+ },
+ {
+  "refId": "SPA-CENSUS-2023",
+  "locator": "خبر واس 31 مايو 2023، الفقرة قبل الأخيرة",
+  "quote": "The Saudi census 2022 results included detailed data on three main categories: population, households, and housing. Results on education, health, employment, income, migration and diversity will be announced over the next few months.",
+  "verifiedHow": "official page https://www.spa.gov.sa/en/66f006e99cg (relay)",
+  "topic": "census_coverage",
+  "services": [
+   "T02"
+  ],
+  "question": "ما المحاور التي تغطيها نتائج تعداد 2022؟"
+ },
+ {
+  "refId": "GASTAT-LFS",
+  "locator": "خبر الهيئة 29-06-2025 (news/56)، الفقرة 1",
+  "quote": "أصدرت الهيئة العامة للإحصاء اليوم نشرة إحصاءات سوق العمل للربع الأول من عام 2025م، ووفقًا لنتائجها فقد بلغ معدل البطالة الإجمالي (للسعوديين وغير السعوديين) 2.8%، وبلغ معدل المشاركة في القوى العاملة الإجمالي (للسعوديين وغير السعوديين) 68.2%",
+  "verifiedHow": "official page https://stats.gov.sa/ar/w/news/56 (relay)",
+  "topic": "unemployment_national",
+  "services": [
+   "T02"
+  ],
+  "question": "كم بلغ معدل البطالة الإجمالي في المملكة في الربع الأول 2025؟"
+ },
+ {
+  "refId": "GASTAT-LFS",
+  "locator": "خبر الهيئة 29-06-2025 (news/56)، الفقرة 4",
+  "quote": "فقد سجَّل معدل البطالة بين السعوديين أدنى مستوى تاريخي له، حيث انخفض إلى 6.3% في الربع الأول من عام 2025",
+  "verifiedHow": "official page https://stats.gov.sa/ar/w/news/56 (relay)",
+  "topic": "unemployment_saudis",
+  "services": [
+   "T02"
+  ],
+  "question": "ما معدل بطالة السعوديين في الربع الأول 2025؟"
+ },
+ {
+  "refId": "GASTAT-LFS",
+  "locator": "تقرير المنهجية والجودة لإحصاءات سوق العمل 4.0 — التغطية الجغرافية",
+  "quote": "عينة المسح هي عينة ممثلة للـ 13 منطقة إدارية في المملكة العربية السعودية.",
+  "verifiedHow": "official page https://www.stats.gov.sa/w/methodology-and-quality-report-for-labor-market-statistics (relay, targeted extraction — re-check visually)",
+  "topic": "lfs_geography",
+  "services": [
+   "T02"
+  ],
+  "question": "هل عينة مسح القوى العاملة ممثلة للمناطق الإدارية؟"
+ },
+ {
+  "refId": "GASTAT-HEALTH-EST-2024",
+  "locator": "تقرير المنهجية والجودة لإحصاءات المنشآت والقوى العاملة الصحية 4.0 — قائمة الجداول",
+  "quote": "عدد مراكز الرعاية الصحية والمجمعات الطبية حسب المنطقة الإدارية والقطاع في عام 2024م.",
+  "verifiedHow": "official page https://stats.gov.sa/w/methodology-and-quality-report-for-healthcare-establishments-and-workforce-statistics (relay; same line also seen in search snippet)",
+  "topic": "health_facilities_region",
+  "services": [
+   "T02"
+  ],
+  "question": "هل تنشر الهيئة عدد مراكز الرعاية الصحية حسب المنطقة الإدارية؟"
+ },
+ {
+  "refId": "GASTAT-USE-POLICY",
+  "locator": "سياسة الاستخدام، البند 1.2.2",
+  "quote": "Except for trademarks, logos, and any clearly identified third-party material, GASTAT permits users to copy, reproduce, publish, distribute, transmit, adapt, modify, translate, build upon, and otherwise reuse the materials and data made available on this website for any purpose, including commercial use in accordance with the Open Data principle, provided that GASTAT is acknowledged as the official source and any modifications are clearly indicated",
+  "verifiedHow": "official page https://www.stats.gov.sa/en/use-policy (relay, targeted extraction — re-check visually)",
+  "topic": "licence",
+  "services": [
+   "T02"
+  ],
+  "question": "هل يجوز إعادة استخدام بيانات الهيئة العامة للإحصاء في منصة تجارية وبأي شرط؟"
+ },
+ {
+  "refId": "MOH-YEARBOOK",
+  "locator": "صفحة الكتاب الإحصائي السنوي — قائمة الملفات",
+  "quote": "(تاريخ الملف: 2025-10-20 12:44:40) الكتاب الإحصائي السنوي لعام 2024 Excel",
+  "verifiedHow": "official page https://www.moh.gov.sa/ministry/statistics/book/pages/default.aspx (relay)",
+  "topic": "health_yearbook_freshness",
+  "services": [
+   "T02"
+  ],
+  "question": "ما أحدث كتاب إحصائي سنوي لوزارة الصحة وبأي صيغة؟"
+ },
+ {
+  "refId": "HRSD-OPENDATA",
+  "locator": "مكتبة البيانات المفتوحة، البند 69",
+  "quote": "كبار السن المستفيدين من دور الرعاية الاجتماعية للربع الثاني لعام 2026 | ربع سنوياً",
+  "verifiedHow": "official page https://www.hrsd.gov.sa/knowledge-centre/data-and-statistics/open-data/758917 (relay)",
+  "topic": "elderly_care_data",
+  "services": [
+   "T02"
+  ],
+  "question": "هل تنشر وزارة الموارد البشرية بيانات عن كبار السن المستفيدين من دور الرعاية وبأي دورية؟"
+ },
+ {
+  "refId": "HRSD-OPENDATA",
+  "locator": "مكتبة البيانات المفتوحة، البند 1",
+  "quote": "المستفيدين من خدمات الرعاية المنزلية من ذوي الإعاقة للربع الثاني من 2026 | ربع سنوياً",
+  "verifiedHow": "official page https://www.hrsd.gov.sa/knowledge-centre/data-and-statistics/open-data/758917 (relay)",
+  "topic": "disability_services_data",
+  "services": [
+   "T02"
+  ],
+  "question": "ما البيانات المفتوحة المتاحة عن خدمات ذوي الإعاقة لدى الوزارة؟"
+ },
+ {
+  "refId": "NCNP-DIRECTORY",
+  "locator": "دليل الكيانات v5 — رأس القائمة",
+  "quote": "الكيانات ( 8227 )",
+  "verifiedHow": "official page https://es.ncnp.gov.sa/v5/nonprofits (relay; cached 2026-11-05)",
+  "topic": "nonprofit_count",
+  "services": [
+   "T02"
+  ],
+  "question": "كم عدد الكيانات غير الربحية في دليل المركز الوطني؟"
+ },
+ {
+  "refId": "NCNP-STATS",
+  "locator": "صفحة إحصائيات المركز — البند 1",
+  "quote": "توزيع المنظمات غير الربحية على مناطق المملكة جغرافيا لعام 2024م",
+  "verifiedHow": "official page ncnp.gov.sa (relay); القيم داخل صورة لم تُقرأ",
+  "topic": "nonprofit_region",
+  "services": [
+   "T02"
+  ],
+  "question": "هل ينشر المركز الوطني توزيع المنظمات غير الربحية على المناطق؟"
+ },
+ {
+  "refId": "V2030-HOUSING",
+  "locator": "صفحة برنامج الإسكان — الفقرة 2",
+  "quote": "الأمر الذي أسهم في رفع نسبة تملك المنازل من 47% إلى اكثر من 66.24% حتى نهاية عام 2025.",
+  "verifiedHow": "official page https://www.vision2030.gov.sa/ar/explore/programs/housing-program (relay)",
+  "topic": "home_ownership",
+  "services": [
+   "T02"
+  ],
+  "question": "كم بلغت نسبة تملك الأسر السعودية للمساكن حتى نهاية 2025؟"
+ },
+ {
+  "refId": "ETEC-NAFS",
+  "locator": "صفحة نافس — النتائج",
+  "quote": "يرسل لكل مدرسة بطاقة أداء توضح أداء طلبتها في الاختبارات ومقارنة الأداء مع الأداء الإجمالي على مستوى المملكة وعلى مستوى إدارة التعليم.",
+  "verifiedHow": "official page https://etec.gov.sa/ar/programs/nafs (relay)",
+  "topic": "education_quality_access",
+  "services": [
+   "T02"
+  ],
+  "question": "هل نتائج اختبارات نافس منشورة للعموم حسب إدارة التعليم؟"
+ },
+ {
+  "refId": "NZR-ART9",
+  "locator": "المادة 9/1 و9/3",
+  "quote": "1- تنفيذ شرط الواقف وعدم مخالفته وذلك وفق الاعتبارات الشرعية والنظامية. ... وفي جميع الأحوال لا يجوز للناظر ترك العمل بأي شرط للواقف إلا بعد الحصول على إذن من الجهة المختصة.",
+  "verifiedHow": "local snapshot /home/claude/waqfak/data/references/snapshots/NZR/uqn-p18926.md lines 169,173 (captured from uqn.gov.sa)",
+  "topic": "founder_condition",
+  "services": [
+   "T02"
+  ],
+  "question": "هل يجوز صرف غلة الوقف إلى مصرف يخالف شرط الواقف لأن الاحتياج فيه أكبر؟"
+ }
+]
