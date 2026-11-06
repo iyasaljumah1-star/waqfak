@@ -70,6 +70,13 @@ export const PERMISSIONS = {
   "requests.quotes.approve": ["اعتماد عروض الأسعار قبل إرسالها", "admin"],
   "admin.contracts.approve": ["اعتماد العقود والتوقيع عن الشركة", "admin"],
   "outputs.final_approve": ["الاعتماد النهائي لمخرجات المعالجة الآلية وإتاحتها للعميل", "admin"],
+  // unified knowledge engine (2026-11-06): who may accept a source or a passage as citable, per field. Granted to no
+  // role by default — the owner names the reviewers (an accepted review is what lets a text be cited)
+  "knowledge.review.sharia": ["اعتماد المصادر الشرعية ومقاطعها للاستشهاد", "knowledge"],
+  "knowledge.review.accounting": ["اعتماد المصادر المحاسبية ومقاطعها للاستشهاد", "knowledge"],
+  "knowledge.review.legal": ["اعتماد النصوص النظامية والأدلة الرسمية ومطابقاتها للاستشهاد", "knowledge"],
+  "knowledge.review.data": ["اعتماد المصادر الإحصائية والبيانات للاستشهاد", "knowledge"],
+  "knowledge.review.investment": ["اعتماد المصادر الاستثمارية ومقاطعها للاستشهاد", "knowledge"],
   "approvals.direct": ["الاعتماد المباشر ولو كان المعتمِد معدّ المعاملة (يُسجَّل اعتمادًا ذاتيًا، ولا يتجاوز سياسة فصل معتمدة)", "admin"],
   // corporate nazara (Waqfak as legal-entity nazir)
   "nazara.view": ["عرض لوحة النظارة الاعتبارية", "nazara"],

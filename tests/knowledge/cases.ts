@@ -27,12 +27,21 @@ import { statuteUnits } from "../../src/server/knowledge/units";
 export const SYNTHETIC_REVIEWER = "00000000-0000-4000-8000-00000000ae01";
 const TODAY = "2026-11-06";
 
-async function syntheticReviewer(tx: Tx) {
-  await tx.insert(users).values({ id: SYNTHETIC_REVIEWER, phone: "0500000999", fullName: "مراجع اصطناعي (اختبار)" }).onConflictDoNothing();
+/** A synthetic reviewer holding every «knowledge.review.*» permission (all inside the caller's rolled-back transaction). */
+export async function syntheticReviewer(tx: Tx, id = SYNTHETIC_REVIEWER, fields: ReviewRole[] = ["sharia", "accounting", "legal", "data", "investment"]) {
+  await tx.insert(users).values({ id, phone: `05${id.slice(-8).replace(/[^0-9]/g, "0")}`, fullName: "مراجع اصطناعي (اختبار)" }).onConflictDoNothing();
+  if (!fields.length) return;
+  const keys = fields.map((f) => `knowledge.review.${f}`);
+  await tx.execute(sql`insert into permissions (key, name_ar, domain) select k, k, 'knowledge' from unnest(${sql.raw(`array[${keys.map((k) => `'${k}'`).join(",")}]`)}) as k on conflict (key) do nothing`);
+  const roleKey = `test_kb_reviewer_${fields.join("_")}`;
+  await tx.execute(sql`insert into roles (key, name_ar, scope) values (${roleKey}, 'مراجع اختبار', 'global') on conflict (key) do nothing`);
+  await tx.execute(sql`insert into role_permissions (role_id, permission_id) select r.id, p.id from roles r, permissions p where r.key = ${roleKey} and p.key = any(${sql.raw(`array[${keys.map((k) => `'${k}'`).join(",")}]`)}) on conflict do nothing`);
+  await tx.execute(sql`insert into user_roles (user_id, role_id) select ${id}::uuid, r.id from roles r where r.key = ${roleKey} on conflict do nothing`);
 }
 
 /** Records, inside the caller's (rolled-back) transaction, an accepted comparison of an official snapshot. */
 export async function acceptRegistry(tx: Tx, registryId: string, snapshotId: string, articles: number[], effectiveFrom: string) {
+  await syntheticReviewer(tx);
   const entry = getEntry(registryId)!;
   const snap = loadManifest().find((m) => m.id === snapshotId)!;
   const srcId = await registerSource(tx, entry);
@@ -277,6 +286,13 @@ export const CASES: Case[] = [
     id: "11", category: "11. سؤال لا سند كافيًا له (وكل المصادر مراجَعة)",
     query: { question: "ما حكم وقف رمز مشفّر على كوكب المريخ لصالح مركبات فضائية؟", service: "C07", asOf: TODAY },
     expected: "«المراجع غير كافية» حتى بعد مراجعة كل المصادر (حد الصلة)",
+    setup: reviewEverything,
+    judge: (r) => (!r.sufficiency.sufficient && r.citable.length === 0 ? null : `قُدّم سند: ${first(r)?.hit.refCode} ${first(r)?.hit.locator}`),
+  },
+  {
+    id: "11b", category: "11. سؤال عبثي من كلمات وقفية شائعة (مجس المراجعة P1b)",
+    query: { question: "ما حكم وقف الناظر على كوكب المريخ؟", service: "N01", asOf: TODAY },
+    expected: "«المراجع غير كافية» حتى بعد مراجعة كل المصادر",
     setup: reviewEverything,
     judge: (r) => (!r.sufficiency.sufficient && r.citable.length === 0 ? null : `قُدّم سند: ${first(r)?.hit.refCode} ${first(r)?.hit.locator}`),
   },

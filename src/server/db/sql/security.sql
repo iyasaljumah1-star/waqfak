@@ -459,3 +459,19 @@ DROP TRIGGER IF EXISTS ref_append_only ON kb_chunks;
 CREATE TRIGGER ref_append_only BEFORE UPDATE OR DELETE ON kb_chunks FOR EACH ROW EXECUTE FUNCTION ref_append_only();
 DROP TRIGGER IF EXISTS ref_no_truncate ON kb_chunks;
 CREATE TRIGGER ref_no_truncate BEFORE TRUNCATE ON kb_chunks FOR EACH STATEMENT EXECUTE FUNCTION ref_append_only();
+
+-- A source review counts only if its author may give it: an active, unlocked user holding the permission
+-- «knowledge.review.<field>» for the field the review declares (independent review N3). Checked at insertion.
+CREATE OR REPLACE FUNCTION kb_review_authority() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM users u WHERE u.id = NEW.reviewer_user_id AND u.status = 'active' AND (u.locked_until IS NULL OR u.locked_until < now())) THEN
+    RAISE EXCEPTION 'kb_source_reviews: reviewer is not an active user' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM user_roles ur JOIN role_permissions rp ON rp.role_id = ur.role_id JOIN permissions p ON p.id = rp.permission_id
+                 WHERE ur.user_id = NEW.reviewer_user_id AND p.key = 'knowledge.review.' || NEW.reviewer_role) THEN
+    RAISE EXCEPTION 'kb_source_reviews: reviewer lacks knowledge.review.%', NEW.reviewer_role USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS kb_review_authority ON kb_source_reviews;
+CREATE TRIGGER kb_review_authority BEFORE INSERT ON kb_source_reviews FOR EACH ROW EXECUTE FUNCTION kb_review_authority();

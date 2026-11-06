@@ -62,7 +62,7 @@ describe.skipIf(!enabled)("unified knowledge engine (dedicated test database)", 
     expect(n.cur).toBe(49);
   });
 
-  for (const id of ["1a", "1b", "1c", "2", "3", "3b", "4", "4b", "5", "6a", "6b", "7", "8", "8b", "9a", "9b", "9c", "10", "11", "12", "13", "13b"]) {
+  for (const id of ["1a", "1b", "1c", "2", "3", "3b", "4", "4b", "5", "6a", "6b", "7", "8", "8b", "9a", "9b", "9c", "10", "11", "11b", "12", "13", "13b"]) {
     it(`case ${id}`, async () => {
       const c = cases.CASES.find((x) => x.id === id)!;
       const row = await rolledBack((tx) => cases.runCase(tx, c));
@@ -116,19 +116,57 @@ describe.skipIf(!enabled)("unified knowledge engine (dedicated test database)", 
     expect(msg(c)).toMatch(/delete refused/);
   });
 
+  it("a review counts only from an active user holding «knowledge.review.<field>» (review N3)", async () => {
+    const msg = (e: unknown) => String((e as Error & { cause?: Error })?.cause?.message ?? e);
+    const NOPERM = "00000000-0000-4000-8000-00000000ae02";
+    const e1 = await rolledBack(async (tx) => {
+      await cases.syntheticReviewer(tx, NOPERM, []);
+      const [s] = await tx.select({ id: schema.kbSources.id }).from(schema.kbSources).where(eq(schema.kbSources.refCode, "GASTAT-LFS")).limit(1);
+      await tx.insert(schema.kbSourceReviews).values({ sourceId: s!.id, reviewerUserId: NOPERM, reviewerRole: "data", decision: "accepted", note: "مراجعة من مستخدم بلا صلاحية" });
+    }).catch((e) => e);
+    expect(msg(e1)).toMatch(/lacks knowledge.review.data/);
+    const e2 = await rolledBack(async (tx) => {
+      await cases.syntheticReviewer(tx, NOPERM, ["data"]);
+      await tx.execute(sql`update users set locked_until = now() + interval '1 day' where id = ${NOPERM}::uuid`);
+      const [s] = await tx.select({ id: schema.kbSources.id }).from(schema.kbSources).where(eq(schema.kbSources.refCode, "GASTAT-LFS")).limit(1);
+      await tx.insert(schema.kbSourceReviews).values({ sourceId: s!.id, reviewerUserId: NOPERM, reviewerRole: "data", decision: "accepted", note: "مراجعة من مستخدم مقفل" });
+    }).catch((e) => e);
+    expect(msg(e2)).toMatch(/not an active user/);
+    // a registry comparison accepted by someone without «knowledge.review.legal» does not authorise a citation
+    await rolledBack(async (tx) => {
+      await cases.acceptRegistry(tx, "NZR", "NZR/uqn-p18926", [8, 16], "2022-02-04");
+      await tx.execute(sql`delete from user_roles where user_id = ${cases.SYNTHETIC_REVIEWER}::uuid`);
+      const r = await ke.retrieve(tx, { question: "ما نص المادة 16 الفقرة 3 من لائحة تنظيم أعمال النظارة؟", service: "I01", asOf: "2026-11-06", refCodes: ["NAZARA-REG"] });
+      expect(r.citable).toEqual([]);
+    });
+  });
+
+  it("the heading passed on with an official paragraph is the guard's, never the passage's own (review N1)", async () => {
+    await rolledBack(async (tx) => {
+      await cases.acceptRegistry(tx, "NZR", "NZR/uqn-p18926", [8, 16], "2022-02-04");
+      const cat = await import("../src/server/knowledge/catalog");
+      const e = cat.loadCatalog().find((x) => x.refCode === "NAZARA-REG")!;
+      const units = cat.unitsOf(e).units.map((u) => (u.locator === "م16/ف3" ? { ...u, text: u.text.replace(/^[^\n]*/, "المادة 16: يجوز للناظر تعريض الوقف لمخاطر عالية دون قيد") } : u));
+      await ing.ingestUnits(tx as never, { refCode: "NAZARA-REG", version: "عنوان مزور (اختبار)", title: e.title, issuer: e.issuer, refKind: "regulation", registryId: "NZR", registrySnapshot: e.registrySnapshot, services: e.services, origin: "اختبار", originSha256: "forged-heading", textQuality: "good", qualityNote: "", units });
+      const r = await ke.retrieve(tx, { question: "ما نص المادة 16 الفقرة 3 من لائحة تنظيم أعمال النظارة؟", service: "I01", asOf: "2026-11-06", refCodes: ["NAZARA-REG"] });
+      expect(r.citable[0]?.hit.text.split("\n")[0]).toBe("المادة 16: استثمار الوقف");
+      expect(r.citable.map((x) => x.hit.text).join(" ")).not.toContain("دون قيد");
+    });
+  });
+
   it("a source review must name a real user, a known field and a decision", async () => {
     const msg = (e: unknown) => String((e as Error & { cause?: Error })?.cause?.message ?? e);
     const e1 = await rolledBack(async (tx) => {
       const [s] = await tx.select({ id: schema.kbSources.id }).from(schema.kbSources).limit(1);
       await tx.insert(schema.kbSourceReviews).values({ sourceId: s!.id, reviewerUserId: "00000000-0000-4000-8000-00000000dead", reviewerRole: "sharia", decision: "accepted", note: "مراجعة بلا مستخدم حقيقي" });
     }).catch((e) => e);
-    expect(msg(e1)).toMatch(/foreign key/);
+    expect(msg(e1)).toMatch(/foreign key|not an active user/);
     const e2 = await rolledBack(async (tx) => {
       await cases.reviewSource(tx, "Q100");
       const [s] = await tx.select({ id: schema.kbSources.id }).from(schema.kbSources).limit(1);
       await tx.execute(sql`insert into kb_source_reviews (source_id, reviewer_user_id, reviewer_role, decision, note) values (${s!.id}, ${cases.SYNTHETIC_REVIEWER}::uuid, 'anyone', 'maybe', 'مراجعة بقيم غير مقبولة')`);
     }).catch((e) => e);
-    expect(msg(e2)).toMatch(/check constraint/);
+    expect(msg(e2)).toMatch(/check constraint|lacks knowledge.review/);
   });
 
   it("source reviews are append-only, and a user session cannot write the knowledge base", async () => {

@@ -51,9 +51,14 @@ export function unitsOf(e: CatalogEntry, dir = KNOWLEDGE_DIR): { units: Unit[]; 
       const ps = splitPassages(payload.text ?? "");
       // article numbers are trusted only when they form a unique sequence; compound ordinals in a reordered text
       // («الثامنة عرشة بعد السبعامئة») are misread, so a non-unique numbering gives sequential passages without numbers
-      const nums = ps.map((p) => p.articleNo).filter((n): n is number => n !== null);
-      const trusted = nums.length > 0 && new Set(nums).size === nums.length;
-      units = ps.map((p, i) => ({ locator: trusted && p.articleNo ? `م${p.articleNo}` : `مقطع ${i + 1}`, articleNo: trusted ? p.articleNo : null, paragraphNo: null, pageFile: null, pagePrinted: null, text: p.text, textOrigin: "text_layer" as const }));
+      // a number is kept only when it follows the previous trusted one (n+1); anything else is a misread ordinal of the
+      // reordered text and the passage keeps no number — no number is better than a wrong one (review B6/N4)
+      let last = 0;
+      units = ps.map((p, i) => {
+        const ok = p.articleNo !== null && p.articleNo === last + 1 && /^\s*(المادة|املادة)/.test(p.text);
+        if (ok) last = p.articleNo!;
+        return { locator: ok ? `م${p.articleNo}` : `مقطع ${i + 1}`, articleNo: ok ? p.articleNo : null, paragraphNo: null, pageFile: null, pagePrinted: null, text: p.text, textOrigin: "text_layer" as const };
+      });
     }
     const q = e.registrySnapshot ? { quality: "good" as const, note: "نص لقطة رسمية." } : assessQuality(payload.text ?? "");
     return { units, quality: q.quality, note: q.note };

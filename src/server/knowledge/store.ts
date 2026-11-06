@@ -1,5 +1,5 @@
 import "server-only";
-import { eq, inArray } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import type { Tx } from "@/server/db";
 import { refMatchReviews, refMatchRuns, refSources, refUnits, refVersionConfirmations, refVersions } from "@/server/db/schema/references";
 import { InMemoryVersionStore, type VersionStore } from "@/server/references/versions";
@@ -25,7 +25,19 @@ export async function loadVersionStore(tx: Tx, registryIds: string[]): Promise<V
     tx.select({ versionId: refVersionConfirmations.versionId }).from(refVersionConfirmations).where(inArray(refVersionConfirmations.versionId, ids)),
     tx.select().from(refMatchRuns).where(inArray(refMatchRuns.versionId, ids)),
   ]);
-  const reviews = runs.length ? await tx.select().from(refMatchReviews).where(inArray(refMatchReviews.runId, runs.map((r) => r.id))) : [];
+  const all = runs.length ? await tx.select().from(refMatchReviews).where(inArray(refMatchReviews.runId, runs.map((r) => r.id))) : [];
+  // a comparison review counts only from an active, unlocked user holding «knowledge.review.legal» (independent
+  // review N3); the phase-1 tables accept any reviewer id, so the authority is checked here, where the guard reads
+  const reviewerIds = [...new Set(all.map((r) => r.reviewerUserId))];
+  const allowed = reviewerIds.length
+    ? new Set(
+        ((await tx.execute(sql`select u.id::text as id from users u where u.id = any(${sql.raw(`array[${reviewerIds.map((x) => `'${x.replace(/[^0-9a-f-]/gi, "")}'::uuid`).join(",")}]`)})
+          and u.status = 'active' and (u.locked_until is null or u.locked_until < now())
+          and exists (select 1 from user_roles ur join role_permissions rp on rp.role_id = ur.role_id join permissions p on p.id = rp.permission_id
+                      where ur.user_id = u.id and p.key = 'knowledge.review.legal')`)) as unknown as { rows: { id: string }[] }).rows.map((r) => r.id),
+      )
+    : new Set<string>();
+  const reviews = all.filter((r) => allowed.has(r.reviewerUserId));
   const confirmed = new Set(confirmations.map((c) => c.versionId));
   for (const { v, code } of versions) {
     store.addVersion({

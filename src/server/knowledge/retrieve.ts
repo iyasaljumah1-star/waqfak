@@ -37,7 +37,7 @@ export type Retrieved = { hit: Hit; decision: Decision };
 export type RetrieveResult = { results: Retrieved[]; citable: Retrieved[]; sufficiency: Sufficiency };
 
 type Row = Omit<Hit, "score" | "coverage"> & { sourceId: string; norm: string; tokens: Set<string>; titleTokens: Set<string> };
-type Cache = { sig: string; index: Bm25Index; rows: Map<string, Row> };
+type Cache = { sig: string; index: Bm25Index; rows: Map<string, Row>; df: Map<string, number> };
 const g = globalThis as unknown as { __waqfakKnowledge?: Cache };
 
 /** Changes whenever a source or passage is added or superseded (or, were it ever allowed, edited). */
@@ -63,7 +63,9 @@ async function index(tx: Tx): Promise<Cache> {
     });
     return { id: c.id, kind: "requirement", title: `${s.title} ${c.locator}`, body: c.norm, href: "", label: s.refCode };
   });
-  g.__waqfakKnowledge = { sig, index: new Bm25Index(docs), rows: map };
+  const df = new Map<string, number>();
+  for (const r of map.values()) for (const t of r.tokens) df.set(t, (df.get(t) ?? 0) + 1);
+  g.__waqfakKnowledge = { sig, index: new Bm25Index(docs), rows: map, df };
   return g.__waqfakKnowledge;
 }
 
@@ -80,11 +82,19 @@ export function namedArticle(q: string): { article: number; paragraph: number | 
   return null;
 }
 
+/** Words naming the school describe the kind of source wanted (the school rule handles them), not the answer. */
+const SCHOOL_WORDS = new Set(tokenize("المذهب الحنابلة الحنبلي مذهب الإمام أحمد"));
+
 /** Share of the question's content words found in the passage; words that only name the source are left out. */
-export function coverageOf(question: string, r: { tokens: Set<string>; titleTokens: Set<string> }): number {
-  const words = [...new Set(tokenize(question))].filter((w) => !r.titleTokens.has(w));
+export function coverageOf(question: string, r: { tokens: Set<string>; titleTokens: Set<string> }, df?: Map<string, number>, n = 1): number {
+  const words = [...new Set(tokenize(question))].filter((w) => !r.titleTokens.has(w) && !SCHOOL_WORDS.has(w));
   if (!words.length) return 0;
-  return words.filter((w) => r.tokens.has(w)).length / words.length;
+  // words weighted by rarity (idf): «وقف», «ناظر», «حكم» are in most passages and prove little; the rare
+  // words carry the weight (review N2)
+  const idf = (w: string) => Math.log(1 + n / Math.max(1, df?.get(w) ?? 0.5));
+  const total = words.reduce((a, w) => a + idf(w), 0);
+  const got = words.filter((w) => r.tokens.has(w)).reduce((a, w) => a + idf(w), 0);
+  return got / total;
 }
 
 const normCmp = (s: string) => normForSearch(s).replace(/\s+/g, " ").trim();
@@ -119,7 +129,7 @@ export async function retrieve(tx: Tx, q: RetrieveQuery): Promise<RetrieveResult
     const r = c.rows.get(h.doc.id);
     if (!r || seen.has(r.chunkId) || !keep(r)) continue;
     const bonus = pairs.filter((x) => r.norm.includes(x)).length;
-    picked.push({ row: r, score: h.score * (1 + 0.35 * bonus), coverage: coverageOf(q.question, r) });
+    picked.push({ row: r, score: h.score * (1 + 0.35 * bonus), coverage: coverageOf(q.question, r, c.df, c.rows.size) });
     seen.add(r.chunkId);
     if (picked.length >= limit * 8) break;
   }
@@ -129,6 +139,8 @@ export async function retrieve(tx: Tx, q: RetrieveQuery): Promise<RetrieveResult
   const sourceIds = [...new Set(picked.filter((p) => !p.row.registryId).map((p) => p.row.sourceId))];
   const reviews = sourceIds.length ? await tx.select().from(kbSourceReviews).where(inArray(kbSourceReviews.sourceId, sourceIds)) : [];
   const school = SCHOOL_QUESTION.test(q.question);
+  // C07 is a Hanbali opinion: whatever the wording, its basis must include a classical Hanbali book (review B8)
+  const needSchool = school || q.service === "C07";
   const results: Retrieved[] = picked.map(({ row, score, coverage }) => {
     const { sourceId, norm: _n, tokens: _t, titleTokens: _tt, ...base } = row;
     void _n; void _t; void _tt;
@@ -140,7 +152,8 @@ export async function retrieve(tx: Tx, q: RetrieveQuery): Promise<RetrieveResult
       if (registry.ok) {
         // the passage must hold the very text the guard authorised; what is passed on is the guard's text
         registryTextMatches = normCmp(row.text).includes(normCmp(registry.display.text));
-        if (registryTextMatches) hit.text = `${row.text.split("\n")[0]}\n${registry.display.text}`;
+        // heading and text both from the guard: nothing of the passage's own copy reaches the model (review N1)
+        if (registryTextMatches) hit.text = `المادة ${row.articleNo}${registry.display.heading ? `: ${registry.display.heading}` : ""}\n${registry.display.text}`;
       }
     }
     const rv: SourceReview[] = reviews.filter((x) => x.sourceId === sourceId).map((x) => ({ decision: x.decision as "accepted" | "rejected", at: x.at.toISOString(), role: x.reviewerRole as ReviewRole, chunkId: x.chunkId }));
@@ -150,7 +163,7 @@ export async function retrieve(tx: Tx, q: RetrieveQuery): Promise<RetrieveResult
   const ordered = [...results].sort((a, b) => rank(a) - rank(b) || b.hit.score - a.hit.score).slice(0, limit);
   const basis = namedUnits ? ordered.filter((r) => namedUnits!.has(r.hit.chunkId)) : ordered;
   const citable = missingArticle ? [] : basis.filter((r) => r.decision.citable);
-  return { results: ordered, citable, sufficiency: sufficiency(basis, { binding: !!q.needBinding, school, missingArticle }) };
+  return { results: ordered, citable, sufficiency: sufficiency(basis, { binding: !!q.needBinding, school: needSchool, missingArticle }) };
 }
 
 /**
