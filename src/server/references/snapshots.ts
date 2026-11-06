@@ -19,8 +19,12 @@ export type SnapshotEntry = {
   httpStatus: number;
   sha256: string;
   directConfirmed: boolean;
-  role: "text" | "decision";
+  /** text: the instrument's text; decision: its issuing decision; visual_transcription: typed from page images of a
+   *  file (never the comparison baseline); statement: an official page that records facts, never cited as a rule. */
+  role: "text" | "decision" | "visual_transcription" | "statement";
   extractionNote?: string;
+  /** For a transcription of a file: sha256 of that file. */
+  sourceFileSha256?: string;
 };
 
 export class SnapshotIntegrityError extends Error {}
