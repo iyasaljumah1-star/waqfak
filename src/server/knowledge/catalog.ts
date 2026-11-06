@@ -54,11 +54,16 @@ export function unitsOf(e: CatalogEntry, dir = KNOWLEDGE_DIR): { units: Unit[]; 
       // a number is kept only when it follows the previous trusted one (n+1); anything else is a misread ordinal of the
       // reordered text and the passage keeps no number — no number is better than a wrong one (review B6/N4)
       let last = 0;
-      units = ps.map((p, i) => {
-        const ok = p.articleNo !== null && p.articleNo === last + 1 && /^\s*(المادة|املادة)/.test(p.text);
-        if (ok) last = p.articleNo!;
-        return { locator: ok ? `م${p.articleNo}` : `مقطع ${i + 1}`, articleNo: ok ? p.articleNo : null, paragraphNo: null, pageFile: null, pagePrinted: null, text: p.text, textOrigin: "text_layer" as const };
+      const okIdx = new Set<number>();
+      ps.forEach((p, i) => {
+        if (p.articleNo !== null && p.articleNo === last + 1 && /^\s*(المادة|املادة)/.test(p.text)) {
+          last = p.articleNo;
+          okIdx.add(i);
+        }
       });
+      // a sequence shorter than three articles proves nothing (a misread «721» can read as «1»): then no numbers at all
+      if (okIdx.size < 3) okIdx.clear();
+      units = ps.map((p, i) => ({ locator: okIdx.has(i) ? `م${p.articleNo}` : `مقطع ${i + 1}`, articleNo: okIdx.has(i) ? p.articleNo : null, paragraphNo: null, pageFile: null, pagePrinted: null, text: p.text, textOrigin: "text_layer" as const }));
     }
     const q = e.registrySnapshot ? { quality: "good" as const, note: "نص لقطة رسمية." } : assessQuality(payload.text ?? "");
     return { units, quality: q.quality, note: q.note };

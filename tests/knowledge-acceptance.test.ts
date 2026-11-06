@@ -132,6 +132,14 @@ describe.skipIf(!enabled)("unified knowledge engine (dedicated test database)", 
       await tx.insert(schema.kbSourceReviews).values({ sourceId: s!.id, reviewerUserId: NOPERM, reviewerRole: "data", decision: "accepted", note: "مراجعة من مستخدم مقفل" });
     }).catch((e) => e);
     expect(msg(e2)).toMatch(/not an active user/);
+    // a review loses its effect when the reviewer's permission is withdrawn
+    await rolledBack(async (tx) => {
+      await cases.reviewSource(tx, "GASTAT-LFS");
+      const q = { question: "كم بلغ معدل البطالة بين السعوديين في الربع الأول من عام 2025؟", service: "T02", asOf: "2026-11-06", kinds: ["statistical_source" as const] };
+      expect((await ke.retrieve(tx, q)).citable.length).toBeGreaterThan(0);
+      await tx.execute(sql`delete from user_roles where user_id = ${cases.SYNTHETIC_REVIEWER}::uuid`);
+      expect((await ke.retrieve(tx, q)).citable).toEqual([]);
+    });
     // a registry comparison accepted by someone without «knowledge.review.legal» does not authorise a citation
     await rolledBack(async (tx) => {
       await cases.acceptRegistry(tx, "NZR", "NZR/uqn-p18926", [8, 16], "2022-02-04");

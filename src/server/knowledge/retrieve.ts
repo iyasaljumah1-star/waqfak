@@ -69,6 +69,21 @@ async function index(tx: Tx): Promise<Cache> {
   return g.__waqfakKnowledge;
 }
 
+/**
+ * Reviews of these sources whose author still may give them: an active, unlocked user who holds, now,
+ * «knowledge.review.<field>». A review loses its effect when the permission is withdrawn (independent review N3).
+ */
+async function authorisedReviews(tx: Tx, sourceIds: string[]) {
+  if (!sourceIds.length) return [];
+  const rows = await tx.select().from(kbSourceReviews).where(inArray(kbSourceReviews.sourceId, sourceIds));
+  if (!rows.length) return rows;
+  const ok = (await tx.execute(sql`select distinct u.id::text || ':' || substr(p.key, 18) as k from users u
+    join user_roles ur on ur.user_id = u.id join role_permissions rp on rp.role_id = ur.role_id join permissions p on p.id = rp.permission_id
+    where p.key like 'knowledge.review.%' and u.status = 'active' and (u.locked_until is null or u.locked_until < now())`)) as unknown as { rows: { k: string }[] };
+  const allowed = new Set(ok.rows.map((r) => r.k));
+  return rows.filter((r) => allowed.has(`${r.reviewerUserId}:${r.reviewerRole}`));
+}
+
 /** Article (and paragraph) named in a question, if any. */
 export function namedArticle(q: string): { article: number; paragraph: number | null } | null {
   const m = q.match(/(?:^|\s)م\s?(\d{1,3})(?:\s?\/\s?ف\s?(\d{1,2}))?/) ?? q.match(/المادة\s*\(?\s*(\d{1,3})\s*\)?(?:[^\d]{0,12}الفقرة\s*\(?\s*(\d{1,2}))?/);
@@ -137,7 +152,7 @@ export async function retrieve(tx: Tx, q: RetrieveQuery): Promise<RetrieveResult
   const registryIds = [...new Set(picked.map((p) => p.row.registryId).filter((x): x is string => !!x))];
   const store = await loadVersionStore(tx, registryIds);
   const sourceIds = [...new Set(picked.filter((p) => !p.row.registryId).map((p) => p.row.sourceId))];
-  const reviews = sourceIds.length ? await tx.select().from(kbSourceReviews).where(inArray(kbSourceReviews.sourceId, sourceIds)) : [];
+  const reviews = await authorisedReviews(tx, sourceIds);
   const school = SCHOOL_QUESTION.test(q.question);
   // C07 is a Hanbali opinion: whatever the wording, its basis must include a classical Hanbali book (review B8)
   const needSchool = school || q.service === "C07";
@@ -179,7 +194,7 @@ export async function readyRefCodes(tx: Tx, refCodes: string[], asOf: string): P
   const current = sources.filter((s) => s.supersededAt === null && (!s.repealedOn || s.repealedOn > asOf));
   const regIds = [...new Set(current.map((s) => s.registryId).filter((x): x is string => !!x))];
   const store = await loadVersionStore(tx, regIds);
-  const reviews = current.length ? await tx.select().from(kbSourceReviews).where(inArray(kbSourceReviews.sourceId, current.map((s) => s.id))) : [];
+  const reviews = await authorisedReviews(tx, current.map((s) => s.id));
   for (const s of current) {
     if (s.registryId) {
       const entry = getEntry(s.registryId);
