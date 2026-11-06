@@ -574,6 +574,8 @@ CREATE TRIGGER kb_review_target BEFORE INSERT ON kb_source_reviews FOR EACH ROW 
 CREATE OR REPLACE FUNCTION audit_chain_link() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 DECLARE last text;
 BEGIN
+  -- the trigger takes the writers' lock itself, so a writer that skipped it cannot fork the chain (N5-3)
+  PERFORM pg_advisory_xact_lock(724501);
   SELECT hash INTO last FROM audit_logs ORDER BY id DESC LIMIT 1;
   IF NEW.prev_hash IS DISTINCT FROM coalesce(last, 'GENESIS') THEN
     RAISE EXCEPTION 'audit_logs: entry does not continue the chain (prev_hash %, last %)', NEW.prev_hash, coalesce(last, 'GENESIS') USING ERRCODE = 'check_violation';
@@ -588,7 +590,7 @@ CREATE TRIGGER audit_chain_link BEFORE INSERT ON audit_logs FOR EACH ROW EXECUTE
 CREATE OR REPLACE FUNCTION app_holds(perm text) RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
   SELECT EXISTS (SELECT 1 FROM user_roles ur JOIN role_permissions rp ON rp.role_id = ur.role_id JOIN permissions p ON p.id = rp.permission_id
                  JOIN users u ON u.id = ur.user_id
-                 WHERE ur.user_id = app_current_user() AND p.key = perm AND u.status = 'active')
+                 WHERE ur.user_id = app_current_user() AND p.key = perm AND u.status = 'active' AND (u.locked_until IS NULL OR u.locked_until < now()))
 $$;
 REVOKE ALL ON FUNCTION app_holds(text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION app_holds(text) TO waqfak_app;
@@ -625,3 +627,36 @@ BEGIN
 END $$;
 DROP TRIGGER IF EXISTS role_permissions_guard ON role_permissions;
 CREATE TRIGGER role_permissions_guard BEFORE INSERT OR UPDATE OR DELETE ON role_permissions FOR EACH ROW EXECUTE FUNCTION role_permissions_guard();
+
+-- Independent review, round 5 (2026-11-06).
+-- N5-1: the permissions catalog is the code's (authz/catalog.ts, seeded in the system context): no user session adds,
+-- renames or removes a permission (renaming one held into «knowledge.review.*» or «admin.roles» would grant it).
+CREATE OR REPLACE FUNCTION permissions_guard() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF app_current_user() IS NOT NULL THEN
+    RAISE EXCEPTION 'permissions: the permission catalog is changed only by the system (seed)' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  RETURN coalesce(NEW, OLD);
+END $$;
+DROP TRIGGER IF EXISTS permissions_guard ON permissions;
+CREATE TRIGGER permissions_guard BEFORE INSERT OR UPDATE OR DELETE ON permissions FOR EACH ROW EXECUTE FUNCTION permissions_guard();
+
+-- N5-4: from their own session, a user does not lift their own lock, unlock or reactivate their own account, or make
+-- themselves staff (an administrator does it for others, audited).
+CREATE OR REPLACE FUNCTION users_self_guard() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF app_current_user() IS NOT NULL AND app_current_user() = OLD.id THEN
+    IF NEW.locked_until IS DISTINCT FROM OLD.locked_until AND (NEW.locked_until IS NULL OR NEW.locked_until < coalesce(OLD.locked_until, '-infinity')) THEN
+      RAISE EXCEPTION 'users: an account does not lift its own lock' USING ERRCODE = 'insufficient_privilege';
+    END IF;
+    IF NEW.is_staff AND NOT OLD.is_staff THEN
+      RAISE EXCEPTION 'users: an account does not make itself staff' USING ERRCODE = 'insufficient_privilege';
+    END IF;
+    IF OLD.status = 'locked' AND NEW.status IS DISTINCT FROM OLD.status THEN
+      RAISE EXCEPTION 'users: a locked account does not change its own status' USING ERRCODE = 'insufficient_privilege';
+    END IF;
+  END IF;
+  RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS users_self_guard ON users;
+CREATE TRIGGER users_self_guard BEFORE UPDATE ON users FOR EACH ROW EXECUTE FUNCTION users_self_guard();

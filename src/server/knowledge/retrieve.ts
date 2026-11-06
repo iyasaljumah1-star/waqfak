@@ -1,7 +1,7 @@
 import "server-only";
 import { eq, inArray, sql } from "drizzle-orm";
 import type { Tx } from "@/server/db";
-import { kbChunks, kbSourceReviews, kbSources } from "@/server/db/schema";
+import { kbChunks, kbSources } from "@/server/db/schema";
 import { Bm25Index, type CorpusDoc } from "@/server/modules/ai/bm25";
 import { tokenize } from "@/server/modules/ai/text";
 import { articleNumber, normForSearch } from "@/server/engine/knowledge/pure";
@@ -10,7 +10,7 @@ import { OFFICIAL_HOSTS, CITABLE_OUTCOMES } from "@/server/references/types";
 import { REGISTRY, getEntry, statusAt } from "@/server/references/registry";
 import { decide, SCHOOL_QUESTION, sufficiency, DEFAULT_REVIEW_ROLE, MIN_COVERAGE, type Decision, type Hit, type RefKind, type ReviewRole, type SourceReview, type Sufficiency } from "./policy";
 import { loadVersionStore } from "./store";
-import { auditedReviewIds } from "./review";
+import { authorisedReviews } from "./review";
 
 /**
  * The single retrieval route to the knowledge base (kb_* tables). engine-core's processing pipeline goes through here;
@@ -72,27 +72,10 @@ async function index(tx: Tx): Promise<Cache> {
   return g.__waqfakKnowledge;
 }
 
-/**
- * Reviews of these sources whose author still may give them: an active, unlocked user who holds, now,
- * «knowledge.review.<field>». A review loses its effect when the permission is withdrawn (independent review N3).
- */
-async function authorisedReviews(tx: Tx, sourceIds: string[]) {
-  if (!sourceIds.length) return [];
-  const rows = await tx.select().from(kbSourceReviews).where(inArray(kbSourceReviews.sourceId, sourceIds));
-  if (!rows.length) return rows;
-  const ok = (await tx.execute(sql`select distinct u.id::text || ':' || substr(p.key, 18) as k from users u
-    join user_roles ur on ur.user_id = u.id join role_permissions rp on rp.role_id = ur.role_id join permissions p on p.id = rp.permission_id
-    where p.key like 'knowledge.review.%' and u.status = 'active' and (u.locked_until is null or u.locked_until < now())`)) as unknown as { rows: { k: string }[] };
-  const allowed = new Set(ok.rows.map((r) => r.k));
-  // and only a review with its entry in the audit trail (recorded through knowledge/review.ts)
-  const audited = await auditedReviewIds(tx, "kb_source_review", rows.map((r) => r.id));
-  return rows.filter((r) => allowed.has(`${r.reviewerUserId}:${r.reviewerRole}`) && audited.has(r.id));
-}
-
 /** Article (and paragraph) named in a question, if any. */
 export function namedArticle(q: string): { article: number; paragraph: number | null } | null {
   // a number is an article number only when it stands alone («م 2025» is a year, not article 202: review Q3)
-  const m = q.match(/(?:^|\s)م\s?(\d{1,3})(?!\d)(?:\s?\/\s?ف\s?(\d{1,2})(?!\d))?/) ?? q.match(/المادة\s*\(?\s*(\d{1,3})(?!\d)\s*\)?(?:[^\d]{0,12}الفقرة\s*\(?\s*(\d{1,2})(?!\d))?/);
+  const m = q.match(/(?:^|\s)(?<![\d٠-٩]\s?)م\s?(\d{1,3})(?!\d)(?:\s?\/\s?ف\s?(\d{1,2})(?!\d))?/) ?? q.match(/المادة\s*\(?\s*(\d{1,3})(?!\d)\s*\)?(?:[^\d]{0,12}الفقرة\s*\(?\s*(\d{1,2})(?!\d))?/);
   if (m) return { article: Number(m[1]), paragraph: m[2] ? Number(m[2]) : null };
   const w = q.match(/المادة\s+((?:ال[ء-ي]+)(?:\s+و?ال[ء-ي]+){0,3}(?:\s+بعد\s+ال[ء-ي]+)?)/);
   if (w) {

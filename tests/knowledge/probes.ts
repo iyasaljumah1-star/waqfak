@@ -198,7 +198,8 @@ const ROUND4: Probe[] = [
       const { namedArticle } = await import("../../src/server/knowledge/retrieve");
       const a = namedArticle("ما الجديد في تسجيل الأوقاف لعام م 2025؟");
       const b = namedArticle("ما نص م16/ف3؟");
-      return { pass: a === null && b?.article === 16 && b.paragraph === 3, output: { year: a, article: b } };
+      const area = [namedArticle("أرض مساحتها 500 م2 موقوفة"), namedArticle("مساحة 120 م 2 للعمارة"), namedArticle("خزان 30 م3")];
+      return { pass: a === null && area.every((x) => x === null) && b?.article === 16 && b.paragraph === 3, output: { year: a, area, article: b } };
     },
   },
   {
@@ -230,6 +231,49 @@ const ROUND4: Probe[] = [
       const matter = matterOf({ details: "السلام عليكم، نحن نظار وقف عائلي يملك عمارتين تجاريتين في الرياض، ونرغب في إعداد سياسة استثمار للوقف. نريد أن يكون الاستثمار في إطار الحد المقبول للمخاطر، وأن يكون عائده مجدياً مقارنة بمخاطره، وعدم تعريض الوقف لمخاطر عالية، مع مراعاة عمارة العقار الموقوف وصيانته قبل توزيع الغلة على المستحقين، فما الذي تنص عليه اللائحة في ذلك؟" }, (x) => x);
       const r = await retrieve(tx, { question: sectionQuestion({ serviceName: "سياسة الاستثمار الوقفية", sectionTitle: "التحليل", matter }), service: "I01", asOf: T, refCodes: ["NAZARA-REG"], limit: 4 });
       return { pass: r.sufficiency.sufficient && r.citable.some((x) => x.hit.locator === "م16/ف3"), output: brief(r) };
+    },
+  },
+  {
+    id: "N5-1", finding: "N5-1", title: "موظف يعيد تسمية صلاحية يحملها إلى knowledge.review.data", criterion: "يُرفض تعديل جدول الصلاحيات من جلسة مستخدم",
+    run: async (tx) => {
+      const U = "00000000-0000-4000-8000-0000000aa0c1";
+      await testReviewer(tx, U, []);
+      await tx.execute(sql`insert into user_roles (user_id, role_id) select ${U}::uuid, id from roles where key = 'viewer' on conflict do nothing`);
+      const rename = await attempt(tx, () => asUser(tx, U, () => tx.execute(sql`update permissions set key = 'knowledge.review.data' where key = 'waqf.view'`)));
+      const add = await attempt(tx, () => asUser(tx, U, () => tx.execute(sql`insert into permissions (key, name_ar, domain) values ('admin.roles2', 'x', 'admin')`)));
+      return { pass: rename !== "ACCEPTED" && add !== "ACCEPTED", output: { rename, add } };
+    },
+  },
+  {
+    id: "N5-2", finding: "N5-2/R2", title: "مراجعة بإدراج مباشر في جلسة المراجع مع قيد audit() صحيح السلسلة والبصمة لكن دون ختم الخادم", criterion: "لا تُحتسب: لا ختم صالح",
+    run: async (tx) => {
+      const { audit } = await import("../../src/server/lib/audit");
+      await testReviewer(tx, TEST_REVIEWER, ["data"]);
+      const sid = await lfsId(tx);
+      await asUser(tx, TEST_REVIEWER, async () => {
+        const [row] = (await tx.execute(sql`insert into kb_source_reviews (source_id, reviewer_user_id, reviewer_role, decision, note) values (${sid}::uuid, ${TEST_REVIEWER}::uuid, 'data', 'accepted', 'مجس: إدراج مباشر بقيد تدقيق صحيح') returning id`)).rows as { id: string }[];
+        await audit(tx, { actorUserId: TEST_REVIEWER, action: "knowledge.review.recorded", entityType: "kb_source_review", entityId: row!.id, after: { decision: "accepted", role: "data", textSha256: "x".repeat(64), seal: "forged" } });
+      });
+      const r = await retrieve(tx, LFS_Q);
+      return { pass: r.citable.length === 0, output: brief(r) };
+    },
+  },
+  {
+    id: "N5-4", finding: "N5-4", title: "مستخدم مقفل يرفع القفل عن نفسه أو يجعل نفسه موظفًا", criterion: "تُرفض",
+    run: async (tx) => {
+      const U = "00000000-0000-4000-8000-0000000aa0c4";
+      await tx.execute(sql`insert into users (id, phone, full_name, locked_until) values (${U}::uuid, '0500000444', 'مجس', now() + interval '1 day')`);
+      const unlock = await attempt(tx, () => asUser(tx, U, () => tx.execute(sql`update users set locked_until = null where id = ${U}::uuid`)));
+      const staff = await attempt(tx, () => asUser(tx, U, () => tx.execute(sql`update users set is_staff = true where id = ${U}::uuid`)));
+      return { pass: unlock !== "ACCEPTED" && staff !== "ACCEPTED", output: { unlock, staff } };
+    },
+  },
+  {
+    id: "N5-5", finding: "N5-5", title: "المساعد: «ما حكم بيع الوقف إذا تعطلت منافعه؟» بعد مراجعة كل شيء", criterion: "لا يُقتبس مقطع لا يغطي السؤال بوضوح؛ ما يُقتبس صلته ≥ 0.75",
+    run: async (tx) => {
+      await reviewEverything(tx);
+      const b = await regulatoryBasisIn(tx, "ما حكم بيع الوقف إذا تعطلت منافعه؟", T);
+      return { pass: !b.sufficient || b.quotes.every((x) => !/DRAFTING-GUIDE/.test(x.refCode)), output: b };
     },
   },
   {

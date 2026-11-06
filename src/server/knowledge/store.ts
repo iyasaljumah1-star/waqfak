@@ -39,7 +39,7 @@ export async function loadVersionStore(tx: Tx, registryIds: string[]): Promise<V
       )
     : new Set<string>();
   // an acceptance counts only with its audit entry (recorded through knowledge/review.ts); a rejection always counts
-  const audited = await auditedReviewIds(tx, "ref_match_review", all.filter((r) => r.decision === "accepted").map((r) => r.id));
+  const audited = await auditedReviewIds(tx, "ref_match_review", all.filter((r) => r.decision === "accepted").map((r) => ({ id: r.id, reviewerUserId: r.reviewerUserId, decision: r.decision, target: r.runId, role: "legal" })));
   const reviews = all.filter((r) => allowed.has(r.reviewerUserId) && (r.decision !== "accepted" || audited.has(r.id)));
   const confirmed = new Set(confirmations.map((c) => c.versionId));
   for (const { v, code } of versions) {

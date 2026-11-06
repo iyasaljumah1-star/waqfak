@@ -1,5 +1,5 @@
 {
- "ranAt": "2026-11-06T16:47:45.435Z",
+ "ranAt": "2026-11-06T17:07:02.035Z",
  "kb": {
   "cur": 49,
   "units": 2423
@@ -1859,6 +1859,11 @@
    "pass": true,
    "output": {
     "year": null,
+    "area": [
+     null,
+     null,
+     null
+    ],
     "article": {
      "article": 16,
      "paragraph": 3
@@ -1905,6 +1910,55 @@
      "NAZARA-REG م15/ف4: not_relevant — NAZARA-REG م15/ف4: يغطي 11٪ من كلمات السؤال",
      "NAZARA-REG م18/ف0: not_relevant — NAZARA-REG م18/ف0: يغطي 10٪ من كلمات السؤال"
     ]
+   }
+  },
+  {
+   "id": "N5-1",
+   "finding": "N5-1",
+   "title": "موظف يعيد تسمية صلاحية يحملها إلى knowledge.review.data",
+   "criterion": "يُرفض تعديل جدول الصلاحيات من جلسة مستخدم",
+   "pass": true,
+   "output": {
+    "rename": "permissions: the permission catalog is changed only by the system (seed)",
+    "add": "permissions: the permission catalog is changed only by the system (seed)"
+   }
+  },
+  {
+   "id": "N5-2",
+   "finding": "N5-2/R2",
+   "title": "مراجعة بإدراج مباشر في جلسة المراجع مع قيد audit() صحيح السلسلة والبصمة لكن دون ختم الخادم",
+   "criterion": "لا تُحتسب: لا ختم صالح",
+   "pass": true,
+   "output": {
+    "sufficient": false,
+    "reason": "المراجع غير كافية: لا مقطع قابل للاستشهاد (المرجع لم يراجعه مختص من مجاله ولم يُعتمد للاستشهاد).",
+    "citable": [],
+    "refused": [
+     "GASTAT-LFS خبر الهيئة 29-06-2025 (news/56)، الفقرة 4: not_reviewed — GASTAT-LFS (مراجع data)",
+     "GASTAT-LFS خبر الهيئة 29-06-2025 (news/56)، الفقرة 1: not_reviewed — GASTAT-LFS (مراجع data)"
+    ]
+   }
+  },
+  {
+   "id": "N5-4",
+   "finding": "N5-4",
+   "title": "مستخدم مقفل يرفع القفل عن نفسه أو يجعل نفسه موظفًا",
+   "criterion": "تُرفض",
+   "pass": true,
+   "output": {
+    "unlock": "users: an account does not lift its own lock",
+    "staff": "users: an account does not make itself staff"
+   }
+  },
+  {
+   "id": "N5-5",
+   "finding": "N5-5",
+   "title": "المساعد: «ما حكم بيع الوقف إذا تعطلت منافعه؟» بعد مراجعة كل شيء",
+   "criterion": "لا يُقتبس مقطع لا يغطي السؤال بوضوح؛ ما يُقتبس صلته ≥ 0.75",
+   "pass": true,
+   "output": {
+    "sufficient": false,
+    "reason": "المراجع غير كافية: لا نص قابل للاستشهاد يغطي سؤالك بوضوح."
    }
   },
   {

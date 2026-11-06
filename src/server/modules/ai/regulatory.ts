@@ -20,6 +20,9 @@ export const REGULATORY_QUESTION =
 
 export const isRegulatoryQuestion = (q: string) => REGULATORY_QUESTION.test(q);
 
+/** Relevance a passage must reach to be quoted to a customer by the assistant (the engine's bar is 0.5). */
+export const ASSISTANT_MIN_COVERAGE = 0.75;
+
 /** Binding basis needed: the question asks what a regulation requires or provides (not a fiqh or general question). */
 const NEEDS_BINDING = /(?:^|\s)(?:المادة|مادة|م\s?\d|نص\s+(?:النظام|اللائحة)|اللائحة|لائحة|النظام|يجب|يلزم|نظاما|نظامًا|نظامي|(?:ال)?(?:غرامة|غرامات|جزاء|جزاءات|مخالفة|مخالفات|عقوبة|عقوبات))(?=\s|$|[؟?.,،])/;
 
@@ -35,9 +38,13 @@ export function regulatoryBasis(question: string, asOf = new Date().toISOString(
 export async function regulatoryBasisIn(tx: Tx, question: string, asOf: string): Promise<RegulatoryBasis> {
   const r = await retrieve(tx, { question, service: "*", asOf, needBinding: NEEDS_BINDING.test(question), limit: 4 });
   if (!r.sufficiency.sufficient) return { sufficient: false, reason: r.sufficiency.reason };
+  // the assistant answers a customer directly, without an analyst between: only a passage that clearly covers the
+  // question is quoted as the basis (independent review N5-5)
+  const strong = r.citable.filter((x) => x.hit.coverage >= ASSISTANT_MIN_COVERAGE);
+  if (!strong.length) return { sufficient: false, reason: "المراجع غير كافية: لا نص قابل للاستشهاد يغطي سؤالك بوضوح." };
   return {
     sufficient: true,
-    quotes: r.citable.slice(0, 3).map((x) => ({
+    quotes: strong.slice(0, 3).map((x) => ({
       label: x.decision.citable ? x.decision.label : x.hit.refCode, text: x.hit.text, refCode: x.hit.refCode, locator: x.hit.locator,
       binding: x.decision.citable ? x.decision.binding : false,
     })),

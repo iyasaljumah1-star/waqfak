@@ -40,7 +40,7 @@ describe.skipIf(!enabled)("adversarial probes of the knowledge engine (dedicated
     return out as T;
   }
 
-  const IDS = ["R3b", "R1d", "R4b", "R5", "R6", "R6b", "H1", "H3", "Q3", "N2b", "N2c", "A2b", "P1", "P1b", "P1c", "P1d", "P1e", "P1f", "S1", "S2", "S3", "S4", "L1", "L2", "L3", "L4", "L5", "P2", "P2b", "P2c", "P4", "P4d", "B8c", "P5a", "P5b", "P5c", "P5d", "P5e", "P6", "P6b", "P6c", "P6d", "P7", "P7c", "P8", "P9", "P10", "P12", "P13", "A1", "A2", "A3"];
+  const IDS = ["R3b", "R1d", "R4b", "R5", "R6", "R6b", "H1", "H3", "Q3", "N2b", "N2c", "A2b", "N5-1", "N5-2", "N5-4", "N5-5", "P1", "P1b", "P1c", "P1d", "P1e", "P1f", "S1", "S2", "S3", "S4", "L1", "L2", "L3", "L4", "L5", "P2", "P2b", "P2c", "P4", "P4d", "B8c", "P5a", "P5b", "P5c", "P5d", "P5e", "P6", "P6b", "P6c", "P6d", "P7", "P7c", "P8", "P9", "P10", "P12", "P13", "A1", "A2", "A3"];
   it("every probe of the review is in the suite", async () => {
     const mod = await import("./knowledge/probes");
     expect(mod.PROBES.map((p) => p.id).sort()).toEqual([...IDS].sort());

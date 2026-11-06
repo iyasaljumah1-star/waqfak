@@ -46,7 +46,7 @@ async function knowledgeAnswer(question: string): Promise<(ContextAnswer & { pro
   const basis = await regulatoryBasis(question).catch(() => ({ sufficient: false as const, reason: "المراجع غير كافية: تعذر البحث في قاعدة المعرفة." }));
   if (basis.sufficient) {
     const citations: Citation[] = basis.quotes.map((q, i) => ({ n: i + 1, kind: "reference", title: q.label, href: "/regulations", label: q.refCode, snippet: q.text.slice(0, 300) }));
-    const blocks: AnswerBlock[] = [{ type: "p", text: "هذا ما تنص عليه المراجع المعتمدة للاستشهاد في قاعدة المعرفة:" }];
+    const blocks: AnswerBlock[] = [{ type: "p", text: "هذه نصوص من مراجع معتمدة للاستشهاد في قاعدة المعرفة تتصل بسؤالك:" }];
     for (const [i, q] of basis.quotes.entries()) blocks.push({ type: "quote", text: q.text, cite: i + 1 });
     blocks.push({ type: "p", text: "هذا نقل للنص لا رأي في حالتك؛ وللرأي المهني اطلب استشارة موقّعة." });
     return { provider: "local", model: null, citations, blocks };
