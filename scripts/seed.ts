@@ -16,10 +16,7 @@ import { HOLIDAYS, OBLIGATIONS, PENALTIES, PENALTY_NOTE, REFERENCES, REQUIREMENT
 import { CONTRACT_TEMPLATES, FEATURE_FLAGS, LEGACY_NAZARA_FLAG_REASON, NOTIFICATION_TEMPLATES, SETTINGS } from "../src/server/seed/data/system";
 import { ARTICLES, FAQS, GLOSSARY } from "../src/server/seed/data/content";
 import { ENGINE_USER_ID, ENGINE_USER_NAME } from "../src/server/engine/constants";
-import { ingestSource, type KbInput } from "../src/server/engine/knowledge/ingest";
-import { readFileSync, existsSync } from "node:fs";
-import { gunzipSync } from "node:zlib";
-import path from "node:path";
+import { ingestCatalog } from "../src/server/knowledge/catalog";
 
 const pool = new Pool({ connectionString: process.env.DATABASE_OWNER_URL });
 const db = drizzle(pool, { schema: s, casing: "snake_case" });
@@ -194,18 +191,15 @@ async function seedEngineAccount() {
   await db.delete(s.userRoles).where(eq(s.userRoles.userId, ENGINE_USER_ID));
 }
 
-/** Knowledge base: the reference texts shipped with the code (data/kb), loaded once per version (engine/knowledge). */
+/**
+ * Knowledge base: loaded from the unified catalog only (data/knowledge/catalog.json; knowledge/catalog.ts) — one path,
+ * with each source's kind, services, quality and change log. The former loader of data/kb (engine/knowledge/ingest.ts)
+ * is retired: the same four references are in the catalog, and two loaders would supersede each other's rows in turn
+ * (independent review B12). Loading makes nothing citable: citation needs authorised human review.
+ */
 async function seedKnowledge() {
-  const dir = path.join(process.cwd(), "data/kb");
-  const mf = path.join(dir, "manifest.json");
-  if (!existsSync(mf)) return;
-  const items = JSON.parse(readFileSync(mf, "utf8")) as (Omit<KbInput, "text"> & { file: string })[];
-  for (const it of items) {
-    const buf = readFileSync(path.join(dir, it.file));
-    const text = (it.file.endsWith(".gz") ? gunzipSync(buf) : buf).toString("utf8");
-    const r = await ingestSource(db, { ...it, text });
-    if (r.status === "loaded") console.log(`knowledge base: ${it.refCode} ${it.version} — ${r.passages} passages (${r.quality})`);
-  }
+  const r = await ingestCatalog(db);
+  for (const x of r) if (x.status === "loaded") console.log(`knowledge base: ${x.refCode} — ${x.units} units (${x.quality})`);
 }
 
 async function main() {

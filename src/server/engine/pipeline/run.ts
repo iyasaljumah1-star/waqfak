@@ -23,6 +23,8 @@ import { extractText } from "@/server/modules/ai/extract";
 import { engineAuth } from "../actor";
 import { ENGINE_VERSION } from "../constants";
 import { retrieve, readyRefCodes } from "@/server/knowledge/retrieve";
+import { matterOf, sectionQuestion } from "@/server/knowledge/question";
+import { maskPII } from "@/server/modules/ai/safety";
 import { KIND_AR } from "@/server/knowledge/policy";
 
 /** Outputs whose sections state what the rules require: a guide, a study or a book cannot be their only basis. */
@@ -250,10 +252,15 @@ export async function processRequest(job: ClaimedJob): Promise<RunOutcome> {
             const refCodes = w.refCodes?.length ? w.refCodes : PROFILE_REFS[def.profile] ?? [];
             const analysisDef = TEMPLATES[def.profile].analysis.find((a) => `analysis:${a.key}` === sec.key);
             // the single retrieval route: only passages the citation policy authorises reach the model as sources
-            const kb = await retrieve(tx, { question: `${rc.service.nameAr} ${sec.title} ${analysisDef?.prompt ?? ""} ${w.query ?? ""}`, service: rc.service.code, asOf: new Date().toISOString().slice(0, 10), refCodes, needBinding: BINDING_PROFILES.has(def.profile), limit: 4 });
-            const hits = kb.citable.map((r) => r.hit);
+            // the question is the request's matter (masked, local retrieval only), not the section's writing instruction
+            const question = sectionQuestion({ serviceName: rc.service.nameAr, sectionTitle: sec.title, instruction: analysisDef?.prompt, query: w.query, matter: matterOf(rc.req, maskPII) });
+            const kb = await retrieve(tx, { question, service: rc.service.code, asOf: new Date().toISOString().slice(0, 10), refCodes, needBinding: BINDING_PROFILES.has(def.profile), limit: 4 });
+            // nothing reaches the model unless the basis is sufficient — also in a section that does not require a
+            // citation: an auxiliary book alone, or a passage short of the school's books in C07, is never passed on
+            // as a source (review B8). Text, heading and locator of a registry instrument are the guard's (retrieve()).
+            const hits = kb.sufficiency.sufficient ? kb.citable.map((r) => r.hit) : [];
             for (const h of hits) if (!used.some((u) => u.code === h.refCode && u.version === h.version)) used.push({ code: h.refCode, version: h.version });
-            const sources: LlmSource[] = hits.map((h, i) => ({ n: i + 1, chunkId: h.chunkId, refCode: h.refCode, locator: `${KIND_AR[h.refKind]} — ${h.locator}`, text: h.text }));
+            const sources: LlmSource[] = hits.map((h, i) => ({ n: i + 1, chunkId: h.chunkId, refCode: h.refCode, locator: `${KIND_AR[h.refKind]}: ${h.title} — ${h.locator}`, text: h.text }));
             if (w.requireCitation && !kb.sufficiency.sufficient) {
               const why = kb.sufficiency.reason;
               problems.push(`${sec.title}: ${why}`);

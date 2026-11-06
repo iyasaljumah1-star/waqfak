@@ -1,6 +1,7 @@
 import "server-only";
 import { eq, inArray, sql } from "drizzle-orm";
 import type { Tx } from "@/server/db";
+import { auditedReviewIds } from "./review";
 import { refMatchReviews, refMatchRuns, refSources, refUnits, refVersionConfirmations, refVersions } from "@/server/db/schema/references";
 import { InMemoryVersionStore, type VersionStore } from "@/server/references/versions";
 import type { MatchOutcome, RetrievalVia } from "@/server/references/types";
@@ -37,7 +38,9 @@ export async function loadVersionStore(tx: Tx, registryIds: string[]): Promise<V
                       where ur.user_id = u.id and p.key = 'knowledge.review.legal')`)) as unknown as { rows: { id: string }[] }).rows.map((r) => r.id),
       )
     : new Set<string>();
-  const reviews = all.filter((r) => allowed.has(r.reviewerUserId));
+  // an acceptance counts only with its audit entry (recorded through knowledge/review.ts); a rejection always counts
+  const audited = await auditedReviewIds(tx, "ref_match_review", all.filter((r) => r.decision === "accepted").map((r) => r.id));
+  const reviews = all.filter((r) => allowed.has(r.reviewerUserId) && (r.decision !== "accepted" || audited.has(r.id)));
   const confirmed = new Set(confirmations.map((c) => c.versionId));
   for (const { v, code } of versions) {
     store.addVersion({

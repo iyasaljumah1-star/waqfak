@@ -19,6 +19,11 @@
  *     book or a study is not a source for attributing a view to the school.
  *  6. A passage blocked by a specialist's finding (e.g. a page shown to contradict the school) is never cited.
  *  7. When nothing citable remains, the answer is «insufficient references» — the caller must not generate.
+ *  8. A historical question is answered from the version in force on the date asked, known by its own effective date;
+ *     a version whose validity dates are unknown is not used for a historical question. An earlier version is labelled
+ *     with the dates it was in force.
+ *  9. A contemporary book is an auxiliary reference: it is never the sole basis of an answer.
+ * 10. A registry instrument's citation shows only what the guard returned: its name, locator, version, heading and text.
  */
 import type { CitationResult } from "@/server/references/citation";
 
@@ -75,6 +80,12 @@ export type Hit = {
   effectiveOn: string | null;
   repealedOn: string | null;
   superseded: boolean;
+  /** For a historical question: the version's validity, from its own effective date and the next version's. */
+  validFrom?: string | null;
+  validTo?: string | null;
+  validity?: "in_force" | "earlier" | "later" | "unknown";
+  /** Where the text passed on comes from: the citation guard's authorised unit, or the knowledge base's own passage. */
+  provenance?: "guard" | "passage";
   /** Blocked by a specialist's finding recorded in the catalog. */
   blocked: boolean;
   reviewRole: ReviewRole;
@@ -97,6 +108,7 @@ export type Refusal =
   | "not_reviewed"
   | "passage_not_reviewed"
   | "review_rejected"
+  | "unknown_validity"
   | "unclassified";
 
 export const REFUSAL_AR: Record<Refusal, string> = {
@@ -113,6 +125,7 @@ export const REFUSAL_AR: Record<Refusal, string> = {
   not_reviewed: "المرجع لم يراجعه مختص من مجاله ولم يُعتمد للاستشهاد",
   passage_not_reviewed: "المقطع مستخرج من الملف ولم يُقابل بصفحته",
   review_rejected: "المراجعة البشرية رفضت المرجع أو المقطع",
+  unknown_validity: "تاريخ سريان هذه النسخة غير معروف، فلا يُعرف النص النافذ في التاريخ المطلوب",
   unclassified: "نوع المرجع غير محدد",
 };
 
@@ -123,8 +136,10 @@ export type SourceReview = { decision: "accepted" | "rejected"; at: string; role
 const no = (refusal: Refusal, detail: string): Decision => ({ citable: false, refusal, detail });
 
 /** A label that states the source's nature next to every citation. */
-export function citationLabel(h: Pick<Hit, "refKind" | "title" | "locator" | "version" | "superseded">): string {
-  return `${KIND_AR[h.refKind]}: ${h.title} — ${h.locator} (${h.version})${h.superseded ? " — نسخة سابقة" : ""}`;
+export function citationLabel(h: Pick<Hit, "refKind" | "title" | "locator" | "version" | "superseded"> & Partial<Pick<Hit, "validFrom" | "validTo">>, historical = false): string {
+  const base = `${KIND_AR[h.refKind]}: ${h.title} — ${h.locator} (${h.version})`;
+  if (historical && h.validFrom) return `${base} — ${h.validTo ? `نسخة سابقة، سارية من ${h.validFrom} إلى ${h.validTo}` : `سارية من ${h.validFrom}`}`;
+  return `${base}${h.superseded ? " — نسخة سابقة" : ""}`;
 }
 
 /** A question asking for the position of the Hanbali school. */
@@ -138,6 +153,12 @@ export function decide(h: Hit, ctx: DecideContext, evidence: DecideEvidence): De
   if (!ctx.historical) {
     if (h.superseded) return no("out_of_date", `${h.refCode} ${h.version}: نسخة سابقة`);
     if (h.repealedOn && h.repealedOn <= ctx.asOf) return no("out_of_date", `${h.refCode}: لم يعد ساريًا منذ ${h.repealedOn}`);
+  } else if (!h.registryId) {
+    // a registry instrument's version on the date is chosen by the guard; any other source by its own dates (review B10)
+    if (h.validity === "unknown" || !h.validity) return no("unknown_validity", `${h.refCode} ${h.version}`);
+    if (h.validity === "earlier") return no("out_of_date", `${h.refCode} ${h.version}: انتهى سريانها في ${h.validTo}`);
+    if (h.validity === "later") return no("not_yet_effective", `${h.refCode} ${h.version}: تسري من ${h.validFrom}`);
+    if (h.repealedOn && h.repealedOn <= ctx.asOf) return no("out_of_date", `${h.refCode}: لم يعد ساريًا منذ ${h.repealedOn}`);
   }
   if (h.effectiveOn && h.effectiveOn > ctx.asOf) return no("not_yet_effective", `${h.refCode}: يسري من ${h.effectiveOn}`);
   if (h.coverage < MIN_COVERAGE) return no("not_relevant", `${h.refCode} ${h.locator}: يغطي ${Math.round(h.coverage * 100)}٪ من كلمات السؤال`);
@@ -148,7 +169,9 @@ export function decide(h: Hit, ctx: DecideContext, evidence: DecideEvidence): De
     if (!r) return no("registry_refused", `${h.refCode}: لا قرار من حارس الاستشهاد (المادة غير محددة أو المرجع غير مسجل)`);
     if (!r.ok) return no("registry_refused", r.detail);
     if (!evidence.registryTextMatches) return no("text_mismatch", `${h.refCode} ${h.locator}`);
-    return { citable: true, label: citationLabel(h), binding: BINDING_KINDS.has(h.refKind) };
+    // a registry citation is made only from what the guard returned (rule 10)
+    if (h.provenance !== "guard") return no("text_mismatch", `${h.refCode} ${h.locator}: النص ليس نص الحارس`);
+    return { citable: true, label: citationLabel(h, !!ctx.historical), binding: BINDING_KINDS.has(h.refKind) };
   }
   if (ctx.schoolQuestion && h.refKind !== "classical_fiqh") return no("not_school_source", `${KIND_AR[h.refKind]}: ${h.refCode}`);
   if (h.textOrigin === "ocr") return no("ocr_text", `${h.refCode} ${h.locator}`);
@@ -162,7 +185,7 @@ export function decide(h: Hit, ctx: DecideContext, evidence: DecideEvidence): De
     if (!passage) return no("passage_not_reviewed", `${h.refCode} ${h.locator}`);
     if (passage.decision !== "accepted") return no("review_rejected", `${h.refCode} ${h.locator}`);
   }
-  return { citable: true, label: citationLabel(h), binding: false };
+  return { citable: true, label: citationLabel(h, !!ctx.historical), binding: false };
 }
 
 export type Sufficiency = { sufficient: true } | { sufficient: false; reason: string };
@@ -181,5 +204,7 @@ export function sufficiency(decided: { hit: Hit; decision: Decision }[], need: {
   }
   if (need.binding && !ok.some((d) => d.decision.citable && d.decision.binding)) return { sufficient: false, reason: "المراجع غير كافية: لا نص نظامي ملزم قابل للاستشهاد؛ المراجع الإرشادية أو العلمية لا تقوم مقامه." };
   if (need.school && !ok.some((d) => d.hit.refKind === "classical_fiqh")) return { sufficient: false, reason: "المراجع غير كافية: لا نص من كتب المذهب الحنبلي الأصلية قابل للاستشهاد." };
+  // a contemporary book is an auxiliary reference: never the sole basis (rule 9, review B8)
+  if (ok.every((d) => d.hit.refKind === "contemporary_book")) return { sufficient: false, reason: "المراجع غير كافية: الكتاب المعاصر مرجع مساعد لا يُستند إليه منفرداً." };
   return { sufficient: true };
 }

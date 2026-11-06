@@ -60,7 +60,11 @@ ROLE = {"BOOK-MAYSAR": "sharia", "ACC-STUDY": "accounting", "INVEST-GUIDE": "inv
         "ANNUAL-REPORT-2024": "data"}
 # pages of «الميسّر» a specialist showed to contradict the Hanbali school or attribute to it loosely (fiqh report §10.3,
 # investment report §3); they are never cited
-BLOCKED = {"BOOK-MAYSAR": ["86", "101", "110", "212", "213"]}
+# 194 (borrowing: conditions not of the school) and 200 (attribution to the authority's statute not found): investment
+# report §3; 231-232 (attribution to «the majority» and to Ahmad not established): fiqh report §10.3 (review B8)
+BLOCKED = {"BOOK-MAYSAR": ["86", "101", "110", "194", "200", "212", "213", "231", "232"]}
+# legal start of non-registry sources, when the source itself states it (a historical question needs it, review B10)
+EFFECTIVE = {"SOCPA-NPO-2025": "2025-01-01"}
 
 
 def add(**e):
@@ -68,6 +72,7 @@ def add(**e):
     e.setdefault("reviewRole", ROLE.get(e["refCode"]))
     e.setdefault("blockedPages", BLOCKED.get(e["refCode"], []))
     e.setdefault("quality", None)
+    e.setdefault("effectiveOn", EFFECTIVE.get(e["refCode"]))
     e["services"] = sorted(set(e["services"]))
     catalog.append(e)
 

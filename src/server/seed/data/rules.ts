@@ -191,7 +191,7 @@ export const RULES: R[] = [
   { code: "R-AST-002", titleAr: "الأصول المعطلة", condition: eq("idle_band", "gt20"), needCode: "NEED.AST.IDLE", severity: "high", urgencyDays: 180,
     reasonAr: "أكثر من 20% من قيمة الوقف معطلة أو غير مدرة.", reference: "لائحة تنظيم أعمال النظارة م12 وم16", serviceCodes: ["I03", "I04"] },
   { code: "R-AST-003", titleAr: "تقييم العقارات", condition: isIn("valuation_age", ["gt3", "never"]), needCode: "NEED.AST.VALUATION", severity: "medium", urgencyDays: 180,
-    reasonAr: "لم تُقيَّم العقارات منذ أكثر من ثلاث سنوات.", reference: "دليل قواعد وضوابط الاستثمار", serviceCodes: ["I08"] },
+    reasonAr: "لم تُقيَّم العقارات منذ أكثر من ثلاث سنوات.", reference: "دليل قواعد وضوابط الاستثمار (استرشادي، موجه للجمعيات)", serviceCodes: ["I08"] },
   { code: "R-AST-004", titleAr: "توثيق العقود في إيجار", condition: isIn("ejar", ["no", "partial"]), needCode: "NEED.AST.EJAR", severity: "medium", urgencyDays: 120,
     reasonAr: "بعض عقود الإيجار غير موثقة في منصة إيجار.", reference: "الدليل الإرشادي لاستثمار الأوقاف سابعًا/2", serviceCodes: ["I09"] },
   { code: "R-AST-005", titleAr: "خطة الصيانة", condition: lte("score_A7-05", 1), needCode: "NEED.AST.MAINTENANCE", severity: "medium", urgencyDays: 180,

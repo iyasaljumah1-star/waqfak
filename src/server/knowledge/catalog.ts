@@ -2,7 +2,8 @@ import { readFileSync } from "node:fs";
 import { gunzipSync } from "node:zlib";
 import path from "node:path";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
-import { assessQuality, splitPassages } from "@/server/engine/knowledge/pure";
+import { assessQuality } from "@/server/engine/knowledge/pure";
+import { splitOrdinalStatute } from "./ordinals";
 import { getEntry } from "@/server/references/registry";
 import { ingestUnits, type SourceInput } from "./ingest";
 import type { RefKind } from "./policy";
@@ -33,6 +34,8 @@ export type CatalogEntry = {
   blockedPages?: string[];
   /** Quality set by the catalog (a specialist's partial verification), overriding the measured one when lower. */
   quality?: "good" | "degraded" | "unreadable" | null;
+  /** Legal start of a non-registry source, when the source states it. */
+  effectiveOn?: string | null;
 };
 
 export const KNOWLEDGE_DIR = path.join(process.cwd(), "data", "knowledge");
@@ -47,26 +50,17 @@ export function unitsOf(e: CatalogEntry, dir = KNOWLEDGE_DIR): { units: Unit[]; 
     let units = statuteUnits(payload.text ?? "");
     // a text with the known letter-order defect («املادة») is not parsed by the registry's segmenter: engine-core's
     // splitter, which reads that form, gives article passages (no paragraph locators)
+    let numbering: string | null = null;
     if (!units.length) {
-      const ps = splitPassages(payload.text ?? "");
-      // article numbers are trusted only when they form a unique sequence; compound ordinals in a reordered text
-      // («الثامنة عرشة بعد السبعامئة») are misread, so a non-unique numbering gives sequential passages without numbers
-      // a number is kept only when it follows the previous trusted one (n+1); anything else is a misread ordinal of the
-      // reordered text and the passage keeps no number — no number is better than a wrong one (review B6/N4)
-      let last = 0;
-      const okIdx = new Set<number>();
-      ps.forEach((p, i) => {
-        if (p.articleNo !== null && p.articleNo === last + 1 && /^\s*(المادة|املادة)/.test(p.text)) {
-          last = p.articleNo;
-          okIdx.add(i);
-        }
-      });
-      // a sequence shorter than three articles proves nothing (a misread «721» can read as «1»): then no numbers at all
-      if (okIdx.size < 3) okIdx.clear();
-      units = ps.map((p, i) => ({ locator: okIdx.has(i) ? `م${p.articleNo}` : `مقطع ${i + 1}`, articleNo: okIdx.has(i) ? p.articleNo : null, paragraphNo: null, pageFile: null, pagePrinted: null, text: p.text, textOrigin: "text_layer" as const }));
+      // a text with the known letter-order defect («املادة») is not parsed by the registry's segmenter: the ordinal
+      // splitter reads that form and gives an article number only where the written ordinal, the heading and the
+      // position in the sequence agree; if the numbering cannot be settled, no passage has a number (review B6/N4)
+      const r = splitOrdinalStatute(payload.text ?? "");
+      numbering = r.report.reason;
+      units = r.passages.map((p) => ({ locator: p.locator, articleNo: p.articleNo, paragraphNo: null, pageFile: null, pagePrinted: null, text: p.text, textOrigin: "text_layer" as const }));
     }
     const q = e.registrySnapshot ? { quality: "good" as const, note: "نص لقطة رسمية." } : assessQuality(payload.text ?? "");
-    return { units, quality: q.quality, note: q.note };
+    return { units, quality: q.quality, note: numbering ? `${q.note} الترقيم: ${numbering}.` : q.note };
   }
   if (e.textForm === "pages") {
     const pages = payload.pages ?? [];
@@ -79,7 +73,7 @@ export function unitsOf(e: CatalogEntry, dir = KNOWLEDGE_DIR): { units: Unit[]; 
 
 function datesOf(e: CatalogEntry): { effectiveOn: string | null; repealedOn: string | null } {
   const reg = e.registryId ? getEntry(e.registryId) : undefined;
-  const effectiveOn = reg?.effective.value?.from ?? null;
+  const effectiveOn = reg?.effective.value?.from ?? e.effectiveOn ?? null;
   const repealer = e.repealedFrom ? getEntry(e.repealedFrom) : undefined;
   const repealedOn = repealer?.effective.value?.from ?? null;
   return { effectiveOn, repealedOn };

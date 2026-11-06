@@ -9,6 +9,7 @@ import { UserError } from "../_shared";
 import { getIndex } from "./corpus";
 import { answerAssessment, answerMissingDocuments, answerObligations, answerRequests, type ContextAnswer } from "./context";
 import { externalAnswer, externalEnabled } from "./external";
+import { isRegulatoryQuestion, regulatoryBasis } from "./regulatory";
 import { classifyIntent } from "./intents";
 import { classifyRefusal, maskPII } from "./safety";
 import { AI_DISCLOSURE, type AnswerBlock, type AskIntent, type AskResult, type Citation } from "./types";
@@ -29,10 +30,34 @@ function blocksToText(blocks: AnswerBlock[]): string {
   return maskPII(out.join("\n")).slice(0, 4000);
 }
 
-/** Retrieval over the published knowledge base; returns null when nothing is relevant enough. */
+/**
+ * Retrieval over the published knowledge base; returns null when nothing is relevant enough. A question about what a
+ * regulation or the fiqh provides is answered from the knowledge engine and its citation policy only (regulatory.ts):
+ * the library's explanatory material is never presented as that basis.
+ */
 async function knowledgeAnswer(question: string): Promise<(ContextAnswer & { provider: "local" | "external"; model: string | null }) | null> {
   const index = await getIndex();
   const hits = index.search(question, { limit: 6 }).filter((h) => h.coverage >= MIN_COVERAGE);
+  if (isRegulatoryQuestion(question)) {
+    const basis = await regulatoryBasis(question).catch(() => ({ sufficient: false as const, reason: "المراجع غير كافية: تعذر البحث في قاعدة المعرفة." }));
+    if (basis.sufficient) {
+      const citations: Citation[] = basis.quotes.map((q, i) => ({ n: i + 1, kind: "reference", title: q.label, href: "/regulations", label: q.refCode, snippet: q.text.slice(0, 300) }));
+      const blocks: AnswerBlock[] = [{ type: "p", text: "هذا ما تنص عليه المراجع المعتمدة للاستشهاد في قاعدة المعرفة:" }];
+      for (const [i, q] of basis.quotes.entries()) blocks.push({ type: "quote", text: q.text, cite: i + 1 });
+      blocks.push({ type: "p", text: "هذا نقل للنص لا رأي في حالتك؛ وللرأي المهني اطلب استشارة موقّعة." });
+      return { provider: "local", model: null, citations, blocks };
+    }
+    // no citable basis: say so; library material may follow, labelled as explanatory, and no model composes an answer
+    const blocks: AnswerBlock[] = [{ type: "p", text: `لم أجد في قاعدة المعرفة نصًا نظاميًا أو شرعيًا معتمدًا للاستشهاد يجيب عن سؤالك (${basis.reason.replace(/^المراجع غير كافية:\s*/, "المراجع غير كافية: ")}).` }];
+    const picked = hits.slice(0, 3);
+    const citations: Citation[] = picked.map((h, i) => ({ n: i + 1, kind: h.doc.kind, title: h.doc.title, href: h.doc.href, label: h.doc.label, snippet: h.passage }));
+    if (picked.length) {
+      blocks.push({ type: "p", text: "مواد تعريفية منشورة في المنصة قد تفيدك، وليست سندًا نظاميًا أو شرعيًا:" });
+      blocks.push({ type: "list", items: citations.map((c) => ({ text: c.title, href: c.href, meta: c.label, cite: c.n })) });
+    }
+    blocks.push({ type: "p", text: "للرأي في حالتك اطلب استشارة موقّعة." });
+    return { provider: "local", model: null, citations, blocks };
+  }
   if (!hits.length) return null;
   const topScore = hits[0].score;
   const picked = hits.filter((h, i) => i === 0 || h.score >= topScore * 0.45).slice(0, 3);

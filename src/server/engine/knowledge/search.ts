@@ -35,7 +35,15 @@ async function index(tx: Tx): Promise<Cache> {
   return g.__waqfakKb;
 }
 
+/**
+ * RETIRED (owner's order 2026-11-06, §2.7; independent review B11): a search of the knowledge base that bypasses the
+ * citation policy. The only route is knowledge/retrieve.ts. Kept for the record; it refuses to run. No caller remains
+ * (tests/knowledge-policy.test.ts proves it).
+ */
+export const RETIRED = "engine/knowledge/search is retired: use knowledge/retrieve (retrieve, readyRefCodes)";
+
 export async function searchKb(tx: Tx, query: string, opts: { refCodes?: string[]; limit?: number } = {}): Promise<KbHit[]> {
+  if (!process.env.__KB_LEGACY_SEARCH_NEVER) throw new Error(RETIRED);
   const c = await index(tx);
   const hits = c.index.search(query, { limit: 60 });
   const out: KbHit[] = [];
@@ -51,11 +59,13 @@ export async function searchKb(tx: Tx, query: string, opts: { refCodes?: string[
 
 /** The current version of each reference (for the processing record and the coverage report). */
 export async function currentSources(tx: Tx, refCodes?: string[]) {
+  if (!process.env.__KB_LEGACY_SEARCH_NEVER) throw new Error(RETIRED);
   return tx.select().from(kbSources).where(and(isNull(kbSources.supersededAt), refCodes?.length ? inArray(kbSources.refCode, refCodes) : undefined));
 }
 
 /** A passage by id (for verifying a citation after generation). */
 export async function chunkById(tx: Tx, id: string) {
+  if (!process.env.__KB_LEGACY_SEARCH_NEVER) throw new Error(RETIRED);
   const [r] = await tx.select({ c: kbChunks, s: kbSources }).from(kbChunks).innerJoin(kbSources, eq(kbSources.id, kbChunks.sourceId)).where(eq(kbChunks.id, id)).limit(1);
   return r ?? null;
 }

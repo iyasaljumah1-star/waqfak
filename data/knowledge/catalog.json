@@ -72,7 +72,8 @@
    ],
    "reviewRole": null,
    "blockedPages": [],
-   "quality": null
+   "quality": null,
+   "effectiveOn": null
   },
   {
    "refCode": "PRODUCTS-REG",
@@ -98,7 +99,8 @@
    ],
    "reviewRole": null,
    "blockedPages": [],
-   "quality": null
+   "quality": null,
+   "effectiveOn": null
   },
   {
    "refCode": "DONATIONS-REG",
@@ -118,7 +120,8 @@
    ],
    "reviewRole": null,
    "blockedPages": [],
-   "quality": null
+   "quality": null,
+   "effectiveOn": null
   },
   {
    "refCode": "REVIVAL-REG",
@@ -139,7 +142,8 @@
    ],
    "reviewRole": null,
    "blockedPages": [],
-   "quality": null
+   "quality": null,
+   "effectiveOn": null
   },
   {
    "refCode": "BO-STD",
@@ -163,7 +167,8 @@
    ],
    "reviewRole": null,
    "blockedPages": [],
-   "quality": null
+   "quality": null,
+   "effectiveOn": null
   },
   {
    "refCode": "GAA-LAW",
@@ -190,7 +195,8 @@
    ],
    "reviewRole": null,
    "blockedPages": [],
-   "quality": null
+   "quality": null,
+   "effectiveOn": null
   },
   {
    "refCode": "PENALTIES",
@@ -223,7 +229,8 @@
    ],
    "reviewRole": null,
    "blockedPages": [],
-   "quality": null
+   "quality": null,
+   "effectiveOn": null
   },
   {
    "refCode": "PORTFOLIO-REG",
@@ -245,7 +252,8 @@
    ],
    "reviewRole": null,
    "blockedPages": [],
-   "quality": null
+   "quality": null,
+   "effectiveOn": null
   },
   {
    "refCode": "FUNDS-INSTR",
@@ -266,7 +274,8 @@
    ],
    "reviewRole": null,
    "blockedPages": [],
-   "quality": null
+   "quality": null,
+   "effectiveOn": null
   },
   {
    "refCode": "REPORTING-RULES",
@@ -285,7 +294,8 @@
    "services": [],
    "reviewRole": null,
    "blockedPages": [],
-   "quality": null
+   "quality": null,
+   "effectiveOn": null
   },
   {
    "refCode": "GOV-PRINCIPLES",
@@ -326,7 +336,8 @@
    ],
    "reviewRole": null,
    "blockedPages": [],
-   "quality": null
+   "quality": null,
+   "effectiveOn": null
   },
   {
    "refCode": "NAZIR-GUIDE",
@@ -358,7 +369,8 @@
    ],
    "reviewRole": null,
    "blockedPages": [],
-   "quality": null
+   "quality": null,
+   "effectiveOn": null
   },
   {
    "refCode": "DRAFTING-GUIDE",
@@ -389,7 +401,8 @@
    ],
    "reviewRole": null,
    "blockedPages": [],
-   "quality": null
+   "quality": null,
+   "effectiveOn": null
   },
   {
    "refCode": "WAQIF-GUIDE",
@@ -418,7 +431,8 @@
    ],
    "reviewRole": null,
    "blockedPages": [],
-   "quality": null
+   "quality": null,
+   "effectiveOn": null
   },
   {
    "refCode": "Q100",
@@ -454,7 +468,8 @@
    ],
    "reviewRole": null,
    "blockedPages": [],
-   "quality": null
+   "quality": null,
+   "effectiveOn": null
   },
   {
    "refCode": "ASSETS-GUIDE",
@@ -481,7 +496,8 @@
    ],
    "reviewRole": "investment",
    "blockedPages": [],
-   "quality": null
+   "quality": null,
+   "effectiveOn": null
   },
   {
    "refCode": "INVEST-GUIDE",
@@ -511,7 +527,8 @@
    ],
    "reviewRole": "investment",
    "blockedPages": [],
-   "quality": null
+   "quality": null,
+   "effectiveOn": null
   },
   {
    "refCode": "INVEST-RULES",
@@ -534,7 +551,8 @@
    ],
    "reviewRole": "investment",
    "blockedPages": [],
-   "quality": null
+   "quality": null,
+   "effectiveOn": null
   },
   {
    "refCode": "REG-USER-GUIDE",
@@ -560,7 +578,8 @@
    ],
    "reviewRole": null,
    "blockedPages": [],
-   "quality": null
+   "quality": null,
+   "effectiveOn": null
   },
   {
    "refCode": "WAQF-TYPES-GUIDE",
@@ -583,7 +602,8 @@
    ],
    "reviewRole": null,
    "blockedPages": [],
-   "quality": null
+   "quality": null,
+   "effectiveOn": null
   },
   {
    "refCode": "QUALITY-POLICY",
@@ -602,7 +622,8 @@
    "services": [],
    "reviewRole": null,
    "blockedPages": [],
-   "quality": null
+   "quality": null,
+   "effectiveOn": null
   },
   {
    "refCode": "ANNUAL-REPORT-2024",
@@ -621,7 +642,8 @@
    "services": [],
    "reviewRole": "data",
    "blockedPages": [],
-   "quality": null
+   "quality": null,
+   "effectiveOn": null
   },
   {
    "refCode": "CIVIL-TX",
@@ -648,7 +670,8 @@
    ],
    "reviewRole": null,
    "blockedPages": [],
-   "quality": null
+   "quality": null,
+   "effectiveOn": null
   },
   {
    "refCode": "COMPANIES",
@@ -669,7 +692,8 @@
    ],
    "reviewRole": null,
    "blockedPages": [],
-   "quality": null
+   "quality": null,
+   "effectiveOn": null
   },
   {
    "refCode": "BOOK-MAYSAR",
@@ -697,10 +721,15 @@
     "86",
     "101",
     "110",
+    "194",
+    "200",
     "212",
-    "213"
+    "213",
+    "231",
+    "232"
    ],
-   "quality": null
+   "quality": null,
+   "effectiveOn": null
   },
   {
    "refCode": "ACC-STUDY",
@@ -726,7 +755,8 @@
    ],
    "reviewRole": "accounting",
    "blockedPages": [],
-   "quality": null
+   "quality": null,
+   "effectiveOn": null
   },
   {
    "refCode": "FQH-SHARH-MUNTAHA",
@@ -746,7 +776,8 @@
    "reviewRole": "sharia",
    "quality": null,
    "note": "اقتباسات تحقق منها المختص (مكتمل ومتحقق منه)؛ لم تُقابل بالمطبوع: get_book 21693؛ get_page 1073 (ج2 ص425)؛ search_turath لصفحات ج2: 398، 401، 406، 407، 411، 414، 415، 417، 426.",
-   "blockedPages": []
+   "blockedPages": [],
+   "effectiveOn": null
   },
   {
    "refCode": "FQH-INSAF",
@@ -770,7 +801,8 @@
    "reviewRole": "sharia",
    "quality": null,
    "note": "اقتباسات تحقق منها المختص (مكتمل ومتحقق منه)؛ لم تُقابل بالمطبوع: get_book 19228؛ get_page 7895-7896 (ج16 ص522-523)؛ search_turath لصفحات ج16: 377، 378، 443، 445، 449، 450، 452، 460، 528. صفحات الإنصاف تبدأ بسطر نقاط يمثل موضع المقنع في المطبوع.",
-   "blockedPages": []
+   "blockedPages": [],
+   "effectiveOn": null
   },
   {
    "refCode": "FQH-INSAF-B21609",
@@ -794,7 +826,8 @@
    "reviewRole": "sharia",
    "quality": null,
    "note": "اقتباسات تحقق منها المختص (مكتمل ومتحقق منه)؛ لم تُقابل بالمطبوع: get_book 19228؛ get_page 7895-7896 (ج16 ص522-523)؛ search_turath لصفحات ج16: 377، 378، 443، 445، 449، 450، 452، 460، 528. صفحات الإنصاف تبدأ بسطر نقاط يمثل موضع المقنع في المطبوع.",
-   "blockedPages": []
+   "blockedPages": [],
+   "effectiveOn": null
   },
   {
    "refCode": "FQH-KASHSHAF",
@@ -819,7 +852,8 @@
    "reviewRole": "sharia",
    "quality": null,
    "note": "اقتباسات تحقق منها المختص (مكتمل ومتحقق منه)؛ لم تُقابل بالمطبوع: get_book 622 (بيانات الطبعة)؛ search_turath/get_page لصفحات ج10: 15، 31، 32، 41، 46، 49، 55، 59، 61، 64، 65، 66، 67، 89، 106، 108، 111. النص الرقمي مُدخل إدخالًا جديدًا بحسب بيان Turath، والحواشي مدمجة في النص المسترجع بأرقامها.",
-   "blockedPages": []
+   "blockedPages": [],
+   "effectiveOn": null
   },
   {
    "refCode": "FQH-KASHSHAF-B21642",
@@ -844,7 +878,8 @@
    "reviewRole": "sharia",
    "quality": null,
    "note": "اقتباسات تحقق منها المختص (مكتمل ومتحقق منه)؛ لم تُقابل بالمطبوع: get_book 622 (بيانات الطبعة)؛ search_turath/get_page لصفحات ج10: 15، 31، 32، 41، 46، 49، 55، 59، 61، 64، 65، 66، 67، 89، 106، 108، 111. النص الرقمي مُدخل إدخالًا جديدًا بحسب بيان Turath، والحواشي مدمجة في النص المسترجع بأرقامها.",
-   "blockedPages": []
+   "blockedPages": [],
+   "effectiveOn": null
   },
   {
    "refCode": "FQH-MUGHNI",
@@ -864,7 +899,8 @@
    "reviewRole": "sharia",
    "quality": null,
    "note": "اقتباسات تحقق منها المختص (مكتمل ومتحقق منه)؛ لم تُقابل بالمطبوع: get_book 6910؛ search_turath لصفحات ج8: 186، 213، 220، 233، 234.",
-   "blockedPages": []
+   "blockedPages": [],
+   "effectiveOn": null
   },
   {
    "refCode": "FQH-MUMTI",
@@ -884,7 +920,8 @@
    "reviewRole": "sharia",
    "quality": "degraded",
    "note": "اقتباسات تحقق منها المختص (مكتمل جزئياً)؛ لا يُقتبس حرفياً قبل استكمال التحقق؛ لم تُقابل بالمطبوع: get_book 10649؛ search_turath ج11 ص34.",
-   "blockedPages": []
+   "blockedPages": [],
+   "effectiveOn": null
   },
   {
    "refCode": "SOCPA-NPO-2025",
@@ -913,7 +950,8 @@
    "reviewRole": "accounting",
    "quality": null,
    "note": "اقتباسات تحقق منها المختص (مكتمل ومتحقق منه)؛ لم تُقابل بالمطبوع: firecrawl relay للصفحة والملف 2.pdf (23 ص)",
-   "blockedPages": []
+   "blockedPages": [],
+   "effectiveOn": "2025-01-01"
   },
   {
    "refCode": "SOCPA-NPO-QA",
@@ -938,7 +976,8 @@
    "reviewRole": "accounting",
    "quality": null,
    "note": "اقتباسات تحقق منها المختص (مكتمل ومتحقق منه)؛ لم تُقابل بالمطبوع: firecrawl relay النص الكامل للأجوبة",
-   "blockedPages": []
+   "blockedPages": [],
+   "effectiveOn": null
   },
   {
    "refCode": "SOCPA-NPCO-OPINION-2025",
@@ -963,7 +1002,8 @@
    "reviewRole": "accounting",
    "quality": null,
    "note": "اقتباسات تحقق منها المختص (مكتمل ومتحقق منه)؛ لم تُقابل بالمطبوع: firecrawl relay directQuote + خبر سوكبا 2025-10-21",
-   "blockedPages": []
+   "blockedPages": [],
+   "effectiveOn": null
   },
   {
    "refCode": "COMPANIES-LAW-ART17",
@@ -985,7 +1025,8 @@
    "reviewRole": "accounting",
    "quality": null,
    "note": "اقتباسات تحقق منها المختص (مكتمل ومتحقق منه)؛ لم تُقابل بالمطبوع: نص الملف بعد تطبيع NFKC",
-   "blockedPages": []
+   "blockedPages": [],
+   "effectiveOn": null
   },
   {
    "refCode": "AAOIFI-FAS37",
@@ -1011,7 +1052,8 @@
    "reviewRole": "accounting",
    "quality": "degraded",
    "note": "اقتباسات تحقق منها المختص (مكتمل جزئياً)؛ لا يُقتبس حرفياً قبل استكمال التحقق؛ لم تُقابل بالمطبوع: صفحة أيوفي CIS (Effective January 1, 2022)؛ إعلان الإصدار؛ إعلان اعتماد المجلس 22-23 يونيو 2020؛ النص الكامل للأعضاء فقط — لم يُقرأ",
-   "blockedPages": []
+   "blockedPages": [],
+   "effectiveOn": null
   },
   {
    "refCode": "CMA-SBR",
@@ -1034,7 +1076,8 @@
    "reviewRole": "investment",
    "quality": "degraded",
    "note": "اقتباسات تحقق منها المختص (مكتمل جزئياً)؛ لا يُقتبس حرفياً قبل استكمال التحقق؛ لم تُقابل بالمطبوع: نص م2 وم3 وم5 عبر get_provision (law.arbiter.sa، ثانوي)؛ صفحة اللوائح التنفيذية في cma.gov.sa (relay) لإثبات الاسم والإدراج.",
-   "blockedPages": []
+   "blockedPages": [],
+   "effectiveOn": null
   },
   {
    "refCode": "FQH-IQNA",
@@ -1057,7 +1100,8 @@
    "reviewRole": "sharia",
    "quality": "degraded",
    "note": "اقتباسات تحقق منها المختص (مكتمل جزئياً)؛ لا يُقتبس حرفياً قبل استكمال التحقق؛ لم تُقابل بالمطبوع: get_book 7360؛ search_turath ج3 ص27.",
-   "blockedPages": []
+   "blockedPages": [],
+   "effectiveOn": null
   },
   {
    "refCode": "SPA-CENSUS-2023",
@@ -1077,7 +1121,8 @@
    "reviewRole": "data",
    "quality": null,
    "note": "اقتباسات تحقق منها المختص (مكتمل ومتحقق منه)؛ لم تُقابل بالمطبوع: فُتح النص الكامل للخبر relay (Firecrawl scrape/search) 2026-11-06",
-   "blockedPages": []
+   "blockedPages": [],
+   "effectiveOn": null
   },
   {
    "refCode": "GASTAT-LFS",
@@ -1097,7 +1142,8 @@
    "reviewRole": "data",
    "quality": null,
    "note": "اقتباسات تحقق منها المختص (مكتمل جزئياً)؛ لم تُقابل بالمطبوع: فُتح خبر نشرة الربع الأول 2025 كاملاً، وفُتح تقرير المنهجية والجودة 4.0 (https://www.stats.gov.sa/w/methodology-and-quality-report-for-labor-market-statistics) وفيه أن العينة ممثلة للـ13 منطقة إدارية وأن حجمها 97,019 مسكناً. relay (Firecraw",
-   "blockedPages": []
+   "blockedPages": [],
+   "effectiveOn": null
   },
   {
    "refCode": "GASTAT-HEALTH-EST-2024",
@@ -1117,7 +1163,8 @@
    "reviewRole": "data",
    "quality": null,
    "note": "اقتباسات تحقق منها المختص (مكتمل ومتحقق منه)؛ لم تُقابل بالمطبوع: فُتح التقرير؛ يسرد جداول بالمنطقة الإدارية (المستشفيات، الأسرّة، مراكز الرعاية الأولية، الصيدليات) ومصادرها السجلات الإدارية لوزارة الصحة والهيئة السعودية للتخصصات الصحية وجهات أخرى. relay (Firecrawl scrape/search) 2026-11-06 (استخراج موجّه",
-   "blockedPages": []
+   "blockedPages": [],
+   "effectiveOn": null
   },
   {
    "refCode": "MOH-YEARBOOK",
@@ -1137,7 +1184,8 @@
    "reviewRole": "data",
    "quality": null,
    "note": "اقتباسات تحقق منها المختص (مكتمل جزئياً)؛ لم تُقابل بالمطبوع: فُتحت صفحة الكتاب الإحصائي وظهرت روابط الملفات وتواريخها؛ لم يُفتح ملف Excel. relay (Firecrawl scrape/search) 2026-11-06",
-   "blockedPages": []
+   "blockedPages": [],
+   "effectiveOn": null
   },
   {
    "refCode": "HRSD-OPENDATA",
@@ -1157,7 +1205,8 @@
    "reviewRole": "data",
    "quality": null,
    "note": "اقتباسات تحقق منها المختص (مكتمل جزئياً)؛ لم تُقابل بالمطبوع: فُتحت القائمة كاملة؛ تشمل: المستفيدين من الرعاية المنزلية لذوي الإعاقة (ربعي)، كبار السن المستفيدين من دور الرعاية الاجتماعية (ربعي/سنوي)، مراكز ضيافة الأطفال حسب المناطق، مراكز الرعاية النهارية، مراكز التنمية، فروع ومكاتب الضمان الاجتماعي ",
-   "blockedPages": []
+   "blockedPages": [],
+   "effectiveOn": null
   },
   {
    "refCode": "NCNP-DIRECTORY",
@@ -1177,7 +1226,8 @@
    "reviewRole": "data",
    "quality": null,
    "note": "اقتباسات تحقق منها المختص (مكتمل جزئياً)؛ لم تُقابل بالمطبوع: فُتحت الصفحة: «الكيانات ( 8227 )»، والحقول: نوع الكيان، جهة الإشراف، التصنيف النوعي، التصنيف الفرعي، المنطقة، درجة الحوكمة 2024. لا يظهر خيار تنزيل أو API. وفُتحت نتيجة https://index.nawa.ncnp.gov.sa/entities (مرشحات نوع الكيان والمحافظة وا",
-   "blockedPages": []
+   "blockedPages": [],
+   "effectiveOn": null
   },
   {
    "refCode": "NCNP-STATS",
@@ -1197,7 +1247,8 @@
    "reviewRole": "data",
    "quality": null,
    "note": "اقتباسات تحقق منها المختص (مكتمل جزئياً)؛ لم تُقابل بالمطبوع: فُتح نص الصفحة؛ التوزيع الجغرافي منشور صورةً (لم تُقرأ قيمها). relay (Firecrawl scrape/search) 2026-11-06",
-   "blockedPages": []
+   "blockedPages": [],
+   "effectiveOn": null
   },
   {
    "refCode": "V2030-HOUSING",
@@ -1217,7 +1268,8 @@
    "reviewRole": "data",
    "quality": null,
    "note": "اقتباسات تحقق منها المختص (مكتمل ومتحقق منه)؛ لم تُقابل بالمطبوع: فُتح نص الصفحة. relay (Firecrawl scrape/search) 2026-11-06",
-   "blockedPages": []
+   "blockedPages": [],
+   "effectiveOn": null
   },
   {
    "refCode": "ETEC-NAFS",
@@ -1237,7 +1289,8 @@
    "reviewRole": "data",
    "quality": null,
    "note": "اقتباسات تحقق منها المختص (غير منطبق)؛ لم تُقابل بالمطبوع: فُتحت الصفحة: النتائج تُرسل بطاقة أداء لكل مدرسة وتُتاح لأولياء الأمور عبر تطبيق «مستقبلهم». relay (Firecrawl scrape/search) 2026-11-06",
-   "blockedPages": []
+   "blockedPages": [],
+   "effectiveOn": null
   }
  ]
 }

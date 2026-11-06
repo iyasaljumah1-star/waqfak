@@ -194,6 +194,13 @@ export const ROLES: Record<string, { nameAr: string; scope: "global" | "waqf"; p
   },
   // Corporate nazara team. The manager approves acceptance, activation, ending and reports; the officer runs the file.
   // A team member's access to a waqf comes from the engagement's team membership (waqf-scoped), not from these roles.
+  // Knowledge reviewers by field (owner's order 2026-11-06, §4): granted to no account by default; the owner gives one
+  // to a named reviewer from the users page (audited). A review is recorded only through knowledge/review.ts.
+  reviewer_legal: { nameAr: "مراجع نظامي (قاعدة المعرفة)", scope: "global", permissions: ["admin.access", "knowledge.review.legal"] },
+  reviewer_sharia: { nameAr: "مراجع شرعي (قاعدة المعرفة)", scope: "global", permissions: ["admin.access", "knowledge.review.sharia"] },
+  reviewer_accounting: { nameAr: "مراجع محاسبي (قاعدة المعرفة)", scope: "global", permissions: ["admin.access", "knowledge.review.accounting"] },
+  reviewer_data: { nameAr: "مراجع بيانات وإحصاء (قاعدة المعرفة)", scope: "global", permissions: ["admin.access", "knowledge.review.data"] },
+  reviewer_investment: { nameAr: "مراجع استثمار (قاعدة المعرفة)", scope: "global", permissions: ["admin.access", "knowledge.review.investment"] },
   nazara_manager: {
     nameAr: "مدير النظارة الاعتبارية", scope: "global", globalAccess: true,
     permissions: ["admin.access", "nazara.view", "nazara.manage", "nazara.approve", "staff.requests.assigned", "staff.deliver"],

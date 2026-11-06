@@ -10,7 +10,7 @@ import { Bm25Index, type CorpusDoc } from "./bm25";
  * The index is cached in memory and rebuilt when a cheap signature (row counts + last update) changes.
  */
 
-const KIND_LABEL: Record<string, string> = { guide: "دليل", article: "مقال", regulation: "مرجع نظامي", study: "دراسة", template: "نموذج", page: "صفحة" };
+const KIND_LABEL: Record<string, string> = { guide: "دليل", article: "مقال", regulation: "شرح منشور لنظام (ليس نصه)", study: "دراسة", template: "نموذج", page: "صفحة" };
 
 export function contentHref(kind: string, slug: string): string {
   if (kind === "page") {

@@ -48,6 +48,8 @@ export async function ingestUnits(db: AnyDb, x: SourceInput): Promise<{ status: 
   const [existing] = await db.select({ id: s.kbSources.id, n: s.kbSources.chunkCount }).from(s.kbSources).where(and(eq(s.kbSources.refCode, x.refCode), eq(s.kbSources.version, x.version), eq(s.kbSources.sha256, sha))).limit(1);
   if (existing) return { status: "unchanged", units: existing.n };
   await db.transaction(async (tx) => {
+    // change log: the new row names the row it supersedes (which stays, marked superseded)
+    const prev = await tx.select({ id: s.kbSources.id, version: s.kbSources.version, sha256: s.kbSources.sha256 }).from(s.kbSources).where(and(eq(s.kbSources.refCode, x.refCode), isNull(s.kbSources.supersededAt)));
     await tx.update(s.kbSources).set({ supersededAt: new Date() }).where(and(eq(s.kbSources.refCode, x.refCode), isNull(s.kbSources.supersededAt)));
     const [src] = await tx
       .insert(s.kbSources)
@@ -55,7 +57,7 @@ export async function ingestUnits(db: AnyDb, x: SourceInput): Promise<{ status: 
         refCode: x.refCode, version: x.version, title: x.title, issuer: x.issuer, bindingLevel: BINDING[x.refKind] ?? (x.refKind === "professional_standard" ? "professional" : "guidance"),
         verificationStatus: "pending_verification", effectiveOn: x.effectiveOn ?? null, origin: x.origin, sha256: sha, textQuality: x.textQuality, qualityNote: x.qualityNote,
         chunkCount: x.units.length, refKind: x.refKind, registryId: x.registryId ?? null, registrySnapshot: x.registrySnapshot ?? null, edition: x.edition ?? null,
-        publishedOn: x.publishedOn ?? null, repealedOn: x.repealedOn ?? null, services: x.services, meta: { originSha256: x.originSha256, ...(x.meta ?? {}) },
+        publishedOn: x.publishedOn ?? null, repealedOn: x.repealedOn ?? null, services: x.services, meta: { originSha256: x.originSha256, loader: "knowledge/catalog", supersedes: prev.map((p) => ({ id: p.id, version: p.version, sha256: p.sha256 })), ...(x.meta ?? {}) },
       })
       .returning({ id: s.kbSources.id });
     for (let i = 0; i < x.units.length; i += 200) {

@@ -14,34 +14,64 @@ import { gunzipSync } from "node:zlib";
 import path from "node:path";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import type { Tx } from "../../src/server/db";
-import { kbChunks, kbSourceReviews, kbSources, users } from "../../src/server/db/schema";
-import { appendMatchRun, appendReview, appendVersion, registerSource } from "../../src/server/references/db-store";
+import { auditLogs, kbChunks, kbSourceReviews, kbSources, users } from "../../src/server/db/schema";
+import { canonical } from "../../src/server/lib/audit";
+import { sha256 } from "../../src/server/lib/crypto";
+import { recordComparisonReview, recordSourceReview, roleOf } from "../../src/server/knowledge/review";
+import { appendMatchRun, appendVersion, registerSource } from "../../src/server/references/db-store";
 import { getEntry } from "../../src/server/references/registry";
 import { loadManifest, versionFromSnapshot } from "../../src/server/references/snapshots";
 import { loadCatalog, KNOWLEDGE_DIR, unitsOf } from "../../src/server/knowledge/catalog";
 import { ingestUnits } from "../../src/server/knowledge/ingest";
-import { DEFAULT_REVIEW_ROLE, type RefKind, type ReviewRole } from "../../src/server/knowledge/policy";
+import type { RefKind, ReviewRole } from "../../src/server/knowledge/policy";
 import { retrieve, type RetrieveQuery, type RetrieveResult } from "../../src/server/knowledge/retrieve";
 import { statuteUnits } from "../../src/server/knowledge/units";
 
-export const SYNTHETIC_REVIEWER = "00000000-0000-4000-8000-00000000ae01";
+/**
+ * TEST ACCOUNT, not a human reviewer. The mechanism cases need a review on record to show what the policy does with
+ * one; they record it through the same path a reviewer uses (knowledge/review.ts: the reviewer's own session, the
+ * permission of the field, the audit entry), from an account given the catalog's reviewer roles inside the case's
+ * rolled-back transaction. Such a case proves the mechanism, never that a human reviewed anything (owner's order
+ * 2026-11-06, §4): the actual state — no review at all — is asserted separately (ACTUAL_STATE).
+ */
+export const TEST_REVIEWER = "00000000-0000-4000-8000-00000000ae01";
+/** @deprecated name kept for the probes; it is the test account above. */
+export const SYNTHETIC_REVIEWER = TEST_REVIEWER;
 const TODAY = "2026-11-06";
 
-/** A synthetic reviewer holding every «knowledge.review.*» permission (all inside the caller's rolled-back transaction). */
-export async function syntheticReviewer(tx: Tx, id = SYNTHETIC_REVIEWER, fields: ReviewRole[] = ["sharia", "accounting", "legal", "data", "investment"]) {
-  await tx.insert(users).values({ id, phone: `05${id.slice(-8).replace(/[^0-9]/g, "0")}`, fullName: "مراجع اصطناعي (اختبار)" }).onConflictDoNothing();
-  if (!fields.length) return;
-  const keys = fields.map((f) => `knowledge.review.${f}`);
-  await tx.execute(sql`insert into permissions (key, name_ar, domain) select k, k, 'knowledge' from unnest(${sql.raw(`array[${keys.map((k) => `'${k}'`).join(",")}]`)}) as k on conflict (key) do nothing`);
-  const roleKey = `test_kb_reviewer_${fields.join("_")}`;
-  await tx.execute(sql`insert into roles (key, name_ar, scope) values (${roleKey}, 'مراجع اختبار', 'global') on conflict (key) do nothing`);
-  await tx.execute(sql`insert into role_permissions (role_id, permission_id) select r.id, p.id from roles r, permissions p where r.key = ${roleKey} and p.key = any(${sql.raw(`array[${keys.map((k) => `'${k}'`).join(",")}]`)}) on conflict do nothing`);
-  await tx.execute(sql`insert into user_roles (user_id, role_id) select ${id}::uuid, r.id from roles r where r.key = ${roleKey} on conflict do nothing`);
+const ROLE_OF: Record<ReviewRole, string> = { legal: "reviewer_legal", sharia: "reviewer_sharia", accounting: "reviewer_accounting", data: "reviewer_data", investment: "reviewer_investment" };
+
+/** A test account holding the catalog's reviewer roles for these fields (inside the caller's rolled-back transaction). */
+export async function testReviewer(tx: Tx, id = TEST_REVIEWER, fields: ReviewRole[] = ["sharia", "accounting", "legal", "data", "investment"]) {
+  await tx.insert(users).values({ id, phone: `05${id.slice(-8).replace(/[^0-9]/g, "0")}`, fullName: "حساب اختبار (ليس مراجعًا بشريًا)", isStaff: true }).onConflictDoNothing();
+  for (const f of fields) {
+    // the roles and permissions come from the catalog (seeded); created here only if the database was not seeded
+    await tx.execute(sql`insert into permissions (key, name_ar, domain) values (${`knowledge.review.${f}`}, ${`knowledge.review.${f}`}, 'knowledge') on conflict (key) do nothing`);
+    await tx.execute(sql`insert into roles (key, name_ar, scope) values (${ROLE_OF[f]}, ${ROLE_OF[f]}, 'global') on conflict (key) do nothing`);
+    await tx.execute(sql`insert into role_permissions (role_id, permission_id) select r.id, p.id from roles r, permissions p where r.key = ${ROLE_OF[f]} and p.key = ${`knowledge.review.${f}`} on conflict do nothing`);
+    await tx.execute(sql`insert into user_roles (user_id, role_id) select ${id}::uuid, r.id from roles r where r.key = ${ROLE_OF[f]} on conflict do nothing`);
+  }
+}
+/** @deprecated alias of testReviewer. */
+export const syntheticReviewer = testReviewer;
+
+/** Runs `fn` in the session of `userId` (as a reviewer's action does), then returns to the system context. */
+export async function asUser<T>(tx: Tx, userId: string, fn: () => Promise<T>): Promise<T> {
+  await tx.execute(sql`select set_config('app.user_id', ${userId}, true)`);
+  const out = await fn(); // on error the transaction is aborted and rolled back: nothing to restore
+  await tx.execute(sql`select set_config('app.user_id', '', true)`);
+  return out;
+}
+
+/** Fires the deferred checks now (every review recorded so far must have its audit entry). */
+export async function checkDeferred(tx: Tx) {
+  await tx.execute(sql`set constraints all immediate`);
+  await tx.execute(sql`set constraints all deferred`);
 }
 
 /** Records, inside the caller's (rolled-back) transaction, an accepted comparison of an official snapshot. */
-export async function acceptRegistry(tx: Tx, registryId: string, snapshotId: string, articles: number[], effectiveFrom: string) {
-  await syntheticReviewer(tx);
+export async function acceptRegistry(tx: Tx, registryId: string, snapshotId: string, articles: number[], effectiveFrom: string, reviewer = TEST_REVIEWER) {
+  await testReviewer(tx, reviewer);
   const entry = getEntry(registryId)!;
   const snap = loadManifest().find((m) => m.id === snapshotId)!;
   const srcId = await registerSource(tx, entry);
@@ -49,7 +79,8 @@ export async function acceptRegistry(tx: Tx, registryId: string, snapshotId: str
   const vId = await appendVersion(tx, srcId, v);
   const perArticle = Object.fromEntries(articles.map((a) => [`م${a}`, "identical"])) as Record<string, "identical">;
   const runId = await appendMatchRun(tx, vId, { id: "x", versionId: vId, candidateLabel: "اختبار قبول", candidateSha256: v.source.sha256, outcome: "identical", perArticle, ranAt: `${TODAY}T08:00:00Z` }, { synthetic: true });
-  await appendReview(tx, runId, { reviewer: "مراجع اصطناعي", reviewerUserId: SYNTHETIC_REVIEWER, at: `${TODAY}T09:00:00Z`, decision: "accepted", note: "مراجعة اصطناعية لاختبار القبول" });
+  await asUser(tx, reviewer, () => recordComparisonReview(tx, { userId: reviewer }, { runId, decision: "accepted", note: "مراجعة من حساب اختبار لاختبار الآلية" }));
+  return runId;
 }
 
 async function currentSource(tx: Tx, refCode: string) {
@@ -58,31 +89,55 @@ async function currentSource(tx: Tx, refCode: string) {
 }
 
 /**
- * Records an accepted (or rejected) review of the current source by a synthetic reviewer of the source's field (or of
- * the given field), and of its passages: `passages` = locators, or "all" for every passage of the source.
+ * Records, through knowledge/review.ts in the test account's session, an accepted (or rejected) review of the current
+ * source and of its passages: `passages` = locators, or "all" for every passage of the source.
  */
-export async function reviewSource(tx: Tx, refCode: string, o: { decision?: "accepted" | "rejected"; role?: ReviewRole; passages?: string[] | "all" } = {}) {
-  await syntheticReviewer(tx);
+export async function reviewSource(tx: Tx, refCode: string, o: { decision?: "accepted" | "rejected"; passages?: string[] | "all"; reviewer?: string; fields?: ReviewRole[] } = {}) {
+  const reviewer = o.reviewer ?? TEST_REVIEWER;
+  await testReviewer(tx, reviewer, o.fields);
   const s = await currentSource(tx, refCode);
-  const role = o.role ?? ((s.meta as { reviewRole?: ReviewRole }).reviewRole ?? DEFAULT_REVIEW_ROLE[s.refKind as RefKind]);
-  const note = "مراجعة اصطناعية لاختبار القبول";
-  await tx.insert(kbSourceReviews).values({ sourceId: s.id, reviewerUserId: SYNTHETIC_REVIEWER, reviewerRole: role, decision: o.decision ?? "accepted", note });
+  const note = "مراجعة من حساب اختبار لاختبار الآلية";
+  await asUser(tx, reviewer, () => recordSourceReview(tx, { userId: reviewer }, { sourceId: s.id, decision: o.decision ?? "accepted", note }));
   if (o.passages) {
     const chunks = await tx.select({ id: kbChunks.id, locator: kbChunks.locator }).from(kbChunks).where(eq(kbChunks.sourceId, s.id));
     const pick = o.passages === "all" ? chunks : chunks.filter((c) => (o.passages as string[]).includes(c.locator));
-    for (let i = 0; i < pick.length; i += 500) await tx.insert(kbSourceReviews).values(pick.slice(i, i + 500).map((c) => ({ sourceId: s.id, chunkId: c.id, reviewerUserId: SYNTHETIC_REVIEWER, reviewerRole: role, decision: o.decision ?? "accepted", note })));
+    if (pick.length > 20) await bulkReviews(tx, reviewer, pick.map((c) => ({ sourceId: s.id, chunkId: c.id, role: roleOf(s) })), o.decision ?? "accepted");
+    else for (const c of pick) await asUser(tx, reviewer, () => recordSourceReview(tx, { userId: reviewer }, { sourceId: s.id, chunkId: c.id, decision: o.decision ?? "accepted", note }));
   }
 }
 
-const ROLE_SQL = sql.raw(`coalesce(s.meta->>'reviewRole', case when s.ref_kind in ('classical_fiqh','contemporary_book') then 'sharia' when s.ref_kind = 'professional_standard' then 'accounting' when s.ref_kind in ('statistical_source','dataset') then 'data' else 'legal' end)`);
+/**
+ * Many reviews at once for the worst-case tests, recorded the way knowledge/review.ts records them — the reviewer's
+ * session, then one audit entry per review on the same hash chain (lib/audit.ts's formula) — in batches.
+ */
+async function bulkReviews(tx: Tx, reviewer: string, items: { sourceId: string; chunkId: string | null; role: ReviewRole }[], decision: "accepted" | "rejected") {
+  const note = "مراجعة من حساب اختبار لاختبار الآلية";
+  await asUser(tx, reviewer, async () => {
+    await tx.execute(sql`select pg_advisory_xact_lock(724501)`);
+    let prev = ((await tx.execute<{ h: string | null }>(sql`select app_audit_last_hash() as h`)).rows[0]?.h) ?? "GENESIS";
+    for (let i = 0; i < items.length; i += 500) {
+      const part = items.slice(i, i + 500);
+      const rows = await tx.insert(kbSourceReviews).values(part.map((x) => ({ sourceId: x.sourceId, chunkId: x.chunkId, reviewerUserId: reviewer, reviewerRole: x.role, decision, note }))).returning({ id: kbSourceReviews.id });
+      const at = new Date().toISOString();
+      const entries = rows.map((r, k) => {
+        const after = { sourceId: part[k].sourceId, chunkId: part[k].chunkId, role: part[k].role, decision, note, bulk: true };
+        const hash = sha256(JSON.stringify(canonical([prev, at, reviewer, "knowledge.review.recorded", "kb_source_review", r.id, null, null, after])));
+        const e = { actorUserId: reviewer, action: "knowledge.review.recorded", entityType: "kb_source_review", entityId: r.id, after, prevHash: prev, hash, at: new Date(at) };
+        prev = hash;
+        return e;
+      });
+      await tx.insert(auditLogs).values(entries);
+    }
+  });
+}
 
 /** Every current source reviewed, with all its passages (the worst case for a question without a basis). */
-async function reviewEverything(tx: Tx) {
-  await syntheticReviewer(tx);
-  await tx.execute(sql`insert into kb_source_reviews (source_id, reviewer_user_id, reviewer_role, decision, note)
-    select s.id, ${SYNTHETIC_REVIEWER}::uuid, ${ROLE_SQL}, 'accepted', 'مراجعة اصطناعية شاملة' from kb_sources s where s.superseded_at is null`);
-  await tx.execute(sql`insert into kb_source_reviews (source_id, chunk_id, reviewer_user_id, reviewer_role, decision, note)
-    select s.id, c.id, ${SYNTHETIC_REVIEWER}::uuid, ${ROLE_SQL}, 'accepted', 'مراجعة اصطناعية شاملة' from kb_chunks c join kb_sources s on s.id = c.source_id where s.superseded_at is null`);
+export async function reviewEverything(tx: Tx) {
+  await testReviewer(tx);
+  const rows = await tx.select({ s: kbSources, c: kbChunks.id }).from(kbChunks).innerJoin(kbSources, eq(kbSources.id, kbChunks.sourceId)).where(isNull(kbSources.supersededAt));
+  const sources = new Map(rows.map((r) => [r.s.id, r.s]));
+  await bulkReviews(tx, TEST_REVIEWER, [...sources.values()].map((s) => ({ sourceId: s.id, chunkId: null, role: roleOf(s) })), "accepted");
+  await bulkReviews(tx, TEST_REVIEWER, rows.map((r) => ({ sourceId: r.s.id, chunkId: r.c, role: roleOf(r.s) })), "accepted");
 }
 
 /** The original unit the passage must come from: the same paragraph of the snapshot, the same page, the same quote. */
@@ -109,7 +164,7 @@ export type Case = {
   category: string;
   query: RetrieveQuery;
   expected: string;
-  setup?: (tx: Tx) => Promise<void>;
+  setup?: (tx: Tx) => Promise<unknown>;
   /** Returns null when the result is right, else what is wrong. */
   judge: (r: RetrieveResult) => string | null;
 };
@@ -126,12 +181,13 @@ const expectCitable = (r: RetrieveResult, ref: string, locator: string | RegExp,
   return null;
 };
 
-const SYN_VERSIONS = async (tx: Tx) => {
+/** Two versions of a synthetic guide, each with its own effective date (2020-01-01, then 2025-01-01), or undated. */
+const SYN_VERSIONS = (dated = true) => async (tx: Tx) => {
   const base = { refCode: "SYN-GUIDE", title: "دليل اصطناعي", issuer: null, refKind: "official_guide" as const, services: ["C01"], origin: "اختبار", textQuality: "good" as const, qualityNote: "" };
   const u = (t: string) => [{ locator: "س1", articleNo: null, paragraphNo: null, pageFile: null, pagePrinted: null, text: t, textOrigin: "verified_quote" as const }];
-  await ingestUnits(tx as never, { ...base, version: "الإصدار 1", originSha256: "v1", units: u("مدة حفظ سجلات الوقف الاصطناعي في الدليل الاصطناعي خمس سنوات.") });
+  await ingestUnits(tx as never, { ...base, version: "الإصدار 1", effectiveOn: dated ? "2020-01-01" : null, originSha256: "v1", units: u("مدة حفظ سجلات الوقف الاصطناعي في الدليل الاصطناعي خمس سنوات.") });
   await reviewSource(tx, "SYN-GUIDE");
-  await ingestUnits(tx as never, { ...base, version: "الإصدار 2", originSha256: "v2", units: u("مدة حفظ سجلات الوقف الاصطناعي في الدليل الاصطناعي عشر سنوات.") });
+  await ingestUnits(tx as never, { ...base, version: "الإصدار 2", effectiveOn: dated ? "2025-01-01" : null, originSha256: "v2", units: u("مدة حفظ سجلات الوقف الاصطناعي في الدليل الاصطناعي عشر سنوات.") });
   await reviewSource(tx, "SYN-GUIDE");
 };
 
@@ -261,19 +317,29 @@ export const CASES: Case[] = [
     id: "9b", category: "9. نسخة سابقة بعد تسجيل نسخة أحدث",
     query: { question: "ما مدة حفظ سجلات الوقف الاصطناعي في الدليل الاصطناعي؟", service: "C01", asOf: TODAY, refCodes: ["SYN-GUIDE"] },
     expected: "النسخة الثانية فقط (عشر سنوات)؛ السابقة (خمس سنوات) لا تعود لسؤال حالي",
-    setup: SYN_VERSIONS,
+    setup: SYN_VERSIONS(),
     judge: (r) => (r.results.some((x) => x.hit.text.includes("خمس سنوات")) ? "عادت النسخة السابقة" : expectCitable(r, "SYN-GUIDE", "س1", "عشر سنوات")),
   },
   {
-    id: "9c", category: "9. السؤال نفسه تاريخيًا",
-    query: { question: "ما مدة حفظ سجلات الوقف الاصطناعي في الدليل الاصطناعي؟", service: "C01", asOf: TODAY, refCodes: ["SYN-GUIDE"], historical: true },
-    expected: "تعود النسختان، والسابقة موسومة «نسخة سابقة»",
-    setup: SYN_VERSIONS,
+    id: "9c", category: "9. سؤال تاريخي: النص النافذ في التاريخ المطلوب (مجس المراجعة P9)",
+    query: { question: "ما مدة حفظ سجلات الوقف الاصطناعي في الدليل الاصطناعي؟", service: "C01", asOf: "2023-06-01", refCodes: ["SYN-GUIDE"], historical: true },
+    expected: "في 2023-06-01 النافذ هو الإصدار 1 (خمس سنوات) موسومًا «نسخة سابقة، سارية من 2020-01-01 إلى 2025-01-01»؛ الإصدار 2 لم يكن نافذًا",
+    setup: SYN_VERSIONS(),
     judge: (r) => {
-      const old = r.results.find((x) => x.hit.text.includes("خمس سنوات"));
-      if (!old) return "لم تعد النسخة السابقة";
-      return old.decision.citable && (old.decision as { label: string }).label.endsWith("نسخة سابقة") ? null : "النسخة السابقة غير موسومة";
+      if (r.citable.some((x) => x.hit.text.includes("عشر سنوات"))) return "استُشهد بنسخة لم تكن نافذة";
+      const why = expectCitable(r, "SYN-GUIDE", "س1", "خمس سنوات");
+      if (why) return why;
+      const later = r.results.find((x) => x.hit.text.includes("عشر سنوات"));
+      if (!later || refusal(later.decision) !== "not_yet_effective") return "النسخة اللاحقة لم تُرفض بأنها غير نافذة";
+      return (first(r)!.decision as { label: string }).label.endsWith("نسخة سابقة، سارية من 2020-01-01 إلى 2025-01-01") ? null : "الوسم لا يبين تاريخ السريان والانتهاء";
     },
+  },
+  {
+    id: "9d", category: "9. سؤال تاريخي ونسخ بلا تاريخ سريان (مجس المراجعة P9)",
+    query: { question: "ما مدة حفظ سجلات الوقف الاصطناعي في الدليل الاصطناعي؟", service: "C01", asOf: "2023-06-01", refCodes: ["SYN-GUIDE"], historical: true },
+    expected: "لا يُعرف النافذ في التاريخ: لا يُستشهد بأي نسخة (لا أحدث نسخة محمّلة)",
+    setup: SYN_VERSIONS(false),
+    judge: (r) => (r.citable.length === 0 && r.results.length > 0 && r.results.every((x) => refusal(x.decision) === "unknown_validity") ? null : "استُشهد بنسخة لا يُعرف تاريخ سريانها"),
   },
   {
     id: "10", category: "10. مرجع غير منطبق على الخدمة",
@@ -319,9 +385,52 @@ export const CASES: Case[] = [
   {
     id: "13b", category: "13. مراجعة من غير مجال المصدر",
     query: { question: "ما الإفصاحات المطلوبة عن المساهمات المقدمة من الواقف في القوائم المالية للأوقاف؟", service: "F05", asOf: TODAY, kinds: ["professional_standard"] },
-    expected: "مراجعة معيار محاسبي من مراجع شرعي لا تجعله قابلاً للاستشهاد",
-    setup: (tx) => reviewSource(tx, "SOCPA-NPO-2025", { role: "sharia" }),
+    expected: "مراجع شرعي لا يستطيع تسجيل مراجعة معيار محاسبي، ولا يصير المعيار قابلاً للاستشهاد",
+    setup: async (tx) => {
+      const R = "00000000-0000-4000-8000-00000000ae05";
+      const refused = await reviewSource(tx, "SOCPA-NPO-2025", { reviewer: R, fields: ["sharia"] }).then(() => false, (e: Error) => /المراجعة المحاسبية/.test(e.message));
+      if (!refused) throw new Error("قُبلت مراجعة من غير مجال المصدر");
+    },
     judge: (r) => (r.citable.length === 0 && r.results.some((x) => refusal(x.decision) === "not_reviewed") ? null : "قُبلت مراجعة من غير مجاله"),
+  },
+  {
+    id: "14a", category: "14. سؤال عبثي يشترك مع نص في كلمات نادرة متباعدة (مجس المراجعة P1e)",
+    query: { question: "شروط الواقف في الصين", service: "*", asOf: TODAY },
+    expected: "«المراجع غير كافية» حتى بعد مراجعة كل المصادر: كلمات السؤال لا تجتمع في موضع واحد",
+    setup: reviewEverything,
+    judge: (r) => (!r.sufficiency.sufficient && r.citable.length === 0 ? null : `قُدّم سند: ${first(r)?.hit.refCode} ${first(r)?.hit.locator} cov=${first(r)?.hit.coverage.toFixed(2)}`),
+  },
+  {
+    id: "14b", category: "14. سؤال مشروع بعد مراجعة كل المصادر (الصلة لا تمنع الجواب الصحيح)",
+    query: { question: "هل للناظر أن يستدين على الوقف بلا إذن الحاكم لمصلحة الوقف؟", service: "C07", asOf: TODAY },
+    expected: "كشاف القناع (ط وزارة العدل) ج10 ص55 أو طبعة مصيلحي ج4 ص267: الاستدانة بلا إذن حاكم لمصلحة",
+    setup: reviewEverything,
+    judge: (r) => (r.sufficiency.sufficient && r.citable.some((x) => /^FQH-KASHSHAF/.test(x.hit.refCode) && /الاستدانة|يستدين|استدان/.test(x.hit.text)) ? null : `لم يُجب من الكشاف (${r.citable.map((x) => `${x.hit.refCode} ${x.hit.locator}`).join("، ") || (r.sufficiency as { reason?: string }).reason})`),
+  },
+  {
+    id: "14c", category: "14. مادة غير موجودة دون تحديد المرجع (مجس المراجعة P2b)",
+    query: { question: "ما نص المادة 300 من لائحة تنظيم أعمال النظارة؟", service: "*", asOf: TODAY, needBinding: true },
+    expected: "«غير موجودة»؛ لا تُعوَّض بمادة أخرى ولو رُوجع كل شيء",
+    setup: async (tx) => { await acceptRegistry(tx, "NZR", "NZR/uqn-p18926", [8, 16], "2022-02-04"); await reviewEverything(tx); },
+    judge: (r) => (!r.sufficiency.sufficient && r.citable.length === 0 && /المادة 300/.test((r.sufficiency as { reason?: string }).reason ?? "") ? null : "قُدّم سند لمادة غير موجودة"),
+  },
+  {
+    id: "14d", category: "14. كتاب معاصر وحده لا يكفي سندًا (B8)",
+    query: { question: "ما اللجان المتفرعة من مجلس النظارة في الوقف المؤسسي؟", service: "*", asOf: TODAY, refCodes: ["BOOK-MAYSAR"] },
+    expected: "يُسترجع «الميسّر» مرجعًا مساعدًا، ولا يُعدّ وحده سندًا كافيًا",
+    setup: (tx) => reviewSource(tx, "BOOK-MAYSAR", { passages: "all" }),
+    judge: (r) => (r.citable.some((x) => x.hit.refCode === "BOOK-MAYSAR") && !r.sufficiency.sufficient && /مرجع مساعد/.test((r.sufficiency as { reason?: string }).reason ?? "") ? null : `الكفاية ${r.sufficiency.sufficient}`),
+  },
+  {
+    id: "14e", category: "14. صفحات «الميسّر» التي رصد المختصون خطأها محجوبة (B8)",
+    query: { question: "ضوابط الاستدانة للوقف موافقة القاضي أو وجود شرط للواقف", service: "*", asOf: TODAY, refCodes: ["BOOK-MAYSAR"] },
+    expected: "ص194 (الاستدانة) تُسترجع وتُرفض «محجوب بملاحظة مختص»",
+    setup: (tx) => reviewSource(tx, "BOOK-MAYSAR", { passages: "all" }),
+    judge: (r) => {
+      const p = r.results.find((x) => x.hit.pagePrinted === "194");
+      if (!p) return "لم تُسترجع ص194";
+      return !p.decision.citable && refusal(p.decision) === "blocked_passage" ? null : `القرار ${refusal(p.decision)}`;
+    },
   },
 ];
 
@@ -338,6 +447,8 @@ export const KNOWN_LIMITS: Case[] = [
 
 export async function runCase(tx: Tx, c: Case): Promise<CaseRow> {
   if (c.setup) await c.setup(tx);
+  // every review the setup recorded must have its audit entry (the database's deferred check, fired now)
+  await checkDeferred(tx);
   const r = await retrieve(tx, c.query);
   const h = r.citable[0] ?? r.results[0] ?? null;
   const orig = h ? originalUnitText(h.hit.refCode, h.hit.locator) : null;
@@ -355,4 +466,19 @@ export async function runCase(tx: Tx, c: Case): Promise<CaseRow> {
   row.pass = why === null;
   row.note = why ?? (r.sufficiency.sufficient ? "" : (r.sufficiency as { reason: string }).reason);
   return row;
+}
+
+export type ActualRow = { id: string; question: string; service: string; retrieved: number; citable: number; sufficient: boolean; reason: string; top: string | null; pass: boolean };
+
+/**
+ * The actual state, with the knowledge base as loaded and NO review on record (no reviewer has been named): every
+ * case's question must be refused — nothing citable, «المراجع غير كافية». Run without the cases' setups.
+ */
+export async function runActual(tx: Tx, c: Case): Promise<ActualRow> {
+  const r = await retrieve(tx, c.query);
+  const top = r.results[0] ? `${r.results[0].hit.refCode} ${r.results[0].hit.locator}: ${r.results[0].decision.citable ? "قابل للاستشهاد" : (r.results[0].decision as { refusal: string }).refusal}` : null;
+  return {
+    id: c.id, question: c.query.question, service: c.query.service, retrieved: r.results.length, citable: r.citable.length, sufficient: r.sufficiency.sufficient,
+    reason: r.sufficiency.sufficient ? "" : (r.sufficiency as { reason: string }).reason, top, pass: r.citable.length === 0 && !r.sufficiency.sufficient,
+  };
 }

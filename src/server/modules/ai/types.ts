@@ -2,7 +2,8 @@
 
 export const AI_DISCLOSURE = "إجابة آلية مستندة إلى المصادر المذكورة؛ وللرأي المهني في حالتك اطلب استشارة موقّعة";
 
-export type CitationKind = "content" | "faq" | "glossary" | "requirement" | "data";
+/** «reference»: a text the knowledge engine's citation policy authorised (a regulation's official text, a reviewed book). */
+export type CitationKind = "content" | "faq" | "glossary" | "requirement" | "data" | "reference";
 
 export type Citation = {
   n: number;

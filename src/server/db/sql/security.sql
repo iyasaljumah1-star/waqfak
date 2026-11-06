@@ -475,3 +475,76 @@ BEGIN
 END $$;
 DROP TRIGGER IF EXISTS kb_review_authority ON kb_source_reviews;
 CREATE TRIGGER kb_review_authority BEFORE INSERT ON kb_source_reviews FOR EACH ROW EXECUTE FUNCTION kb_review_authority();
+
+-- A review is recorded by its author, in the author's own session: no one records a review on another's behalf, and a
+-- system context (seed, scripts, the engine) cannot record one at all (owner's order 2026-11-06, §2.3).
+CREATE OR REPLACE FUNCTION kb_review_actor() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF app_current_user() IS NULL OR app_current_user() <> NEW.reviewer_user_id THEN
+    RAISE EXCEPTION 'kb_source_reviews: a review is recorded only by the reviewer, in the reviewer''s own session' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS kb_review_actor ON kb_source_reviews;
+CREATE TRIGGER kb_review_actor BEFORE INSERT ON kb_source_reviews FOR EACH ROW EXECUTE FUNCTION kb_review_actor();
+
+-- Every review has its entry in the hash-chained, append-only audit trail (action «knowledge.review.recorded», entity
+-- the review's id), written in the same transaction: a review without its audit entry cannot be committed.
+CREATE OR REPLACE FUNCTION kb_review_audited() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM audit_logs a WHERE a.action = 'knowledge.review.recorded' AND a.entity_type = 'kb_source_review'
+                 AND a.entity_id = NEW.id::text AND a.actor_user_id = NEW.reviewer_user_id) THEN
+    RAISE EXCEPTION 'kb_source_reviews: review % has no audit entry', NEW.id USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  RETURN NULL;
+END $$;
+DROP TRIGGER IF EXISTS kb_review_audited ON kb_source_reviews;
+CREATE CONSTRAINT TRIGGER kb_review_audited AFTER INSERT ON kb_source_reviews DEFERRABLE INITIALLY DEFERRED
+  FOR EACH ROW EXECUTE FUNCTION kb_review_audited();
+-- A reviewer (staff, not necessarily with global access) inserts their own reviews; the triggers above check the rest.
+DROP POLICY IF EXISTS kb_review_insert ON kb_source_reviews;
+CREATE POLICY kb_review_insert ON kb_source_reviews FOR INSERT TO waqfak_app WITH CHECK (reviewer_user_id = app_current_user() AND app_is_staff());
+
+-- The same for the acceptance of a registry comparison (ref_match_reviews): only an active, unlocked holder of
+-- «knowledge.review.legal», in their own session, with the audit entry. A rejection lowers nothing's standing and may
+-- still be stored by the system context (phase-1 storage tests), but is audited when it comes from a person.
+CREATE OR REPLACE FUNCTION ref_review_authority() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF NEW.decision = 'accepted' THEN
+    IF app_current_user() IS NULL OR app_current_user() <> NEW.reviewer_user_id THEN
+      RAISE EXCEPTION 'ref_match_reviews: an acceptance is recorded only by the reviewer, in the reviewer''s own session' USING ERRCODE = 'insufficient_privilege';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM users u WHERE u.id = NEW.reviewer_user_id AND u.status = 'active' AND (u.locked_until IS NULL OR u.locked_until < now())) THEN
+      RAISE EXCEPTION 'ref_match_reviews: reviewer is not an active user' USING ERRCODE = 'insufficient_privilege';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM user_roles ur JOIN role_permissions rp ON rp.role_id = ur.role_id JOIN permissions p ON p.id = rp.permission_id
+                   WHERE ur.user_id = NEW.reviewer_user_id AND p.key = 'knowledge.review.legal') THEN
+      RAISE EXCEPTION 'ref_match_reviews: reviewer lacks knowledge.review.legal' USING ERRCODE = 'insufficient_privilege';
+    END IF;
+  END IF;
+  RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS ref_review_authority ON ref_match_reviews;
+CREATE TRIGGER ref_review_authority BEFORE INSERT ON ref_match_reviews FOR EACH ROW EXECUTE FUNCTION ref_review_authority();
+
+CREATE OR REPLACE FUNCTION ref_review_audited() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+  IF NEW.decision = 'accepted' AND NOT EXISTS (SELECT 1 FROM audit_logs a WHERE a.action = 'knowledge.review.recorded' AND a.entity_type = 'ref_match_review'
+                 AND a.entity_id = NEW.id::text AND a.actor_user_id = NEW.reviewer_user_id) THEN
+    RAISE EXCEPTION 'ref_match_reviews: acceptance % has no audit entry', NEW.id USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  RETURN NULL;
+END $$;
+DROP TRIGGER IF EXISTS ref_review_audited ON ref_match_reviews;
+CREATE CONSTRAINT TRIGGER ref_review_audited AFTER INSERT ON ref_match_reviews DEFERRABLE INITIALLY DEFERRED
+  FOR EACH ROW EXECUTE FUNCTION ref_review_audited();
+DROP POLICY IF EXISTS ref_review_insert ON ref_match_reviews;
+CREATE POLICY ref_review_insert ON ref_match_reviews FOR INSERT TO waqfak_app WITH CHECK (reviewer_user_id = app_current_user() AND app_is_staff());
+
+-- Read-time proof that a review was audited (the engine reads in the system context; audit_logs is not exposed).
+CREATE OR REPLACE FUNCTION knowledge_audited_reviews(kind text, ids uuid[]) RETURNS SETOF uuid LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
+  SELECT DISTINCT a.entity_id::uuid FROM audit_logs a
+  WHERE a.action = 'knowledge.review.recorded' AND a.entity_type = kind AND a.entity_id = ANY (SELECT x::text FROM unnest(ids) x)
+$$;
+REVOKE ALL ON FUNCTION knowledge_audited_reviews(text, uuid[]) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION knowledge_audited_reviews(text, uuid[]) TO waqfak_app;

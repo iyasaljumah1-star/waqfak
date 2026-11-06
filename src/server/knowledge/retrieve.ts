@@ -10,6 +10,7 @@ import { OFFICIAL_HOSTS, CITABLE_OUTCOMES } from "@/server/references/types";
 import { REGISTRY, getEntry, statusAt } from "@/server/references/registry";
 import { decide, SCHOOL_QUESTION, sufficiency, DEFAULT_REVIEW_ROLE, type Decision, type Hit, type RefKind, type ReviewRole, type SourceReview, type Sufficiency } from "./policy";
 import { loadVersionStore } from "./store";
+import { auditedReviewIds } from "./review";
 
 /**
  * The single retrieval route to the knowledge base (kb_* tables). engine-core's processing pipeline goes through here;
@@ -36,7 +37,7 @@ export type RetrieveQuery = {
 export type Retrieved = { hit: Hit; decision: Decision };
 export type RetrieveResult = { results: Retrieved[]; citable: Retrieved[]; sufficiency: Sufficiency };
 
-type Row = Omit<Hit, "score" | "coverage"> & { sourceId: string; norm: string; tokens: Set<string>; titleTokens: Set<string> };
+type Row = Omit<Hit, "score" | "coverage"> & { sourceId: string; norm: string; tokens: Set<string>; seq: string[]; titleTokens: Set<string>; startOn: string | null; ingestedAt: string };
 type Cache = { sig: string; index: Bm25Index; rows: Map<string, Row>; df: Map<string, number> };
 const g = globalThis as unknown as { __waqfakKnowledge?: Cache };
 
@@ -59,7 +60,9 @@ async function index(tx: Tx): Promise<Cache> {
       services: s.services, publishedOn: s.publishedOn, effectiveOn: s.effectiveOn, repealedOn: s.repealedOn, superseded: s.supersededAt !== null,
       blocked: (!!c.pagePrinted && !!meta.blockedPages?.includes(c.pagePrinted)) || !!meta.blockedLocators?.includes(c.locator),
       reviewRole: meta.reviewRole ?? DEFAULT_REVIEW_ROLE[s.refKind as RefKind] ?? "legal",
-      norm: c.norm, tokens: new Set(tokenize(c.text)), titleTokens: new Set(tokenize(`${s.title} ${s.issuer ?? ""}`)),
+      norm: c.norm, tokens: new Set(tokenize(c.text)), seq: tokenize(c.text), titleTokens: new Set(tokenize(`${s.title} ${s.issuer ?? ""}`)),
+      // a version's own legal start: its effective date, else its publication date; never the date it was loaded
+      startOn: s.effectiveOn ?? s.publishedOn ?? null, ingestedAt: s.ingestedAt.toISOString(),
     });
     return { id: c.id, kind: "requirement", title: `${s.title} ${c.locator}`, body: c.norm, href: "", label: s.refCode };
   });
@@ -81,7 +84,9 @@ async function authorisedReviews(tx: Tx, sourceIds: string[]) {
     join user_roles ur on ur.user_id = u.id join role_permissions rp on rp.role_id = ur.role_id join permissions p on p.id = rp.permission_id
     where p.key like 'knowledge.review.%' and u.status = 'active' and (u.locked_until is null or u.locked_until < now())`)) as unknown as { rows: { k: string }[] };
   const allowed = new Set(ok.rows.map((r) => r.k));
-  return rows.filter((r) => allowed.has(`${r.reviewerUserId}:${r.reviewerRole}`));
+  // and only a review with its entry in the audit trail (recorded through knowledge/review.ts)
+  const audited = await auditedReviewIds(tx, "kb_source_review", rows.map((r) => r.id));
+  return rows.filter((r) => allowed.has(`${r.reviewerUserId}:${r.reviewerRole}`) && audited.has(r.id));
 }
 
 /** Article (and paragraph) named in a question, if any. */
@@ -100,16 +105,78 @@ export function namedArticle(q: string): { article: number; paragraph: number | 
 /** Words naming the school describe the kind of source wanted (the school rule handles them), not the answer. */
 const SCHOOL_WORDS = new Set(tokenize("المذهب الحنابلة الحنبلي مذهب الإمام أحمد"));
 
-/** Share of the question's content words found in the passage; words that only name the source are left out. */
-export function coverageOf(question: string, r: { tokens: Set<string>; titleTokens: Set<string> }, df?: Map<string, number>, n = 1): number {
+/** Window (in content words) within which the question's words must stand together to count (review N2/P1e). */
+export const COVERAGE_WINDOW = 40;
+
+/**
+ * Relevance of a passage to a question: the idf-weighted share of the question's content words that the passage holds
+ * TOGETHER, within one window of COVERAGE_WINDOW content words. Words that only name the source, and words naming the
+ * school, are left out. Common waqf words («وقف», «ناظر», «حكم») weigh little; a rare word found far from the others
+ * (a country named in a list, the matter asked about in another chapter) does not make the passage cover the question.
+ */
+export function coverageOf(question: string, r: { tokens: Set<string>; seq?: string[]; titleTokens: Set<string> }, df?: Map<string, number>, n = 1, window = COVERAGE_WINDOW): number {
   const words = [...new Set(tokenize(question))].filter((w) => !r.titleTokens.has(w) && !SCHOOL_WORDS.has(w));
   if (!words.length) return 0;
-  // words weighted by rarity (idf): «وقف», «ناظر», «حكم» are in most passages and prove little; the rare
-  // words carry the weight (review N2)
   const idf = (w: string) => Math.log(1 + n / Math.max(1, df?.get(w) ?? 0.5));
-  const total = words.reduce((a, w) => a + idf(w), 0);
-  const got = words.filter((w) => r.tokens.has(w)).reduce((a, w) => a + idf(w), 0);
-  return got / total;
+  const weight = new Map(words.map((w) => [w, idf(w)]));
+  const total = [...weight.values()].reduce((a, b) => a + b, 0);
+  const seq = r.seq ?? [...r.tokens];
+  // best window: slide over the passage, counting each question word once. Two shares must both reach the bar, so
+  // neither a single rare word (a country named in a list) nor the common waqf words alone make a passage relevant:
+  // the idf-weighted share of the question's words, and the plain share of them (P1e)
+  let best = 0;
+  const count = new Map<string, number>();
+  let got = 0;
+  let gotN = 0;
+  for (let i = 0; i < seq.length; i++) {
+    const w = seq[i];
+    if (weight.has(w)) {
+      if (!count.get(w)) { got += weight.get(w)!; gotN++; }
+      count.set(w, (count.get(w) ?? 0) + 1);
+    }
+    const out = i - window;
+    if (out >= 0 && weight.has(seq[out])) {
+      const c = count.get(seq[out])! - 1;
+      count.set(seq[out], c);
+      if (!c) { got -= weight.get(seq[out])!; gotN--; }
+    }
+    const share = Math.min(total ? got / total : 0, gotN / words.length);
+    if (share > best) best = share;
+  }
+  return best;
+}
+
+/**
+ * For a historical question: each version of a (non-registry) source is in force from its own legal start (effective
+ * date, else publication date) until the next version's start. A version with no known start cannot be placed on the
+ * calendar, so it is «unknown» — the date it was loaded into the knowledge base says nothing about the law (review B10).
+ */
+function validityOn(c: Cache, picked: Row[], asOf: string): Map<string, Pick<Hit, "validFrom" | "validTo" | "validity">> {
+  const out = new Map<string, Pick<Hit, "validFrom" | "validTo" | "validity">>();
+  const codes = new Set(picked.map((r) => r.refCode));
+  const versions = new Map<string, Map<string, string | null>>(); // refCode -> version -> start
+  for (const r of c.rows.values()) if (codes.has(r.refCode)) {
+    const m = versions.get(r.refCode) ?? new Map<string, string | null>();
+    m.set(r.version, r.startOn);
+    versions.set(r.refCode, m);
+  }
+  for (const r of picked) {
+    const all = [...(versions.get(r.refCode) ?? new Map()).entries()];
+    const from = r.startOn;
+    if (!from) {
+      out.set(r.chunkId, { validFrom: null, validTo: null, validity: "unknown" });
+      continue;
+    }
+    // the next start among the other versions; an undated sibling makes the end unknowable
+    if (all.some(([v, st]) => v !== r.version && !st)) {
+      out.set(r.chunkId, { validFrom: from, validTo: null, validity: "unknown" });
+      continue;
+    }
+    const next = all.map(([, st]) => st as string).filter((st) => st > from).sort()[0] ?? null;
+    const validity = from > asOf ? "later" : next && next <= asOf ? "earlier" : "in_force";
+    out.set(r.chunkId, { validFrom: from, validTo: next, validity });
+  }
+  return out;
 }
 
 const normCmp = (s: string) => normForSearch(s).replace(/\s+/g, " ").trim();
@@ -135,7 +202,8 @@ export async function retrieve(tx: Tx, q: RetrieveQuery): Promise<RetrieveResult
     }
     if (found.length) namedUnits = new Set(found.map((r) => r.chunkId));
     // an article named but absent from the references in scope is never answered from other articles
-    if (scope.length && !found.length) missingArticle = `المادة ${named.article}${named.paragraph !== null ? ` الفقرة ${named.paragraph}` : ""}`;
+    // (also when no reference in scope has numbered articles at all: the article cannot be found, so nothing answers it)
+    if (!found.length) missingArticle = `المادة ${named.article}${named.paragraph !== null ? ` الفقرة ${named.paragraph}` : ""}`;
   }
   // reranking by the question's word pairs: BM25 scores words one by one
   const qn = normForSearch(q.question).split(/\s+/).filter((w) => w.length > 1);
@@ -156,10 +224,12 @@ export async function retrieve(tx: Tx, q: RetrieveQuery): Promise<RetrieveResult
   const school = SCHOOL_QUESTION.test(q.question);
   // C07 is a Hanbali opinion: whatever the wording, its basis must include a classical Hanbali book (review B8)
   const needSchool = school || q.service === "C07";
+  const validity = q.historical ? validityOn(c, picked.map((p) => p.row), q.asOf) : null;
   const results: Retrieved[] = picked.map(({ row, score, coverage }) => {
-    const { sourceId, norm: _n, tokens: _t, titleTokens: _tt, ...base } = row;
-    void _n; void _t; void _tt;
-    const hit: Hit = { ...base, coverage, score };
+    const { sourceId, norm: _n, tokens: _t, seq: _s, titleTokens: _tt, startOn: _so, ingestedAt: _ia, ...base } = row;
+    void _n; void _t; void _s; void _tt; void _so; void _ia;
+    const hit: Hit = { ...base, coverage, score, provenance: "passage" };
+    if (validity) Object.assign(hit, validity.get(row.chunkId));
     let registry = null;
     let registryTextMatches = false;
     if (row.registryId && row.articleNo !== null) {
@@ -167,9 +237,20 @@ export async function retrieve(tx: Tx, q: RetrieveQuery): Promise<RetrieveResult
       if (registry.ok) {
         // the passage must hold the very text the guard authorised; what is passed on is the guard's text
         registryTextMatches = normCmp(row.text).includes(normCmp(registry.display.text));
-        // heading and text both from the guard: nothing of the passage's own copy reaches the model (review N1)
-        if (registryTextMatches) hit.text = `المادة ${row.articleNo}${registry.display.heading ? `: ${registry.display.heading}` : ""}\n${registry.display.text}`;
+        if (registryTextMatches) {
+          // name, locator, version, heading and text all from the guard: nothing of the knowledge base's own copy (its
+          // heading line, title or locator) reaches the model or the citation (review N1/P5c)
+          const d = registry.display;
+          hit.text = `المادة ${row.articleNo}${d.heading ? `: ${d.heading}` : ""}\n${d.text}`;
+          hit.title = d.refName;
+          hit.locator = d.locator;
+          hit.validFrom = d.effectiveFrom;
+          hit.provenance = "guard";
+        }
       }
+    } else if (row.registryId) {
+      // a registry instrument's passage without an article cannot be checked by the guard: never passed on as its text
+      hit.provenance = "passage";
     }
     const rv: SourceReview[] = reviews.filter((x) => x.sourceId === sourceId).map((x) => ({ decision: x.decision as "accepted" | "rejected", at: x.at.toISOString(), role: x.reviewerRole as ReviewRole, chunkId: x.chunkId }));
     return { hit, decision: decide(hit, { service: q.service, asOf: q.asOf, historical: q.historical, schoolQuestion: school }, { registry, registryTextMatches, reviews: rv }) };

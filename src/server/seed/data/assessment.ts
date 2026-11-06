@@ -155,7 +155,7 @@ export const QUESTIONS: Q[] = [
     options: [{ value: "none", label: "لا يوجد", score: 5 }, { value: "authorized", label: "يوجد، ومأذون به في الشرط والسياسة", score: 4 }, { value: "unauthorized", label: "يوجد دون إذن صريح", score: 0 }, U],
     referenceText: "لائحة المنتجات م8/8؛ مائة سؤال وجواب س70 وس73" },
   { code: "A6-06", axisCode: "A6", textAr: "هل يُقارن أداء الاستثمار بمؤشر معياري سنويًا على الأقل؟", answerType: "maturity", weight: 1, factKey: "benchmarking", referenceText: "الدليل الإرشادي لاستثمار الأوقاف، سادسًا/3" },
-  { code: "A6-07", axisCode: "A6", textAr: "هل لكل استثمار مباشر أو عقاري خطة تخارج موثقة؟", answerType: "maturity", weight: 1, factKey: "exit_plans", depth: "deep", referenceText: "دليل قواعد وضوابط الاستثمار" },
+  { code: "A6-07", axisCode: "A6", textAr: "هل لكل استثمار مباشر أو عقاري خطة تخارج موثقة؟", answerType: "maturity", weight: 1, factKey: "exit_plans", depth: "deep", referenceText: "دليل قواعد وضوابط الاستثمار (استرشادي، موجه للجمعيات)" },
 
   // ─────────── A7 الأصول ───────────
   { code: "A7-01", axisCode: "A7", textAr: "هل جميع الأصول مسجلة باسم الوقف بمستندات ملكية سليمة؟", answerType: "yes_partial_no", options: YPN, weight: 3, factKey: "assets_in_name", referenceText: "مائة سؤال وجواب، س19" },
@@ -164,7 +164,7 @@ export const QUESTIONS: Q[] = [
     referenceText: "مبادئ حوكمة الأوقاف، م2" },
   { code: "A7-03", axisCode: "A7", textAr: "متى كان آخر تقييم للعقارات؟", answerType: "band", weight: 1, factKey: "valuation_age", showIf: has("asset_types", "real_estate"),
     options: [{ value: "lt1", label: "خلال سنة", score: 5 }, { value: "1-3", label: "من سنة إلى ثلاث", score: 3 }, { value: "gt3", label: "أكثر من ثلاث سنوات", score: 1 }, { value: "never", label: "لم تُقيَّم", score: 0 }, U],
-    referenceText: "دليل قواعد وضوابط الاستثمار (التقييم السنوي للعقار)" },
+    referenceText: "دليل قواعد وضوابط الاستثمار (التقييم السنوي للعقار؛ استرشادي، موجه للجمعيات)" },
   { code: "A7-04", axisCode: "A7", textAr: "هل جميع عقود الإيجار موثقة في منصة إيجار؟", answerType: "yes_partial_no", options: YPN_NA, weight: 2, factKey: "ejar", showIf: has("asset_types", "real_estate"), referenceText: "الدليل الإرشادي لاستثمار الأوقاف، سابعًا/2" },
   { code: "A7-05", axisCode: "A7", textAr: "هل توجد خطة صيانة دورية واحتياطي للصيانة؟", answerType: "maturity", weight: 2, factKey: "maintenance", referenceText: "لائحة تنظيم أعمال النظارة، م12/1" },
   { code: "A7-06", axisCode: "A7", textAr: "هل على الأصول قيود أو حجوزات أو نزاعات أو تعديات قائمة؟", answerType: "yes_no", options: INV, weight: 2, factKey: "encumbrances", referenceText: "لائحة تنظيم أعمال النظارة، م12" },

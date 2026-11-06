@@ -18,7 +18,15 @@ export type KbInput = {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyDb = NodePgDatabase<any>;
 
+/**
+ * RETIRED as a loader of the knowledge base (owner's order 2026-11-06, §2.8): sources are loaded only from the unified
+ * catalog (knowledge/catalog.ts ingestCatalog), with their kind, services and quality. Two loaders writing the same
+ * reference would supersede each other's rows in turn. Kept (not deleted) for the record; it refuses any reference the
+ * catalog holds, so it can no longer replace a catalog row.
+ */
 export async function ingestSource(db: AnyDb, x: KbInput): Promise<{ status: "loaded" | "unchanged"; quality: TextQuality; passages: number }> {
+  const { loadCatalog } = await import("@/server/knowledge/catalog");
+  if (loadCatalog().some((e) => e.refCode === x.refCode)) throw new Error(`ingestSource: ${x.refCode} is loaded from the unified catalog (knowledge/catalog.ts); the legacy loader may not write it`);
   // the splitter's version is part of the fingerprint: a corrected splitter re-splits a source already loaded
   const sha = createHash("sha256").update(`${SPLITTER_VERSION}\n${x.text}`).digest("hex");
   const [existing] = await db.select().from(s.kbSources).where(and(eq(s.kbSources.refCode, x.refCode), eq(s.kbSources.version, x.version), eq(s.kbSources.sha256, sha))).limit(1);
