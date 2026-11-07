@@ -290,6 +290,8 @@ export async function processRequest(job: ClaimedJob): Promise<RunOutcome> {
             b.runId = run.id;
             // each reference keeps its standing and flags: what the final approval will require reviewed (B13)
             b.refs = picked.map((r, i) => ({ n: i + 1, refCode: r.hit.refCode, version: r.hit.version, locator: r.hit.locator, chunkId: r.hit.chunkId, status: r.draft.usable ? r.draft.status : "rejected", flags: r.draft.usable ? r.draft.flags : [] })).filter((r) => cited.has(r.n));
+            // what the model saw shapes the text whether cited or not: the final gate checks every one (N7-14)
+            b.basis = picked.map((r) => ({ chunkId: r.hit.chunkId, refCode: r.hit.refCode, locator: r.hit.locator }));
             // a section resting on the school's books or «الميسّر» carries a research dossier for the sharia reviewer:
             // the document is not approved before the dossier's result is approved or modified (§7.9)
             if (picked.some((r) => r.hit.refKind === "classical_fiqh" || r.hit.refKind === "contemporary_book")) {

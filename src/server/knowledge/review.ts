@@ -88,7 +88,7 @@ export async function recordSourceReview(tx: Tx, actor: ReviewActor, x: SourceRe
     reviewed = sourceReviewText(s, c.text);
     locator = c.locator;
   }
-  const [row] = await withSessionToken(tx, actor.sessionToken, () => tx.insert(kbSourceReviews).values({ sourceId: s.id, chunkId: x.chunkId ?? null, reviewerUserId: actor.userId, reviewerRole: role, decision: x.decision, note: x.note.trim(), at: new Date() }).returning({ id: kbSourceReviews.id, sessionId: kbSourceReviews.sessionId }));
+  const [row] = await withSessionToken(tx, actor.sessionToken, () => tx.insert(kbSourceReviews).values({ sourceId: s.id, chunkId: x.chunkId ?? null, reviewerUserId: actor.userId, reviewerRole: role, decision: x.decision, note: x.note.trim() }).returning({ id: kbSourceReviews.id, sessionId: kbSourceReviews.sessionId }));
   const textSha256 = sha256(reviewed);
   const seal = reviewSeal({ kind: "kb_source_review", id: row.id, reviewer: actor.userId, decision: x.decision, target: `${s.id}|${x.chunkId ?? ""}`, role, textSha256, sessionId: row.sessionId });
   await audit(tx, {
@@ -106,7 +106,7 @@ export async function recordComparisonReview(tx: Tx, actor: ReviewActor, x: { ru
     .innerJoin(refVersions, eq(refVersions.id, refMatchRuns.versionId)).innerJoin(refSources, eq(refSources.id, refVersions.sourceId))
     .where(eq(refMatchRuns.id, x.runId)).limit(1);
   if (!run) throw new ReviewRefused("المقارنة غير موجودة.");
-  const [row] = await withSessionToken(tx, actor.sessionToken, () => tx.insert(refMatchReviews).values({ runId: x.runId, reviewerUserId: actor.userId, decision: x.decision, note: x.note.trim(), reviewedAt: new Date() }).returning({ id: refMatchReviews.id, sessionId: refMatchReviews.sessionId }));
+  const [row] = await withSessionToken(tx, actor.sessionToken, () => tx.insert(refMatchReviews).values({ runId: x.runId, reviewerUserId: actor.userId, decision: x.decision, note: x.note.trim(), reviewedAt: sql`clock_timestamp()` }).returning({ id: refMatchReviews.id, sessionId: refMatchReviews.sessionId }));
   const seal = reviewSeal({ kind: "ref_match_review", id: row.id, reviewer: actor.userId, decision: x.decision, target: x.runId, role: "legal", textSha256: run.v.sha256, sessionId: row.sessionId });
   await audit(tx, {
     actorUserId: actor.userId, action: "knowledge.review.recorded", entityType: "ref_match_review", entityId: row.id, ip: actor.ip, userAgent: actor.userAgent,
@@ -261,8 +261,7 @@ export async function recordFiqhReview(tx: Tx, actor: ReviewActor, x: { dossierI
   if (x.decision === "modified" && (!replacement || replacement.position.trim().length < 3 || replacement.reasons.trim().length < 10)) throw new ReviewRefused("عند تعديل الترجيح اكتب القول الذي تعتمده وأسبابه.");
   const [row] = await withSessionToken(tx, actor.sessionToken, () => tx.insert(fiqhReviews).values({
     dossierId: d.id, dossierSha256: d.sha256, reviewerUserId: actor.userId, reviewerRole: role, decision: x.decision, note: x.note.trim(), replacement,
-    // the moment of the decision (not the transaction's start): two decisions are ordered as they were made
-    at: new Date(),
+    // the moment of the decision, on the database's clock (N7-15; the trigger review_db_time sets it in any case)
   }).returning({ id: fiqhReviews.id, sessionId: fiqhReviews.sessionId }));
   const textSha256 = sha256(fiqhReviewText(d.sha256, replacement));
   const seal = reviewSeal({ kind: "fiqh_review", id: row!.id, reviewer: actor.userId, decision: x.decision, target: d.id, role, textSha256, sessionId: row!.sessionId });

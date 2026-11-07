@@ -1032,3 +1032,93 @@ BEGIN
 END $$;
 DROP TRIGGER IF EXISTS outputs_basis_guard ON outputs;
 CREATE TRIGGER outputs_basis_guard BEFORE INSERT OR UPDATE OF status, approved_version, current_version ON outputs FOR EACH ROW EXECUTE FUNCTION guard_output_basis();
+
+-- ═════════════ Owner's order of 2026-11-08 ═════════════
+-- G13: an id that is not a uuid makes the guard count the reference as unreviewed, never fail the whole check with a
+-- cast error (a CASE/regex guard does not short-circuit the cast in a join condition).
+CREATE OR REPLACE FUNCTION try_uuid(t text) RETURNS uuid LANGUAGE plpgsql IMMUTABLE AS $$
+BEGIN
+  RETURN t::uuid;
+EXCEPTION WHEN others THEN
+  RETURN NULL;
+END $$;
+
+-- N7-14: every passage put before the model for a section («basis»), cited or not, needs its review as a cited one does;
+-- a passage of a superseded version of a non-registry source is not a basis.
+CREATE OR REPLACE FUNCTION sections_unreviewed_basis(secs jsonb) RETURNS integer LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public AS $$
+DECLARE n integer := 0; m integer := 0;
+BEGIN
+  IF secs IS NULL THEN RETURN 0; END IF;
+  WITH held AS (
+    SELECT DISTINCT ur.user_id, substr(p.key, 18) AS role FROM user_roles ur JOIN role_permissions rp ON rp.role_id = ur.role_id
+    JOIN permissions p ON p.id = rp.permission_id JOIN users u ON u.id = ur.user_id
+    WHERE p.key LIKE 'knowledge.review.%' AND u.status = 'active' AND (u.locked_until IS NULL OR u.locked_until < now())
+  ), refs AS (
+    SELECT DISTINCT r->>'chunkId' AS cid FROM jsonb_path_query(secs, '$[*] ? (!(exists(@.removed)) || @.removed != true).blocks[*] ? (@.type == "specialist").refs[*]') r
+    UNION
+    SELECT DISTINCT r->>'chunkId' AS cid FROM jsonb_path_query(secs, '$[*] ? (!(exists(@.removed)) || @.removed != true).blocks[*] ? (@.type == "specialist").basis[*]') r
+  )
+  SELECT count(*) INTO n FROM refs x
+  LEFT JOIN kb_chunks c ON c.id = try_uuid(x.cid) LEFT JOIN kb_sources s ON s.id = c.source_id
+  WHERE c.id IS NULL OR (s.registry_id IS NULL AND s.superseded_at IS NOT NULL) OR NOT (
+    CASE WHEN s.registry_id IS NOT NULL THEN EXISTS (
+      SELECT 1 FROM ref_sources rs JOIN ref_versions rv ON rv.source_id = rs.id JOIN ref_match_runs mr ON mr.version_id = rv.id
+      JOIN ref_match_reviews mv ON mv.run_id = mr.id JOIN held h ON h.user_id = mv.reviewer_user_id AND h.role = 'legal'
+      WHERE rs.code = s.registry_id AND mv.decision = 'accepted' AND mv.session_id IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM ref_match_reviews later WHERE later.run_id = mr.id AND later.reviewed_at > mv.reviewed_at))
+    ELSE EXISTS (
+      SELECT 1 FROM kb_source_reviews k JOIN held h ON h.user_id = k.reviewer_user_id AND h.role = k.reviewer_role
+      WHERE k.chunk_id = c.id AND k.decision = 'accepted' AND k.session_id IS NOT NULL AND k.reviewer_role = kb_source_role(s)
+        AND NOT EXISTS (SELECT 1 FROM kb_source_reviews later WHERE later.reviewer_role = k.reviewer_role AND later.at > k.at
+                        AND (later.chunk_id = c.id OR (later.chunk_id IS NULL AND later.source_id = s.id AND later.decision = 'rejected'))))
+    END);
+  WITH held AS (
+    SELECT DISTINCT ur.user_id, substr(p.key, 18) AS role FROM user_roles ur JOIN role_permissions rp ON rp.role_id = ur.role_id
+    JOIN permissions p ON p.id = rp.permission_id JOIN users u ON u.id = ur.user_id
+    WHERE p.key LIKE 'knowledge.review.%' AND u.status = 'active' AND (u.locked_until IS NULL OR u.locked_until < now())
+  ), ds AS (
+    SELECT DISTINCT b->>'dossierId' AS did FROM jsonb_path_query(secs, '$[*] ? (!(exists(@.removed)) || @.removed != true).blocks[*] ? (@.type == "specialist" && exists(@.dossierId))') b
+  )
+  SELECT count(*) INTO m FROM ds x LEFT JOIN fiqh_dossiers d ON d.id = try_uuid(x.did)
+  WHERE d.id IS NULL OR NOT EXISTS (
+    SELECT 1 FROM fiqh_reviews f JOIN held h ON h.user_id = f.reviewer_user_id AND h.role = f.reviewer_role
+    WHERE f.dossier_id = d.id AND f.dossier_sha256 = d.sha256 AND f.reviewer_role = d.review_role AND f.decision IN ('approved', 'modified')
+      AND f.session_id IS NOT NULL AND f.reviewer_user_id IS DISTINCT FROM d.created_by
+      AND NOT EXISTS (SELECT 1 FROM fiqh_reviews later WHERE later.dossier_id = d.id AND later.at > f.at));
+  RETURN n + m;
+END $$;
+
+-- B5 (round 7, self): from their own session, an account does not change its own standing — its status (pending to
+-- active included), staff flag, second factor, failed-login count, phone or phone verification — nor mark its e-mail
+-- verified. Those are set by the sign-in and verification flows (system context) or by an administrator for others.
+CREATE OR REPLACE FUNCTION users_self_standing_guard() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF app_current_user() IS NOT NULL AND app_current_user() = OLD.id AND (
+       NEW.status IS DISTINCT FROM OLD.status OR NEW.is_staff IS DISTINCT FROM OLD.is_staff
+    OR NEW.mfa_enabled IS DISTINCT FROM OLD.mfa_enabled OR NEW.failed_login_count IS DISTINCT FROM OLD.failed_login_count
+    OR NEW.phone IS DISTINCT FROM OLD.phone OR NEW.phone_verified_at IS DISTINCT FROM OLD.phone_verified_at
+    OR (NEW.email_verified_at IS DISTINCT FROM OLD.email_verified_at AND NEW.email_verified_at IS NOT NULL)) THEN
+    RAISE EXCEPTION 'users: an account does not change its own status, staff flag, second factor, login counter, phone or verification' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS users_self_standing_guard ON users;
+CREATE TRIGGER users_self_standing_guard BEFORE UPDATE ON users FOR EACH ROW EXECUTE FUNCTION users_self_standing_guard();
+
+-- N7-15: a review's time is the database's clock, whatever the application sends, so that it compares with the session
+-- times (also the database's) without a skew between two clocks; a review is never back- or forward-dated by the
+-- application role.
+CREATE OR REPLACE FUNCTION review_db_time() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF session_user = 'waqfak_app' THEN
+    -- the wall clock (clock_timestamp), not the transaction's start: two reviews in one transaction keep their order
+    IF TG_TABLE_NAME = 'ref_match_reviews' THEN NEW.reviewed_at := clock_timestamp(); ELSE NEW.at := clock_timestamp(); END IF;
+  END IF;
+  RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS review_db_time ON kb_source_reviews;
+CREATE TRIGGER review_db_time BEFORE INSERT ON kb_source_reviews FOR EACH ROW EXECUTE FUNCTION review_db_time();
+DROP TRIGGER IF EXISTS review_db_time ON ref_match_reviews;
+CREATE TRIGGER review_db_time BEFORE INSERT ON ref_match_reviews FOR EACH ROW EXECUTE FUNCTION review_db_time();
+DROP TRIGGER IF EXISTS review_db_time ON fiqh_reviews;
+CREATE TRIGGER review_db_time BEFORE INSERT ON fiqh_reviews FOR EACH ROW EXECUTE FUNCTION review_db_time();
