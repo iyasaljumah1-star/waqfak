@@ -44,7 +44,7 @@
 | AAOIFI-FAS37 — FAS 37 Financial Reporting by Waqf Institutions / معيار المح | professional_standard | ✗ | ✓ verified_quote | اقتباسات تحقق منها المختص على الصفحة أو المصدر | ✓ (1) | ✗ 0/0 | ✓ (7) | ✗ | ✗ | جودة: degraded |
 | CMA-SBR — لائحة أعمال الأوراق المالية | regulation | ✗ | ✓ verified_quote | اقتباسات تحقق منها المختص على الصفحة أو المصدر | ✓ (1) | ✓ 3/3 | ✓ (4) | ✗ | ✗ | جودة: degraded |
 | FQH-IQNA — الإقناع في فقه الإمام أحمد بن حنبل | classical_fiqh | ✗ | ✓ verified_quote | اقتباسات تحقق منها المختص على الصفحة أو المصدر | ✓ (1) | ✓ 3/3 | ✓ (4) | ✗ | ✗ | جودة: degraded |
-| SPA-CENSUS-2023 — Saudi Arabia Census Shows Total Population of 32.2 Million,  | statistical_source | ✗ | ✓ verified_quote | اقتباسات تحقق منها المختص على الصفحة أو المصدر | ✓ (3) | ✓ 3/3 | ✓ (1) | ✗ | ✗ | جودة: good |
+| SPA-CENSUS-2023 — Saudi Arabia Census Shows Total Population of 32.2 Million,  | statistical_source | ✗ | ✓ verified_quote | اقتباسات تحقق منها المختص على الصفحة أو المصدر | ✓ (3) | ✓ 3/3 | ✓ (1) | ✓ | ✗ | جودة: good |
 | GASTAT-LFS — إحصاءات سوق العمل (مسح القوى العاملة) — نشرة ربعية | statistical_source | ✗ | ✓ verified_quote | اقتباسات تحقق منها المختص على الصفحة أو المصدر | ✓ (2) | ✓ 3/3 | ✓ (1) | ✓ | ✗ | جودة: good |
 | GASTAT-HEALTH-EST-2024 — إحصاءات المنشآت والقوى العاملة الصحية — تقرير المنهجية والجو | statistical_source | ✗ | ✓ verified_quote | اقتباسات تحقق منها المختص على الصفحة أو المصدر | ✓ (1) | ✓ 3/3 | ✓ (1) | ✗ | ✗ | جودة: good |
 | MOH-YEARBOOK — الكتاب الإحصائي السنوي — وزارة الصحة | statistical_source | ✗ | ✓ verified_quote | اقتباسات تحقق منها المختص على الصفحة أو المصدر | ✓ (1) | ✓ 3/3 | ✓ (1) | ✗ | ✗ | جودة: good |

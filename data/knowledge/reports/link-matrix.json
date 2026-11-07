@@ -1,5 +1,5 @@
 {
- "ranAt": "2026-11-07T18:10:44.975Z",
+ "ranAt": "2026-11-07T22:09:56.870Z",
  "rows": [
   {
    "refCode": "NAZARA-REG",
@@ -1133,7 +1133,7 @@
     "T02"
    ],
    "linked": true,
-   "tested": false,
+   "tested": true,
    "approved": false,
    "quality": "good",
    "superseded": ""

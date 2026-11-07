@@ -122,6 +122,33 @@ describe.skipIf(!enabled)("relevance regressions (dedicated test database)", () 
     expect(u.hit.text).not.toMatch(/كم بلغ/);
   }, 90_000);
 
+  it("nothing leaves the machine: retrieval and fiqh research make no network call (no model, no external service)", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async () => { throw new Error("network call attempted"); });
+    // node:http/https through their CommonJS objects (the ESM namespace cannot be spied on)
+    const { createRequire } = await import("node:module");
+    const req = createRequire(import.meta.url);
+    const http = req("node:http") as typeof import("node:http");
+    const https = req("node:https") as typeof import("node:https");
+    const httpSpy = vi.spyOn(http, "request");
+    const httpsSpy = vi.spyOn(https, "request");
+    try {
+      const { research } = await import("../src/server/knowledge/fiqh/research");
+      const db = drizzle(app, { schema, casing: "snake_case" });
+      await db.transaction(async (tx) => {
+        await tx.execute(sql`select set_config('app.user_id', '', true), set_config('app.global_access', 'on', true)`);
+        await K.retrieve(tx as never, { question: "ما حكم بيع الوقف إذا تعطلت منافعه؟", service: "*", asOf: T });
+        // synthetic facts only (no client, no waqf)
+        await research(tx as never, { question: "ما حكم بيع الوقف إذا تعطلت منافعه؟", facts: [{ text: "واقعة اصطناعية: تعطلت منافع عقار اختبار", status: "established" }], asOf: T });
+        throw new Rollback();
+      }).catch((e) => { if (!(e instanceof Rollback)) throw e; });
+      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(httpSpy).not.toHaveBeenCalled();
+      expect(httpsSpy).not.toHaveBeenCalled();
+    } finally {
+      fetchSpy.mockRestore(); httpSpy.mockRestore(); httpsSpy.mockRestore();
+    }
+  }, 120_000);
+
   it("pure: negation helpers", () => {
     expect(K.negatedAct("هل يجب على الناظر ألا يسجل الوقف؟")).toBeTruthy();
     expect(K.negatedAct("هل يجب على الناظر أن يسجل الوقف؟")).toBeNull();
