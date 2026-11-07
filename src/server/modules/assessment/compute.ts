@@ -150,6 +150,8 @@ export async function computeAndPersist(tx: Tx, assessmentId: string, actor: { u
   factRows.push({ assessmentId: a.id, key: "meta.waqfak_role", value: waqfakRole as never, source: waqf ? "waqf_profile" : "derived" });
   factRows.push({ assessmentId: a.id, key: "meta.rec_context", value: { ...ctx, today } as never, source: "derived" });
   for (const r of recs) if (r.removedServices.length) factRows.push({ assessmentId: a.id, key: `meta.removed.${r.ruleCode}`, value: r.removedServices as never, source: "derived" });
+  // conditional paths (N01 before its licence): stored with their unmet conditions, shown with the recommendation
+  for (const r of recs) if (r.conditionalServices.length) factRows.push({ assessmentId: a.id, key: `meta.conditional.${r.ruleCode}`, value: r.conditionalServices as never, source: "derived" });
   for (let i = 0; i < factRows.length; i += 200) await tx.insert(facts).values(factRows.slice(i, i + 200));
 
   if (recs.length) {

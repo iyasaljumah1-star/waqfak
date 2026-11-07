@@ -104,11 +104,20 @@ describe("recommendation engine", () => {
     expect(r[0].serviceCodes).toEqual([]);
     expect(r[0].removedServices[0].why).toMatch(/م18/);
   });
-  it("hides nazara service until the license is registered", () => {
+  it("recommends N01 as a conditional path until the licence is registered — never hidden, never claimed met (owner's decision 2026-11-07, §6)", () => {
     const r = runRules(rules, { succession: "no" }, services, ctx);
-    expect(r[0].serviceCodes).toEqual([]);
+    expect(r[0].serviceCodes).toEqual(["N01"]);
+    expect(r[0].removedServices).toEqual([]);
+    expect(r[0].conditionalServices).toEqual([{ code: "N01", conditions: [expect.stringContaining("م5/2"), expect.stringContaining("لا تبدأ مباشرة النظارة")] }]);
     const r2 = runRules(rules, { succession: "no" }, services, { ...ctx, activeLicenses: ["gaa_nazara_license"] });
     expect(r2[0].serviceCodes).toEqual(["N01"]);
+    expect(r2[0].conditionalServices).toEqual([]);
+    // the other filters still apply to N01 (the GAA as nazir; an open request)
+    expect(runRules(rules, { succession: "no" }, services, { ...ctx, gaaIsNazir: true })[0].serviceCodes).toEqual([]);
+    // another licensed service stays removed without its licence (the decision is N01's)
+    const other: ServiceInfo[] = [{ code: "I09", nameAr: "استشارة مرخصة", conflictRule: "none", requiresLicenseKey: "cma_license", isActive: true }];
+    const ro = runRules([{ ...rules[2], serviceCodes: ["I09"] }], { succession: "no" }, other, ctx);
+    expect(ro[0].serviceCodes).toEqual([]);
   });
 });
 

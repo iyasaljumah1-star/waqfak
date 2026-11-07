@@ -58,6 +58,11 @@ export type Recommendation = {
   reference: string | null;
   serviceCodes: string[];
   removedServices: { code: string; why: string }[];
+  /**
+   * Services recommended as a CONDITIONAL path (owner's decision of 2026-11-07, §6): shown and requestable, with the
+   * requirements not yet met — never claimed as met. Their codes are also in serviceCodes.
+   */
+  conditionalServices: { code: string; conditions: string[] }[];
   selfServiceHintAr: string | null;
   status: "open" | "suppressed";
   suppressedNote: string | null;
@@ -71,6 +76,19 @@ export function urgencyFactor(days: number): number {
 
 const LITIGATION_SENSITIVE = /^NEED\.(SHR|REG\.AMEND|INV\.SUBST|AST\.SUBST)/;
 const NAZARA_SERVICES = new Set(["N01", "N02", "N03", "N04", "N05", "N06", "N07"]);
+
+/**
+ * N01 (تولي النظارة بصفة اعتبارية): owner's decision of 2026-11-07, §6. Without the licence registered, the service is
+ * not removed: it is recommended as a conditional path — study, file and follow-up now; the nazara itself only after
+ * the appointment is decided by the competent authority and the statutory requirements are met (activateEngagement
+ * enforces that). The conditions are stated as not yet met; none is invented.
+ */
+const CONDITIONAL_ON_LICENCE: Record<string, string[]> = {
+  N01: [
+    "الترخيص اللازم لتعيين الشخص الاعتباري ناظرًا لم يُسجَّل في المنصة بعد (لائحة تنظيم أعمال النظارة م5/2: «يُشترط لتعيين الشخص الاعتباري أن يكون مرخصاً من الهيئة»).",
+    "لا تبدأ مباشرة النظارة إلا بعد ثبوت التعيين بقرار من الجهة المختصة على هذا الوقف واستيفاء المتطلبات النظامية المنطبقة؛ تقديم الطلب لا يجعل وقفك ناظرًا.",
+  ],
+};
 
 export function runRules(rules: Rule[], facts: Facts, services: ServiceInfo[], ctx: RecContext) {
   const svc = new Map(services.map((s) => [s.code, s]));
@@ -96,6 +114,7 @@ export function runRules(rules: Rule[], facts: Facts, services: ServiceInfo[], c
 
     const removed: { code: string; why: string }[] = [];
     const kept: string[] = [];
+    const conditional: { code: string; conditions: string[] }[] = [];
     for (const code of rule.serviceCodes) {
       const s = svc.get(code);
       if (!s || !s.isActive) {
@@ -111,7 +130,7 @@ export function runRules(rules: Rule[], facts: Facts, services: ServiceInfo[], c
         removed.push({ code, why: "استقلال المراجعة: لا يراجع القوائم من يديرها أو يمسك دفاترها؛ يُعيَّن مراجع مستقل." });
         continue;
       }
-      if (s.requiresLicenseKey && !ctx.activeLicenses.includes(s.requiresLicenseKey)) {
+      if (s.requiresLicenseKey && !ctx.activeLicenses.includes(s.requiresLicenseKey) && !CONDITIONAL_ON_LICENCE[code]) {
         removed.push({ code, why: "تتطلب ترخيصًا لم يُسجّل بعد في المنصة." });
         continue;
       }
@@ -123,6 +142,7 @@ export function runRules(rules: Rule[], facts: Facts, services: ServiceInfo[], c
         removed.push({ code, why: "يوجد طلب مفتوح لهذه الخدمة." });
         continue;
       }
+      if (s.requiresLicenseKey && !ctx.activeLicenses.includes(s.requiresLicenseKey) && CONDITIONAL_ON_LICENCE[code]) conditional.push({ code, conditions: CONDITIONAL_ON_LICENCE[code] });
       kept.push(code);
     }
 
@@ -149,6 +169,7 @@ export function runRules(rules: Rule[], facts: Facts, services: ServiceInfo[], c
       reference: rule.reference ?? null,
       serviceCodes: kept,
       removedServices: removed,
+      conditionalServices: conditional,
       selfServiceHintAr: rule.selfServiceHintAr ?? null,
       status,
       suppressedNote,

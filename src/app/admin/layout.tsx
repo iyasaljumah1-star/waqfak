@@ -17,6 +17,7 @@ export const metadata: Metadata = { title: { default: "لوحة الإدارة",
 const ALT_PERMS: Record<string, string[]> = {
   "/admin/requests": ["admin.requests.all"], "/admin/continuous": ["admin.requests.all"],
   "/admin/knowledge": ["knowledge.review.sharia", "knowledge.review.accounting", "knowledge.review.data", "knowledge.review.investment", "admin.roles"],
+  "/admin/knowledge/fiqh": ["knowledge.review.legal", "knowledge.review.accounting", "knowledge.review.data", "knowledge.review.investment", "admin.roles"],
 };
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {

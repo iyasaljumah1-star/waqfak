@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { activationGate, licenceValid, PRACTICE_GATED_LICENSES } from "@/server/modules/nazara/licence";
+import { activationGate, appointmentMissing, licenceValid, PRACTICE_GATED_LICENSES } from "@/server/modules/nazara/licence";
 import { ACTIVATION_TASKS, canTransition, checklistProgress, DEFAULT_CHECKLIST, freshChecklist, freshHandover, HANDOVER_KEYS, TRANSITIONS } from "@/server/modules/nazara/pure";
 import { ROLES } from "@/server/authz/catalog";
 
@@ -19,6 +19,15 @@ describe("nazara licence gate (لائحة تنظيم أعمال النظارة �
     expect(activationGate({ licence: undefined, today, waqfIsDemo: true })).toEqual({ allowed: true, practice: true });
     expect(activationGate({ licence: lic({ active: true, number: "9", expiresOn: "2030-01-01" }), today, waqfIsDemo: false })).toEqual({ allowed: true, practice: false });
     expect(activationGate({ licence: lic({ active: true, number: "9", expiresOn: "2030-01-01" }), today, waqfIsDemo: true })).toEqual({ allowed: true, practice: false });
+  });
+  it("the nazara starts only on a complete appointment record — for a real waqf with its decision document (owner's decision 2026-11-07, §6)", () => {
+    const full = { leadUserId: "u", appointmentDecisionNo: "123", appointmentDecisionDate: "2026-10-01", appointmentAuthority: "court", powers: "صلاحيات كما في القرار", feeTerms: "أتعاب", responsibilities: "مسؤوليات كما في القرار", appointmentDocumentId: "d" };
+    expect(appointmentMissing(full, false)).toEqual([]);
+    expect(appointmentMissing({ ...full, appointmentDocumentId: null }, false)).toEqual(["وثيقة قرار التعيين مرفقة بملف الوقف"]);
+    expect(appointmentMissing({ ...full, appointmentDocumentId: null }, true)).toEqual([]);
+    expect(appointmentMissing({ ...full, appointmentDecisionNo: null, appointmentAuthority: null }, false)).toEqual(["رقم قرار التعيين", "الجهة المصدرة للقرار"]);
+    // and the licence gate still applies to a real waqf, whatever the record says
+    expect(activationGate({ licence: undefined, today, waqfIsDemo: false }).allowed).toBe(false);
   });
   it("the nazara licence gates practice, not intake", () => {
     expect(PRACTICE_GATED_LICENSES.has("gaa_nazara_license")).toBe(true);

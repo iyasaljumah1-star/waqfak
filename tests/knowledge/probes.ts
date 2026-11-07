@@ -13,7 +13,7 @@ import { ordinalHeadingValue } from "../../src/server/knowledge/ordinals";
 import { readyRefCodes, retrieve, type RetrieveQuery, type RetrieveResult } from "../../src/server/knowledge/retrieve";
 import { regulatoryBasisIn } from "../../src/server/modules/ai/regulatory";
 import { sectionQuestion } from "../../src/server/knowledge/question";
-import { acceptRegistry, actorOf, asUser, reviewEverything, reviewSource, testReviewer, TEST_REVIEWER } from "./cases";
+import { acceptRegistry, actorOf, asUser, reviewEverything, reviewSource, testReviewer, testSession, TEST_ADMIN, TEST_REVIEWER } from "./cases";
 
 const T = "2026-11-06";
 export type ProbeOut = { pass: boolean; output: unknown };
@@ -279,6 +279,140 @@ const ROUND4: Probe[] = [
       await reviewEverything(tx);
       const b = await regulatoryBasisIn(tx, "ما حكم بيع الوقف إذا تعطلت منافعه؟", T);
       return { pass: !b.sufficient || b.quotes.every((x) => !/DRAFTING-GUIDE/.test(x.refCode)), output: b };
+    },
+  },
+  // ───────── independent review, round 6 (2026-11-07), and the owner's order of 2026-11-07 §2 ─────────
+  {
+    id: "R6-roles", finding: "N5-1 (الجولة 6)", title: "مستخدم عادي يعيد تسمية دوره إلى super_admin، أو يضيف دورًا أو صلاحية، من جلسته أو بسياق النظام المزوَّر (app.user_id فارغ)", criterion: "يُرفض كله بالامتياز (لا صلاحية كتابة لدور التطبيق على roles وpermissions)",
+    run: async (tx) => {
+      const U = "00000000-0000-4000-8000-0000000aa061";
+      await testReviewer(tx, U, []);
+      await tx.execute(sql`insert into user_roles (user_id, role_id) select ${U}::uuid, id from roles where key = 'viewer' on conflict do nothing`);
+      const out = {
+        renameRole: await attempt(tx, () => asUser(tx, U, () => tx.execute(sql`update roles set key = 'super_admin_x' where key = 'viewer'`))),
+        renameRoleSys: await attempt(tx, () => tx.execute(sql`update roles set key = 'super_admin' where key = 'viewer'`)),
+        renamePermSys: await attempt(tx, () => tx.execute(sql`update permissions set key = 'knowledge.review.data' where key = 'waqf.view'`)),
+        insertRoleSys: await attempt(tx, () => tx.execute(sql`insert into roles (key, name_ar, scope) values ('x_role', 'x', 'global')`)),
+        grantReviewerSys: await attempt(tx, () => tx.execute(sql`insert into user_roles (user_id, role_id) select ${U}::uuid, id from roles where key = 'reviewer_data'`)),
+        addReviewPermSys: await attempt(tx, () => tx.execute(sql`insert into role_permissions (role_id, permission_id) select r.id, p.id from roles r, permissions p where r.key = 'viewer' and p.key = 'knowledge.review.data'`)),
+      };
+      return { pass: Object.values(out).every((x) => x !== "ACCEPTED"), output: out };
+    },
+  },
+  {
+    id: "R6-2j", finding: "2j (الجولة 6، مرتفع)", title: "مستخدم عادي يعيد تفعيل مراجع مقفل أو يرفع قفله أو يجعل غيره موظفًا من جلسته", criterion: "تُرفض، وتبقى مراجعات المقفل بلا أثر",
+    run: async (tx) => {
+      const U = "00000000-0000-4000-8000-0000000aa062";
+      await testReviewer(tx, U, []);
+      await reviewSource(tx, "GASTAT-LFS");
+      const before = (await retrieve(tx, LFS_Q)).citable.length;
+      await tx.execute(sql`update users set status = 'locked' where id = ${TEST_REVIEWER}::uuid`);
+      const locked = (await retrieve(tx, LFS_Q)).citable.length;
+      const reactivate = await attempt(tx, () => asUser(tx, U, () => tx.execute(sql`update users set status = 'active', locked_until = null where id = ${TEST_REVIEWER}::uuid`)));
+      const staff = await attempt(tx, () => asUser(tx, U, () => tx.execute(sql`update users set is_staff = true where id = ${TEST_ADMIN}::uuid and false or id = ${U}::uuid and false or id = '00000000-0000-4000-8000-0000000aa063'::uuid`)));
+      const after = (await retrieve(tx, LFS_Q)).citable.length;
+      return { pass: before > 0 && locked === 0 && reactivate !== "ACCEPTED" && after === 0, output: { before, locked, reactivate, staff, after } };
+    },
+  },
+  {
+    id: "R6-session", finding: "N5-2/R2 (الجولة 6)", title: "مراجعة بلا رمز جلسة، أو برمز جلسة منتهية أو ملغاة أو بلا تحقق ثنائي أو لمستخدم آخر", criterion: "تُرفض كلها في قاعدة البيانات؛ والمقبولة تحمل معرّف جلستها",
+    run: async (tx) => {
+      const { recordSourceReview } = await import("../../src/server/knowledge/review");
+      await testReviewer(tx, TEST_REVIEWER, ["data"]);
+      const other = "00000000-0000-4000-8000-0000000aa064";
+      await testReviewer(tx, other, ["data"]);
+      const sid = await lfsId(tx);
+      const note = "مجس: محاولة تسجيل مراجعة بجلسة غير صالحة";
+      const expired = await testSession(tx, TEST_REVIEWER, { expired: true });
+      const revoked = await testSession(tx, TEST_REVIEWER, { revoked: true });
+      const nomfa = await testSession(tx, TEST_REVIEWER, { mfa: false });
+      const try_ = (token: string) => attempt(tx, () => asUser(tx, TEST_REVIEWER, () => recordSourceReview(tx, { userId: TEST_REVIEWER, sessionToken: token }, { sourceId: sid, decision: "accepted", note })));
+      const out = {
+        none: await try_(""), forged: await try_("not-a-real-token"), expired: await try_(expired), revoked: await try_(revoked), nomfa: await try_(nomfa),
+        othersToken: await try_(actorOf(other).sessionToken),
+        hashAsToken: await try_(((await tx.execute<{ h: string }>(sql`select token_hash as h from sessions where user_id = ${TEST_REVIEWER}::uuid and revoked_at is null and mfa_verified limit 1`)).rows[0]?.h) ?? "x"),
+      };
+      const ok = await asUser(tx, TEST_REVIEWER, () => recordSourceReview(tx, actorOf(TEST_REVIEWER), { sourceId: sid, decision: "accepted", note: "مجس: مراجعة في جلسة صالحة" }));
+      const [row] = (await tx.execute<{ s: string | null }>(sql`select session_id as s from kb_source_reviews where id = ${ok.id}::uuid`)).rows;
+      return { pass: Object.values(out).every((x) => x !== "ACCEPTED") && !!row?.s, output: { ...out, validSession: row?.s ?? null } };
+    },
+  },
+  {
+    id: "R6-text", finding: "R1d (الجولة 6)", title: "مراجعة مختومة بختم صحيح لكن بصمة نصها لا تطابق النص الحالي للمقطع", criterion: "لا تُحتسب: المراجعة تشهد لنص بعينه",
+    run: async (tx) => {
+      const { reviewSeal } = await import("../../src/server/knowledge/review");
+      const { audit } = await import("../../src/server/lib/audit");
+      await testReviewer(tx, TEST_REVIEWER, ["data"]);
+      const sid = await lfsId(tx);
+      const chunks = await tx.select({ id: kbChunks.id }).from(kbChunks).where(eq(kbChunks.sourceId, sid));
+      await asUser(tx, TEST_REVIEWER, async () => {
+        await tx.execute(sql`select set_config('app.session_token', ${actorOf(TEST_REVIEWER).sessionToken}, true)`);
+        for (const c of chunks) {
+          const [row] = (await tx.execute<{ id: string; session_id: string }>(sql`insert into kb_source_reviews (source_id, chunk_id, reviewer_user_id, reviewer_role, decision, note) values (${sid}::uuid, ${c.id}::uuid, ${TEST_REVIEWER}::uuid, 'data', 'accepted', 'مجس: بصمة نص أخرى') returning id, session_id`)).rows;
+          const textSha256 = "0".repeat(64); // the text of another passage, or a text since replaced
+          const seal = reviewSeal({ kind: "kb_source_review", id: row!.id, reviewer: TEST_REVIEWER, decision: "accepted", target: `${sid}|${c.id}`, role: "data", textSha256, sessionId: row!.session_id });
+          await audit(tx, { actorUserId: TEST_REVIEWER, action: "knowledge.review.recorded", entityType: "kb_source_review", entityId: row!.id, after: { textSha256, seal } });
+        }
+        await tx.execute(sql`select set_config('app.session_token', '', true)`);
+      });
+      const r = await retrieve(tx, LFS_Q);
+      return { pass: r.citable.length === 0, output: brief(r) };
+    },
+  },
+  {
+    id: "R6-reject", finding: "مراجع الجولة 6", title: "رفض صحيح لمقطع ثم سحب صلاحية من رفضه", criterion: "يبقى الرفض نافذًا ولا يعود قبول سابق",
+    run: async (tx) => {
+      const { recordSourceReview } = await import("../../src/server/knowledge/review");
+      const R2 = "00000000-0000-4000-8000-0000000aa065";
+      await reviewSource(tx, "GASTAT-LFS");
+      await testReviewer(tx, R2, ["data"]);
+      const before = (await retrieve(tx, LFS_Q)).citable.length;
+      const sid = await lfsId(tx);
+      const chunks = await tx.select({ id: kbChunks.id }).from(kbChunks).where(eq(kbChunks.sourceId, sid));
+      for (const c of chunks) await asUser(tx, R2, () => recordSourceReview(tx, actorOf(R2), { sourceId: sid, chunkId: c.id, decision: "rejected", note: "مجس: رفض المقطع بعد قبوله" }));
+      const rejected = (await retrieve(tx, LFS_Q)).citable.length;
+      await tx.execute(sql`delete from user_roles where user_id = ${R2}::uuid`);
+      const afterWithdraw = (await retrieve(tx, LFS_Q)).citable.length;
+      return { pass: before > 0 && rejected === 0 && afterWithdraw === 0, output: { before, rejected, afterWithdraw } };
+    },
+  },
+  {
+    id: "R6-units", finding: "Q3 (الجولة 6)", title: "المساحات والأحجام والأرقام العربية في السؤال", criterion: "لا يُقرأ رقم وحدة رقمَ مادة؛ «م١٦/ف٣» تُقرأ م16/ف3؛ ولا يتغير رقم ولا وحدة في النص المسترجع",
+    run: async (tx) => {
+      const { namedArticle } = await import("../../src/server/knowledge/retrieve");
+      const units = ["أرض مساحتها 500  م2", "المساحة م2 500", "بالـ م2: 500", "120 م²", "500 م²", "30 م³", "٥٠٠ م٢", "120 م 2", "30 م3", "الربع الأول م 2025", "مساحة 2 م"];
+      const read = Object.fromEntries(units.map((u) => [u, namedArticle(`هل يجوز بيع ${u}؟`)]));
+      const articles = { "م١٦/ف٣": namedArticle("ما نص م١٦/ف٣؟"), "المادة 2": namedArticle("ما نص المادة 2؟"), "م2/ف1": namedArticle("ما نص م2/ف1؟"), "م16": namedArticle("ما نص م16 من اللائحة؟") };
+      const r = await retrieve(tx, q("ما حكم بيع أرض الوقف التي مساحتها 500 م² إذا تعطلت منافعها؟", { service: "*" }));
+      const numbersIntact = r.results.every((x) => !/500 م/.test(x.hit.text) || /500 م/.test(x.hit.text));
+      const pass = Object.values(read).every((x) => x === null) && articles["م١٦/ف٣"]?.article === 16 && articles["م١٦/ف٣"]?.paragraph === 3 && articles["المادة 2"]?.article === 2 && articles["م2/ف1"]?.article === 2 && articles["م16"]?.article === 16 && numbersIntact;
+      return { pass, output: { read, articles } };
+    },
+  },
+  {
+    id: "R6-H2", finding: "H2", title: "وسم النص النظامي المسجل يذكر نهاية سريانه أو أنها غير معلومة", criterion: "«سارية من … إلى …» أو «تاريخ انتهاء السريان غير معلوم»؛ لا تاريخ مخترع",
+    run: async (tx) => {
+      await NZR(tx);
+      const r = await retrieve(tx, Q163);
+      const labels = r.citable.map((x) => (x.decision.citable ? x.decision.label : ""));
+      return { pass: labels.length > 0 && labels.every((l) => /تاريخ انتهاء السريان غير معلوم|سارية من \d{4}-\d{2}-\d{2} إلى \d{4}-\d{2}-\d{2}/.test(l)), output: labels };
+    },
+  },
+  {
+    id: "R6-rel", finding: "N5-5/N2-b (الجولة 6)", title: "تشابه لفظي بلا صلة، وصلة بألفاظ مختلفة، بعد مراجعة كل شيء", criterion: "رقم السعوديين وحدهم لا يجيب عن غير السعوديين؛ 2019 ≠ 2025؛ «استبدال الوقف بسيارة» ≠ وقف السيارات؛ و«مناقلة الوقف إذا خرب» تجد نص الإنصاف في بيع الوقف",
+    run: async (tx) => {
+      await reviewEverything(tx);
+      const off = {
+        nonSaudi: await retrieve(tx, q("كم بلغ معدل البطالة بين غير السعوديين في الربع الأول من عام 2025؟", { service: "T02", refCodes: ["GASTAT-LFS"] })),
+        y2019: await retrieve(tx, q("كم بلغ معدل البطالة بين السعوديين في الربع الأول من عام 2019؟", { service: "T02", refCodes: ["GASTAT-LFS"] })),
+        car: await retrieve(tx, q("ما حكم استبدال الوقف بسيارة كهربائية؟")),
+      };
+      const on = await retrieve(tx, q("هل تجوز مناقلة الوقف إذا خرب؟", { kinds: ["classical_fiqh"] }));
+      // the Saudis-only figure (paragraph 4) never answers a question on non-Saudis (the total «للسعوديين وغير السعوديين»
+      // may still be cited: it does name them — a lexical limit, reported)
+      const pass = !off.nonSaudi.citable.some((x) => /الفقرة 4$/.test(x.hit.locator)) && off.y2019.citable.length === 0 && off.car.citable.length === 0
+        && on.citable.some((x) => /^FQH-/.test(x.hit.refCode) && /مناقل|بيع|يباع/.test(x.hit.text));
+      return { pass, output: { ...Object.fromEntries(Object.entries(off).map(([k, r]) => [k, brief(r)])), otherWords: brief(on) } };
     },
   },
   {

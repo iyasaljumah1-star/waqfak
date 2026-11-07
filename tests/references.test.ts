@@ -369,13 +369,58 @@ describe("8. every unit traces back to its source", () => {
   });
 });
 
+/**
+ * Isolation (phase 1, rewritten 2026-11-07 at the owner's order, §2.7). The original test allowed no importer of the
+ * reference engine but the schema barrel: its purpose was that no statutory text reaches a page, a route, a server
+ * action or a client without passing a controlled gate. The unified knowledge engine (eb4fd06) is that gate — it cites
+ * only what references/citation.ts authorises — so the original's letter broke while its purpose held. This version
+ * keeps the purpose and asserts more than the original did:
+ *  1. the reference engine is imported only by the schema barrel and the knowledge gateway (an explicit allowlist);
+ *  2. inside the gateway, the citation guard is called only from knowledge/retrieve.ts;
+ *  3. the gateway itself is imported only by an explicit allowlist of server modules (the processing pipeline, the
+ *     assistant's regulatory route, the output gate, the team's knowledge pages);
+ *  4. nothing a client can reach — the client app, public pages, share links, API routes, components — imports either.
+ * A new importer fails this test until it is added here, by name, with its reason.
+ */
 describe("9–10. isolation: manual services untouched, nothing reaches clients", () => {
   const files = (dir: string): string[] => readdirSync(dir, { withFileTypes: true }).flatMap((d) => (d.isDirectory() ? files(path.join(dir, d.name)) : /\.(ts|tsx)$/.test(d.name) ? [path.join(dir, d.name)] : []));
-  it("no page, route, server action or service module imports the reference engine", () => {
-    const importers = files(path.join(process.cwd(), "src"))
-      .filter((f) => !f.includes(`${path.sep}references${path.sep}`))
-      .filter((f) => /server\/references|from "\.\.?\/references|\.\/references"/.test(readFileSync(f, "utf8")));
-    // Only the schema barrel re-exports the table definitions (no runtime reads).
-    expect(importers.map((f) => path.relative(process.cwd(), f))).toEqual([path.join("src", "server", "db", "schema", "index.ts")]);
+  const all = files(path.join(process.cwd(), "src")).map((f) => path.relative(process.cwd(), f).split(path.sep).join("/"));
+  const src = (f: string) => readFileSync(path.join(process.cwd(), f), "utf8");
+  const importsReferences = (f: string) => /server\/references|from "\.\.?\/references|\.\/references"|from "\.\.\/\.\.\/references/.test(src(f));
+  const importsKnowledge = (f: string) => /server\/knowledge(\/|")|from "\.\.\/knowledge|from "\.\.\/\.\.\/knowledge/.test(src(f));
+  const GATEWAY = /^src\/server\/knowledge\//;
+
+  it("the reference engine is imported only by the schema barrel and the knowledge gateway", () => {
+    const importers = all.filter((f) => !f.startsWith("src/server/references/") && importsReferences(f));
+    expect(importers.filter((f) => f !== "src/server/db/schema/index.ts" && !GATEWAY.test(f))).toEqual([]);
+    expect(importers).toContain("src/server/knowledge/retrieve.ts");
+  });
+
+  it("inside the gateway, only knowledge/retrieve.ts calls the citation guard", () => {
+    // a value import (a type import carries no code); comments naming the file do not count
+    const callers = all.filter((f) => GATEWAY.test(f) && /^import (?!type )[^;]*from "[^"]*references\/citation"/m.test(src(f)));
+    expect(callers).toEqual(["src/server/knowledge/retrieve.ts"]);
+  });
+
+  it("the knowledge gateway is imported only by the allowlisted server modules", () => {
+    const ALLOWED = new Set([
+      "src/server/engine/pipeline/run.ts", // drafts through retrieve(); final approval gated (B13)
+      "src/server/engine/knowledge/ingest.ts", // the retired legacy loader refuses catalog references
+      "src/server/engine/verify/pure.ts", // verification of a section's citations
+      "src/server/modules/ai/regulatory.ts", // the public assistant's only route to texts (through the policy)
+      "src/server/modules/admin/knowledge/actions.ts", // reviewers' actions (session-bound)
+      "src/server/modules/outputs/quality.ts", // the final approval's review gate
+      "src/app/admin/knowledge/page.tsx", // the team's review queue (staff, MFA)
+      "src/app/admin/knowledge/fiqh/page.tsx", // the sharia reviewer's queue of research dossiers
+      "src/app/admin/knowledge/fiqh/[id]/page.tsx",
+    ]);
+    const importers = all.filter((f) => !GATEWAY.test(f) && importsKnowledge(f));
+    expect(importers.filter((f) => !ALLOWED.has(f))).toEqual([]);
+  });
+
+  it("nothing a client can reach imports the reference engine or the knowledge gateway", () => {
+    const clientFacing = all.filter((f) => /^src\/(app\/(app|\(site\)|r|api)\/|components\/)/.test(f) || (/^src\/app\/[^/]+\.tsx?$/.test(f)));
+    expect(clientFacing.length).toBeGreaterThan(20);
+    expect(clientFacing.filter((f) => importsReferences(f) || importsKnowledge(f))).toEqual([]);
   });
 });

@@ -117,7 +117,7 @@ const SYNONYM_GROUPS = [
   "استبدال إبدال مناقلة مناقلته المناقلة بيع بيعه",
   "أجرة أجر أجره عوض مكافأة",
   "ناظر الناظر متولي المتولي",
-  "تعطل تعطلت تعطيل خرب خراب",
+  "تعطل تعطلت تتعطل يتعطل تعطلها تعطيل خرب خراب",
   "دراهم الدراهم نقود النقود نقدي النقدي دنانير",
   "استدانة الاستدانة يستدين يستدان اقتراض الاقتراض يقترض",
   "شرط شروط",
@@ -457,6 +457,22 @@ export async function availableRefCodes(tx: Tx, refCodes: string[], asOf: string
       continue;
     }
     if (s.textQuality !== "unreadable") out.add(s.refCode);
+  }
+  return out;
+}
+
+/**
+ * For the final gate: which of these passages of registry instruments the citation guard authorises now (their article
+ * compared, the comparison accepted by an authorised, session-bound reviewer). B13: article by article.
+ */
+export async function registryCitable(tx: Tx, chunkIds: string[], asOf: string): Promise<Map<string, boolean>> {
+  const out = new Map<string, boolean>();
+  if (!chunkIds.length) return out;
+  const rows = await tx.select({ id: kbChunks.id, articleNo: kbChunks.articleNo, paragraphNo: kbChunks.paragraphNo, registryId: kbSources.registryId }).from(kbChunks).innerJoin(kbSources, eq(kbSources.id, kbChunks.sourceId)).where(inArray(kbChunks.id, chunkIds));
+  const store = await loadVersionStore(tx, [...new Set(rows.map((r) => r.registryId).filter((x): x is string => !!x))]);
+  for (const r of rows) {
+    if (!r.registryId) continue;
+    out.set(r.id, r.articleNo !== null && cite(REGISTRY, store, { refId: r.registryId, article: r.articleNo, paragraph: r.paragraphNo ?? undefined, asOf }).ok);
   }
   return out;
 }

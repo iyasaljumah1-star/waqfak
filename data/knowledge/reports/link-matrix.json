@@ -1,5 +1,5 @@
 {
- "ranAt": "2026-11-06T17:07:28.393Z",
+ "ranAt": "2026-11-07T17:36:14.540Z",
  "rows": [
   {
    "refCode": "NAZARA-REG",
@@ -249,7 +249,7 @@
    "inKb": true,
    "units": 8,
    "retrievable": true,
-   "probe": "3/3",
+   "probe": "2/3",
    "services": [
     "I06",
     "T07"
@@ -314,7 +314,7 @@
    "inKb": true,
    "units": 23,
    "retrievable": true,
-   "probe": "3/3",
+   "probe": "2/3",
    "services": [
     "C01",
     "C02",
@@ -451,7 +451,7 @@
    "inKb": true,
    "units": 32,
    "retrievable": true,
-   "probe": "2/3",
+   "probe": "3/3",
    "services": [
     "C01",
     "C03",
@@ -471,7 +471,7 @@
     "W05"
    ],
    "linked": true,
-   "tested": false,
+   "tested": true,
    "approved": false,
    "quality": "good",
    "superseded": ""

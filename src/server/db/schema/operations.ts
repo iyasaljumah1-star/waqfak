@@ -72,7 +72,7 @@ export type OutputBlock =
   | { type: "list"; items: { text: string; prov?: Provenance; ref?: string }[]; ordered?: boolean }
   /** Text the specialist must write; blocks approval while empty. Written by the processing engine, it carries `by`
    *  «engine», the passages it rests on (`refs`, numbered as cited in the text) and the run that wrote it. */
-  | { type: "specialist"; prompt: string; text: string; by?: "engine" | "person"; refs?: { n: number; refCode: string; version: string; locator: string; chunkId: string }[]; runId?: string }
+  | { type: "specialist"; prompt: string; text: string; by?: "engine" | "person"; refs?: { n: number; refCode: string; version: string; locator: string; chunkId: string; status?: string; flags?: string[] }[]; runId?: string; dossierId?: string }
   /** A drafted clause of a document (will, deed, policy): `generated` is the text built from the data; `text` is what
    *  the document says now (equal to `generated` until a person edits it). `refs` = where the rule behind it comes from. */
   | { type: "clause"; key: string; n: number; title: string; text: string; generated: string; prov: Provenance; refs?: string[]; data?: ClauseDatum[] }

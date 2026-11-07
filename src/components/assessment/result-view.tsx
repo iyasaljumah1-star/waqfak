@@ -117,6 +117,14 @@ function RecCard({ rec, waqfId, mode }: { rec: RecView; waqfId: string | null; m
                   <ArrowLeft aria-hidden className="size-3.5" />
                 </ButtonLink>
               ) : null}
+              {s.conditions?.length ? (
+                <div className="w-full rounded-md border border-line bg-surface-2 px-3 py-2 text-[13px] leading-6">
+                  <p className="font-medium">مسار مشروط: يُقبل الطلب الآن للدراسة وتجهيز الملف ومتابعته، وهذه متطلبات لم تُستوفَ بعد:</p>
+                  <ul className="mt-1 list-disc ps-5 text-muted">
+                    {s.conditions.map((c) => <li key={c}>{c}</li>)}
+                  </ul>
+                </div>
+              ) : null}
             </div>
           ))}
           {rec.selfServiceHintAr ? (

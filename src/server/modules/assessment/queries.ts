@@ -76,7 +76,8 @@ export type RecView = {
   suppressedNote: string | null;
   dismissReason: string | null;
   serviceRequestId: string | null;
-  services: { code: string; nameAr: string }[];
+  /** `conditions`: a conditional path (N01 before its licence) — the requirements not yet met, shown as such. */
+  services: { code: string; nameAr: string; conditions?: string[] }[];
   removed: { code: string; nameAr: string; why: string }[];
   manual: boolean;
 };
@@ -149,11 +150,12 @@ export async function loadResultBundle(tx: Tx, row: AssessmentRow): Promise<Resu
 
   const recs: RecView[] = recRows.map((r) => {
     const removed = (meta.get(`meta.removed.${r.ruleCode}`) as { code: string; why: string }[] | undefined) ?? [];
+    const conditional = (meta.get(`meta.conditional.${r.ruleCode}`) as { code: string; conditions: string[] }[] | undefined) ?? [];
     return {
       id: r.id, ruleCode: r.ruleCode, needCode: r.needCode, needTitle: needTitle.get(r.needCode) ?? r.titleAr, severity: r.severity, priority: Number(r.priority),
       wave: r.wave, titleAr: r.titleAr, reasonAr: r.reasonAr, whyItMattersAr: r.whyItMattersAr, reference: r.reference, selfServiceHintAr: r.selfServiceHintAr,
       status: r.status, suppressedNote: r.suppressedNote, dismissReason: r.dismissReason, serviceRequestId: r.serviceRequestId,
-      services: r.serviceCodes.map((c) => ({ code: c, nameAr: svcName.get(c) ?? c })),
+      services: r.serviceCodes.map((c) => ({ code: c, nameAr: svcName.get(c) ?? c, conditions: conditional.find((x) => x.code === c)?.conditions })),
       removed: removed.map((x) => ({ ...x, nameAr: svcName.get(x.code) ?? x.code })),
       manual: r.ruleCode.startsWith("MANUAL"),
     };

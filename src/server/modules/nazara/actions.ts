@@ -20,7 +20,7 @@ import { openEngagementTx } from "./engine";
 import { syncRequestsFromNazara } from "@/server/modules/operations/links";
 import { buildPeriodicSnapshot, buildRecordSnapshot } from "./report";
 import { randomToken } from "@/server/lib/crypto";
-import { activationGate, NAZARA_LICENSE_KEY, type LicenceRecord } from "./licence";
+import { activationGate, appointmentMissing, NAZARA_LICENSE_KEY, type LicenceRecord } from "./licence";
 import { ACTIVATION_TASKS, canTransition, checklistProgress, END_REASON_AR, freshHandover, RUNNING_STATUSES, STATUS_AR, TRANSITIONS, type EngagementStatus } from "./pure";
 
 const uuid = z.string().uuid("معرّف غير صالح.");
@@ -345,17 +345,10 @@ export async function activateEngagement(_: ActionState, fd: FormData): Promise<
   return staffAction("nazara.approve", async (c) => {
     const e = await loadEngagement(c.tx, r.data.id);
     if (!canTransition(e.status, "activate")) throw new UserError("تُباشَر النظارة بعد اعتماد القبول.");
-    const missing = [
-      !e.leadUserId && "مسؤول الملف",
-      !e.appointmentDecisionNo && "رقم قرار التعيين",
-      !e.appointmentDecisionDate && "تاريخه",
-      !e.powers && "الصلاحيات",
-      !e.feeTerms && "الأتعاب",
-      !e.responsibilities && "المسؤوليات",
-    ].filter(Boolean);
-    if (missing.length) throw new UserError(`أكمل قرار التعيين قبل المباشرة: ${missing.join("، ")}.`);
     const [w] = await c.tx.select().from(waqfs).where(eq(waqfs.id, e.waqfId)).limit(1);
     if (!w) throw new UserError("لم نجد الوقف.");
+    const missing = appointmentMissing(e, w.isDemo);
+    if (missing.length) throw new UserError(`أكمل قرار التعيين قبل المباشرة: ${missing.join("، ")}.`);
     const licences = await readSettingValue<LicenceRecord[]>(c.tx, "company.licenses", []);
     const licence = licences.find((l) => l.key === NAZARA_LICENSE_KEY);
     const gate = activationGate({ licence, today: todayISO(), waqfIsDemo: w.isDemo });

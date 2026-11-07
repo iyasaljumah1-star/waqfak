@@ -24,6 +24,7 @@ import { engineAuth } from "../actor";
 import { ENGINE_VERSION } from "../constants";
 import { retrieve, availableRefCodes } from "@/server/knowledge/retrieve";
 import { matterOf, sectionQuestion } from "@/server/knowledge/question";
+import { research, saveDossier } from "@/server/knowledge/fiqh/research";
 import { maskPII } from "@/server/modules/ai/safety";
 import { DRAFT_FLAG_AR, KIND_AR } from "@/server/knowledge/policy";
 
@@ -287,7 +288,16 @@ export async function processRequest(job: ClaimedJob): Promise<RunOutcome> {
             b.text = result.text;
             b.by = "engine";
             b.runId = run.id;
-            b.refs = hits.map((h, i) => ({ n: i + 1, refCode: h.refCode, version: h.version, locator: h.locator, chunkId: h.chunkId })).filter((r) => cited.has(r.n));
+            // each reference keeps its standing and flags: what the final approval will require reviewed (B13)
+            b.refs = picked.map((r, i) => ({ n: i + 1, refCode: r.hit.refCode, version: r.hit.version, locator: r.hit.locator, chunkId: r.hit.chunkId, status: r.draft.usable ? r.draft.status : "rejected", flags: r.draft.usable ? r.draft.flags : [] })).filter((r) => cited.has(r.n));
+            // a section resting on the school's books or «الميسّر» carries a research dossier for the sharia reviewer:
+            // the document is not approved before the dossier's result is approved or modified (§7.9)
+            if (picked.some((r) => r.hit.refKind === "classical_fiqh" || r.hit.refKind === "contemporary_book")) {
+              const matter = matterOf(rc.req, maskPII);
+              const dossier = await research(tx, { question: question, facts: matter ? [{ text: matter, status: "established" }] : [], service: rc.service.code, asOf: new Date().toISOString().slice(0, 10), stage: "draft" });
+              const saved = await saveDossier(tx, dossier, { createdBy: eauth.user.id, requestId: rc.req.id, outputId: o.id });
+              b.dossierId = saved.id;
+            }
             sectionLog.push({ section: sec.title, by: provider.id, model: provider.model, cited: b.refs.map((r) => `${r.refCode} ${r.locator}`), rationale: result.rationale });
           }
         }

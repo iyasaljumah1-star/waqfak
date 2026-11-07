@@ -141,11 +141,16 @@ describe("isolation of the knowledge engine (replaces nothing: the phase-1 isola
     const importers = src.filter((f) => !rel(f).startsWith("src/server/knowledge/")).filter((f) => /server\/knowledge\//.test(fs.readFileSync(f, "utf8"))).map(rel);
     // engine-core's pipeline, the public assistant's regulatory route (through the policy), the admin review page and
     // action (recording reviews), and the retired legacy loader's refusal check (catalog lookup only)
-    expect(importers.sort()).toEqual(["src/app/admin/knowledge/page.tsx", "src/server/engine/knowledge/ingest.ts", "src/server/engine/pipeline/run.ts", "src/server/modules/admin/knowledge/actions.ts", "src/server/modules/ai/regulatory.ts"]);
-    // no page reaches retrieval: the only page is the admin review page, which reads the review queue
+    // owner's order 2026-11-07: + the final approval's review gate (outputs/quality.ts) and the sharia reviewer's pages
+    expect(importers.sort()).toEqual([
+      "src/app/admin/knowledge/fiqh/[id]/page.tsx", "src/app/admin/knowledge/fiqh/page.tsx", "src/app/admin/knowledge/page.tsx",
+      "src/server/engine/knowledge/ingest.ts", "src/server/engine/pipeline/run.ts", "src/server/modules/admin/knowledge/actions.ts",
+      "src/server/modules/ai/regulatory.ts", "src/server/modules/outputs/quality.ts",
+    ]);
+    // no page reaches retrieval: the admin pages read the review queue and the stored dossiers only (staff, MFA)
     const pages = src.map(rel).filter((f) => f.startsWith("src/app/") && /server\/(knowledge|references)\//.test(fs.readFileSync(f, "utf8")));
-    expect(pages).toEqual(["src/app/admin/knowledge/page.tsx"]);
-    expect(fs.readFileSync("src/app/admin/knowledge/page.tsx", "utf8")).not.toMatch(/retrieve|readyRefCodes/);
+    expect(pages.sort()).toEqual(["src/app/admin/knowledge/fiqh/[id]/page.tsx", "src/app/admin/knowledge/fiqh/page.tsx", "src/app/admin/knowledge/page.tsx"]);
+    for (const p of pages) expect(fs.readFileSync(p, "utf8")).not.toMatch(/retrieve|readyRefCodes|server\/references/);
     // the assistant reaches the knowledge base only through retrieve() (the policy), never the tables
     expect(fs.readFileSync("src/server/modules/ai/regulatory.ts", "utf8")).toMatch(/from "@\/server\/knowledge\/retrieve"/);
     expect(src.filter((f) => /\bkbChunks\b|\bkbSources\b/.test(fs.readFileSync(f, "utf8"))).map(rel).filter((f) => !f.startsWith("src/server/knowledge/") && f !== "src/server/db/schema/engine.ts" && !f.startsWith("src/server/engine/knowledge/"))).toEqual([]);

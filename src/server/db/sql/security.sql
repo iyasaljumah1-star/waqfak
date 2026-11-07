@@ -790,10 +790,9 @@ CREATE CONSTRAINT TRIGGER fiqh_review_audited AFTER INSERT ON fiqh_reviews DEFER
 -- cites (a specialist block's refs) has no accepted review of that passage, recorded in an authenticated session by a
 -- holder of the field's permission — nor while a fiqh dossier it rests on has no approving review. The seal and the
 -- audit hash are verified by the server; the database checks what it can see.
-CREATE OR REPLACE FUNCTION output_unreviewed_basis(oid uuid, ver integer) RETURNS integer LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public AS $$
-DECLARE n integer := 0; secs jsonb;
+CREATE OR REPLACE FUNCTION sections_unreviewed_basis(secs jsonb) RETURNS integer LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public AS $$
+DECLARE n integer := 0;
 BEGIN
-  SELECT sections INTO secs FROM output_versions WHERE output_id = oid AND version = ver;
   IF secs IS NULL THEN RETURN 0; END IF;
   WITH refs AS (
     SELECT (r->>'chunkId')::uuid AS chunk_id FROM jsonb_path_query(secs, '$[*] ? (!(exists(@.removed)) || @.removed != true).blocks[*] ? (@.type == "specialist").refs[*]') r
@@ -816,6 +815,11 @@ BEGIN
         AND NOT EXISTS (SELECT 1 FROM kb_source_reviews later WHERE later.chunk_id = c.id AND later.reviewer_role = k.reviewer_role AND later.at > k.at))
     END);
   -- every dossier a block rests on needs an approving (or modifying) review by a holder of its field, on its content
+  WITH held AS (
+    SELECT DISTINCT ur.user_id, substr(p.key, 18) AS role FROM user_roles ur JOIN role_permissions rp ON rp.role_id = ur.role_id
+    JOIN permissions p ON p.id = rp.permission_id JOIN users u ON u.id = ur.user_id
+    WHERE p.key LIKE 'knowledge.review.%' AND u.status = 'active' AND (u.locked_until IS NULL OR u.locked_until < now())
+  )
   SELECT n + count(*) INTO n FROM (
     SELECT DISTINCT (b->>'dossierId')::uuid AS did FROM jsonb_path_query(secs, '$[*] ? (!(exists(@.removed)) || @.removed != true).blocks[*] ? (@.type == "specialist" && exists(@.dossierId))') b
   ) x JOIN fiqh_dossiers d ON d.id = x.did
@@ -825,6 +829,11 @@ BEGIN
       AND NOT EXISTS (SELECT 1 FROM fiqh_reviews later WHERE later.dossier_id = d.id AND later.at > f.at));
   RETURN n;
 END $$;
+REVOKE ALL ON FUNCTION sections_unreviewed_basis(jsonb) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION sections_unreviewed_basis(jsonb) TO waqfak_app;
+CREATE OR REPLACE FUNCTION output_unreviewed_basis(oid uuid, ver integer) RETURNS integer LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
+  SELECT coalesce((SELECT sections_unreviewed_basis(sections) FROM output_versions WHERE output_id = oid AND version = ver), 0)
+$$;
 REVOKE ALL ON FUNCTION output_unreviewed_basis(uuid, integer) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION output_unreviewed_basis(uuid, integer) TO waqfak_app;
 

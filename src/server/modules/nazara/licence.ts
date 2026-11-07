@@ -37,3 +37,22 @@ export function activationGate(opts: { licence: LicenceRecord | undefined | null
       "يُفعَّل الترخيص من «الإعدادات والتراخيص» برقمه وتاريخ انتهائه، وتبقى إجراءات الاستلام والدراسة متاحة حتى ذلك الحين.",
   };
 }
+
+/**
+ * What the appointment record must hold before the nazara is started (owner's decision 2026-11-07, §6, phase 3): the
+ * file's lead, the decision's number, date and issuing authority, the powers, fees and responsibilities it sets (م4/6),
+ * and — for a real waqf — the decision document itself attached to the waqf. Combined with activationGate (licence,
+ * م5/2), nothing registers the company as the waqf's nazir before these are met.
+ */
+export function appointmentMissing(e: { leadUserId: string | null; appointmentDecisionNo: string | null; appointmentDecisionDate: string | null; appointmentAuthority: string | null; powers: string | null; feeTerms: string | null; responsibilities: string | null; appointmentDocumentId: string | null }, waqfIsDemo: boolean): string[] {
+  return [
+    !e.leadUserId && "مسؤول الملف",
+    !e.appointmentDecisionNo && "رقم قرار التعيين",
+    !e.appointmentDecisionDate && "تاريخه",
+    !e.appointmentAuthority && "الجهة المصدرة للقرار",
+    !e.powers && "الصلاحيات",
+    !e.feeTerms && "الأتعاب",
+    !e.responsibilities && "المسؤوليات",
+    !waqfIsDemo && !e.appointmentDocumentId && "وثيقة قرار التعيين مرفقة بملف الوقف",
+  ].filter((x): x is string => !!x);
+}

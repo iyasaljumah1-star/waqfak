@@ -1,12 +1,12 @@
 import "server-only";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { Tx } from "@/server/db";
-import { kbChunks, kbSourceReviews, kbSources } from "@/server/db/schema";
+import { fiqhDossiers, fiqhReviews, kbChunks, kbSourceReviews, kbSources } from "@/server/db/schema";
 import { refMatchReviews, refMatchRuns, refSources, refVersions } from "@/server/db/schema/references";
 import { audit, canonical } from "@/server/lib/audit";
 import { rowHash } from "@/server/modules/admin/audit/chain";
 import { lookupHash, sha256 } from "@/server/lib/crypto";
-import { DEFAULT_REVIEW_ROLE, type RefKind, type ReviewRole } from "./policy";
+import { DEFAULT_REVIEW_ROLE, passageStatus, type RefKind, type ReviewRole } from "./policy";
 
 /**
  * Human review of the knowledge base (owner's order 2026-11-06, §2.3 and §4). A review is what lets a text be cited,
@@ -87,7 +87,7 @@ export async function recordSourceReview(tx: Tx, actor: ReviewActor, x: SourceRe
     reviewed = sourceReviewText(s, c.text);
     locator = c.locator;
   }
-  const [row] = await withSessionToken(tx, actor.sessionToken, () => tx.insert(kbSourceReviews).values({ sourceId: s.id, chunkId: x.chunkId ?? null, reviewerUserId: actor.userId, reviewerRole: role, decision: x.decision, note: x.note.trim() }).returning({ id: kbSourceReviews.id, sessionId: kbSourceReviews.sessionId }));
+  const [row] = await withSessionToken(tx, actor.sessionToken, () => tx.insert(kbSourceReviews).values({ sourceId: s.id, chunkId: x.chunkId ?? null, reviewerUserId: actor.userId, reviewerRole: role, decision: x.decision, note: x.note.trim(), at: new Date() }).returning({ id: kbSourceReviews.id, sessionId: kbSourceReviews.sessionId }));
   const textSha256 = sha256(reviewed);
   const seal = reviewSeal({ kind: "kb_source_review", id: row.id, reviewer: actor.userId, decision: x.decision, target: `${s.id}|${x.chunkId ?? ""}`, role, textSha256, sessionId: row.sessionId });
   await audit(tx, {
@@ -232,4 +232,107 @@ export async function comparisonQueue(tx: Tx): Promise<ComparisonItem[]> {
     runId: x.r.id, refId: x.code, versionLabel: x.label, outcome: x.r.outcome, ranAt: x.r.ranAt.toISOString(),
     reviews: reviews.filter((v) => v.runId === x.r.id).map((v) => ({ decision: v.decision, at: v.reviewedAt.toISOString() })),
   }));
+}
+
+// ───────────────────────── fiqh research dossiers (owner's order 2026-11-07, §7) ─────────────────────────
+
+export type FiqhDecision = "approved" | "modified" | "rejected" | "more_research";
+export const FIQH_DECISION_AR: Record<FiqhDecision, string> = { approved: "اعتماد النتيجة", modified: "تعديل الترجيح", rejected: "رفض", more_research: "طلب استكمال البحث" };
+export type FiqhReplacement = { position: string; reasons: string; statementIds: string[] };
+
+/** What a fiqh review attests: the dossier's content (its sha256) and, when modified, the reviewer's own weighing. */
+export const fiqhReviewText = (dossierSha256: string, replacement: FiqhReplacement | null) => `${dossierSha256}|${replacement ? JSON.stringify(canonical(replacement)) : ""}`;
+
+/**
+ * Records a reviewer's decision on a research dossier: approve, modify (the reviewer's weighing replaces the engine's,
+ * with reasons), reject, or ask for more research. In the reviewer's own authenticated session (the database binds it),
+ * by a holder of the dossier's field, never by the dossier's author, with its sealed audit entry. Approving or modifying
+ * may approve, at the same time, the passages the reviewer checked — each passage on its own (B13).
+ */
+export async function recordFiqhReview(tx: Tx, actor: ReviewActor, x: { dossierId: string; decision: FiqhDecision; note: string; replacement?: FiqhReplacement | null; passages?: string[] }) {
+  const [d] = await tx.select().from(fiqhDossiers).where(eq(fiqhDossiers.id, x.dossierId)).limit(1);
+  if (!d) throw new ReviewRefused("الملف البحثي غير موجود.");
+  const role = d.reviewRole as ReviewRole;
+  if (!(await mayReview(tx, actor.userId, role))) throw new ReviewRefused(`لا تحمل صلاحية «${REVIEW_ROLE_AR[role]}» لهذا الملف.`);
+  if (d.createdBy && d.createdBy === actor.userId) throw new ReviewRefused("لا يراجع معدّ الملف ملفه.");
+  if (x.note.trim().length < 10) throw new ReviewRefused("اكتب أسباب قرارك (عشرة أحرف على الأقل).");
+  const replacement = x.decision === "modified" ? x.replacement ?? null : null;
+  if (x.decision === "modified" && (!replacement || replacement.position.trim().length < 3 || replacement.reasons.trim().length < 10)) throw new ReviewRefused("عند تعديل الترجيح اكتب القول الذي تعتمده وأسبابه.");
+  const [row] = await withSessionToken(tx, actor.sessionToken, () => tx.insert(fiqhReviews).values({
+    dossierId: d.id, dossierSha256: d.sha256, reviewerUserId: actor.userId, reviewerRole: role, decision: x.decision, note: x.note.trim(), replacement,
+    // the moment of the decision (not the transaction's start): two decisions are ordered as they were made
+    at: new Date(),
+  }).returning({ id: fiqhReviews.id, sessionId: fiqhReviews.sessionId }));
+  const textSha256 = sha256(fiqhReviewText(d.sha256, replacement));
+  const seal = reviewSeal({ kind: "fiqh_review", id: row!.id, reviewer: actor.userId, decision: x.decision, target: d.id, role, textSha256, sessionId: row!.sessionId });
+  await audit(tx, {
+    actorUserId: actor.userId, action: "knowledge.review.recorded", entityType: "fiqh_review", entityId: row!.id, ip: actor.ip, userAgent: actor.userAgent,
+    after: { dossierId: d.id, dossierSha256: d.sha256, role, decision: x.decision, note: x.note.trim(), replacement, textSha256, seal },
+  });
+  // the passages the reviewer checked: each reviewed on its own (B13) — only when the result is approved or modified
+  const passages: string[] = [];
+  if ((x.decision === "approved" || x.decision === "modified") && x.passages?.length) {
+    const used = new Set(((d.dossier as { sources?: { chunkId: string }[] }).sources ?? []).map((s) => s.chunkId));
+    for (const chunkId of x.passages) {
+      if (!used.has(chunkId)) throw new ReviewRefused("مقطع ليس من نصوص هذا الملف.");
+      const [c] = await tx.select({ sourceId: kbChunks.sourceId }).from(kbChunks).where(eq(kbChunks.id, chunkId)).limit(1);
+      if (!c) continue;
+      await recordSourceReview(tx, actor, { sourceId: c.sourceId, chunkId, decision: "accepted", note: `روجع ضمن الملف البحثي ${d.id.slice(0, 8)}: ${x.note.trim()}`.slice(0, 2000) });
+      passages.push(chunkId);
+    }
+  }
+  return { id: row!.id, role, passages };
+}
+
+/** Reviews of these dossiers that count: genuine (sealed, audited, session-bound, on the dossier's content) and, for an approval or a modification, by an author who still holds the field's permission. Latest first. */
+export async function authorisedFiqhReviews(tx: Tx, dossierIds: string[]) {
+  if (!dossierIds.length) return [];
+  const rows = await tx.select().from(fiqhReviews).where(inArray(fiqhReviews.dossierId, dossierIds));
+  if (!rows.length) return [];
+  const dossiers = await tx.select({ id: fiqhDossiers.id, sha256: fiqhDossiers.sha256 }).from(fiqhDossiers).where(inArray(fiqhDossiers.id, dossierIds));
+  const shaOf = new Map(dossiers.map((x) => [x.id, x.sha256]));
+  const okUsers = (await tx.execute(sql`select distinct u.id::text || ':' || substr(p.key, 18) as k from users u
+    join user_roles ur on ur.user_id = u.id join role_permissions rp on rp.role_id = ur.role_id join permissions p on p.id = rp.permission_id
+    where p.key like 'knowledge.review.%' and u.status = 'active' and (u.locked_until is null or u.locked_until < now())`)) as unknown as { rows: { k: string }[] };
+  const allowed = new Set(okUsers.rows.map((r) => r.k));
+  const genuine = await auditedReviewIds(tx, "fiqh_review", rows.map((r) => ({
+    id: r.id, reviewerUserId: r.reviewerUserId, decision: r.decision, target: r.dossierId, role: r.reviewerRole, sessionId: r.sessionId,
+    expectedTextSha256: shaOf.get(r.dossierId) === r.dossierSha256 ? sha256(fiqhReviewText(r.dossierSha256, (r.replacement as FiqhReplacement | null) ?? null)) : "stale",
+  })));
+  return rows
+    .filter((r) => genuine.has(r.id) && (r.decision === "rejected" || r.decision === "more_research" || allowed.has(`${r.reviewerUserId}:${r.reviewerRole}`)))
+    .sort((a, b) => b.at.getTime() - a.at.getTime());
+}
+
+/** The standing of each dossier: its latest genuine review, if any. «final» only when that review approves or modifies. */
+export async function dossierStanding(tx: Tx, dossierIds: string[]) {
+  const rv = await authorisedFiqhReviews(tx, dossierIds);
+  return new Map(dossierIds.map((id) => {
+    const latest = rv.find((r) => r.dossierId === id) ?? null;
+    return [id, { latest, final: !!latest && (latest.decision === "approved" || latest.decision === "modified") }];
+  }));
+}
+
+/**
+ * Each passage's standing (B13, §5.6): approved or rejected by its latest genuine review of THAT passage (or a later
+ * rejection of its source as a whole); «under review» while a dossier or an output awaiting review uses it; else
+ * «unreviewed».
+ */
+export async function passageStanding(tx: Tx, chunkIds: string[]): Promise<Map<string, "unreviewed" | "under_review" | "approved" | "rejected">> {
+  const out = new Map<string, "unreviewed" | "under_review" | "approved" | "rejected">();
+  if (!chunkIds.length) return out;
+  const chunks = await tx.select({ id: kbChunks.id, sourceId: kbChunks.sourceId, refKind: kbSources.refKind, meta: kbSources.meta }).from(kbChunks).innerJoin(kbSources, eq(kbSources.id, kbChunks.sourceId)).where(inArray(kbChunks.id, chunkIds));
+  const reviews = await authorisedReviews(tx, [...new Set(chunks.map((c) => c.sourceId))]);
+  const pending = await tx.execute<{ chunk: string }>(sql`select distinct s->>'chunkId' as chunk from fiqh_dossiers d, jsonb_array_elements(d.dossier->'sources') s
+    where not exists (select 1 from fiqh_reviews f where f.dossier_id = d.id)
+    union select distinct r->>'chunkId' from outputs o join output_versions v on v.output_id = o.id and v.version = o.current_version,
+      jsonb_path_query(v.sections, '$[*].blocks[*] ? (@.type == "specialist").refs[*]') r where o.status = 'in_review'`);
+  const under = new Set(pending.rows.map((r) => r.chunk));
+  for (const c of chunks) {
+    const role = roleOf({ refKind: c.refKind, meta: c.meta });
+    const mine = reviews.filter((r) => r.sourceId === c.sourceId && r.reviewerRole === role).map((r) => ({ decision: r.decision as "accepted" | "rejected", at: r.at.toISOString(), role, chunkId: r.chunkId }));
+    const st = passageStatus({ chunkId: c.id, reviewRole: role }, mine);
+    out.set(c.id, st === "unreviewed" && under.has(c.id) ? "under_review" : st);
+  }
+  return out;
 }

@@ -1,4 +1,5 @@
 import "server-only";
+import { finalBasisErrors } from "@/server/knowledge/gate";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import type { Tx } from "@/server/db";
 import { dataConflicts, outputOfficialRecords, outputReviews, users } from "@/server/db/schema";
@@ -101,5 +102,7 @@ export async function transitionGate(tx: Tx, rc: RequestCtx, o: OutputRow, cur: 
   const cb = checkBlockers(checksOf(cur.sections), [...reviews.checks.values()]);
   errors.push(...cb.failed.map((c) => `فشل التحقق: ${c.label}`));
   if (mode === "approve") errors.push(...cb.pendingSpecialist.map((c) => `بانتظار رأي المختص: ${c.label}`));
+  // B13 and the sharia reviewer (owner's order 2026-11-07): every cited passage reviewed, every research dossier approved
+  if (mode === "approve") errors.push(...(await finalBasisErrors(tx, cur.sections, new Date().toISOString().slice(0, 10))));
   return { errors, live, requirements: requirementsOf({ serviceCode: rc.service.code, keys: inp?.ctx.keys ?? {}, tables: inp?.ctx.tables ?? {}, gaps: cur.gaps, checks: checksOf(cur.sections), reviews: [...reviews.checks.values()] }) };
 }
