@@ -5,7 +5,7 @@ import { fiqhDossiers, users } from "@/server/db/schema";
 import { read } from "@/server/modules/_shared";
 import { requireAdmin } from "@/server/modules/admin/guard";
 import { authorisedFiqhReviews, FIQH_DECISION_AR, passageStanding, REVIEW_ROLE_AR, type FiqhDecision } from "@/server/knowledge/review";
-import { KIND_AR, POLARITY_AR, RANK_AR, STAGE_AR, type FiqhDossier, type Statement } from "@/server/knowledge/fiqh/types";
+import { EXCEPTION_AR, KIND_AR, POLARITY_AR, RANK_AR, REG_STANDING_AR, STAGE_AR, type FiqhDossier, type Statement } from "@/server/knowledge/fiqh/types";
 import type { ReviewRole } from "@/server/knowledge/policy";
 import { recordFiqhDecision } from "@/server/modules/admin/knowledge/actions";
 import { Badge, PageHeader, Panel } from "@/components/ui";
@@ -47,7 +47,10 @@ function StatementView({ s, standing }: { s: Statement; standing: string }) {
       <Element kind={s.element}><p className="whitespace-pre-wrap">{s.text}</p></Element>
       <Element kind="engine">
         <p>الحكم في النص: {POLARITY_AR[s.polarity]}{s.effective !== s.polarity ? ` — وعلى هذه الوقائع: ${POLARITY_AR[s.effective]} (بالاستثناء)` : ""}. {APPLIES_AR[s.applies]}.</p>
-        {s.conditions.length ? <ul className="list-disc ps-5">{s.conditions.map((c, i) => <li key={i}>{c.kind === "exception" ? "استثناء" : "قيد"}: «{c.text}» — {COND_AR[c.status]}{c.byFact ? ` («${c.byFact}»)` : ""}</li>)}</ul> : null}
+        {s.conditions.length ? <ul className="list-disc ps-5">{s.conditions.map((c, i) => <li key={i}>{c.kind === "exception" ? "استثناء" : "قيد"}: «{c.text}» — {COND_AR[c.status]}{c.byFact ? ` («${c.byFact}»)` : ""}{c.parts?.length ? ` — أجزاؤه (${c.join === "and" ? "لا بد منها كلها" : "يكفي أحدها"}): ${c.parts.map((x) => `«${x.text}» ${COND_AR[x.status]}`).join("، ")}` : ""}</li>)}</ul> : null}
+        {s.exceptionStructure && s.exceptionStructure !== "none" ? <p className="text-[13px]">بنية الاستثناء: {EXCEPTION_AR[s.exceptionStructure]}</p> : null}
+        {s.unclear ? <p className="text-[13px] text-warn">لم يُستخرج حكم: {s.unclear}</p> : null}
+        {s.schoolHoldsContrary ? <p className="text-[13px] text-warn">نص الكتاب أن المذهب خلاف هذا القول، ولم يرد لفظ قول المذهب في المقطع.</p> : null}
         {s.markers.length ? <p className="text-[12.5px] text-muted">الألفاظ التي بُني عليها التصنيف: {s.markers.map((m) => `«${m}»`).join("، ")}</p> : null}
       </Element>
     </li>
@@ -146,6 +149,24 @@ export default async function FiqhDossierPage({ params }: { params: Promise<{ id
               </>
             )}
             <p className="mt-1">يحتاج إلى مراجعة بشرية: {w.humanReview.join("؛ ")}</p>
+          </Element>
+        </Panel>
+      ) : null}
+
+      {d.regulatory ? (
+        <Panel title="المسار النظامي والإرشادي (منفصل عن الترجيح الفقهي)">
+          <Element kind="engine">
+            {d.regulatory.items.length ? (
+              <ul className="list-disc ps-5">
+                {d.regulatory.items.map((i) => {
+                  const rel = d.regulatory!.relation.find((r) => r.statementId === i.statementId);
+                  return <li key={i.statementId}>{i.statementId} — {REG_STANDING_AR[i.standing]}: {i.title} — {i.locator} — {POLARITY_AR[i.polarity]}{rel ? ` — ${rel.note}` : ""}</li>;
+                })}
+              </ul>
+            ) : null}
+            <p className="mt-1 font-medium">الأثر المجتمع:</p>
+            <ul className="list-disc ps-5">{d.regulatory.combined.map((c, k) => <li key={k}>{c}</li>)}</ul>
+            {d.regulatory.legalReview ? <p className="mt-1 text-warn">يحتاج إلى مراجعة نظامية.</p> : null}
           </Element>
         </Panel>
       ) : null}
