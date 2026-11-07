@@ -918,7 +918,7 @@ END $$;
 CREATE OR REPLACE FUNCTION admin_grant_guard() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 BEGIN
   IF session_user = 'waqfak_app' AND app_current_user() IS NULL
-     AND EXISTS (SELECT 1 FROM role_permissions rp JOIN permissions p ON p.id = rp.permission_id WHERE rp.role_id = NEW.role_id AND p.key = 'admin.roles')
+     AND EXISTS (SELECT 1 FROM role_permissions rp JOIN permissions p ON p.id = rp.permission_id WHERE rp.role_id = NEW.role_id AND p.key IN ('admin.roles', 'outputs.final_approve', 'approvals.direct'))
      AND EXISTS (SELECT 1 FROM user_roles ur JOIN role_permissions rp ON rp.role_id = ur.role_id JOIN permissions p ON p.id = rp.permission_id JOIN users u ON u.id = ur.user_id
                  WHERE p.key = 'admin.roles' AND u.status = 'active' AND ur.user_id <> NEW.user_id) THEN
     RAISE EXCEPTION 'user_roles: an administrator role is granted from the system context only for the first administrator' USING ERRCODE = 'insufficient_privilege';
@@ -930,7 +930,7 @@ CREATE TRIGGER admin_grant_guard BEFORE INSERT OR UPDATE ON user_roles FOR EACH 
 -- and «admin.roles» is never added to a role from the system context with the application role
 CREATE OR REPLACE FUNCTION admin_perm_guard() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 BEGIN
-  IF session_user = 'waqfak_app' AND app_current_user() IS NULL AND EXISTS (SELECT 1 FROM permissions p WHERE p.id = NEW.permission_id AND p.key IN ('admin.roles', 'admin.users')) THEN
+  IF session_user = 'waqfak_app' AND app_current_user() IS NULL AND EXISTS (SELECT 1 FROM permissions p WHERE p.id = NEW.permission_id AND p.key IN ('admin.roles', 'admin.users', 'outputs.final_approve', 'approvals.direct')) THEN
     RAISE EXCEPTION 'role_permissions: an administrator permission is added only from an administrator''s session' USING ERRCODE = 'insufficient_privilege';
   END IF;
   RETURN NEW;

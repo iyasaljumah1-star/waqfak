@@ -280,10 +280,13 @@ export function extractStatements(source: SourceRef, text: string, ctx: { questi
     const conds: Condition[] = conditionsIn(t).map((c) => ({ ...c, ...conditionStatus(c.text, ctx.facts) }));
     const unmet = conds.some((c) => c.kind === "condition" && c.status === "unmet");
     // «لا … إلا أن A، إلا أن B»: each exception met reverses the ruling once (an exception to the exception restores it)
-    const metExceptions = conds.filter((c) => c.kind === "exception" && c.status === "met").length;
+    // exceptions joined by «أو إلا» are alternatives (any one met reverses once); otherwise each is nested in the last
+    const alternatives = /او الا|او الا ان/.test(t);
+    const met = conds.filter((c) => c.kind === "exception" && c.status === "met").length;
+    const metExceptions = alternatives ? Math.min(met, 1) : met;
     const exceptionMet = metExceptions % 2 === 1;
     const unknown = conds.some((c) => c.status === "unknown");
-    const reverse = (p: Polarity): Polarity => (p === "prohibit" ? "permit" : p === "permit" ? "prohibit" : p);
+    const reverse = (p: Polarity): Polarity => ({ prohibit: "permit", permit: "prohibit", not_obliged: "oblige", oblige: "not_obliged" } as Record<string, Polarity>)[p] ?? p;
     const applies: Statement["applies"] = metExceptions ? "applies" : unmet ? "does_not_apply" : unknown ? "unknown" : "applies";
     const via = !contemporary ? t.match(/^و?قال في\s+([ء-ي]+)/)?.[1] : undefined;
     return {
@@ -366,6 +369,12 @@ export function weigh(statements: Statement[], issue: Issue, cmp: Comparison): W
     };
   }
   const mutamad = statements.filter((s) => s.rank === "mutamad" && s.source.refKind === "classical_fiqh");
+  // the relied-upon view with a condition the facts leave open is not set aside: the fact is asked for (round 8)
+  const open = mutamad.filter((m) => m.applies === "unknown" && m.effective !== "unknown");
+  if (open.length) {
+    const conds = [...new Set(open.flatMap((m) => m.conditions.filter((c) => c.status === "unknown").map((c) => c.text)))];
+    return { status: "needs_facts", reasons: ["للقول المعتمد في المذهب قيد لم تبيّنه الوقائع؛ لا يُرجَّح قبل معرفته."], unresolved: conds.map((c) => `هل تحقق في الواقعة: «${c}»؟`), humanReview, by: "engine" };
+  }
   const mutamadApplying = mutamad.filter((s) => s.applies !== "does_not_apply" && s.effective !== "unknown");
   const byPol = new Map<Polarity, Statement[]>();
   for (const s of known) byPol.set(s.effective, [...(byPol.get(s.effective) ?? []), s]);

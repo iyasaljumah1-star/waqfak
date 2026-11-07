@@ -48,3 +48,6 @@ next-env.d.ts
 /backups
 /.env.preview
 /preview-output
+
+# independent reviewers' temporary scripts
+scratch-*/

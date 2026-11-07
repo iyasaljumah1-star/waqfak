@@ -1,5 +1,5 @@
 {
- "ranAt": "2026-11-07T18:10:37.648Z",
+ "ranAt": "2026-11-07T18:26:12.171Z",
  "kb": {
   "cur": 49,
   "units": 2423
@@ -2034,7 +2034,7 @@
     "nomfa": "kb_source_reviews: a review is recorded only in the reviewer's own authenticated session (no valid session token)",
     "othersToken": "kb_source_reviews: a review is recorded only in the reviewer's own authenticated session (no valid session token)",
     "hashAsToken": "kb_source_reviews: a review is recorded only in the reviewer's own authenticated session (no valid session token)",
-    "validSession": "ecace45a-4987-4f5c-b3cd-4923e73e4af7"
+    "validSession": "5a53b270-7856-4923-97b6-7078c21d2cdb"
    }
   },
   {

@@ -117,6 +117,18 @@ describe("fiqh analysis — synthetic test texts", () => {
     expect(run("ما حكم ذلك؟", [], [{ s: src(), text: "قال الشيخ: يجوز إبداله لمصلحة راجحة" }]).statements[0]!.attributedTo).toMatch(/لم يُسمَّ/);
   });
 
+  it("round 8: alternative exceptions reverse once; an exception to a negated obligation obliges; an open condition of the relied-upon view asks for the fact", () => {
+    const alt = run("ما حكم بيع الوقف؟", [F("تعطلت منافع العقار"), F("اذن الحاكم بالبيع")], [{ s: src(), text: "لا يجوز بيعه إلا أن تتعطل منافعه أو إلا بإذن الحاكم" }]).statements[0]!;
+    expect(alt).toMatchObject({ polarity: "prohibit", effective: "permit" });
+    const ob = run("ما حكم ذلك؟", [F("في الإشهاد مصلحة ظاهرة")], [{ s: src(), text: "لا يلزم الناظر الإشهاد إلا لمصلحة" }]).statements[0]!;
+    expect(ob.polarity).toBe("not_obliged");
+    const w = run("ما حكم إجارة الوقف مدة طويلة؟", [F("لا شرط للواقف")], [
+      { s: src(), text: "تصح إجارة الوقف مدة طويلة إذا أذن الحاكم على الصحيح من المذهب" },
+      { s: src({ refCode: "TEST-FQH-B", chunkId: "t2" }), text: "وقال الشيخ تقي الدين لا تصح إجارته مدة طويلة" },
+    ]).weighing;
+    expect(w.status).toBe("needs_facts");
+  });
+
   it("a weighing is a research recommendation: never a ruling, never final", () => {
     const r = run("ما حكم إجارة الوقف؟", [F("لمصلحة")], [{ s: src(), text: "تصح إجارة الوقف" }]);
     expect(r.weighing.by).toBe("engine");
