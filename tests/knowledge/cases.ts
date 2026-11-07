@@ -480,18 +480,21 @@ export const CASES: Case[] = [
       return !p.decision.citable && refusal(p.decision) === "blocked_passage" ? null : `القرار ${refusal(p.decision)}`;
     },
   },
-];
-
-/** Cases reported but not asserted: known limits of the current retrieval, kept visible in the acceptance report. */
-export const KNOWN_LIMITS: Case[] = [
   {
-    id: "7L", category: "7. (قيد معروف) سؤال عربي ومصدره المحفوظ بالإنجليزية",
+    id: "7L", category: "7. سؤال عربي ومصدره المحفوظ بالإنجليزية (عبر الوصف العربي المسجل للمقطع)",
     query: { question: "كم بلغ إجمالي عدد سكان المملكة في تعداد 2022؟", service: "T02", asOf: TODAY, kinds: ["statistical_source", "dataset"] },
     expected: "خبر واس 31 مايو 2023 (بالإنجليزية)، الفقرة 1: 32,175,224",
     setup: (tx) => reviewSource(tx, "SPA-CENSUS-2023"),
     judge: (r) => expectCitable(r, "SPA-CENSUS-2023", /الفقرة 1$/, "32,175,224"),
   },
 ];
+
+/**
+ * Cases reported but not asserted: known limits of the current retrieval, kept visible in the acceptance report.
+ * (7L — an Arabic question on an English passage — is asserted since the owner's order of 2026-11-08: the passage is
+ * matched through its specialist's Arabic descriptor, flagged as such; tests/knowledge-relevance.test.ts holds its negatives.)
+ */
+export const KNOWN_LIMITS: Case[] = [];
 
 export async function runCase(tx: Tx, c: Case): Promise<CaseRow> {
   if (c.setup) await c.setup(tx);

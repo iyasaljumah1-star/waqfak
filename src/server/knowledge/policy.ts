@@ -97,6 +97,10 @@ export type Hit = {
   validity?: "in_force" | "earlier" | "later" | "unknown";
   /** Where the text passed on comes from: the citation guard's authorised unit, or the knowledge base's own passage. */
   provenance?: "guard" | "passage" | "stored_official";
+  /** Matched through the specialist's Arabic descriptor of a foreign-language passage (7L), not through its own words. */
+  matchedVia?: "descriptor";
+  /** The question negates the act it asks about and the passage does not (or the reverse): X9. */
+  negationMismatch?: boolean;
   /** What the passage lacks of the question's qualifiers (a year, «غير X»): not relevant whatever the shared words. */
   lacking?: string[];
   /** Blocked by a specialist's finding recorded in the catalog. */
@@ -225,7 +229,7 @@ export function passageStatus(h: Pick<Hit, "chunkId" | "reviewRole">, reviews: S
 }
 
 /** Why a passage is used in a draft with a warning: each flag is shown next to its use. */
-export type DraftFlag = "unreviewed" | "ocr" | "degraded" | "contemporary" | "not_school_attribution" | "registry_unconfirmed" | "earlier_version";
+export type DraftFlag = "unreviewed" | "ocr" | "degraded" | "contemporary" | "not_school_attribution" | "registry_unconfirmed" | "earlier_version" | "descriptor_match" | "negation_mismatch";
 export const DRAFT_FLAG_AR: Record<DraftFlag, string> = {
   unreviewed: "مقطع غير مراجع: يلزم مراجعته قبل أي مستند نهائي",
   ocr: "نص مستخرج آليًا بالتعرف الضوئي: قد يحتوي أخطاء، ولا يُعامل نقلًا محققًا",
@@ -234,6 +238,8 @@ export const DRAFT_FLAG_AR: Record<DraftFlag, string> = {
   not_school_attribution: "لا يُنسب منه قول إلى المذهب الحنبلي",
   registry_unconfirmed: "النص الرسمي المحفوظ؛ مطابقته لم تُعتمد بعد من مراجع نظامي",
   earlier_version: "نسخة سابقة",
+  descriptor_match: "طوبق عبر الوصف العربي الذي سجله المختص للمقطع الأجنبي؛ النص المنقول بلغته الأصلية",
+  negation_mismatch: "السؤال منفي والنص مثبت (أو العكس): يُقرأ النص جوابًا عن السؤال لا موافقة لصيغته",
 };
 export type DraftUse = { usable: true; status: Exclude<PassageStatus, "under_review">; flags: DraftFlag[]; label: string } | { usable: false; refusal: Refusal; detail: string };
 
@@ -264,6 +270,8 @@ export function draftUse(h: Hit, ctx: DecideContext, evidence: DecideEvidence & 
   if (h.refKind === "contemporary_book") flags.push("contemporary");
   if (ctx.schoolQuestion && h.refKind !== "classical_fiqh" && !BINDING_KINDS.has(h.refKind)) flags.push("not_school_attribution");
   if (h.superseded || h.validity === "earlier") flags.push("earlier_version");
+  if (h.matchedVia === "descriptor") flags.push("descriptor_match");
+  if (h.negationMismatch) flags.push("negation_mismatch");
   return { usable: true, status, flags: [...new Set(flags)], label: citationLabel(h, !!ctx.historical) };
 }
 
