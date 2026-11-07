@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
-import { decide, SCHOOL_QUESTION, sufficiency, type Hit, type SourceReview } from "../src/server/knowledge/policy";
+import { decide, draftSufficiency, draftUse, passageStatus, SCHOOL_QUESTION, sufficiency, type Hit, type SourceReview } from "../src/server/knowledge/policy";
 import { pageUnits, quoteUnits, statuteUnits } from "../src/server/knowledge/units";
 import { loadCatalog, unitsOf } from "../src/server/knowledge/catalog";
 
@@ -17,19 +17,27 @@ const hit = (over: Partial<Hit> = {}): Hit => ({
 });
 const ctx = { service: "C01", asOf: "2026-11-06" };
 const rev = (o: Partial<SourceReview> = {}): SourceReview => ({ decision: "accepted", at: "2026-11-06T09:00:00Z", role: "legal", chunkId: null, ...o });
-const accepted = [rev()];
+/** B13: the passage used ("c1") reviewed and accepted (with the source as a whole). */
+const accepted = [rev(), rev({ chunkId: "c1" })];
 
 describe("citation policy", () => {
-  it("a non-registry source is citable only after an accepted review by its field, and never as binding", () => {
-    expect(decide(hit(), ctx, {})).toMatchObject({ citable: false, refusal: "not_reviewed" });
-    expect(decide(hit(), ctx, { reviews: [rev({ role: "sharia" })] })).toMatchObject({ citable: false, refusal: "not_reviewed" });
-    expect(decide(hit(), ctx, { reviews: [rev({ decision: "rejected", at: "2026-11-06T10:00:00Z" }), rev()] })).toMatchObject({ citable: false, refusal: "review_rejected" });
+  it("a non-registry passage is citable (final) only after an accepted review OF THAT PASSAGE by its field, and never as binding (B13)", () => {
+    expect(decide(hit(), ctx, {})).toMatchObject({ citable: false, refusal: "passage_not_reviewed" });
+    // the source accepted as a whole approves no passage; another passage's acceptance approves not this one
+    expect(decide(hit(), ctx, { reviews: [rev()] })).toMatchObject({ citable: false, refusal: "passage_not_reviewed" });
+    expect(decide(hit(), ctx, { reviews: [rev(), rev({ chunkId: "c2" })] })).toMatchObject({ citable: false, refusal: "passage_not_reviewed" });
+    expect(decide(hit(), ctx, { reviews: [rev({ role: "sharia", chunkId: "c1" })] })).toMatchObject({ citable: false, refusal: "passage_not_reviewed" });
+    // the latest review of the passage decides; a later rejection of the source as a whole withdraws it
+    expect(decide(hit(), ctx, { reviews: [rev({ chunkId: "c1", decision: "rejected", at: "2026-11-06T10:00:00Z" }), rev({ chunkId: "c1" })] })).toMatchObject({ citable: false, refusal: "review_rejected" });
+    expect(decide(hit(), ctx, { reviews: [rev({ chunkId: "c1" }), rev({ decision: "rejected", at: "2026-11-06T10:00:00Z" })] })).toMatchObject({ citable: false, refusal: "review_rejected" });
+    expect(passageStatus({ chunkId: "c1", reviewRole: "legal" }, [])).toBe("unreviewed");
+    expect(passageStatus({ chunkId: "c2", reviewRole: "legal" }, accepted)).toBe("unreviewed");
     expect(decide(hit(), ctx, { reviews: accepted })).toMatchObject({ citable: true, binding: false });
     expect(decide(hit({ refKind: "academic_study" }), ctx, { reviews: accepted })).toMatchObject({ citable: true, binding: false, label: expect.stringMatching(/^دراسة أكاديمية/) });
   });
   it("a page from a file's text layer needs a review of that page; OCR is never cited", () => {
     const page = hit({ textOrigin: "text_layer" });
-    expect(decide(page, ctx, { reviews: accepted })).toMatchObject({ refusal: "passage_not_reviewed" });
+    expect(decide(page, ctx, { reviews: [rev()] })).toMatchObject({ refusal: "passage_not_reviewed" });
     expect(decide(page, ctx, { reviews: [rev(), rev({ chunkId: "other" })] })).toMatchObject({ refusal: "passage_not_reviewed" });
     expect(decide(page, ctx, { reviews: [rev(), rev({ chunkId: "c1" })] })).toMatchObject({ citable: true });
     expect(decide(hit({ textOrigin: "ocr" }), ctx, { reviews: [rev(), rev({ chunkId: "c1" })] })).toMatchObject({ refusal: "ocr_text" });
@@ -63,8 +71,9 @@ describe("citation policy", () => {
     expect(decide(hit({ blocked: true }), ctx, { reviews: accepted })).toMatchObject({ refusal: "blocked_passage" });
     expect(decide(hit({ refKind: "unclassified" }), ctx, { reviews: accepted })).toMatchObject({ refusal: "unclassified" });
     const book = hit({ refKind: "contemporary_book", reviewRole: "sharia" });
-    expect(decide(book, { ...ctx, schoolQuestion: true }, { reviews: [rev({ role: "sharia" })] })).toMatchObject({ refusal: "not_school_source" });
-    expect(decide(book, ctx, { reviews: [rev({ role: "sharia" })] })).toMatchObject({ citable: true });
+    const sh = [rev({ role: "sharia" }), rev({ role: "sharia", chunkId: "c1" })];
+    expect(decide(book, { ...ctx, schoolQuestion: true }, { reviews: sh })).toMatchObject({ refusal: "not_school_source" });
+    expect(decide(book, ctx, { reviews: sh })).toMatchObject({ citable: true });
     expect(SCHOOL_QUESTION.test("هل يجوز وقف المشاع عند الحنابلة؟")).toBe(true);
   });
   it("insufficiency: nothing citable, no binding basis when needed, no Hanbali book on the school's view, a missing article", () => {
@@ -74,10 +83,12 @@ describe("citation policy", () => {
     expect(sufficiency([g], { binding: true })).toMatchObject({ sufficient: false, reason: expect.stringContaining("لا نص نظامي ملزم") });
     expect(sufficiency([g], { binding: false, school: true })).toMatchObject({ sufficient: false, reason: expect.stringContaining("المذهب الحنبلي") });
     expect(sufficiency([g], { binding: false, missingArticle: "المادة 99" })).toMatchObject({ sufficient: false, reason: expect.stringContaining("المادة 99") });
-    // a contemporary book is auxiliary: never the sole basis (B8)
+    // owner's order 2026-11-07 (§4): a contemporary book may stand alone — once its passage is reviewed for a final
+    // document; never as the school's view
     const b = hit({ refKind: "contemporary_book", reviewRole: "sharia" });
-    const gb = { hit: b, decision: decide(b, ctx, { reviews: [rev({ role: "sharia" })] }) };
-    expect(sufficiency([gb], { binding: false })).toMatchObject({ sufficient: false, reason: expect.stringContaining("مرجع مساعد") });
+    const gb = { hit: b, decision: decide(b, ctx, { reviews: [rev({ role: "sharia", chunkId: "c1" })] }) };
+    expect(sufficiency([gb], { binding: false })).toEqual({ sufficient: true });
+    expect(sufficiency([gb], { binding: false, school: true })).toMatchObject({ sufficient: false, reason: expect.stringContaining("المذهب الحنبلي") });
     expect(sufficiency([gb, g], { binding: false })).toEqual({ sufficient: true });
   });
 });
@@ -200,5 +211,28 @@ describe("the public assistant and regulatory questions (review B11)", () => {
     expect(body).toContain("وليست سندًا نظاميًا أو شرعيًا");
     expect(engine).not.toMatch(/externalAnswer\(/);
     expect(fs.readFileSync("src/server/modules/ai/corpus.ts", "utf8")).not.toContain('"مرجع نظامي"');
+  });
+
+  it("draft tier: an unreviewed passage serves a draft with its flags; a rejected, irrelevant, blocked or inapplicable one does not (owner's order 2026-11-07, §4–§5)", () => {
+    const d = draftUse(hit(), ctx, {});
+    expect(d).toMatchObject({ usable: true, status: "unreviewed", flags: ["unreviewed"] });
+    expect(draftUse(hit(), ctx, { reviews: accepted })).toMatchObject({ usable: true, status: "approved", flags: [] });
+    expect(draftUse(hit(), ctx, { reviews: [rev({ chunkId: "c1", decision: "rejected" })] })).toMatchObject({ usable: false, refusal: "review_rejected" });
+    expect(draftUse(hit({ coverage: 0.2 }), ctx, {})).toMatchObject({ usable: false, refusal: "not_relevant" });
+    expect(draftUse(hit({ blocked: true }), ctx, {})).toMatchObject({ usable: false, refusal: "blocked_passage" });
+    expect(draftUse(hit({ services: ["F02"] }), ctx, {})).toMatchObject({ usable: false, refusal: "not_applicable" });
+    // OCR and degraded text: usable in a draft, flagged — never a verified quotation
+    expect(draftUse(hit({ textOrigin: "ocr" }), ctx, {})).toMatchObject({ usable: true, flags: expect.arrayContaining(["ocr", "unreviewed"]) });
+    expect(draftUse(hit({ quality: "degraded" }), ctx, {})).toMatchObject({ usable: true, flags: expect.arrayContaining(["degraded"]) });
+    // «الميسّر» alone, unreviewed: a draft may rest on it; to a school question it is never attributed
+    const book = hit({ refKind: "contemporary_book", reviewRole: "sharia" });
+    expect(draftUse(book, ctx, {})).toMatchObject({ usable: true, flags: expect.arrayContaining(["unreviewed", "contemporary"]) });
+    expect(draftUse(book, { ...ctx, schoolQuestion: true }, {})).toMatchObject({ usable: true, flags: expect.arrayContaining(["not_school_attribution"]) });
+    expect(draftSufficiency([{ hit: book, draft: draftUse(book, ctx, {}) }], { binding: false })).toEqual({ sufficient: true });
+    // a registry instrument: only from its stored official text, flagged until its comparison is accepted
+    const st = hit({ refKind: "regulation", registryId: "NZR", articleNo: 16 });
+    expect(draftUse(st, ctx, { registry: { ok: false, refusal: "not_reviewed", detail: "x" } })).toMatchObject({ usable: false });
+    expect(draftUse({ ...st, provenance: "stored_official" }, ctx, { registry: { ok: false, refusal: "not_reviewed", detail: "x" }, registryDraftText: true })).toMatchObject({ usable: true, flags: expect.arrayContaining(["registry_unconfirmed"]) });
+    expect(draftSufficiency([{ hit: book, draft: draftUse(book, ctx, {}) }], { binding: true })).toMatchObject({ sufficient: false });
   });
 });

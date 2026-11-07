@@ -96,9 +96,10 @@ describe.skipIf(!enabled)("unified knowledge engine (dedicated test database)", 
     const run = readFileSync(path.join(process.cwd(), "src/server/engine/pipeline/run.ts"), "utf8");
     expect(run).toContain('from "@/server/knowledge/retrieve"');
     expect(run).not.toMatch(/searchKb|knowledge\/search|verificationStatus === "verified"/);
-    expect(run).toContain("kb.citable.map");
-    // nothing reaches the model unless the basis is sufficient, also in sections that do not require a citation (B8)
-    expect(run).toMatch(/const hits = kb\.sufficiency\.sufficient \? kb\.citable\.map\(\(r\) => r\.hit\) : \[\];/);
+    // owner's order 2026-11-07 (§4–§5): the engine drafts from the passages usable for a draft, each with its flags;
+    // nothing reaches the model unless the draft basis is sufficient, also in sections that do not require a citation
+    expect(run).toMatch(/const picked = kb\.draftSufficiency\.sufficient \? kb\.usable : \[\];/);
+    expect(run).toContain("DRAFT_FLAG_AR[f]");
   });
 
   it("a corrected text never deletes the earlier version; the earlier one stays, superseded", async () => {
@@ -138,7 +139,7 @@ describe.skipIf(!enabled)("unified knowledge engine (dedicated test database)", 
       await cases.testReviewer(tx, NOPERM, []);
       await tx.execute(sql`update users set locked_until = now() + interval '1 day' where id = ${NOPERM}::uuid`);
       const id = await lfs(tx);
-      await cases.asUser(tx, NOPERM, () => rv.recordSourceReview(tx, { userId: NOPERM }, { sourceId: id, decision: "accepted", note: "مراجعة من مستخدم بلا دور ومقفل" }));
+      await cases.asUser(tx, NOPERM, () => rv.recordSourceReview(tx, cases.actorOf(NOPERM), { sourceId: id, decision: "accepted", note: "مراجعة من مستخدم بلا دور ومقفل" }));
     }).catch((e) => e);
     expect(msg(e0)).toMatch(/لا تحمل صلاحية/);
     const e1 = await rolledBack(async (tx) => {
@@ -172,7 +173,11 @@ describe.skipIf(!enabled)("unified knowledge engine (dedicated test database)", 
     const e5 = await rolledBack(async (tx) => {
       await cases.testReviewer(tx);
       const id = await lfs(tx);
-      await cases.asUser(tx, cases.TEST_REVIEWER, () => tx.insert(schema.kbSourceReviews).values({ sourceId: id, reviewerUserId: cases.TEST_REVIEWER, reviewerRole: "data", decision: "accepted", note: "إدراج دون قيد في سجل التدقيق" }));
+      await cases.asUser(tx, cases.TEST_REVIEWER, async () => {
+        // in the reviewer's authenticated session (its token), so that what refuses it is the missing audit entry
+        await tx.execute(sql`select set_config('app.session_token', ${cases.actorOf(cases.TEST_REVIEWER).sessionToken}, true)`);
+        await tx.insert(schema.kbSourceReviews).values({ sourceId: id, reviewerUserId: cases.TEST_REVIEWER, reviewerRole: "data", decision: "accepted", note: "إدراج دون قيد في سجل التدقيق" });
+      });
       await cases.checkDeferred(tx);
     }).catch((e) => e);
     expect(msg(e5)).toMatch(/has no audit entry/);
@@ -186,7 +191,8 @@ describe.skipIf(!enabled)("unified knowledge engine (dedicated test database)", 
       const run = await db.appendMatchRun(tx, vid, { id: "r", versionId: vid, candidateLabel: "c", candidateSha256: "s", outcome: "identical", perArticle: { م16: "identical" }, ranAt: "2026-11-06T00:00:00Z" }, {});
       await db.appendReview(tx, run, { reviewer: "x", reviewerUserId: cases.TEST_REVIEWER, at: "2026-11-06T00:00:00Z", decision: "accepted", note: "قبول من سياق النظام" });
     }).catch((e) => e);
-    expect(msg(e6)).toMatch(/recorded only by the reviewer/);
+    // refused from the system context: no authenticated session (owner's order 2026-11-07), nor the reviewer's own session
+    expect(msg(e6)).toMatch(/recorded only by the reviewer|authenticated session/);
     // the audit entry carries the reviewed text's fingerprint, on the hash chain
     await rolledBack(async (tx) => {
       await cases.reviewSource(tx, "GASTAT-LFS");

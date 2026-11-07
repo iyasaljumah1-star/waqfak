@@ -82,6 +82,8 @@ export const refMatchReviews = pgTable("ref_match_reviews", {
   decision: text().notNull(), // accepted | rejected
   note: text().notNull(),
   reviewedAt: timestamp({ withTimezone: true }).notNull(),
+  /** The authenticated session an acceptance was recorded in (set by the database; see kb_source_reviews.session_id). */
+  sessionId: uuid(),
 });
 
 /** Every retrieval attempt, successful or not, with the failure kind. */

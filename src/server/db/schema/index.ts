@@ -11,3 +11,4 @@ export * from "./commerce";
 export * from "./operations";
 export * from "./engine";
 export * from "./references";
+export * from "./fiqh";

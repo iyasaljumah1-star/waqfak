@@ -4,6 +4,7 @@ import { UserError } from "@/server/modules/_shared";
 import type { ActionState } from "@/lib/utils";
 import { staffAction } from "../guard";
 import { recordComparisonReview, recordSourceReview, ReviewRefused } from "@/server/knowledge/review";
+import { currentSessionToken } from "@/server/auth/session";
 
 /**
  * Recording a human review of the knowledge base (owner's order 2026-11-06, §4). The reviewer's own session; the
@@ -27,7 +28,9 @@ export async function recordKnowledgeReview(_: ActionState, fd: FormData): Promi
   const p = sourceSchema.safeParse(Object.fromEntries(fd));
   if (!p.success) return { ok: false, message: p.error.issues[0]?.message ?? "البيانات غير صحيحة." };
   return staffAction("admin.access", async ({ auth, tx, ip, userAgent }) => {
-    const r = await recordSourceReview(tx, { userId: auth.user.id, ip, userAgent }, p.data).catch(refused);
+    // the review is bound to this request's authenticated session: the database checks the token (security.sql)
+    const sessionToken = (await currentSessionToken()) ?? "";
+    const r = await recordSourceReview(tx, { userId: auth.user.id, sessionToken, ip, userAgent }, p.data).catch(refused);
     return { ok: true, message: `سُجلت المراجعة (${p.data.decision === "accepted" ? "قبول" : "رفض"}) في مجال ${r!.role}، وقُيدت في سجل التدقيق.` };
   }, "/admin/knowledge");
 }
@@ -36,7 +39,8 @@ export async function recordComparisonDecision(_: ActionState, fd: FormData): Pr
   const p = runSchema.safeParse(Object.fromEntries(fd));
   if (!p.success) return { ok: false, message: p.error.issues[0]?.message ?? "البيانات غير صحيحة." };
   return staffAction("admin.access", async ({ auth, tx, ip, userAgent }) => {
-    await recordComparisonReview(tx, { userId: auth.user.id, ip, userAgent }, p.data).catch(refused);
+    const sessionToken = (await currentSessionToken()) ?? "";
+    await recordComparisonReview(tx, { userId: auth.user.id, sessionToken, ip, userAgent }, p.data).catch(refused);
     return { ok: true, message: "سُجلت مراجعة المطابقة وقُيدت في سجل التدقيق." };
   }, "/admin/knowledge");
 }

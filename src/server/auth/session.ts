@@ -58,6 +58,8 @@ export async function readSession(): Promise<{ session: SessionRow; user: UserRo
       return null;
     }
     if (row.user.status === "locked" || row.user.status === "deleted") return null;
+    // a temporary lock (failed attempts, an administrator's lock) ends the session's use too (independent review, round 6)
+    if (row.user.lockedUntil && row.user.lockedUntil.getTime() > now) return null;
     // sliding idle window, throttled to one write per minute
     if (now - row.session.lastSeenAt.getTime() > 60_000) {
       const idle = row.user.isStaff ? STAFF_IDLE_MS : IDLE_MS;
@@ -92,4 +94,14 @@ export async function revokeAllSessions(userId: string, reason: string, exceptSe
       .set({ revokedAt: new Date(), revokeReason: reason })
       .where(and(eq(sessions.userId, userId), isNull(sessions.revokedAt), exceptSessionId ? ne(sessions.id, exceptSessionId) : undefined)),
   );
+}
+
+/**
+ * The raw token of the request's session (the cookie's value), for the one transaction that must prove to the database
+ * that it runs in that authenticated session (knowledge reviews: security.sql app_review_session). Never stored, logged
+ * or returned to a client.
+ */
+export async function currentSessionToken(): Promise<string | null> {
+  const jar = await cookies();
+  return jar.get(SESSION_COOKIE)?.value ?? null;
 }

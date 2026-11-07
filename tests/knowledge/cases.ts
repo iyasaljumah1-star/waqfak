@@ -12,12 +12,12 @@
 import { readFileSync } from "node:fs";
 import { gunzipSync } from "node:zlib";
 import path from "node:path";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { Tx } from "../../src/server/db";
 import { auditLogs, kbChunks, kbSourceReviews, kbSources, users } from "../../src/server/db/schema";
 import { canonical } from "../../src/server/lib/audit";
 import { sha256 } from "../../src/server/lib/crypto";
-import { recordComparisonReview, recordSourceReview, reviewSeal, roleOf } from "../../src/server/knowledge/review";
+import { recordComparisonReview, recordSourceReview, reviewSeal, roleOf, sourceReviewText } from "../../src/server/knowledge/review";
 import { appendMatchRun, appendVersion, registerSource } from "../../src/server/references/db-store";
 import { getEntry } from "../../src/server/references/registry";
 import { loadManifest, versionFromSnapshot } from "../../src/server/references/snapshots";
@@ -45,13 +45,41 @@ const ROLE_OF: Record<ReviewRole, string> = { legal: "reviewer_legal", sharia: "
 export async function testReviewer(tx: Tx, id = TEST_REVIEWER, fields: ReviewRole[] = ["sharia", "accounting", "legal", "data", "investment"]) {
   await tx.insert(users).values({ id, phone: `05${id.slice(-8).replace(/[^0-9]/g, "0")}`, fullName: "حساب اختبار (ليس مراجعًا بشريًا)", isStaff: true }).onConflictDoNothing();
   for (const f of fields) {
-    // the roles and permissions come from the catalog (seeded); created here only if the database was not seeded
-    await tx.execute(sql`insert into permissions (key, name_ar, domain) values (${`knowledge.review.${f}`}, ${`knowledge.review.${f}`}, 'knowledge') on conflict (key) do nothing`);
-    await tx.execute(sql`insert into roles (key, name_ar, scope) values (${ROLE_OF[f]}, ${ROLE_OF[f]}, 'global') on conflict (key) do nothing`);
-    await tx.execute(sql`insert into role_permissions (role_id, permission_id) select r.id, p.id from roles r, permissions p where r.key = ${ROLE_OF[f]} and p.key = ${`knowledge.review.${f}`} on conflict do nothing`);
-    await tx.execute(sql`insert into user_roles (user_id, role_id) select ${id}::uuid, r.id from roles r where r.key = ${ROLE_OF[f]} on conflict do nothing`);
+    // the roles and permissions come from the catalog, seeded with the owner role (the application role cannot create
+    // them: owner's order 2026-11-07, N5-1)
+    const ok = await tx.execute<{ n: number }>(sql`select count(*)::int as n from role_permissions rp join roles r on r.id = rp.role_id join permissions p on p.id = rp.permission_id where r.key = ${ROLE_OF[f]} and p.key = ${`knowledge.review.${f}`}`);
+    if (!ok.rows[0]?.n) throw new Error(`the test database is not seeded: role ${ROLE_OF[f]} with knowledge.review.${f} is missing (run scripts/seed.ts)`);
+    // a reviewer is named by an administrator from their own session (holder of admin.roles), never from the system
+    // context (security.sql reviewer_grant_guard) — so the test does it the same way, with a test administrator
+    await testAdmin(tx);
+    await asUser(tx, TEST_ADMIN, () => tx.execute(sql`insert into user_roles (user_id, role_id) select ${id}::uuid, r.id from roles r where r.key = ${ROLE_OF[f]} on conflict do nothing`));
   }
+  await testSession(tx, id);
 }
+
+/** TEST ACCOUNT of an administrator (super_admin), who names the test reviewers. */
+export const TEST_ADMIN = "00000000-0000-4000-8000-00000000ad01";
+export async function testAdmin(tx: Tx) {
+  await tx.insert(users).values({ id: TEST_ADMIN, phone: "0500000ad1", fullName: "حساب اختبار مدير (ليس شخصًا)", isStaff: true }).onConflictDoNothing();
+  await tx.execute(sql`insert into user_roles (user_id, role_id) select ${TEST_ADMIN}::uuid, r.id from roles r where r.key = 'super_admin' on conflict do nothing`);
+}
+
+/**
+ * A live, second-factor-verified session of the test account, as login creates one (the row holds the token's hash).
+ * Its token is what the account's requests carry (actorOf): reviews are bound to it by the database.
+ */
+const TOKENS = new Map<string, string>();
+export async function testSession(tx: Tx, userId: string, o: { mfa?: boolean; expired?: boolean; revoked?: boolean } = {}) {
+  const token = `test-session-${userId}-${o.mfa === false ? "nomfa" : ""}${o.expired ? "exp" : ""}${o.revoked ? "rev" : ""}`;
+  const exp = o.expired ? sql`now() - interval '1 minute'` : sql`now() + interval '1 hour'`;
+  await tx.execute(sql`insert into sessions (user_id, token_hash, mfa_verified, idle_expires_at, absolute_expires_at, revoked_at)
+    select ${userId}::uuid, ${sha256(token)}, ${o.mfa !== false}, ${exp}, ${exp}, ${o.revoked ? sql`now()` : sql`null`}
+    where not exists (select 1 from sessions where token_hash = ${sha256(token)})`);
+  if (!o.mfa && o.mfa !== false && !o.expired && !o.revoked) TOKENS.set(userId, token);
+  return token;
+}
+/** The reviewer's request as the server sees it: the account and its session token. */
+export const actorOf = (userId: string) => ({ userId, sessionToken: TOKENS.get(userId) ?? "" });
 /** @deprecated alias of testReviewer. */
 export const syntheticReviewer = testReviewer;
 
@@ -79,7 +107,7 @@ export async function acceptRegistry(tx: Tx, registryId: string, snapshotId: str
   const vId = await appendVersion(tx, srcId, v);
   const perArticle = Object.fromEntries(articles.map((a) => [`م${a}`, "identical"])) as Record<string, "identical">;
   const runId = await appendMatchRun(tx, vId, { id: "x", versionId: vId, candidateLabel: "اختبار قبول", candidateSha256: v.source.sha256, outcome: "identical", perArticle, ranAt: `${TODAY}T08:00:00Z` }, { synthetic: true });
-  await asUser(tx, reviewer, () => recordComparisonReview(tx, { userId: reviewer }, { runId, decision: "accepted", note: "مراجعة من حساب اختبار لاختبار الآلية" }));
+  await asUser(tx, reviewer, () => recordComparisonReview(tx, actorOf(reviewer), { runId, decision: "accepted", note: "مراجعة من حساب اختبار لاختبار الآلية" }));
   return runId;
 }
 
@@ -92,17 +120,23 @@ async function currentSource(tx: Tx, refCode: string) {
  * Records, through knowledge/review.ts in the test account's session, an accepted (or rejected) review of the current
  * source and of its passages: `passages` = locators, or "all" for every passage of the source.
  */
-export async function reviewSource(tx: Tx, refCode: string, o: { decision?: "accepted" | "rejected"; passages?: string[] | "all"; reviewer?: string; fields?: ReviewRole[] } = {}) {
+/**
+ * Reviews a source through knowledge/review.ts: the source as a whole and (B13: a review approves the passage it names,
+ * and only it) its passages — all of them unless `passages` names some, or `passages: "none"` reviews the source alone.
+ */
+export async function reviewSource(tx: Tx, refCode: string, o: { decision?: "accepted" | "rejected"; passages?: string[] | "all" | "none"; reviewer?: string; fields?: ReviewRole[] } = {}) {
+  o = { ...o, passages: o.passages ?? "all" };
+  if (o.passages === "none") o.passages = undefined;
   const reviewer = o.reviewer ?? TEST_REVIEWER;
   await testReviewer(tx, reviewer, o.fields);
   const s = await currentSource(tx, refCode);
   const note = "مراجعة من حساب اختبار لاختبار الآلية";
-  await asUser(tx, reviewer, () => recordSourceReview(tx, { userId: reviewer }, { sourceId: s.id, decision: o.decision ?? "accepted", note }));
+  await asUser(tx, reviewer, () => recordSourceReview(tx, actorOf(reviewer), { sourceId: s.id, decision: o.decision ?? "accepted", note }));
   if (o.passages) {
     const chunks = await tx.select({ id: kbChunks.id, locator: kbChunks.locator }).from(kbChunks).where(eq(kbChunks.sourceId, s.id));
     const pick = o.passages === "all" ? chunks : chunks.filter((c) => (o.passages as string[]).includes(c.locator));
     if (pick.length > 20) await bulkReviews(tx, reviewer, pick.map((c) => ({ sourceId: s.id, chunkId: c.id, role: roleOf(s) })), o.decision ?? "accepted");
-    else for (const c of pick) await asUser(tx, reviewer, () => recordSourceReview(tx, { userId: reviewer }, { sourceId: s.id, chunkId: c.id, decision: o.decision ?? "accepted", note }));
+    else for (const c of pick) await asUser(tx, reviewer, () => recordSourceReview(tx, actorOf(reviewer), { sourceId: s.id, chunkId: c.id, decision: o.decision ?? "accepted", note }));
   }
 }
 
@@ -112,16 +146,21 @@ export async function reviewSource(tx: Tx, refCode: string, o: { decision?: "acc
  */
 async function bulkReviews(tx: Tx, reviewer: string, items: { sourceId: string; chunkId: string | null; role: ReviewRole }[], decision: "accepted" | "rejected") {
   const note = "مراجعة من حساب اختبار لاختبار الآلية";
+  const sources = new Map((await tx.select({ id: kbSources.id, refCode: kbSources.refCode, version: kbSources.version, sha256: kbSources.sha256 }).from(kbSources)).map((x) => [x.id, x]));
+  const chunkIds = items.map((x) => x.chunkId).filter((x): x is string => !!x);
+  const texts = new Map<string, string>();
+  for (let i = 0; i < chunkIds.length; i += 2000) for (const c of await tx.select({ id: kbChunks.id, text: kbChunks.text }).from(kbChunks).where(inArray(kbChunks.id, chunkIds.slice(i, i + 2000)))) texts.set(c.id, c.text);
   await asUser(tx, reviewer, async () => {
+    await tx.execute(sql`select set_config('app.session_token', ${actorOf(reviewer).sessionToken}, true)`);
     await tx.execute(sql`select pg_advisory_xact_lock(724501)`);
     let prev = ((await tx.execute<{ h: string | null }>(sql`select app_audit_last_hash() as h`)).rows[0]?.h) ?? "GENESIS";
     for (let i = 0; i < items.length; i += 500) {
       const part = items.slice(i, i + 500);
-      const rows = await tx.insert(kbSourceReviews).values(part.map((x) => ({ sourceId: x.sourceId, chunkId: x.chunkId, reviewerUserId: reviewer, reviewerRole: x.role, decision, note }))).returning({ id: kbSourceReviews.id });
+      const rows = await tx.insert(kbSourceReviews).values(part.map((x) => ({ sourceId: x.sourceId, chunkId: x.chunkId, reviewerUserId: reviewer, reviewerRole: x.role, decision, note }))).returning({ id: kbSourceReviews.id, sessionId: kbSourceReviews.sessionId });
       const at = new Date().toISOString();
       const entries = rows.map((r, k) => {
-        const textSha256 = sha256(`${part[k].sourceId}|${part[k].chunkId ?? ""}`);
-        const seal = reviewSeal({ kind: "kb_source_review", id: r.id, reviewer, decision, target: `${part[k].sourceId}|${part[k].chunkId ?? ""}`, role: part[k].role, textSha256 });
+        const textSha256 = sha256(sourceReviewText(sources.get(part[k].sourceId)!, part[k].chunkId ? texts.get(part[k].chunkId!) : null));
+        const seal = reviewSeal({ kind: "kb_source_review", id: r.id, reviewer, decision, target: `${part[k].sourceId}|${part[k].chunkId ?? ""}`, role: part[k].role, textSha256, sessionId: r.sessionId });
         const after = { sourceId: part[k].sourceId, chunkId: part[k].chunkId, role: part[k].role, decision, note, bulk: true, textSha256, seal };
         const hash = sha256(JSON.stringify(canonical([prev, at, reviewer, "knowledge.review.recorded", "kb_source_review", r.id, null, null, after])));
         const e = { actorUserId: reviewer, action: "knowledge.review.recorded", entityType: "kb_source_review", entityId: r.id, after, prevHash: prev, hash, at: new Date(at) };
@@ -130,6 +169,7 @@ async function bulkReviews(tx: Tx, reviewer: string, items: { sourceId: string; 
       });
       await tx.insert(auditLogs).values(entries);
     }
+    await tx.execute(sql`select set_config('app.session_token', '', true)`);
   });
 }
 
@@ -240,8 +280,8 @@ export const CASES: Case[] = [
   {
     id: "3b", category: "3. صفحة من ملف لم تُقابل بصورتها",
     query: { question: "ما المقصود بالمنقولات التي يمكن وقفها وما مزاياها؟", service: "T05", asOf: TODAY, refCodes: ["ASSETS-GUIDE"] },
-    expected: "مراجعة المصدر وحدها لا تكفي لصفحة مستخرجة: «لم يُقابل بصفحته»",
-    setup: (tx) => reviewSource(tx, "ASSETS-GUIDE"),
+    expected: "مراجعة المصدر وحدها لا تكفي لصفحة مستخرجة: «لم يراجعه مختص» (B13)",
+    setup: (tx) => reviewSource(tx, "ASSETS-GUIDE", { passages: "none" }),
     judge: (r) => (r.citable.length === 0 && r.results.some((x) => refusal(x.decision) === "passage_not_reviewed") ? null : "استُشهد بصفحة غير مقابلة"),
   },
   {
@@ -393,7 +433,7 @@ export const CASES: Case[] = [
       const refused = await reviewSource(tx, "SOCPA-NPO-2025", { reviewer: R, fields: ["sharia"] }).then(() => false, (e: Error) => /المراجعة المحاسبية/.test(e.message));
       if (!refused) throw new Error("قُبلت مراجعة من غير مجال المصدر");
     },
-    judge: (r) => (r.citable.length === 0 && r.results.some((x) => refusal(x.decision) === "not_reviewed") ? null : "قُبلت مراجعة من غير مجاله"),
+    judge: (r) => (r.citable.length === 0 && r.results.some((x) => refusal(x.decision) === "passage_not_reviewed") ? null : "قُبلت مراجعة من غير مجاله"),
   },
   {
     id: "14a", category: "14. سؤال عبثي يشترك مع نص في كلمات نادرة متباعدة (مجس المراجعة P1e)",
@@ -417,12 +457,17 @@ export const CASES: Case[] = [
     judge: (r) => (!r.sufficiency.sufficient && r.citable.length === 0 && /المادة 300/.test((r.sufficiency as { reason?: string }).reason ?? "") ? null : "قُدّم سند لمادة غير موجودة"),
   },
   {
-    id: "14d", category: "14. كتاب معاصر وحده لا يكفي سندًا (B8)",
+    id: "14d", category: "14. «الميسّر» وحده (قرار المالك 2026-11-07، رابعاً)",
     query: { question: "ما اللجان المتفرعة من مجلس النظارة في الوقف المؤسسي؟", service: "*", asOf: TODAY, refCodes: ["BOOK-MAYSAR"] },
-    expected: "يُسترجع «الميسّر» مرجعًا مساعدًا، ولا يُعدّ وحده سندًا كافيًا",
+    expected: "يُستعمل «الميسّر» وحده: صالح للمسودة بوسم «كتاب معاصر»، ويُستشهد بمقطعه نهائيًا بعد مراجعة المقطع، ولا يُوسم ملزمًا",
     setup: (tx) => reviewSource(tx, "BOOK-MAYSAR", { passages: "all" }),
-    // the book's passage is retrieved and refused as auxiliary without a classical fiqh text; nothing is passed on
-    judge: (r) => (r.citable.length === 0 && !r.sufficiency.sufficient && r.results.some((x) => x.hit.refCode === "BOOK-MAYSAR" && refusal(x.decision) === "auxiliary_alone") ? null : `الكفاية ${r.sufficiency.sufficient}`),
+    judge: (r) => {
+      const m = r.citable.find((x) => x.hit.refCode === "BOOK-MAYSAR");
+      const d = r.usable.find((x) => x.hit.refCode === "BOOK-MAYSAR");
+      if (!m || !r.sufficiency.sufficient) return `الكفاية ${r.sufficiency.sufficient}`;
+      if (m.decision.citable && m.decision.binding) return "وُسم ملزمًا";
+      return d?.draft.usable && d.draft.flags.includes("contemporary") ? null : "لا وسم «كتاب معاصر» في المسودة";
+    },
   },
   {
     id: "14e", category: "14. صفحات «الميسّر» التي رصد المختصون خطأها محجوبة (B8)",

@@ -22,8 +22,19 @@
  *  8. A historical question is answered from the version in force on the date asked, known by its own effective date;
  *     a version whose validity dates are unknown is not used for a historical question. An earlier version is labelled
  *     with the dates it was in force.
- *  9. A contemporary book is an auxiliary reference: it is never the sole basis of an answer.
+ *  9. (Owner's order 2026-11-07, §4 — replaces the former «never the sole basis» rule.) A contemporary book («الميسّر»)
+ *     may serve alone for internal drafts; it is never labelled binding nor as the school's view, and, like any source,
+ *     it reaches a final document only through the human review of the passage used and of the reasoning.
  * 10. A registry instrument's citation shows only what the guard returned: its name, locator, version, heading and text.
+ * 11. (B13, owner's order 2026-11-07, §5.) A review approves the passage it names, and only it: an accepted review of a
+ *     source as a whole, or of another passage, approves no passage (it attests the source's identity and edition). A
+ *     rejected review of the source as a whole withdraws all its passages. Each passage stands: unreviewed, under
+ *     review, approved or rejected.
+ *
+ * Two tiers (owner's order 2026-11-07, §4, §5, §8): `decide` says whether a passage may be cited in a FINAL document
+ * (human-reviewed); `draftUse` says whether it may be used in an internal DRAFT, with the flags its use must carry
+ * (unreviewed, OCR, contemporary…). A draft never becomes final by itself: the server's final gate and the database
+ * require the reviews (outputs/quality.ts, security.sql output_unreviewed_basis).
  */
 import type { CitationResult } from "@/server/references/citation";
 
@@ -85,7 +96,9 @@ export type Hit = {
   validTo?: string | null;
   validity?: "in_force" | "earlier" | "later" | "unknown";
   /** Where the text passed on comes from: the citation guard's authorised unit, or the knowledge base's own passage. */
-  provenance?: "guard" | "passage";
+  provenance?: "guard" | "passage" | "stored_official";
+  /** What the passage lacks of the question's qualifiers (a year, «غير X»): not relevant whatever the shared words. */
+  lacking?: string[];
   /** Blocked by a specialist's finding recorded in the catalog. */
   blocked: boolean;
   reviewRole: ReviewRole;
@@ -124,7 +137,7 @@ export const REFUSAL_AR: Record<Refusal, string> = {
   ocr_text: "النص بالتعرف الضوئي لا يُستشهد به",
   degraded_text: "النص المستخرج غير موثوق",
   not_reviewed: "المرجع لم يراجعه مختص من مجاله ولم يُعتمد للاستشهاد",
-  passage_not_reviewed: "المقطع مستخرج من الملف ولم يُقابل بصفحته",
+  passage_not_reviewed: "المقطع المستخدم لم يراجعه مختص من مجاله (اعتماد المصدر جملةً أو مقطع آخر منه لا يعتمد هذا المقطع)",
   review_rejected: "المراجعة البشرية رفضت المرجع أو المقطع",
   auxiliary_alone: "مرجع مساعد (كتاب معاصر) لا يُستند إليه دون نص من كتب الفقه الأصلية",
   unknown_validity: "تاريخ سريان هذه النسخة غير معروف، فلا يُعرف النص النافذ في التاريخ المطلوب",
@@ -138,9 +151,14 @@ export type SourceReview = { decision: "accepted" | "rejected"; at: string; role
 const no = (refusal: Refusal, detail: string): Decision => ({ citable: false, refusal, detail });
 
 /** A label that states the source's nature next to every citation. */
-export function citationLabel(h: Pick<Hit, "refKind" | "title" | "locator" | "version" | "superseded"> & Partial<Pick<Hit, "validFrom" | "validTo">>, historical = false): string {
+export function citationLabel(h: Pick<Hit, "refKind" | "title" | "locator" | "version" | "superseded"> & Partial<Pick<Hit, "validFrom" | "validTo" | "registryId" | "provenance">>, historical = false): string {
   const base = `${KIND_AR[h.refKind]}: ${h.title} — ${h.locator} (${h.version})`;
-  if (historical && h.validFrom) return `${base} — ${h.validTo ? `نسخة سابقة، سارية من ${h.validFrom} إلى ${h.validTo}` : `سارية من ${h.validFrom}`}`;
+  // H2: a registered text always shows its validity — its end when on record, else that its end is unknown (never guessed)
+  const registered = !!h.registryId && (h.provenance === "guard" || h.provenance === "stored_official");
+  if ((historical || registered) && h.validFrom) {
+    if (h.validTo) return `${base} — ${historical ? "نسخة سابقة، " : ""}سارية من ${h.validFrom} إلى ${h.validTo}`;
+    return `${base} — سارية من ${h.validFrom}؛ تاريخ انتهاء السريان غير معلوم`;
+  }
   return `${base}${h.superseded ? " — نسخة سابقة" : ""}`;
 }
 
@@ -166,6 +184,7 @@ export function decide(h: Hit, ctx: DecideContext, evidence: DecideEvidence): De
     if (h.repealedOn && h.repealedOn <= ctx.asOf) return no("out_of_date", `${h.refCode}: لم يعد ساريًا منذ ${h.repealedOn}`);
   }
   if (h.effectiveOn && h.effectiveOn > ctx.asOf) return no("not_yet_effective", `${h.refCode}: يسري من ${h.effectiveOn}`);
+  if (h.lacking?.length) return no("not_relevant", `${h.refCode} ${h.locator}: لا يتناول ${h.lacking.join("، ")} الوارد في السؤال (اشتراك الألفاظ لا يثبت الصلة)`);
   if (h.coverage < MIN_COVERAGE) return no("not_relevant", `${h.refCode} ${h.locator}: يغطي ${Math.round(h.coverage * 100)}٪ من كلمات السؤال`);
   if (h.refKind === "unclassified") return no("unclassified", h.refCode);
   if (h.blocked) return no("blocked_passage", `${h.refCode} ${h.locator}`);
@@ -181,16 +200,70 @@ export function decide(h: Hit, ctx: DecideContext, evidence: DecideEvidence): De
   if (ctx.schoolQuestion && h.refKind !== "classical_fiqh") return no("not_school_source", `${KIND_AR[h.refKind]}: ${h.refCode}`);
   if (h.textOrigin === "ocr") return no("ocr_text", `${h.refCode} ${h.locator}`);
   if (h.quality !== "good") return no("degraded_text", `${h.refCode}: جودة النص «${h.quality}»`);
-  const mine = (evidence.reviews ?? []).filter((r) => r.role === h.reviewRole).sort((a, b) => b.at.localeCompare(a.at));
-  const source = mine.filter((r) => r.chunkId === null)[0];
-  if (!source) return no("not_reviewed", `${h.refCode} (مراجع ${h.reviewRole})`);
-  if (source.decision !== "accepted") return no("review_rejected", h.refCode);
-  if (h.textOrigin === "text_layer") {
-    const passage = mine.filter((r) => r.chunkId === h.chunkId)[0];
-    if (!passage) return no("passage_not_reviewed", `${h.refCode} ${h.locator}`);
-    if (passage.decision !== "accepted") return no("review_rejected", `${h.refCode} ${h.locator}`);
-  }
+  const st = passageStatus(h, evidence.reviews ?? []);
+  if (st === "rejected") return no("review_rejected", `${h.refCode} ${h.locator}`);
+  if (st !== "approved") return no("passage_not_reviewed", `${h.refCode} ${h.locator} (مراجع ${h.reviewRole})`);
   return { citable: true, label: citationLabel(h, !!ctx.historical), binding: false };
+}
+
+export type PassageStatus = "unreviewed" | "under_review" | "approved" | "rejected";
+export const PASSAGE_STATUS_AR: Record<PassageStatus, string> = { unreviewed: "غير مراجع", under_review: "قيد المراجعة", approved: "مراجع ومعتمد", rejected: "مرفوض" };
+
+/**
+ * A passage's standing from the reviews of its field (B13): the latest review OF THIS PASSAGE decides; a later rejection
+ * of the source as a whole withdraws it. An acceptance of the source as a whole approves no passage. («under review» is
+ * the caller's to add: a passage used in a document or dossier awaiting its review.)
+ */
+export function passageStatus(h: Pick<Hit, "chunkId" | "reviewRole">, reviews: SourceReview[]): Exclude<PassageStatus, "under_review"> {
+  const mine = reviews.filter((r) => r.role === h.reviewRole).sort((a, b) => b.at.localeCompare(a.at));
+  const passage = mine.find((r) => r.chunkId === h.chunkId);
+  const sourceRejection = mine.find((r) => r.chunkId === null && r.decision === "rejected");
+  if (sourceRejection && (!passage || sourceRejection.at >= passage.at)) return "rejected";
+  if (!passage) return "unreviewed";
+  return passage.decision === "accepted" ? "approved" : "rejected";
+}
+
+/** Why a passage is used in a draft with a warning: each flag is shown next to its use. */
+export type DraftFlag = "unreviewed" | "ocr" | "degraded" | "contemporary" | "not_school_attribution" | "registry_unconfirmed" | "earlier_version";
+export const DRAFT_FLAG_AR: Record<DraftFlag, string> = {
+  unreviewed: "مقطع غير مراجع: يلزم مراجعته قبل أي مستند نهائي",
+  ocr: "نص مستخرج آليًا بالتعرف الضوئي: قد يحتوي أخطاء، ولا يُعامل نقلًا محققًا",
+  degraded: "نص الملف معيب الاستخراج: لا يُعامل نقلًا محققًا",
+  contemporary: "كتاب معاصر: شرح المؤلف وتلخيصه، لا نص المذهب",
+  not_school_attribution: "لا يُنسب منه قول إلى المذهب الحنبلي",
+  registry_unconfirmed: "النص الرسمي المحفوظ؛ مطابقته لم تُعتمد بعد من مراجع نظامي",
+  earlier_version: "نسخة سابقة",
+};
+export type DraftUse = { usable: true; status: Exclude<PassageStatus, "under_review">; flags: DraftFlag[]; label: string } | { usable: false; refusal: Refusal; detail: string };
+
+/**
+ * Whether a passage may serve an internal draft (owner's order 2026-11-07, §4–§5): applicable to the service, in force on
+ * the date, relevant, not blocked by a specialist's finding, not rejected by a review — reviewed or not. A registry
+ * instrument is used only from its stored official text (the guard's version), even before its comparison is accepted.
+ */
+export function draftUse(h: Hit, ctx: DecideContext, evidence: DecideEvidence & { registryDraftText?: boolean }): DraftUse {
+  const final = decide(h, ctx, evidence);
+  const status = BINDING_KINDS.has(h.refKind) || h.registryId ? (final.citable ? "approved" : "unreviewed") : passageStatus(h, evidence.reviews ?? []);
+  const flags: DraftFlag[] = [];
+  if (!final.citable) {
+    const r = final.refusal;
+    // what stops a final citation but not a draft's use (with its flag)
+    const draftable: Refusal[] = ["passage_not_reviewed", "not_reviewed", "ocr_text", "degraded_text", "not_school_source", "registry_refused", "text_mismatch"];
+    const notUsable: DraftUse = { usable: false, refusal: r, detail: final.detail };
+    if (!draftable.includes(r)) return notUsable;
+    if (r === "registry_refused" || r === "text_mismatch") {
+      if (!evidence.registryDraftText) return notUsable;
+      flags.push("registry_unconfirmed");
+    }
+  }
+  if (status === "rejected") return { usable: false, refusal: "review_rejected", detail: `${h.refCode} ${h.locator}` };
+  if (status !== "approved") flags.push("unreviewed");
+  if (h.textOrigin === "ocr") flags.push("ocr");
+  if (h.quality !== "good") flags.push("degraded");
+  if (h.refKind === "contemporary_book") flags.push("contemporary");
+  if (ctx.schoolQuestion && h.refKind !== "classical_fiqh" && !BINDING_KINDS.has(h.refKind)) flags.push("not_school_attribution");
+  if (h.superseded || h.validity === "earlier") flags.push("earlier_version");
+  return { usable: true, status, flags: [...new Set(flags)], label: citationLabel(h, !!ctx.historical) };
 }
 
 export type Sufficiency = { sufficient: true } | { sufficient: false; reason: string };
@@ -209,7 +282,21 @@ export function sufficiency(decided: { hit: Hit; decision: Decision }[], need: {
   }
   if (need.binding && !ok.some((d) => d.decision.citable && d.decision.binding)) return { sufficient: false, reason: "المراجع غير كافية: لا نص نظامي ملزم قابل للاستشهاد؛ المراجع الإرشادية أو العلمية لا تقوم مقامه." };
   if (need.school && !ok.some((d) => d.hit.refKind === "classical_fiqh")) return { sufficient: false, reason: "المراجع غير كافية: لا نص من كتب المذهب الحنبلي الأصلية قابل للاستشهاد." };
-  // a contemporary book is an auxiliary reference: never the sole basis (rule 9, review B8)
-  if (ok.every((d) => d.hit.refKind === "contemporary_book")) return { sufficient: false, reason: "المراجع غير كافية: الكتاب المعاصر مرجع مساعد لا يُستند إليه منفرداً." };
+  return { sufficient: true };
+}
+
+/**
+ * Enough for an internal draft: at least one usable passage; a binding one (its stored official text) when the section
+ * states what the rules require. A school question with no classical book is still drafted — every use flagged «لا يُنسب
+ * منه قول إلى المذهب» (owner's order 2026-11-07, §4.6).
+ */
+export function draftSufficiency(decided: { hit: Hit; draft: DraftUse }[], need: { binding: boolean; missingArticle?: string | null }): Sufficiency {
+  if (need.missingArticle) return { sufficient: false, reason: `المراجع غير كافية: ${need.missingArticle} غير موجودة في النص المحفوظ.` };
+  const ok = decided.filter((d) => d.draft.usable);
+  if (!ok.length) {
+    const why = [...new Set(decided.filter((d) => !d.draft.usable).map((d) => REFUSAL_AR[(d.draft as { refusal: Refusal }).refusal]))];
+    return { sufficient: false, reason: decided.length ? `المراجع غير كافية حتى للمسودة: لا مقطع صالح (${why.join("؛ ")}).` : "المراجع غير كافية: لم يُعثر على نص ذي صلة في قاعدة المعرفة." };
+  }
+  if (need.binding && !ok.some((d) => BINDING_KINDS.has(d.hit.refKind))) return { sufficient: false, reason: "المراجع غير كافية حتى للمسودة: لا نص نظامي ملزم محفوظ من مصدره الرسمي؛ المراجع الإرشادية أو العلمية لا تقوم مقامه." };
   return { sufficient: true };
 }

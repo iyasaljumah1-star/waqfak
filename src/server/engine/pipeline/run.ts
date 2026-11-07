@@ -22,10 +22,10 @@ import { readVersionPlain } from "@/server/modules/documents/core";
 import { extractText } from "@/server/modules/ai/extract";
 import { engineAuth } from "../actor";
 import { ENGINE_VERSION } from "../constants";
-import { retrieve, readyRefCodes } from "@/server/knowledge/retrieve";
+import { retrieve, availableRefCodes } from "@/server/knowledge/retrieve";
 import { matterOf, sectionQuestion } from "@/server/knowledge/question";
 import { maskPII } from "@/server/modules/ai/safety";
-import { KIND_AR } from "@/server/knowledge/policy";
+import { DRAFT_FLAG_AR, KIND_AR } from "@/server/knowledge/policy";
 
 /** Outputs whose sections state what the rules require: a guide, a study or a book cannot be their only basis. */
 const BINDING_PROFILES: ReadonlySet<string> = new Set(["legal_review", "legal_package", "nazara_study", "aml_program", "ops_package", "investment_policy", "deed_draft"]);
@@ -139,8 +139,9 @@ export async function processRequest(job: ClaimedJob): Promise<RunOutcome> {
       }
       const packs = packsFor(rulePacks(), rc.service.code);
       const essential = [...new Set(packs.flatMap((p) => p.essentialRefs ?? []))];
-      // an essential reference counts only when the knowledge engine's policy lets it be cited now (unified engine)
-      const ready = await readyRefCodes(tx, essential, new Date().toISOString().slice(0, 10));
+      // an essential reference must be present with a usable text for the draft (owner's order 2026-11-07, §5: its use is
+      // reviewed passage by passage at the final approval, not before the draft — B13)
+      const ready = await availableRefCodes(tx, essential, new Date().toISOString().slice(0, 10));
       const missingRefs = essential.filter((c) => !ready.has(c));
       const facts = {
         service: { code: rc.service.code, pricing: rc.service.pricingModel },
@@ -255,14 +256,20 @@ export async function processRequest(job: ClaimedJob): Promise<RunOutcome> {
             // the question is the request's matter (masked, local retrieval only), not the section's writing instruction
             const question = sectionQuestion({ serviceName: rc.service.nameAr, sectionTitle: sec.title, instruction: analysisDef?.prompt, query: w.query, matter: matterOf(rc.req, maskPII) });
             const kb = await retrieve(tx, { question, service: rc.service.code, asOf: new Date().toISOString().slice(0, 10), refCodes, needBinding: BINDING_PROFILES.has(def.profile), limit: 4 });
-            // nothing reaches the model unless the basis is sufficient — also in a section that does not require a
-            // citation: an auxiliary book alone, or a passage short of the school's books in C07, is never passed on
-            // as a source (review B8). Text, heading and locator of a registry instrument are the guard's (retrieve()).
-            const hits = kb.sufficiency.sufficient ? kb.citable.map((r) => r.hit) : [];
+            // an internal draft (owner's order 2026-11-07, §4–§5): the passages usable for a draft — reviewed or not, each
+            // passed on with its flags (unreviewed, OCR, contemporary book, not the school's view…). Nothing reaches the
+            // model unless the draft basis is sufficient. A registry instrument's text is its official text (retrieve()).
+            // The final approval requires the human review of every passage the version cites (outputs/quality.ts).
+            const picked = kb.draftSufficiency.sufficient ? kb.usable : [];
+            const hits = picked.map((r) => r.hit);
             for (const h of hits) if (!used.some((u) => u.code === h.refCode && u.version === h.version)) used.push({ code: h.refCode, version: h.version });
-            const sources: LlmSource[] = hits.map((h, i) => ({ n: i + 1, chunkId: h.chunkId, refCode: h.refCode, locator: `${KIND_AR[h.refKind]}: ${h.title} — ${h.locator}`, text: h.text }));
-            if (w.requireCitation && !kb.sufficiency.sufficient) {
-              const why = kb.sufficiency.reason;
+            const sources: LlmSource[] = picked.map((r, i) => {
+              const h = r.hit;
+              const flags = r.draft.usable ? r.draft.flags.map((f) => DRAFT_FLAG_AR[f]) : [];
+              return { n: i + 1, chunkId: h.chunkId, refCode: h.refCode, locator: `${KIND_AR[h.refKind]}: ${h.title} — ${h.locator}${flags.length ? ` [${flags.join("؛ ")}]` : ""}`, text: h.text };
+            });
+            if (w.requireCitation && !kb.draftSufficiency.sufficient) {
+              const why = kb.draftSufficiency.reason;
               problems.push(`${sec.title}: ${why}`);
               sectionLog.push({ section: sec.title, by: "none", reason: why, refused: kb.results.filter((r) => !r.decision.citable).map((r) => `${r.hit.refCode} ${r.hit.locator}: ${(r.decision as { detail: string }).detail}`) });
               continue;

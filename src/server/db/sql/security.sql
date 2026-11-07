@@ -660,3 +660,223 @@ BEGIN
 END $$;
 DROP TRIGGER IF EXISTS users_self_guard ON users;
 CREATE TRIGGER users_self_guard BEFORE UPDATE ON users FOR EACH ROW EXECUTE FUNCTION users_self_guard();
+
+-- ═════════════ Owner's order of 2026-11-07 ═════════════
+-- N5-1 (by privilege, not by a session variable): the permission catalog and the list of roles are the code's, written
+-- by the seed with the owner role. The application role cannot insert, change or remove a permission or a role at all —
+-- whatever app.user_id says (a session variable any connection of the role can set).
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON permissions FROM waqfak_app;
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON roles FROM waqfak_app;
+
+-- N5-2 / R2: a review is bound to a real authenticated session. The request carries its session token (the cookie's
+-- value) in app.session_token, for the review's own transaction only; the database hashes it and requires a session of
+-- the reviewer that exists, is not revoked, has not expired, passed the second factor, and belongs to a staff account.
+-- The session row stores only the token's hash: a connection that knows a reviewer's id — or even the hash — cannot
+-- produce the token. The session found is written on the review (session_id), whatever the inserter supplied.
+CREATE OR REPLACE FUNCTION app_review_session(reviewer uuid) RETURNS uuid LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public AS $$
+DECLARE tok text := nullif(current_setting('app.session_token', true), ''); sid uuid;
+BEGIN
+  IF tok IS NULL OR reviewer IS NULL THEN RETURN NULL; END IF;
+  SELECT s.id INTO sid FROM sessions s JOIN users u ON u.id = s.user_id
+   WHERE s.token_hash = encode(sha256(convert_to(tok, 'UTF8')), 'hex') AND s.user_id = reviewer
+     AND s.revoked_at IS NULL AND s.idle_expires_at > now() AND s.absolute_expires_at > now()
+     AND s.mfa_verified AND u.is_staff AND u.status = 'active' AND (u.locked_until IS NULL OR u.locked_until < now());
+  RETURN sid;
+END $$;
+REVOKE ALL ON FUNCTION app_review_session(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION app_review_session(uuid) TO waqfak_app;
+
+CREATE OR REPLACE FUNCTION kb_review_session() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF TG_TABLE_NAME = 'ref_match_reviews' AND NEW.decision <> 'accepted' THEN
+    NEW.session_id := app_review_session(NEW.reviewer_user_id);
+    RETURN NEW;
+  END IF;
+  NEW.session_id := app_review_session(NEW.reviewer_user_id);
+  IF NEW.session_id IS NULL THEN
+    RAISE EXCEPTION '%: a review is recorded only in the reviewer''s own authenticated session (no valid session token)', TG_TABLE_NAME USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS kb_review_session ON kb_source_reviews;
+CREATE TRIGGER kb_review_session BEFORE INSERT ON kb_source_reviews FOR EACH ROW EXECUTE FUNCTION kb_review_session();
+DROP TRIGGER IF EXISTS kb_review_session ON ref_match_reviews;
+CREATE TRIGGER kb_review_session BEFORE INSERT ON ref_match_reviews FOR EACH ROW EXECUTE FUNCTION kb_review_session();
+
+-- At use: whether the session a review names existed, belonged to the reviewer and was valid when the review was made.
+-- (Read by the engine in the system context; sessions are not exposed beyond this yes/no.)
+CREATE OR REPLACE FUNCTION knowledge_review_sessions(kind text, ids uuid[]) RETURNS TABLE (id uuid, ok boolean)
+  LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
+  SELECT r.id, EXISTS (SELECT 1 FROM sessions s WHERE s.id = r.session_id AND s.user_id = r.reviewer_user_id
+           AND s.created_at <= r.at AND s.absolute_expires_at > r.at AND (s.revoked_at IS NULL OR s.revoked_at > r.at) AND s.mfa_verified)
+  FROM (
+    SELECT k.id, k.session_id, k.reviewer_user_id, k.at FROM kb_source_reviews k WHERE kind = 'kb_source_review' AND k.id = ANY (ids)
+    UNION ALL SELECT m.id, m.session_id, m.reviewer_user_id, m.reviewed_at FROM ref_match_reviews m WHERE kind = 'ref_match_review' AND m.id = ANY (ids)
+    UNION ALL SELECT f.id, f.session_id, f.reviewer_user_id, f.at FROM fiqh_reviews f WHERE kind = 'fiqh_review' AND f.id = ANY (ids)
+  ) r
+$$;
+REVOKE ALL ON FUNCTION knowledge_review_sessions(text, uuid[]) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION knowledge_review_sessions(text, uuid[]) TO waqfak_app;
+
+-- ───────────── Fiqh research dossiers and their human reviews ─────────────
+-- Team-side only (no waqf member reads them). Dossiers are written by the engine (system context) or staff; reviews by a
+-- reviewer in their own authenticated session, holding the field's permission, with its audit entry. Both append-only.
+DO $$
+DECLARE t text;
+BEGIN
+  FOREACH t IN ARRAY ARRAY['fiqh_dossiers','fiqh_reviews'] LOOP
+    EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
+    EXECUTE format('DROP POLICY IF EXISTS fiqh_read ON %I', t);
+    EXECUTE format('CREATE POLICY fiqh_read ON %I FOR SELECT TO waqfak_app USING (app_current_user() IS NULL OR app_is_staff())', t);
+    EXECUTE format('DROP TRIGGER IF EXISTS ref_append_only ON %I', t);
+    EXECUTE format('CREATE TRIGGER ref_append_only BEFORE UPDATE OR DELETE ON %I FOR EACH ROW EXECUTE FUNCTION ref_append_only()', t);
+    EXECUTE format('DROP TRIGGER IF EXISTS ref_no_truncate ON %I', t);
+    EXECUTE format('CREATE TRIGGER ref_no_truncate BEFORE TRUNCATE ON %I FOR EACH STATEMENT EXECUTE FUNCTION ref_append_only()', t);
+    EXECUTE format('REVOKE UPDATE, DELETE, TRUNCATE ON %I FROM waqfak_app', t);
+  END LOOP;
+END $$;
+DROP POLICY IF EXISTS fiqh_dossier_insert ON fiqh_dossiers;
+CREATE POLICY fiqh_dossier_insert ON fiqh_dossiers FOR INSERT TO waqfak_app WITH CHECK (app_current_user() IS NULL OR app_is_staff());
+DROP POLICY IF EXISTS fiqh_review_insert ON fiqh_reviews;
+CREATE POLICY fiqh_review_insert ON fiqh_reviews FOR INSERT TO waqfak_app WITH CHECK (reviewer_user_id = app_current_user() AND app_is_staff());
+
+CREATE OR REPLACE FUNCTION fiqh_review_guard() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE d record;
+BEGIN
+  IF app_current_user() IS NULL OR app_current_user() <> NEW.reviewer_user_id THEN
+    RAISE EXCEPTION 'fiqh_reviews: a review is recorded only by the reviewer, in the reviewer''s own session' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  SELECT * INTO d FROM fiqh_dossiers WHERE id = NEW.dossier_id;
+  IF NOT FOUND OR d.sha256 <> NEW.dossier_sha256 THEN
+    RAISE EXCEPTION 'fiqh_reviews: the review does not name the dossier''s content' USING ERRCODE = 'check_violation';
+  END IF;
+  IF NEW.reviewer_role <> d.review_role THEN
+    RAISE EXCEPTION 'fiqh_reviews: this dossier is reviewed by the % field', d.review_role USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM users u WHERE u.id = NEW.reviewer_user_id AND u.status = 'active' AND (u.locked_until IS NULL OR u.locked_until < now())) THEN
+    RAISE EXCEPTION 'fiqh_reviews: reviewer is not an active user' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM user_roles ur JOIN role_permissions rp ON rp.role_id = ur.role_id JOIN permissions p ON p.id = rp.permission_id
+                 WHERE ur.user_id = NEW.reviewer_user_id AND p.key = 'knowledge.review.' || NEW.reviewer_role) THEN
+    RAISE EXCEPTION 'fiqh_reviews: reviewer lacks knowledge.review.%', NEW.reviewer_role USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  -- the engine's account never reviews what the engine produced
+  IF d.created_by IS NOT NULL AND d.created_by = NEW.reviewer_user_id THEN
+    RAISE EXCEPTION 'fiqh_reviews: the author of a dossier does not review it' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  NEW.session_id := app_review_session(NEW.reviewer_user_id);
+  IF NEW.session_id IS NULL THEN
+    RAISE EXCEPTION 'fiqh_reviews: a review is recorded only in the reviewer''s own authenticated session (no valid session token)' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS fiqh_review_guard ON fiqh_reviews;
+CREATE TRIGGER fiqh_review_guard BEFORE INSERT ON fiqh_reviews FOR EACH ROW EXECUTE FUNCTION fiqh_review_guard();
+
+CREATE OR REPLACE FUNCTION fiqh_review_audited() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM audit_logs a WHERE a.action = 'knowledge.review.recorded' AND a.entity_type = 'fiqh_review'
+                 AND a.entity_id = NEW.id::text AND a.actor_user_id = NEW.reviewer_user_id) THEN
+    RAISE EXCEPTION 'fiqh_reviews: review % has no audit entry', NEW.id USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  RETURN NULL;
+END $$;
+DROP TRIGGER IF EXISTS fiqh_review_audited ON fiqh_reviews;
+CREATE CONSTRAINT TRIGGER fiqh_review_audited AFTER INSERT ON fiqh_reviews DEFERRABLE INITIALLY DEFERRED
+  FOR EACH ROW EXECUTE FUNCTION fiqh_review_audited();
+
+-- ───────────── B13 at the final approval: what a final output cites must be human-reviewed, passage by passage ─────────────
+-- Defence in depth for the server's gate (outputs/quality.ts): an output does not become «approved» while a passage it
+-- cites (a specialist block's refs) has no accepted review of that passage, recorded in an authenticated session by a
+-- holder of the field's permission — nor while a fiqh dossier it rests on has no approving review. The seal and the
+-- audit hash are verified by the server; the database checks what it can see.
+CREATE OR REPLACE FUNCTION output_unreviewed_basis(oid uuid, ver integer) RETURNS integer LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public AS $$
+DECLARE n integer := 0; secs jsonb;
+BEGIN
+  SELECT sections INTO secs FROM output_versions WHERE output_id = oid AND version = ver;
+  IF secs IS NULL THEN RETURN 0; END IF;
+  WITH refs AS (
+    SELECT (r->>'chunkId')::uuid AS chunk_id FROM jsonb_path_query(secs, '$[*] ? (!(exists(@.removed)) || @.removed != true).blocks[*] ? (@.type == "specialist").refs[*]') r
+    WHERE r ? 'chunkId'
+  ), held AS (
+    SELECT DISTINCT ur.user_id, substr(p.key, 18) AS role FROM user_roles ur JOIN role_permissions rp ON rp.role_id = ur.role_id
+    JOIN permissions p ON p.id = rp.permission_id JOIN users u ON u.id = ur.user_id
+    WHERE p.key LIKE 'knowledge.review.%' AND u.status = 'active' AND (u.locked_until IS NULL OR u.locked_until < now())
+  )
+  SELECT count(*) INTO n FROM refs x JOIN kb_chunks c ON c.id = x.chunk_id JOIN kb_sources s ON s.id = c.source_id
+  WHERE NOT (
+    CASE WHEN s.registry_id IS NOT NULL THEN EXISTS (
+      SELECT 1 FROM ref_sources rs JOIN ref_versions rv ON rv.source_id = rs.id JOIN ref_match_runs mr ON mr.version_id = rv.id
+      JOIN ref_match_reviews mv ON mv.run_id = mr.id JOIN held h ON h.user_id = mv.reviewer_user_id AND h.role = 'legal'
+      WHERE rs.code = s.registry_id AND mv.decision = 'accepted' AND mv.session_id IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM ref_match_reviews later WHERE later.run_id = mr.id AND later.reviewed_at > mv.reviewed_at))
+    ELSE EXISTS (
+      SELECT 1 FROM kb_source_reviews k JOIN held h ON h.user_id = k.reviewer_user_id AND h.role = k.reviewer_role
+      WHERE k.chunk_id = c.id AND k.decision = 'accepted' AND k.session_id IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM kb_source_reviews later WHERE later.chunk_id = c.id AND later.reviewer_role = k.reviewer_role AND later.at > k.at))
+    END);
+  -- every dossier a block rests on needs an approving (or modifying) review by a holder of its field, on its content
+  SELECT n + count(*) INTO n FROM (
+    SELECT DISTINCT (b->>'dossierId')::uuid AS did FROM jsonb_path_query(secs, '$[*] ? (!(exists(@.removed)) || @.removed != true).blocks[*] ? (@.type == "specialist" && exists(@.dossierId))') b
+  ) x JOIN fiqh_dossiers d ON d.id = x.did
+  WHERE NOT EXISTS (
+    SELECT 1 FROM fiqh_reviews f JOIN held h ON h.user_id = f.reviewer_user_id AND h.role = f.reviewer_role
+    WHERE f.dossier_id = d.id AND f.dossier_sha256 = d.sha256 AND f.decision IN ('approved', 'modified') AND f.session_id IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM fiqh_reviews later WHERE later.dossier_id = d.id AND later.at > f.at));
+  RETURN n;
+END $$;
+REVOKE ALL ON FUNCTION output_unreviewed_basis(uuid, integer) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION output_unreviewed_basis(uuid, integer) TO waqfak_app;
+
+CREATE OR REPLACE FUNCTION guard_output_basis() RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE n integer;
+BEGIN
+  IF NEW.status = 'approved' AND NEW.status IS DISTINCT FROM OLD.status THEN
+    n := output_unreviewed_basis(NEW.id, NEW.current_version);
+    IF n > 0 THEN
+      RAISE EXCEPTION 'output_guard: % cited passage(s) or research dossier(s) without the required human review', n USING ERRCODE = 'check_violation';
+    END IF;
+  END IF;
+  RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS outputs_basis_guard ON outputs;
+CREATE TRIGGER outputs_basis_guard BEFORE UPDATE OF status ON outputs FOR EACH ROW EXECUTE FUNCTION guard_output_basis();
+
+-- Independent review, round 6 (2026-11-07).
+-- 2j: an account's standing (status, lock, staff flag, second factor) is changed, from a user session, only by a holder
+-- of «admin.users» — an ordinary user could reactivate a locked reviewer, whose reviews then counted again.
+CREATE OR REPLACE FUNCTION users_standing_guard() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF app_current_user() IS NOT NULL AND app_current_user() <> OLD.id
+     AND (NEW.status IS DISTINCT FROM OLD.status OR NEW.locked_until IS DISTINCT FROM OLD.locked_until
+          OR NEW.is_staff IS DISTINCT FROM OLD.is_staff OR NEW.mfa_enabled IS DISTINCT FROM OLD.mfa_enabled
+          OR NEW.failed_login_count IS DISTINCT FROM OLD.failed_login_count)
+     AND NOT app_holds('admin.users') THEN
+    RAISE EXCEPTION 'users: another account''s status, lock, staff flag or second factor is changed only by admin.users' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS users_standing_guard ON users;
+CREATE TRIGGER users_standing_guard BEFORE UPDATE ON users FOR EACH ROW EXECUTE FUNCTION users_standing_guard();
+
+-- N5-1 (system context): the application role setting app.user_id to '' is the system context, which the guards above
+-- let through for the seed and the bootstrap. A reviewer is never named from it: with the application role, a role
+-- carrying «knowledge.review.*» is granted — and such a permission added to a role — only from an administrator's own
+-- session (holder of admin.roles, not for themselves). The seed runs with the owner role and is unaffected.
+CREATE OR REPLACE FUNCTION reviewer_grant_guard() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+  IF session_user = 'waqfak_app' AND app_current_user() IS NULL AND TG_OP <> 'DELETE' THEN
+    IF TG_TABLE_NAME = 'user_roles' THEN
+      IF EXISTS (SELECT 1 FROM role_permissions rp JOIN permissions p ON p.id = rp.permission_id WHERE rp.role_id = (to_jsonb(NEW)->>'role_id')::uuid AND p.key LIKE 'knowledge.review.%') THEN
+        RAISE EXCEPTION 'user_roles: a reviewer role is granted only from an administrator''s session' USING ERRCODE = 'insufficient_privilege';
+      END IF;
+    ELSIF EXISTS (SELECT 1 FROM permissions p WHERE p.id = (to_jsonb(NEW)->>'permission_id')::uuid AND p.key LIKE 'knowledge.review.%') THEN
+      RAISE EXCEPTION 'role_permissions: a reviewer permission is added only from an administrator''s session' USING ERRCODE = 'insufficient_privilege';
+    END IF;
+  END IF;
+  RETURN coalesce(NEW, OLD);
+END $$;
+DROP TRIGGER IF EXISTS reviewer_grant_guard ON user_roles;
+CREATE TRIGGER reviewer_grant_guard BEFORE INSERT OR UPDATE ON user_roles FOR EACH ROW EXECUTE FUNCTION reviewer_grant_guard();
+DROP TRIGGER IF EXISTS reviewer_grant_guard ON role_permissions;
+CREATE TRIGGER reviewer_grant_guard BEFORE INSERT OR UPDATE ON role_permissions FOR EACH ROW EXECUTE FUNCTION reviewer_grant_guard();

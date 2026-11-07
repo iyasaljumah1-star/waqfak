@@ -148,6 +148,11 @@ export const kbSourceReviews = pgTable("kb_source_reviews", {
   /** What was checked: «النص مطابق لصفحات الطبعة المذكورة»، «النسبة إلى الجهة صحيحة». */
   note: text().notNull(),
   at: createdAt(),
+  /**
+   * The authenticated session the review was recorded in (owner's order 2026-11-07, §2.2: N5-2/R2). Set by the
+   * database from the session token the request carries, never by the application: a review without it does not count.
+   */
+  sessionId: uuid(),
 }, (t) => [
   index("kbsr_source_idx").on(t.sourceId, t.at),
   check("kbsr_decision_ck", sql`${t.decision} in ('accepted', 'rejected')`),

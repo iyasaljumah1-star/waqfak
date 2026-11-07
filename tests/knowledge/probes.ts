@@ -13,7 +13,7 @@ import { ordinalHeadingValue } from "../../src/server/knowledge/ordinals";
 import { readyRefCodes, retrieve, type RetrieveQuery, type RetrieveResult } from "../../src/server/knowledge/retrieve";
 import { regulatoryBasisIn } from "../../src/server/modules/ai/regulatory";
 import { sectionQuestion } from "../../src/server/knowledge/question";
-import { acceptRegistry, asUser, reviewEverything, reviewSource, testReviewer, TEST_REVIEWER } from "./cases";
+import { acceptRegistry, actorOf, asUser, reviewEverything, reviewSource, testReviewer, TEST_REVIEWER } from "./cases";
 
 const T = "2026-11-06";
 export type ProbeOut = { pass: boolean; output: unknown };
@@ -88,7 +88,7 @@ const ROUND4: Probe[] = [
       const runId = await NZR(tx);
       const before = (await retrieve(tx, Q163)).citable.length;
       await tx.execute(sql`select pg_sleep(0.01)`);
-      await asUser(tx, TEST_REVIEWER, () => recordComparisonReview(tx, { userId: TEST_REVIEWER }, { runId, decision: "rejected", note: "مجس: رفض لاحق بعد القبول" }));
+      await asUser(tx, TEST_REVIEWER, () => recordComparisonReview(tx, actorOf(TEST_REVIEWER), { runId, decision: "rejected", note: "مجس: رفض لاحق بعد القبول" }));
       const after = (await retrieve(tx, Q163)).citable.length;
       return { pass: before > 0 && after === 0, output: { before, after } };
     },
@@ -250,12 +250,17 @@ const ROUND4: Probe[] = [
       const { audit } = await import("../../src/server/lib/audit");
       await testReviewer(tx, TEST_REVIEWER, ["data"]);
       const sid = await lfsId(tx);
+      // the strongest case: inside the reviewer's real authenticated session (its token), but bypassing review.ts
       await asUser(tx, TEST_REVIEWER, async () => {
+        await tx.execute(sql`select set_config('app.session_token', ${actorOf(TEST_REVIEWER).sessionToken}, true)`);
         const [row] = (await tx.execute(sql`insert into kb_source_reviews (source_id, reviewer_user_id, reviewer_role, decision, note) values (${sid}::uuid, ${TEST_REVIEWER}::uuid, 'data', 'accepted', 'مجس: إدراج مباشر بقيد تدقيق صحيح') returning id`)).rows as { id: string }[];
         await audit(tx, { actorUserId: TEST_REVIEWER, action: "knowledge.review.recorded", entityType: "kb_source_review", entityId: row!.id, after: { decision: "accepted", role: "data", textSha256: "x".repeat(64), seal: "forged" } });
       });
+      await tx.execute(sql`select set_config('app.session_token', '', true)`);
       const r = await retrieve(tx, LFS_Q);
-      return { pass: r.citable.length === 0, output: brief(r) };
+      // and without the session token (system context or another code path setting app.user_id): refused outright
+      const noToken = await attempt(tx, () => asUser(tx, TEST_REVIEWER, () => tx.execute(sql`insert into kb_source_reviews (source_id, reviewer_user_id, reviewer_role, decision, note) values (${sid}::uuid, ${TEST_REVIEWER}::uuid, 'data', 'accepted', 'مجس: إدراج بلا رمز جلسة')`)));
+      return { pass: r.citable.length === 0 && noToken !== "ACCEPTED", output: { ...brief(r), noToken } };
     },
   },
   {
@@ -328,8 +333,15 @@ export const PROBES: Probe[] = [
     run: async (tx) => { await reviewSource(tx, "BOOK-MAYSAR", { passages: "all" }); const r = await retrieve(tx, q("هل يحصل الوقف بالفعل دون القول؟", { service: "C07" })); return { pass: !r.sufficiency.sufficient && !r.citable.some((x) => ["231", "232"].includes(x.hit.pagePrinted ?? "")), output: brief(r) }; },
   },
   {
-    id: "B8c", finding: "B8", title: "خارج C07: «الميسّر» وحده لسؤال فقهي بلا كلمات المذهب", criterion: "الكتاب المعاصر لا يكون السند الوحيد",
-    run: async (tx) => { await reviewSource(tx, "BOOK-MAYSAR", { passages: "all" }); const r = await retrieve(tx, q("ما اللجان المتفرعة من مجلس النظارة في الوقف المؤسسي؟", { refCodes: ["BOOK-MAYSAR"] })); return { pass: !r.sufficiency.sufficient, output: brief(r) }; },
+    id: "B8c", finding: "B8 → قرار المالك 2026-11-07 (رابعاً)", title: "«الميسّر» وحده: مسودة بلا مراجعة، ولا نسبة إلى المذهب", criterion: "صالح للمسودة دون مصدر أصلي، موسوم «غير مراجع» و«كتاب معاصر»؛ لسؤال عن المذهب: لا يُنسب إليه ولا يكفي نهائيًا",
+    run: async (tx) => {
+      const plain = await retrieve(tx, q("ما اللجان المتفرعة من مجلس النظارة في الوقف المؤسسي؟", { refCodes: ["BOOK-MAYSAR"] }));
+      const school = await retrieve(tx, q("ما اللجان المتفرعة من مجلس النظارة في الوقف المؤسسي في المذهب الحنبلي؟", { refCodes: ["BOOK-MAYSAR"] }));
+      const flagsOf = (r: RetrieveResult) => r.usable.flatMap((x) => (x.draft.usable ? x.draft.flags : []));
+      const pass = plain.draftSufficiency.sufficient && !plain.sufficiency.sufficient && flagsOf(plain).includes("unreviewed") && flagsOf(plain).includes("contemporary")
+        && !school.sufficiency.sufficient && flagsOf(school).includes("not_school_attribution");
+      return { pass, output: { plain: { draft: plain.draftSufficiency, final: plain.sufficiency, flags: [...new Set(flagsOf(plain))] }, school: { final: school.sufficiency, flags: [...new Set(flagsOf(school))] } } };
+    },
   },
   {
     id: "P5a", finding: "B1", title: "نص فقرة معدَّل بالكامل", criterion: "text_mismatch، غير كافٍ",
@@ -375,7 +387,7 @@ export const PROBES: Probe[] = [
   },
   {
     id: "P6b", finding: "B4", title: "صفحة من طبقة النص بمراجعة المصدر وحدها", criterion: "passage_not_reviewed",
-    run: async (tx) => { await reviewSource(tx, "ASSETS-GUIDE"); const r = await retrieve(tx, q("ما المقصود بالمنقولات التي يمكن وقفها وما مزاياها؟", { service: "T05", refCodes: ["ASSETS-GUIDE"] })); return { pass: insufficient(r) && r.results.some((x) => (x.decision as { refusal?: string }).refusal === "passage_not_reviewed"), output: brief(r) }; },
+    run: async (tx) => { await reviewSource(tx, "ASSETS-GUIDE", { passages: "none" }); const r = await retrieve(tx, q("ما المقصود بالمنقولات التي يمكن وقفها وما مزاياها؟", { service: "T05", refCodes: ["ASSETS-GUIDE"] })); return { pass: insufficient(r) && r.results.some((x) => (x.decision as { refusal?: string }).refusal === "passage_not_reviewed"), output: brief(r) }; },
   },
   {
     id: "P6c", finding: "N3/B5", title: "مستخدم بلا دور ومقفل يسجل مراجعة، وإدراج مباشر من سياق النظام", criterion: "تُرفض كلتاهما، ولا يصير المصدر قابلاً للاستشهاد",
