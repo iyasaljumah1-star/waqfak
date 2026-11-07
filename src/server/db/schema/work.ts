@@ -634,6 +634,8 @@ export const reportShares = pgTable("report_shares", {
   reportId: uuid().notNull().references(() => reports.id, { onDelete: "cascade" }),
   waqfId: uuid(),
   tokenHash: text().notNull(),
+  /** HMAC binding of the token to this row as issued (lib/capability.ts); null on rows issued before it: refused. */
+  binding: text(),
   createdBy: uuid().notNull(),
   expiresAt: timestamp({ withTimezone: true }).notNull(),
   revokedAt: timestamp({ withTimezone: true }),

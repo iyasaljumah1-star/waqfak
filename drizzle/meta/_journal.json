@@ -127,6 +127,13 @@
       "when": 1794070264899,
       "tag": "0017_knowledge_session_fiqh",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1794087975574,
+      "tag": "0018_capability_binding",
+      "breakpoints": true
     }
   ]
 }

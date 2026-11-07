@@ -13,7 +13,9 @@ import { AGENT_CEILING, INVITABLE_ROLES, PROTECTED_ROLES, REGISTER_ROLES } from 
 import { deriveSizeClass } from "../../engines/assessment";
 import { env, showOtpOnScreen } from "../../env";
 import { audit, nextNumber } from "../../lib/audit";
-import { newDataKey, randomToken, sha256 } from "../../lib/crypto";
+import { newDataKey, randomToken } from "../../lib/crypto";
+import { bindInvitation, capabilityBinding, capabilityLookup, verifyCapability } from "../../lib/capability";
+import { randomUUID } from "node:crypto";
 import { requestInfo } from "../../lib/request-info";
 import { sendSms } from "../../adapters/messaging";
 import { emitWaqfEvent, syncWaqfObligations } from "../compliance/events";
@@ -277,11 +279,12 @@ async function createInvitation(
     .set({ revokedAt: new Date() })
     .where(and(eq(invitations.waqfId, o.waqfId), eq(invitations.phone, o.phone), eq(invitations.roleKey, o.roleKey), isNull(invitations.acceptedAt), isNull(invitations.revokedAt)));
   const token = randomToken(24);
+  // the token is bound to this invitation as issued: its waqf, phone, role, scope, inviter and expiry (lib/capability.ts)
+  const row = { id: randomUUID(), waqfId: o.waqfId, phone: o.phone, roleKey: o.roleKey, invitedBy: o.invitedBy, expiresAt: new Date(Date.now() + 7 * 86_400_000), scope: o.scope ?? null };
   const [inv] = await tx
     .insert(invitations)
     .values({
-      waqfId: o.waqfId, phone: o.phone, roleKey: o.roleKey, tokenHash: sha256(token), invitedBy: o.invitedBy,
-      expiresAt: new Date(Date.now() + 7 * 86_400_000), scope: o.scope ?? null, note: o.note ?? null,
+      ...row, tokenHash: capabilityLookup("invitation", token), binding: capabilityBinding("invitation", token, bindInvitation(row)), note: o.note ?? null,
     })
     .returning({ id: invitations.id });
   const link = `/app/invitations/${token}`;
@@ -595,8 +598,9 @@ export async function updateWaqfProfile(_: ActionState, fd: FormData): Promise<A
  */
 async function loadInvitationForMe(token: string) {
   const auth = await requireAuth({ next: `/app/invitations/${token}` });
-  const [inv] = await withSystem((tx) => tx.select().from(invitations).where(eq(invitations.tokenHash, sha256(token))).limit(1));
-  if (!inv) throw new UserError("رابط الدعوة غير صحيح.");
+  const [inv] = await withSystem((tx) => tx.select().from(invitations).where(eq(invitations.tokenHash, capabilityLookup("invitation", token))).limit(1));
+  // a row changed after issue (another phone, role, waqf, scope or a later expiry), or planted without the key: refused
+  if (!inv || !verifyCapability("invitation", token, inv.binding, bindInvitation(inv))) throw new UserError("رابط الدعوة غير صحيح.");
   if (inv.acceptedAt) throw new UserError("استُخدمت هذه الدعوة مسبقًا.");
   if (inv.revokedAt) throw new UserError("أُلغيت هذه الدعوة. اطلب من ناظر الوقف دعوة جديدة.");
   if (inv.expiresAt < new Date()) throw new UserError("انتهت صلاحية الدعوة. اطلب من ناظر الوقف دعوة جديدة.");

@@ -2,11 +2,11 @@ import "server-only";
 import { and, eq, sql } from "drizzle-orm";
 import { withSystem } from "../../db";
 import { documents, documentShares, documentVersions } from "../../db/schema";
-import { sha256 } from "../../lib/crypto";
+import { bindDocumentShare, capabilityLookup, verifyCapability } from "../../lib/capability";
 import { logAccess, readVersionPlain } from "./service";
 
 /**
- * Public share links (/s/[token]). The token is never stored: only its SHA-256.
+ * Public share links (/s/[token]). The token is never stored: only its keyed lookup and its binding (lib/capability.ts).
  * Anonymous access cannot carry a user identity into RLS, so these two functions use the system context,
  * scoped strictly to the single share row matched by the token hash (same pattern as /r/[token]).
  */
@@ -21,10 +21,11 @@ async function lookup(tx: Parameters<Parameters<typeof withSystem>[0]>[0], token
     .from(documentShares)
     .innerJoin(documents, eq(documents.id, documentShares.documentId))
     .leftJoin(documentVersions, and(eq(documentVersions.documentId, documents.id), eq(documentVersions.version, documents.currentVersion)))
-    .where(eq(documentShares.tokenHash, sha256(token)))
+    .where(eq(documentShares.tokenHash, capabilityLookup("document_share", token)))
     .limit(1);
   const [row] = lock ? await q.for("update", { of: documentShares }) : await q;
-  if (!row) return { state: "not_found" as ShareState, row: null };
+  // a share row re-pointed to another document, extended, given more uses, or planted without the key: not found
+  if (!row || !verifyCapability("document_share", token, row.s.binding, bindDocumentShare(row.s))) return { state: "not_found" as ShareState, row: null };
   const { s, d, v } = row;
   let state: ShareState = "ok";
   if (s.revokedAt) state = "revoked";

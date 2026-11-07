@@ -1,6 +1,8 @@
 "use server";
 
 import { and, eq, inArray } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
+import { bindReportShare, capabilityBinding, capabilityLookup } from "../../lib/capability";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
@@ -278,7 +280,9 @@ export async function createShare(_prev: ActionState, fd: FormData): Promise<Act
           })
           .returning({ id: reports.id });
       }
-      const [share] = await tx.insert(reportShares).values({ reportId: rep.id, waqfId: v.row.waqfId, tokenHash: sha256(token), createdBy: auth.user.id, expiresAt }).returning({ id: reportShares.id });
+      // bound to this report, its issuer and expiry (lib/capability.ts)
+      const row = { id: randomUUID(), reportId: rep.id, waqfId: v.row.waqfId, createdBy: auth.user.id, expiresAt };
+      const [share] = await tx.insert(reportShares).values({ ...row, tokenHash: capabilityLookup("report_share", token), binding: capabilityBinding("report_share", token, bindReportShare(row)) }).returning({ id: reportShares.id });
       await audit(tx, { actorUserId: auth.user.id, action: "assessment.share", entityType: "report_share", entityId: share.id, waqfId: v.row.waqfId, ip, userAgent, after: { assessmentId: id, days } });
     });
     revalidatePath(`/app/assessments/${id}`);

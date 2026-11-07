@@ -1,4 +1,5 @@
 import "server-only";
+import { bindInvitation, capabilityLookup, verifyCapability } from "../../lib/capability";
 import { and, asc, count, desc, eq, gte, isNotNull, isNull, like, lt, notInArray, sql } from "drizzle-orm";
 import { cache } from "react";
 import { requireWaqf, type Auth } from "../../authz/context";
@@ -8,7 +9,6 @@ import {
   users, waqfMemberships, waqfs, waqfTimelineEvents,
 } from "../../db/schema";
 import { withSystem } from "../../db";
-import { sha256 } from "../../lib/crypto";
 import { read } from "../_shared";
 import { OPEN_REQUEST_EXCLUDED } from "../portal/queries";
 
@@ -150,12 +150,16 @@ export async function invitationByToken(token: string) {
       .select({
         id: invitations.id, phone: invitations.phone, roleKey: invitations.roleKey, expiresAt: invitations.expiresAt, acceptedAt: invitations.acceptedAt,
         revokedAt: invitations.revokedAt, note: invitations.note, scope: invitations.scope, waqfId: invitations.waqfId, waqfName: waqfs.name, inviter: users.fullName,
+        invitedBy: invitations.invitedBy, binding: invitations.binding,
       })
       .from(invitations)
       .innerJoin(waqfs, eq(waqfs.id, invitations.waqfId))
       .leftJoin(users, eq(users.id, invitations.invitedBy))
-      .where(eq(invitations.tokenHash, sha256(token)))
+      .where(eq(invitations.tokenHash, capabilityLookup("invitation", token)))
       .limit(1),
   );
-  return row ?? null;
+  if (!row || !verifyCapability("invitation", token, row.binding, bindInvitation(row))) return null;
+  const { binding: _b, invitedBy: _i, ...out } = row;
+  void _b; void _i;
+  return out;
 }

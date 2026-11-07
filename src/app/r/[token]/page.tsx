@@ -4,7 +4,7 @@ import { and, eq, gt, isNull, sql } from "drizzle-orm";
 import { ArrowLeft, LinkIcon } from "lucide-react";
 import { withSystem } from "@/server/db";
 import { assessments, reportShares, reports } from "@/server/db/schema";
-import { sha256 } from "@/server/lib/crypto";
+import { bindReportShare, capabilityLookup, verifyCapability } from "@/server/lib/capability";
 import { loadResultBundle } from "@/server/modules/assessment/queries";
 import { ResultView } from "@/components/assessment/result-view";
 import { Logo } from "@/components/brand";
@@ -26,9 +26,10 @@ export default async function SharedReport({ params }: { params: Promise<{ token
           .select({ share: reportShares, assessmentId: reports.assessmentId })
           .from(reportShares)
           .innerJoin(reports, eq(reports.id, reportShares.reportId))
-          .where(and(eq(reportShares.tokenHash, sha256(token)), isNull(reportShares.revokedAt), isNull(reports.revokedAt), gt(reportShares.expiresAt, new Date())))
+          .where(and(eq(reportShares.tokenHash, capabilityLookup("report_share", token)), isNull(reportShares.revokedAt), isNull(reports.revokedAt), gt(reportShares.expiresAt, new Date())))
           .limit(1);
-        if (!s?.assessmentId) return null;
+        // re-pointed to another report, extended, or planted without the key: nothing shown
+        if (!s?.assessmentId || !verifyCapability("report_share", token, s.share.binding, bindReportShare(s.share))) return null;
         const [row] = await tx.select().from(assessments).where(eq(assessments.id, s.assessmentId)).limit(1);
         // a shared link shows only an approved result (owner's decision of 2026-11-01)
         if (!row || row.status !== "published") return null;

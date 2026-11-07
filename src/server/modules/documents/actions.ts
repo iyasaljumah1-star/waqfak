@@ -1,9 +1,11 @@
 "use server";
 import { and, eq, isNull } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
+import { bindDocumentShare, capabilityBinding, capabilityLookup } from "../../lib/capability";
 import { z } from "zod";
 import { documents, documentShares, documentVersions } from "../../db/schema";
 import { audit } from "../../lib/audit";
-import { randomToken, sha256 } from "../../lib/crypto";
+import { randomToken } from "../../lib/crypto";
 import { env } from "../../env";
 import { emitWaqfEvent } from "../compliance/events";
 import { parseForm, UserError, waqfAction, type WaqfCtx } from "../_shared";
@@ -144,9 +146,11 @@ export async function createShareLink(_prev: ActionState, fd: FormData): Promise
     if (d.confidentiality === "secret") throw new UserError("لا تُشارك الوثائق «السرية جدًا» عبر روابط عامة. خفّض درجة السرية أولًا إن كان ذلك مناسبًا.");
     const token = randomToken(24);
     const expiresAt = new Date(Date.now() + days * 86_400_000);
+    // bound to this document, its issuer, expiry and use limit (lib/capability.ts)
+    const row = { id: randomUUID(), documentId: d.id, waqfId: d.waqfId, createdBy: c.auth.user.id, expiresAt, maxUses };
     const [s] = await c.tx
       .insert(documentShares)
-      .values({ documentId: d.id, waqfId: d.waqfId, tokenHash: sha256(token), createdBy: c.auth.user.id, expiresAt, maxUses })
+      .values({ ...row, tokenHash: capabilityLookup("document_share", token), binding: capabilityBinding("document_share", token, bindDocumentShare(row)) })
       .returning({ id: documentShares.id });
     await logAccess(c.tx, { documentId: d.id, waqfId: d.waqfId, userId: c.auth.user.id, action: "share", ip: c.ip });
     await audit(c.tx, { actorUserId: c.auth.user.id, action: "documents.share", entityType: "document", entityId: d.id, waqfId: d.waqfId, ip: c.ip, userAgent: c.userAgent, after: { shareId: s.id, expiresAt, maxUses } });

@@ -148,6 +148,8 @@ export const invitations = pgTable("invitations", {
   phone: text().notNull(),
   roleKey: text().notNull(),
   tokenHash: text().notNull(),
+  /** HMAC binding of the token to this row as issued (lib/capability.ts); null on rows issued before it: refused. */
+  binding: text(),
   invitedBy: uuid().notNull(),
   expiresAt: timestamp({ withTimezone: true }).notNull(),
   acceptedAt: timestamp({ withTimezone: true }),
