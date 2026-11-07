@@ -353,8 +353,12 @@ export function weigh(statements: Statement[], issue: Issue, cmp: Comparison): W
   if (issue.missing.length) {
     return { status: "needs_facts", reasons: ["لا يُرجَّح قبل استكمال الوقائع المؤثرة في الحكم."], unresolved: issue.missing, humanReview, by: "engine" };
   }
-  const known = statements.filter((s) => s.effective !== "unknown" && s.applies !== "does_not_apply");
-  if (!known.length) {
+  const allKnown = statements.filter((s) => s.effective !== "unknown" && s.applies !== "does_not_apply");
+  // the school's books, where they speak to the facts, are what is weighed; guidance pages and contemporary books, and
+  // statements whose conditions the facts leave open, are set beside them (listed among the other views), not against them
+  const classicalApplying = allKnown.filter((s) => s.source.refKind === "classical_fiqh" && s.applies === "applies");
+  const known = classicalApplying.length ? classicalApplying : allKnown;
+  if (!allKnown.length) {
     return {
       status: "insufficient",
       reasons: statements.length ? ["لم يتبين من النصوص المسترجعة حكم ينطبق على الواقعة (الحكم أو القيد غير ظاهر في ألفاظها)."] : ["لم يُعثر في قاعدة المعرفة على نص في المسألة."],
@@ -393,6 +397,7 @@ export function weigh(statements: Statement[], issue: Issue, cmp: Comparison): W
     differs = true;
     reasons.push("القول المعتمد في المذهب لا ينطبق قيده على هذه الواقعة، فبُني الميل على قول آخر.");
   }
+  const asides = allKnown.filter((s) => !known.includes(s) && s.effective !== leaning).map((s) => ({ statementId: s.id, why: s.source.refKind === "classical_fiqh" ? "انطباقه على الواقعة غير متبين" : "ليس من كتب المذهب: لا يُرجَّح به على نصوصها المنطبقة" }));
   const others = known.filter((s) => s.effective !== leaning).map((s) => ({
     statementId: s.id,
     why: s.rank === "other" ? "خلاف المعتمد بحسب نص الكتاب" : mutamadApplying.length && s.rank !== "mutamad" ? "يخالف القول المعتمد المنطبق على الواقعة" : "لم يتقدم بمرجح من النصوص المتاحة",
@@ -415,7 +420,7 @@ export function weigh(statements: Statement[], issue: Issue, cmp: Comparison): W
   return {
     status: "weighed", leaning, statementIds: chosen.map((s) => s.id), reasons: [...new Set(reasons)],
     supporting: [...new Set(chosen.map((s) => `${s.source.title} — ${s.source.locator}`))],
-    others: [...others, ...notApplying], mutamad: mutamad.map((s) => s.id), differsFromMutamad: differs,
+    others: [...others, ...asides, ...notApplying], mutamad: mutamad.map((s) => s.id), differsFromMutamad: differs,
     unresolved: issue.factors.filter((f) => f.status === "missing").map((f) => f.question), confidence, uncertainty, humanReview: [...new Set(humanReview)], by: "engine",
   };
 }
