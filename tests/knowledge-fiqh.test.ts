@@ -13,7 +13,7 @@ import { Pool } from "pg";
 vi.mock("server-only", () => ({}));
 
 import * as schema from "../src/server/db/schema";
-import { analyzeIssue, compare, conditionStatus, extractStatements, weigh } from "../src/server/knowledge/fiqh/analyze";
+import { analyzeIssue, compare, conditionStatus, extractStatements, regulatoryTrack, reverse, weigh } from "../src/server/knowledge/fiqh/analyze";
 import type { Fact, SourceRef } from "../src/server/knowledge/fiqh/types";
 import { FIQH_CASES } from "./knowledge/fiqh-cases";
 
@@ -74,9 +74,13 @@ describe("fiqh analysis — synthetic test texts", () => {
     const r = run("ما حكم إجارة الوقف مدة طويلة؟", [], [{ s: src({ refKind: "contemporary_book", refCode: "TEST-BOOK" }), text: "والراجح عند الحنابلة جواز إجارة الوقف مدة طويلة إذا كانت فيها مصلحة." }]);
     expect(r.statements[0]).toMatchObject({ kind: "author_choice", element: "author", rank: "unverified" });
     expect(r.comparison.contemporaryChecks[0]).toMatchObject({ outcome: "attributes_school" });
-    // alone it may still ground a draft's weighing, with low confidence and the reviewer told it rests on the book alone
-    expect(r.weighing).toMatchObject({ status: "weighed", confidence: "low" });
-    expect((r.weighing as { humanReview: string[] }).humanReview.join(" ")).toMatch(/الميسّر/);
+    // its condition («إذا كانت فيها مصلحة») unknown: the result depends on that fact and is not given (order 2026-11-08, §3.1)
+    expect(r.weighing.status).toBe("needs_facts");
+    expect(r.weighing.reasons.join(" ")).toMatch(/تتوقف النتيجة على استكمال هذه الواقعة/);
+    // with the fact given, it may ground a draft's weighing alone — low confidence, the reviewer told it rests on the book alone
+    const r2 = run("ما حكم إجارة الوقف مدة طويلة؟", [F("في الإجارة الطويلة مصلحة ظاهرة للوقف")], [{ s: src({ refKind: "contemporary_book", refCode: "TEST-BOOK" }), text: "والراجح عند الحنابلة جواز إجارة الوقف مدة طويلة إذا كانت فيها مصلحة." }]);
+    expect(r2.weighing).toMatchObject({ status: "weighed", confidence: "low" });
+    expect((r2.weighing as { humanReview: string[] }).humanReview.join(" ")).toMatch(/الميسّر/);
   });
 
   it("no weighing before the facts the ruling turns on are given; assumptions are told apart from established facts", () => {
@@ -110,8 +114,13 @@ describe("fiqh analysis — synthetic test texts", () => {
   it("round 7 (cont.): «وهي المذهب» makes the riwaya the relied-upon view and the contrary statement the other; nested exceptions; «لا بأس»; «ليس لل…»; an unnamed «الشيخ»", () => {
     const a = run("ما حكم وقف الدراهم؟", [], [{ s: src(), text: "لا يصح وقف الدراهم. وعنه يصح، وهي المذهب عند المتأخرين." }]).statements;
     expect(a).toEqual([expect.objectContaining({ rank: "other", polarity: "prohibit" }), expect.objectContaining({ kind: "riwaya", rank: "mutamad", polarity: "permit" })]);
-    const n = run("ما حكم بيع الوقف؟", [F("تعطلت منافع العقار كليًا"), F("اشترط الواقف ألا يباع الوقف بحال")], [{ s: src(), text: "لا يجوز بيعه إلا أن تتعطل منافعه، إلا أن يشترط الواقف ألا يباع بحال." }]).statements[0]!;
-    expect(n).toMatchObject({ polarity: "prohibit", effective: "prohibit" });
+    // two «إلا» clauses with nothing saying how they relate (nested? repeated?): no ruling is drawn, and a human decides
+    // (order 2026-11-08, §3.2 — replaces the former parity count, which assumed nesting)
+    const nr = run("ما حكم بيع الوقف؟", [F("تعطلت منافع العقار كليًا"), F("اشترط الواقف ألا يباع الوقف بحال")], [{ s: src(), text: "لا يجوز بيعه إلا أن تتعطل منافعه، إلا أن يشترط الواقف ألا يباع بحال." }]);
+    const n = nr.statements[0]!;
+    expect(n).toMatchObject({ polarity: "prohibit", effective: "unknown", exceptionStructure: "unclear" });
+    expect(nr.weighing.status).not.toBe("weighed");
+    expect(nr.weighing.humanReview.join(" ")).toMatch(/لا يبين النص/);
     expect(run("ما حكم ذلك؟", [], [{ s: src(), text: "ولا بأس ببيع آلته إذا خربت" }]).statements[0]).toMatchObject({ polarity: "permit" });
     expect(run("ما حكم ذلك؟", [], [{ s: src(), text: "وليس للواقف الرجوع في وقفه بعد لزومه" }]).statements[0]).toMatchObject({ polarity: "prohibit" });
     expect(run("ما حكم ذلك؟", [], [{ s: src(), text: "قال الشيخ: يجوز إبداله لمصلحة راجحة" }]).statements[0]!.attributedTo).toMatch(/لم يُسمَّ/);
@@ -127,6 +136,144 @@ describe("fiqh analysis — synthetic test texts", () => {
       { s: src({ refCode: "TEST-FQH-B", chunkId: "t2" }), text: "وقال الشيخ تقي الدين لا تصح إجارته مدة طويلة" },
     ]).weighing;
     expect(w.status).toBe("needs_facts");
+  });
+
+  // ── order of 2026-11-08, «ثالثاً»: unknown conditions, exceptions, negation, the relied-upon view ──────────────────
+  const W = (r: ReturnType<typeof run>) => r.weighing as Extract<typeof r.weighing, { status: "weighed" }>;
+  it("§3.1 a condition of the relied-upon view: met → its ruling; unmet → the other view, flagged; unknown → «تتوقف النتيجة», never the other view", () => {
+    const texts = [
+      { s: src(), text: "تصح إجارة الوقف مدة طويلة إذا أذن الحاكم على الصحيح من المذهب" },
+      { s: src({ refCode: "TEST-FQH-B", chunkId: "t2", title: "نص اختبار ب" }), text: "وقال الشيخ تقي الدين لا تصح إجارته مدة طويلة" },
+    ];
+    const met = run("ما حكم إجارة الوقف مدة طويلة؟", [F("لا شرط للواقف"), F("صدر إذن الحاكم بالإجارة")], texts);
+    expect(W(met)).toMatchObject({ status: "weighed", leaning: "permit", differsFromMutamad: false });
+    const unmet = run("ما حكم إجارة الوقف مدة طويلة؟", [F("لا شرط للواقف"), F("لم يصدر إذن الحاكم")], texts);
+    expect(W(unmet)).toMatchObject({ status: "weighed", leaning: "prohibit", differsFromMutamad: true, confidence: "low" });
+    const unknown = run("ما حكم إجارة الوقف مدة طويلة؟", [F("لا شرط للواقف")], texts);
+    expect(unknown.weighing.status).toBe("needs_facts");
+    expect(unknown.weighing.reasons[0]).toBe("تتوقف النتيجة على استكمال هذه الواقعة.");
+    expect(unknown.weighing.unresolved.join(" ")).toMatch(/اذن الحاكم/);
+  });
+
+  it("§3.1 a condition of the other view: unknown and not decisive → the relied-upon view stands; decisive → «تتوقف النتيجة»; a missing fact is no evidence against a view", () => {
+    const texts = [
+      { s: src(), text: "لا تصح إجارة الوقف مدة طويلة على الصحيح من المذهب" },
+      { s: src({ refCode: "TEST-FQH-B", chunkId: "t2" }), text: "وقيل تصح إذا كانت لمصلحة الوقف" },
+    ];
+    const r = run("ما حكم إجارة الوقف مدة طويلة؟", [F("لا شرط للواقف")], texts);
+    expect(W(r)).toMatchObject({ status: "weighed", leaning: "prohibit" });
+    expect(W(r).uncertainty.join(" ")).toMatch(/لا يتغير بها الحكم/);
+    // no relied-upon view, and the only applying view's condition unknown: the result turns on it
+    const r2 = run("ما حكم إجارة الوقف مدة طويلة؟", [F("لا شرط للواقف")], [{ s: src(), text: "تصح إجارة الوقف مدة طويلة إذا كانت لمصلحة الوقف" }]);
+    expect(r2.weighing.status).toBe("needs_facts");
+    expect(r2.weighing.unresolved.join(" ")).toMatch(/مصلح/);
+  });
+
+  it("§3.2 exceptions: single; alternatives (any one); cumulative (all); undeterminable → no ruling, human review", () => {
+    const single = (facts: Fact[]) => run("ما حكم بيع الوقف؟", [F("لا شرط للواقف"), ...facts], [{ s: src(), text: "لا يجوز بيعه إلا أن تتعطل منافعه" }]).statements[0]!;
+    expect(single([F("تعطلت منافع العقار")])).toMatchObject({ exceptionStructure: "single", effective: "permit", applies: "applies" });
+    expect(single([F("منافع العقار قائمة")])).toMatchObject({ effective: "prohibit", applies: "applies" });
+    const alt = (facts: Fact[]) => run("ما حكم بيع الوقف؟", facts, [{ s: src(), text: "لا يجوز بيعه إلا أن تتعطل منافعه أو إلا بإذن الحاكم" }]).statements[0]!;
+    expect(alt([F("منافع العقار قائمة"), F("أذن الحاكم بالبيع")])).toMatchObject({ exceptionStructure: "alternative", effective: "permit" });
+    expect(alt([F("منافع العقار قائمة"), F("لم يأذن الحاكم")])).toMatchObject({ effective: "prohibit", applies: "applies" });
+    expect(alt([F("منافع العقار قائمة")])).toMatchObject({ applies: "unknown" });
+    const cum = (facts: Fact[]) => run("هل يجوز للناظر الاستدانة على الوقف؟", facts, [{ s: src(), text: "لا يجوز للناظر الاستدانة على الوقف إلا أن يشترطه الواقف ويأذن الحاكم" }]).statements[0]!;
+    expect(cum([F("اشترط الواقف ذلك"), F("أذن الحاكم")])).toMatchObject({ exceptionStructure: "cumulative", effective: "permit", applies: "applies" });
+    expect(cum([F("اشترط الواقف ذلك"), F("لم يأذن الحاكم")])).toMatchObject({ effective: "prohibit", applies: "applies" });
+    expect(cum([F("اشترط الواقف ذلك")])).toMatchObject({ applies: "unknown" });
+    // no parity count: two «إلا» clauses with no connector are not read as nested
+    const u = run("ما حكم بيع الوقف؟", [F("تعطلت منافع العقار"), F("أذن الحاكم")], [{ s: src(), text: "لا يجوز بيعه إلا أن تتعطل منافعه، إلا بإذن الحاكم" }]);
+    expect(u.statements[0]).toMatchObject({ exceptionStructure: "unclear", effective: "unknown" });
+    expect(u.weighing.status).not.toBe("weighed");
+  });
+
+  it("§3.3 «لا يلزم الناظر الإشهاد إلا أن يشترطه الواقف»: conjugated «يشترطه»; not obliged / obliged / depends; «يجوز» does not answer «يلزم؟»; reverse()", () => {
+    const q = "هل يلزم الناظر الإشهاد؟";
+    const t = [{ s: src(), text: "لا يلزم الناظر الإشهاد إلا أن يشترطه الواقف" }];
+    const ob = run(q, [F("اشترط الواقف الإشهاد في الوقفية")], t);
+    expect(ob.statements[0]).toMatchObject({ polarity: "not_obliged", effective: "oblige", applies: "applies" });
+    expect(W(ob)).toMatchObject({ status: "weighed", leaning: "oblige" });
+    const no = run(q, [F("لم يشترط الواقف الإشهاد")], t);
+    expect(W(no)).toMatchObject({ status: "weighed", leaning: "not_obliged" });
+    const open = run(q, [], t);
+    expect(open.weighing.status).toBe("needs_facts");
+    expect(open.weighing.reasons[0]).toMatch(/تتوقف النتيجة/);
+    // permitted is not obliged, and not-obliged is not permitted: a «يجوز» answers no «يلزم؟»
+    const perm = run(q, [F("لا شرط للواقف")], [{ s: src(), text: "يجوز للناظر الإشهاد على تصرفاته" }]);
+    expect(perm.weighing.status).toBe("insufficient");
+    expect(perm.weighing.reasons.join(" ")).toMatch(/الجواز أو المنع لا الوجوب/);
+    expect(perm.comparison.divergences).toEqual([]);
+    expect([reverse("prohibit"), reverse("permit"), reverse("not_obliged"), reverse("oblige"), reverse("unknown")]).toEqual(["permit", "prohibit", "oblige", "not_obliged", "unknown"]);
+    // «إلا إذا نص الواقف»: one exception (not also a condition), read as the founder's condition
+    const nass = run("ما حكم صرف الريع لغير المصرف؟", [F("نص الواقف في الوقفية على جواز ذلك")], [{ s: src(), text: "لا يجوز صرف الريع لغير مصرفه إلا إذا نص الواقف" }]).statements[0]!;
+    expect(nass.conditions.map((c) => c.kind)).toEqual(["exception"]);
+    expect(nass).toMatchObject({ effective: "permit", kind: "text" });
+    // contrary rulings in one clause: no ruling drawn
+    expect(run("ما حكم بيعه؟", [], [{ s: src(), text: "يجوز بيعه ولا يجوز بيعه" }]).statements[0]).toMatchObject({ polarity: "unknown", unclear: expect.stringMatching(/التركيب غير واضح/) });
+  });
+
+  it("§3.4 the relied-upon view is never invented: «والمذهب الأول» resolved only when unambiguous; «قيل» never the school's; «والمذهب خلافه» says the school holds the contrary", () => {
+    const a = run("ما حكم بيع الوقف؟", [], [{ s: src(), text: "يجوز بيعه وعنه لا يجوز والمذهب الأول" }]).statements;
+    expect(a.find((x) => x.polarity === "permit")).toMatchObject({ rank: "mutamad" });
+    expect(a.find((x) => x.kind === "riwaya")).toMatchObject({ rank: "other" });
+    // three views before it: which is «the first» of the school's two? not certain from the passage
+    const b = run("ما حكم بيع الوقف؟", [], [{ s: src(), text: "يجوز بيعه وعنه لا يجوز وقيل يجوز بإذن الحاكم والمذهب الأول" }]).statements;
+    expect(b.some((x) => x.rank === "mutamad")).toBe(false);
+    expect(b.find((x) => /الاول/.test(x.unclear ?? ""))).toBeTruthy();
+    // a single view before it: its referent may lie outside the passage
+    const c = run("ما حكم بيع الوقف؟", [], [{ s: src(), text: "يجوز بيعه والمذهب الأول" }]).statements;
+    expect(c.some((x) => x.rank === "mutamad")).toBe(false);
+    // «وقيل … والمذهب خلافه» alone: the school holds the contrary — no leaning built on the «qila» view, no school view invented
+    const d = run("ما حكم بيع الوقف؟", [F("تعطلت منافع العقار"), F("لا شرط للواقف")], [{ s: src(), text: "وقيل يجوز بيعه والمذهب خلافه" }]);
+    expect(d.statements[0]).toMatchObject({ kind: "qila", rank: "other", schoolHoldsContrary: true });
+    expect(d.weighing.status).toBe("unresolved");
+    expect(d.weighing.reasons.join(" ")).toMatch(/المذهب خلاف القول المتاح/);
+    // «وقيل … وهو المذهب»: «qila» stays «qila», flagged for the reviewer
+    const e = run("ما حكم بيع الوقف؟", [], [{ s: src(), text: "وقيل يجوز بيعه وهو المذهب" }]).statements[0]!;
+    expect(e.rank).not.toBe("mutamad");
+    expect(e.unclear).toMatch(/قيل/);
+    // riwaya, wajh and a scholar's choice kept apart
+    const f = run("ما حكم بيع الوقف؟", [], [{ s: src(), text: "وعنه يجوز بيعه وفي وجه لا يجوز واختار الشيخ تقي الدين جوازه للمصلحة" }]).statements;
+    expect(f.map((x) => x.kind)).toEqual(["riwaya", "wajh", "ikhtiyar"]);
+    // a question (B4) is not a ruling
+    const g = run("ما حكم بيع الوقف؟", [], [{ s: src({ refKind: "official_guide" }), text: "هل يجوز للناظر بيع الوقف إذا تعطلت منافعه كليًا؟ يجوز بيع الوقف إذا تعطلت منافعه بقرار من الجهة المختصة." }]).statements;
+    expect(g[0]).toMatchObject({ polarity: "unknown", unclear: expect.stringMatching(/سؤال/) });
+  });
+
+  it("§4 two tracks: a regulation never weighed with the books, never dropped, never declared in agreement; guidance never proves the school's view", () => {
+    const q = "ما حكم بيع الوقف إذا تعطلت منافعه؟";
+    const facts = [F("تعطلت منافع العقار"), F("لا شرط للواقف")];
+    const reg = src({ refCode: "TEST-REG", refKind: "regulation", chunkId: "r1", title: "لائحة اختبار" });
+    const r = run(q, facts, [{ s: src(), text: "يجوز بيعه إذا تعطلت منافعه" }, { s: reg, text: "لا يجوز بيع الوقف ولو تعطلت منافعه" }]);
+    expect(W(r)).toMatchObject({ status: "weighed", leaning: "permit" });
+    expect(W(r).statementIds.every((id) => r.statements.find((x) => x.id === id)!.source.refKind === "classical_fiqh")).toBe(true);
+    // no agreement or divergence counted across the tracks
+    expect([...r.comparison.agreements, ...r.comparison.divergences.map((d) => `${d.a} ${d.b}`)].join(" ")).not.toMatch(/ق2/);
+    const t = regulatoryTrack(r.statements, r.weighing);
+    expect(t.items).toEqual([expect.objectContaining({ refCode: "TEST-REG", standing: "binding" })]);
+    expect(t.relation[0]).toMatchObject({ outcome: "conflict" });
+    expect(t.legalReview).toBe(true);
+    expect(t.combined.join(" ")).toMatch(/قيد نظامي ملزم.*لا يُنسب إلى المذهب/);
+    expect(t.combined.join(" ")).toMatch(/تعارض ظاهر/);
+    expect(t.combined.join(" ")).not.toMatch(/اتفق/);
+    // the same ruling: at most «no conflict seen», never «agreement»
+    const same = run(q, facts, [{ s: src(), text: "يجوز بيعه إذا تعطلت منافعه" }, { s: reg, text: "يجوز للناظر بيع الوقف إذا تعطلت منافعه بعد موافقة الهيئة" }]);
+    const ts = regulatoryTrack(same.statements, same.weighing);
+    expect(ts.relation[0]!.outcome).not.toBe("conflict");
+    expect(ts.relation.map((x) => x.note).join(" ")).not.toMatch(/^اتفاق/);
+    expect(ts.items[0]!.standing).toBe("binding");
+    // a constraint whose condition is not met is still shown, never dropped
+    const unmet = run(q, facts, [{ s: src(), text: "يجوز بيعه إذا تعطلت منافعه" }, { s: reg, text: "إذا كان الوقف مسجدا لم يجز بيعه ولو تعطلت منافعه" }]);
+    const tu = regulatoryTrack(unmet.statements, unmet.weighing);
+    expect(tu.items).toHaveLength(1);
+    expect(tu.combined.join(" ")).toMatch(/لائحة اختبار/);
+    // guidance alone: no fiqh weighing from it (it never proves the school's view), standing kept apart from binding
+    const g = run(q, facts, [{ s: src({ refKind: "official_guide", refCode: "TEST-GUIDE", chunkId: "g1" }), text: "يجوز بيع الوقف إذا تعطلت منافعه." }]);
+    expect(g.weighing.status).toBe("insufficient");
+    const tg = regulatoryTrack(g.statements, g.weighing);
+    expect(tg.items[0]).toMatchObject({ standing: "guidance" });
+    expect(tg.legalReview).toBe(false);
+    expect(regulatoryTrack(run(q, facts, [{ s: src({ refKind: "official_guide", chunkId: "g2" }), text: "يراعى عند بيع الوقف تعطل منافعه." }]).statements, null).items[0]).toMatchObject({ standing: "non_binding" });
   });
 
   it("a weighing is a research recommendation: never a ruling, never final", () => {

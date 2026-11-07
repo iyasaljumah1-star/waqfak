@@ -34,6 +34,8 @@ export type Issue = {
   topic: string | null;
   subIssues: string[];
   factors: Factor[];
+  /** What is asked: whether it is obligatory, or whether it is permitted (a «يجوز» does not answer «يجب»). */
+  asks: "obligation" | "permission" | "unknown";
   /** Essential facts missing: no weighing until they are given (§3.1). */
   missing: string[];
   facts: Fact[];
@@ -80,7 +82,26 @@ export const RANK_AR: Record<Rank, string> = {
 export type Polarity = "permit" | "prohibit" | "oblige" | "not_obliged" | "unknown";
 export const POLARITY_AR: Record<Polarity, string> = { permit: "الجواز / الصحة", prohibit: "المنع / عدم الصحة", oblige: "الوجوب / اللزوم", not_obliged: "عدم الوجوب / عدم اللزوم", unknown: "لم يتبين الحكم من النص" };
 
-export type Condition = { text: string; kind: "condition" | "exception"; status: "met" | "unmet" | "unknown"; byFact?: string };
+/** One conjunct of a condition («إلا أن يشترطه الواقف ويأذن الحاكم»: two parts, joined by «و»). */
+export type ConditionPart = { text: string; status: "met" | "unmet" | "unknown"; byFact?: string };
+export type Condition = {
+  text: string; kind: "condition" | "exception"; status: "met" | "unmet" | "unknown"; byFact?: string;
+  /** Where it starts in the statement's bare text (to read the connector between two exceptions). */
+  at?: number;
+  /** Its parts and how they are joined, when the clause holds more than one («و»: all; «أو»: any). */
+  parts?: ConditionPart[]; join?: "and" | "or";
+};
+
+/**
+ * How a statement's exceptions combine (owner's order 2026-11-08, §3.2): one; alternatives («أو إلا»: any one met
+ * reverses the ruling); cumulative («إلا أن A وB»: all must be met); or «unclear» — two «إلا» clauses with nothing in the
+ * text saying how they relate (nested, repeated, or alternative): no ruling is drawn from it, and a human decides.
+ */
+export type ExceptionStructure = "none" | "single" | "alternative" | "cumulative" | "unclear";
+export const EXCEPTION_AR: Record<ExceptionStructure, string> = {
+  none: "لا استثناء", single: "استثناء واحد", alternative: "استثناءات بديلة (أيها تحقق)", cumulative: "استثناء مجتمع الأجزاء (لا بد من تحققها كلها)",
+  unclear: "استثناءات لا يتبين من النص وجه اجتماعها — تُعرض على المراجع",
+};
 
 export type SourceRef = {
   chunkId: string;
@@ -112,6 +133,12 @@ export type Statement = {
   applies: "applies" | "does_not_apply" | "unknown";
   /** The polarity in force on these facts (an exception met reverses «لا … إلا أن …»). */
   effective: Polarity;
+  exceptionStructure: ExceptionStructure;
+  /** Why the reading gives no ruling, when the structure is not clear (a question, an unresolved reference, an unclear
+   * combination of exceptions, contrary rulings in one clause). */
+  unclear?: string;
+  /** The text says the school holds the contrary of this view («والمذهب خلافه») — without stating the school's view. */
+  schoolHoldsContrary?: boolean;
   source: SourceRef;
   /** Words of the text that gave the kind, rank and polarity (so that the reviewer can check the reading). */
   markers: string[];
@@ -147,6 +174,26 @@ export type Weighing =
     }
   | { status: "needs_facts" | "insufficient" | "unresolved"; reasons: string[]; unresolved: string[]; humanReview: string[]; by: "engine" };
 
+/**
+ * The regulatory track (owner's order 2026-11-08, §4), kept apart from the fiqh result: what the regulations and the
+ * official guidance retrieved say, each with its standing — never used to prove the school's view, never dropped, and
+ * never declared in agreement with the fiqh result where it differs.
+ */
+export type RegulatoryStanding = "binding" | "guidance" | "non_binding" | "explanation";
+export const REG_STANDING_AR: Record<RegulatoryStanding, string> = {
+  binding: "نص نظامي ملزم", guidance: "دليل أو تعليمات إرشادية رسمية", non_binding: "توجيه غير ملزم", explanation: "شرح أو إيضاح",
+};
+export type RegulatoryItem = { statementId: string; refCode: string; title: string; locator: string; standing: RegulatoryStanding; polarity: Polarity; applies: "applies" | "does_not_apply" | "unknown"; text: string };
+export type RegulatoryTrack = {
+  items: RegulatoryItem[];
+  /** Each item against the fiqh leaning: no conflict seen, a conflict, or its effect not determinable. */
+  relation: { statementId: string; outcome: "no_conflict_seen" | "conflict" | "undetermined"; note: string }[];
+  /** The combined effect, in words: the fiqh result and the constraints together (never «اتفقت» across the two tracks). */
+  combined: string[];
+  legalReview: boolean;
+  by: "engine";
+};
+
 export type FiqhDossier = {
   kind: "fiqh_dossier";
   engineVersion: string;
@@ -158,6 +205,7 @@ export type FiqhDossier = {
   statements: Statement[];
   comparison: Comparison | null;
   weighing: Weighing | null;
+  regulatory: RegulatoryTrack | null;
   /** Fixed: what the dossier is and is not (§3.8). */
   standing: string;
   limits: string[];

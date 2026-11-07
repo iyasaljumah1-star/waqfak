@@ -36,10 +36,16 @@ export const FIQH_CASES: FiqhCase[] = [
     question: "ما حكم بيع الوقف إذا تعطلت منافعه؟",
     facts: [{ text: "تعطلت منافع العقار الموقوف كليًا بسبب خرابه", status: "established" }, { text: "لا شرط للواقف في البيع أو المنع منه", status: "established" }],
     judge: (d) => {
-      const s = d.statements.find((x) => x.source.refCode === "FQH-INSAF" && x.source.locator.includes("ص522"));
-      if (!s) return "لم يُستخرج نص الإنصاف ج16 ص522";
-      if (s.polarity !== "prohibit") return `حكم النص ${s.polarity}`;
-      if (s.effective !== "permit") return "لم يُطبَّق الاستثناء «إلا أن يكون بحال لا ينتفع به» على الواقعة";
+      // the passage's two sentences are two statements (each condition governs its own sentence): «فإن لم تتعطل منافعه
+      // لم يجز بيعه» does not apply to these facts; «لا يبيعه إلا أن يكون بحال لا ينتفع به» applies, reversed by its exception
+      const ss = d.statements.filter((x) => x.source.refCode === "FQH-INSAF" && x.source.locator.includes("ص522"));
+      if (!ss.length) return "لم يُستخرج نص الإنصاف ج16 ص522";
+      const ex = ss.find((x) => x.conditions.some((c) => c.kind === "exception"));
+      if (!ex || ex.polarity !== "prohibit") return `حكم النص ${ex?.polarity}`;
+      if (ex.effective !== "permit" || ex.applies !== "applies") return "لم يُطبَّق الاستثناء «إلا أن يكون بحال لا ينتفع به» على الواقعة";
+      const cond = ss.find((x) => x.conditions.some((c) => c.kind === "condition" && /تتعطل/.test(c.text)));
+      if (cond && cond.applies !== "does_not_apply") return "عُدّ «فإن لم تتعطل منافعه لم يجز» منطبقًا مع تعطل المنافع";
+      if (d.weighing?.status !== "weighed" || d.weighing.leaning !== "permit") return `الترجيح ${d.weighing?.status}`;
       return null;
     },
   },

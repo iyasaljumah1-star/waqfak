@@ -19,7 +19,7 @@
  * understand a text it has no words for; what it cannot tell, it marks «غير متحقق».
  */
 import { normalizeArabic, tokenize } from "@/server/modules/ai/text";
-import type { Comparison, Condition, Divergence, Fact, Factor, Issue, Polarity, Rank, SourceRef, Statement, StatementKind, Weighing } from "./types";
+import type { Comparison, Condition, ConditionPart, Divergence, ExceptionStructure, Fact, Factor, Issue, Polarity, Rank, RegulatoryItem, RegulatoryStanding, RegulatoryTrack, SourceRef, Statement, StatementKind, Weighing } from "./types";
 
 /** Text without diacritics and tatweel; hamza forms as alif, alif maqsura as ya (for matching only). */
 export const bare = (s: string) => s.replace(/[ً-ٰٟـ]/g, "").replace(/[إأآٱ]/g, "ا").replace(/ى/g, "ي");
@@ -30,7 +30,8 @@ type Concept = { key: string; label: string; words: RegExp; negators?: RegExp };
 const CONCEPTS: Concept[] = [
   { key: "benefit", label: "قيام منافع العين", words: /منافع|منفع|ينتفع|انتفاع|الانتفاع|يُنتفع/, negators: /تعطل|تتعطل|خرب|خراب|تعذر|تهدم|انهدم/ },
   { key: "maslaha", label: "المصلحة أو الحاجة", words: /مصلح|اصلح|حاج/ },
-  { key: "waqif", label: "شرط الواقف", words: /شرط|شروط|اشترط/ },
+  // the root ش-ر-ط in its forms («شرط», «شروط», «اشترط», «يشترطه», «اشتراط») and «نص الواقف» (round 8, B5)
+  { key: "waqif", label: "شرط الواقف", words: /ش(?:ت)?ر[وا]?ط|نص(?:ه|ها)?\s+(?:عليه\s+)?الواقف|نص الواقف/ },
   { key: "judge", label: "إذن الحاكم أو الجهة", words: /اذن|حاكم|قاضي|المحكم|الهيئ/ },
   { key: "mosque", label: "كون الموقوف مسجدًا", words: /مسجد/ },
   { key: "cash", label: "وجه الانتفاع بالنقود", words: /قرض|القرض|استثمار|مضارب|تحلي|الوزن/ },
@@ -138,8 +139,10 @@ export function analyzeIssue(question: string, facts: Fact[]): Issue {
     const f = facts.find((x) => (d.concept ? conceptsOf(x.text).has(d.concept) : false) || (d.words ? d.words.test(bare(x.text)) : false));
     return { key: d.key, question: d.question, essential: d.essential, status: f ? (f.status === "established" ? "given" : "assumed") : "missing", by: f?.text };
   });
+  // what is asked: «يجب/يلزم» asks about obligation; «يجوز/يصح/حكم» about permission (round 8, §3.3)
+  const asks: Issue["asks"] = /(?:^|\s)(?:هل\s+)?(?:يجب|يلزم|تجب|تلزم|واجب|لازم|يتعين)(?=\s|$)/.test(q) ? "obligation" : /يجوز|تجوز|يصح|تصح|حكم|يحل|يحق|هل ل|ان ي/.test(q) ? "permission" : "unknown";
   return {
-    question, head: headOf(question), topic: topic?.label ?? null, subIssues: topic?.subIssues ?? [], factors,
+    question, head: headOf(question), topic: topic?.label ?? null, subIssues: topic?.subIssues ?? [], factors, asks,
     missing: factors.filter((f) => f.essential && f.status === "missing").map((f) => f.question), facts, by: "engine",
   };
 }
@@ -164,7 +167,31 @@ const BACK_REF = /^(?:و?اختاره|وهو المذهب|وهو الصحيح|و
 /** The text says the view it states is NOT the school's («والمذهب خلافه»): never read as the relied-upon view. */
 const NOT_MUTAMAD = /والمذهب خلافه|والصحيح خلافه|خلاف المذهب|خلاف الصحيح|والمشهور خلافه/;
 const MUTAMAD = /الصحيح من المذهب|وهو المذهب|وهي المذهب|وهي الصحيحه|وهي الصحيحة|على المذهب|والمذهب|وعليه الاصحاب|وعليه جماهير الاصحاب|وعليه اكثر الاصحاب|المشهور في المذهب|المذهب انه/;
-const NASS = /نص عليه|نص احمد|منصوص احمد|المنصوص/;
+const NASS = /نص عليه(?!\s+الواقف)|نص احمد|منصوص احمد|المنصوص(?!\s+عليه\s+في\s+(?:الوقف|الوثيقه|الصك))/;
+/** «والمذهب الأول» / «والأول المذهب»: the relied-upon view named by its order — resolved only when unambiguous. */
+const ORDINAL_REF = /والمذهب الاول|والاول هو المذهب|والاول المذهب|والصحيح الاول|والاول اصح|والاول هو الصحيح|والمذهب الثاني|والثاني هو المذهب|والثاني المذهب/;
+/** A question, or an objection put to be answered («فإن قيل»): not a ruling (B4). */
+const INTERROGATIVE = /[؟?]|^(?:هل|فان قيل|ان قيل|فلو قيل|فان قال قائل)(?=\s)/;
+
+const CONTRARY: [Polarity, Polarity][] = [["permit", "prohibit"], ["oblige", "not_obliged"], ["oblige", "prohibit"]];
+/** Two polarities that cannot both hold of one act («يجوز» and «لا يجوز»), unlike «يجوز ولا يجب». */
+export const contrary = (a: Polarity, b: Polarity) => CONTRARY.some(([x, y]) => (a === x && b === y) || (a === y && b === x));
+/** All the rulings a clause states, in order. */
+function polaritiesIn(t: string): { p: Polarity; i: number; m: string }[] {
+  const tests: [Polarity, RegExp][] = [
+    ["not_obliged", /(?:لا|لم|ليس)\s+(?:يجب|يلزم|يلزمه|يتعين|بواجب|بلازم)|عدم (?:ال)?وجوب|عدم (?:ال)?لزوم/g],
+    ["prohibit", /(?:لم|لا)\s+(?:يصح|يجز|يجوز|تجوز|تصح|يستبدل|يبيع|يباع|يحل|يحق)|عدم (?:ال)?جواز|عدم (?:ال)?صح|يحرم|ليس له|ليس لل[ء-ي]+|ليس من حق|يمنع|لا يملك/g],
+    ["oblige", /يجب|يلزم|وجب|يتعين|فتعين|تعين/g],
+    ["permit", /لا باس|يصح|يجوز|جاز|جوز|تجوز|صح |فله|وله |للناظر|يحق|لم يكن جواز هذا بعيدا|جواز|الجواز|صحه|صحة/g],
+  ];
+  const all = tests.flatMap(([p, re]) => [...t.matchAll(re)].map((m) => ({ p, i: m.index ?? 0, m: m[0], end: (m.index ?? 0) + m[0].length })));
+  // overlapping matches are one ruling: the earliest (and, at the same start, the longest) — «لا تصح» holds «صح »
+  all.sort((a, b) => a.i - b.i || b.end - a.end);
+  const kept: typeof all = [];
+  for (const a of all) if (!kept.some((b) => a.i < b.end && b.i < a.end)) kept.push(a);
+  // «للناظر», «فله», «وله» say whose the act is more than they rule on it: not counted against an explicit ruling
+  return kept.filter((a) => !/^(?:للناظر|فله|وله )$/.test(a.m));
+}
 
 function polarityOf(t: string): { polarity: Polarity; marker: string | null } {
   const tests: [Polarity, RegExp][] = [
@@ -178,8 +205,9 @@ function polarityOf(t: string): { polarity: Polarity; marker: string | null } {
 }
 
 const RULING_CUT = /\s(?=(?:ف?لم|ف?لا)\s+(?:يصح|يجز|يجوز|تجوز|تصح|يستبدل|يبيع|يباع)|ف?(?:جاز|يجوز|يصح|صح|يحرم|يجب|وجب|يلزم|فله|فيباع)(?:\s|$)|علي الصحيح|على الصحيح)/;
-function conditionsIn(t: string): { text: string; kind: Condition["kind"] }[] {
-  const out: { text: string; kind: Condition["kind"] }[] = [];
+type RawCondition = { text: string; kind: Condition["kind"]; at: number; end: number };
+function conditionsIn(t: string): RawCondition[] {
+  const out: RawCondition[] = [];
   // a fragment ends on a whole word (a cut «غيره» must not read as the negation «غير»)
   const whole = (m: RegExpMatchArray) => {
     let end = (m.index ?? 0) + m[0].length;
@@ -187,10 +215,63 @@ function conditionsIn(t: string): { text: string; kind: Condition["kind"] }[] {
     // the condition ends where the ruling begins («إذا كانت منافعه قائمة | لم يجز بيعه»)
     return t.slice(m.index ?? 0, end).replace(/^[\s(]+/, "").split(RULING_CUT)[0]!.trim();
   };
-  for (const m of t.matchAll(/(?:^|[\s(])(?:فان لم|وان لم|ان لم|اذا لم|فاذا|اذا|بشرط|حيث|متى)\s+([^،.؛:\n()…]{3,60})/g)) out.push({ text: whole(m), kind: "condition" });
-  for (const m of t.matchAll(/(?:^|[\s(])الا\s+(?:ان\s+)?([^،.؛:\n()…]{3,60})/g)) out.push({ text: whole(m), kind: "exception" });
-  for (const m of t.matchAll(/(?:لمصلح[هة]|للمصلح[هة]|مع الحاج[هة]|بلا حاج[هة]|لظهور المصلح[هة])/g)) out.push({ text: m[0].trim(), kind: "condition" });
+  const push = (m: RegExpMatchArray, kind: Condition["kind"]) => { const text = whole(m); out.push({ text, kind, at: m.index ?? 0, end: (m.index ?? 0) + m[0].length }); };
+  // «إلا إذا X» is an exception, not also a condition (B5)
+  for (const m of t.matchAll(/(?:^|[\s(])(?:فان لم|وان لم|ان لم|اذا لم|فاذا|اذا|بشرط|حيث|متى)\s+([^،.؛:\n()…]{3,60})/g)) if (!/الا\s*$/.test(t.slice(0, m.index ?? 0))) push(m, "condition");
+  for (const m of t.matchAll(/(?:^|[\s(])الا\s+(?:ان\s+|اذا\s+)?([^،.؛:\n()…]{3,60})/g)) push(m, "exception");
+  for (const m of t.matchAll(/(?:لمصلح[هة]|للمصلح[هة]|مع الحاج[هة]|بلا حاج[هة]|لظهور المصلح[هة])/g)) push(m, "condition");
   return out;
+}
+
+/** A clause's conjuncts: «A أو B» (any), «A ويفعل B» (all: «و» before a verb starts a second requirement). */
+function partsOf(text: string): { parts: string[]; join?: "and" | "or" } {
+  const or = text.split(/\s+او\s+/).filter((x) => x.trim().length > 2);
+  if (or.length > 1) return { parts: or, join: "or" };
+  const and = text.split(/\s+(?=و(?:ي|ت|ن|ا)[ء-ي]{2,}\s)/).map((x) => x.replace(/^و/, "")).filter((x) => x.trim().length > 2);
+  // only when each conjunct speaks of something the facts can answer («ويكون»/«وان» alone do not make a second one)
+  if (and.length > 1 && and.every((x) => conceptsOf(x).size)) return { parts: and, join: "and" };
+  return { parts: [text] };
+}
+
+/** A condition with its parts, against the facts. */
+export function condition(text: string, kind: Condition["kind"], facts: Fact[], at?: number): Condition {
+  const { parts, join } = partsOf(text);
+  if (!join) return { text, kind, at, ...conditionStatus(text, facts) };
+  const ps: ConditionPart[] = parts.map((x) => ({ text: x.trim(), ...conditionStatus(x, facts) }));
+  return { text, kind, at, parts: ps, join, status: combine(ps.map((x) => x.status), join), byFact: ps.map((x) => x.byFact).filter(Boolean).join("؛ ") || undefined };
+}
+const combine = (st: Condition["status"][], join: "and" | "or"): Condition["status"] =>
+  join === "and" ? (st.every((x) => x === "met") ? "met" : st.some((x) => x === "unmet") ? "unmet" : "unknown")
+    : st.some((x) => x === "met") ? "met" : st.every((x) => x === "unmet") ? "unmet" : "unknown";
+
+/** How the exceptions combine, from the words between them only (never assumed). */
+export function exceptionStructure(t: string, exceptions: { at?: number; text: string; join?: "and" | "or" }[]): ExceptionStructure {
+  if (!exceptions.length) return "none";
+  // one «إلا» clause of several parts: «إلا أن A وB» cumulative, «إلا أن A أو B» alternative (the parts carry it)
+  if (exceptions.length === 1) {
+    const j = (exceptions[0] as { join?: "and" | "or" }).join;
+    return j === "and" ? "cumulative" : j === "or" ? "alternative" : "single";
+  }
+  const joins = exceptions.slice(1).map((e, k) => t.slice((exceptions[k]!.at ?? 0) + exceptions[k]!.text.length, e.at ?? 0));
+  if (joins.every((j) => /(?:^|\s)او\s*$/.test(j.trim() ? ` ${j.trim()}` : ""))) return "alternative";
+  if (joins.every((j) => /(?:^|\s)و\s*$/.test(` ${j.trim()}`) || /^\s*و$/.test(j.trim()))) return "cumulative";
+  return "unclear";
+}
+
+/** «لا … إلا أن …»: the ruling an exception gives — the contrary of the stated one. */
+export const reverse = (p: Polarity): Polarity => ({ prohibit: "permit", permit: "prohibit", not_obliged: "oblige", oblige: "not_obliged" } as Record<string, Polarity>)[p] ?? p;
+
+/** What a statement gives on the facts, from its ruling, conditions and the structure of its exceptions. */
+export function evaluate(polarity: Polarity, conds: Condition[], structure: ExceptionStructure): Pick<Statement, "applies" | "effective"> {
+  const c = conds.filter((x) => x.kind === "condition");
+  const ex = conds.filter((x) => x.kind === "exception");
+  if (c.some((x) => x.status === "unmet")) return { applies: "does_not_apply", effective: polarity };
+  if (structure === "unclear") return { applies: "unknown", effective: "unknown" };
+  const exStatus: Condition["status"] | null = !ex.length ? null
+    : structure === "alternative" ? combine(ex.map((x) => x.status), "or")
+      : structure === "cumulative" ? combine(ex.map((x) => x.status), "and") : ex[0]!.status;
+  const open = c.some((x) => x.status === "unknown") || exStatus === "unknown";
+  return { applies: open ? "unknown" : "applies", effective: exStatus === "met" ? reverse(polarity) : polarity };
 }
 
 function attributionOf(t: string, kind: StatementKind): string | null {
@@ -250,7 +331,23 @@ export function extractStatements(source: SourceRef, text: string, ctx: { questi
       if (joined.length && BACK_REF.test(bare(x))) joined[joined.length - 1] = `${joined[joined.length - 1]} ${x}`;
       else joined.push(x);
     }
-    pieces = joined.filter((x) => x.length > 8);
+    // a condition or exception governs its own sentence: a passage of two sentences that each state a ruling is two
+    // statements («فإن لم تتعطل منافعه لم يجز بيعه. نص عليه…: لا يبيعه إلا أن يكون بحال لا ينتفع به»)
+    // — only where a sentence carries its own condition or exception: a bare ruling («ولا يباع فيحرم بيعه.») stays with
+    // what follows, since an exception after it may govern it («… ولا يصح … إلا أن تتعطل منافعه»)
+    pieces = joined.flatMap((x) => {
+      const ss = x.split(/(?<=[.؛])\s+/).filter((y) => y.trim().length > 8);
+      if (ss.length < 2) return [x];
+      const out: string[] = [];
+      let cur = "";
+      for (const y of ss) {
+        cur = cur ? `${cur} ${y}` : y;
+        const b = bare(cur);
+        if (polaritiesIn(b).length && conditionsIn(b).length) { out.push(cur); cur = ""; }
+      }
+      if (cur) out.length ? out.push(cur) : out.push(cur);
+      return out.length > 1 && out.every((y) => polaritiesIn(bare(y)).length) ? out : [x];
+    }).filter((x) => x.length > 8);
   }
   const statements: Statement[] = pieces.map((piece, i) => {
     const t = bare(piece);
@@ -273,27 +370,54 @@ export function extractStatements(source: SourceRef, text: string, ctx: { questi
       if (/اختاره|واختار/.test(t) && kind === "text") { kind = "ikhtiyar"; markers.push(t.match(/اختاره|واختار/)![0]); }
     }
     let rank: Rank = "unverified";
-    if (!contemporary && NOT_MUTAMAD.test(t)) { rank = "other"; markers.push(t.match(NOT_MUTAMAD)![0]); }
-    else if (!contemporary && MUTAMAD.test(t)) { rank = "mutamad"; markers.push(t.match(MUTAMAD)![0]); }
-    const pol = polarityOf(t);
+    let unclear: string | undefined;
+    const ordinal = !contemporary ? t.match(ORDINAL_REF) : null;
+    const notMutamad = !contemporary && NOT_MUTAMAD.test(t);
+    if (notMutamad) { rank = "other"; markers.push(t.match(NOT_MUTAMAD)![0]); }
+    else if (ordinal) markers.push(ordinal[0]); // resolved below, against the views before it
+    else if (!contemporary && MUTAMAD.test(t)) {
+      // a view introduced by «قيل» is never the relied-upon view on the strength of a word in it (§3.4)
+      if (kind === "qila") { unclear = "قول مصدَّر بـ«قيل» وفيه لفظ المذهب: لا يُعدّ معتمدًا، ويقرر المراجع مرجع اللفظ"; markers.push(t.match(MUTAMAD)![0]); }
+      else { rank = "mutamad"; markers.push(t.match(MUTAMAD)![0]); }
+    }
+    const raw = conditionsIn(t);
+    // the ruling is read outside the condition and exception clauses («لا يجوز إلا أن … فيجوز» states one ruling)
+    let main = t;
+    for (const c of raw) {
+      const i = t.indexOf(c.text, c.at);
+      if (i >= 0) main = main.slice(0, i) + " ".repeat(c.text.length) + main.slice(i + c.text.length);
+    }
+    const rulings = polaritiesIn(main);
+    let pol = polarityOf(t);
+    if (INTERROGATIVE.test(t.trim())) { pol = { polarity: "unknown", marker: null }; unclear = "سؤال أو اعتراض يُجاب عنه، لا حكم"; }
+    else if (rulings.some((a) => rulings.some((b) => contrary(a.p, b.p)))) { pol = { polarity: "unknown", marker: null }; unclear = `حكمان متقابلان في جملة واحدة («${rulings.map((r) => r.m).join("»، «")}»): التركيب غير واضح`; }
     if (pol.marker) markers.push(pol.marker);
-    const conds: Condition[] = conditionsIn(t).map((c) => ({ ...c, ...conditionStatus(c.text, ctx.facts) }));
-    const unmet = conds.some((c) => c.kind === "condition" && c.status === "unmet");
-    // «لا … إلا أن A، إلا أن B»: each exception met reverses the ruling once (an exception to the exception restores it)
-    // exceptions joined by «أو إلا» are alternatives (any one met reverses once); otherwise each is nested in the last
-    const alternatives = /او الا|او الا ان/.test(t);
-    const met = conds.filter((c) => c.kind === "exception" && c.status === "met").length;
-    const metExceptions = alternatives ? Math.min(met, 1) : met;
-    const exceptionMet = metExceptions % 2 === 1;
-    const unknown = conds.some((c) => c.status === "unknown");
-    const reverse = (p: Polarity): Polarity => ({ prohibit: "permit", permit: "prohibit", not_obliged: "oblige", oblige: "not_obliged" } as Record<string, Polarity>)[p] ?? p;
-    const applies: Statement["applies"] = metExceptions ? "applies" : unmet ? "does_not_apply" : unknown ? "unknown" : "applies";
+    const conds: Condition[] = raw.map((c) => condition(c.text, c.kind, ctx.facts, c.at));
+    const structure = exceptionStructure(t, conds.filter((c) => c.kind === "exception"));
+    if (structure === "unclear" && !unclear) unclear = "أكثر من استثناء لا يبين النص أهي بدائل أم مجتمعة أم متداخلة";
+    const ev = evaluate(pol.polarity, conds, structure);
     const via = !contemporary ? t.match(/^و?قال في\s+([ء-ي]+)/)?.[1] : undefined;
     return {
       id: `${ctx.idPrefix}.${i + 1}`, kind, rank, text: piece, element: contemporary && kind !== "naql" ? "author" : "quote",
-      attributedTo: via && kind !== "naql" ? `${attributionOf(t.replace(/^و?قال في\s+[ء-ي]+\s+/, ""), kind) ?? "غير مسمى"} — بنقل كتاب «${via}»` : attributionOf(t, kind), polarity: pol.polarity, conditions: conds, applies, effective: exceptionMet ? reverse(pol.polarity) : pol.polarity,
+      attributedTo: via && kind !== "naql" ? `${attributionOf(t.replace(/^و?قال في\s+[ء-ي]+\s+/, ""), kind) ?? "غير مسمى"} — بنقل كتاب «${via}»` : attributionOf(t, kind), polarity: pol.polarity, conditions: conds, applies: ev.applies, effective: ev.effective,
+      exceptionStructure: structure, ...(unclear ? { unclear } : {}), ...(notMutamad ? { schoolHoldsContrary: true } : {}),
       source, markers: [...new Set(markers)],
     };
+  });
+  // «والمذهب الأول»: the first of the views before it — only when the views before it are exactly the two it orders
+  // (a verdict on its own) or the one it is set against (a view that states its own ruling). Otherwise its referent is
+  // not certain from the passage, and no view is made the relied-upon one (§3.4)
+  statements.forEach((s, k) => {
+    const o = !contemporary ? bare(s.text).match(ORDINAL_REF) : null;
+    if (!o) return;
+    const second = /الثاني/.test(o[0]);
+    const before = statements.slice(0, k).filter((x) => x.polarity !== "unknown");
+    const views = s.polarity === "unknown" ? before : [...before, s];
+    if (views.length === 2 && !(s.polarity === "unknown" && before.length !== 2)) {
+      const [first, other] = second ? [views[1]!, views[0]!] : [views[0]!, views[1]!];
+      first.rank = "mutamad"; first.markers.push(o[0]);
+      other.rank = "other";
+    } else s.unclear = `«${o[0]}» لا يتعين مرجعه في المقطع (${views.length} من الأقوال قبله): لا يُعيَّن المعتمد`;
   });
   // a passage that names the relied-upon view makes the riwayat and «qila» views beside it the other views
   const mut = statements.filter((s) => s.rank === "mutamad");
@@ -309,7 +433,8 @@ export function extractStatements(source: SourceRef, text: string, ctx: { questi
 // ───────────────────────── 3. comparison ─────────────────────────
 
 export function compare(statements: Statement[], issue: Issue): Comparison {
-  const known = statements.filter((s) => s.effective !== "unknown");
+  // the fiqh track only: a regulation or a guide is never counted in agreement or divergence with the school's books (§4)
+  const known = statements.filter((s) => s.effective !== "unknown" && FIQH_TRACK.has(s.source.refKind));
   const positions = (["permit", "prohibit", "oblige", "not_obliged"] as Polarity[]).map((p) => {
     const ss = known.filter((s) => s.effective === p);
     return { polarity: p, statementIds: ss.map((s) => s.id), refCodes: [...new Set(ss.map((s) => s.source.refCode))] };
@@ -320,6 +445,8 @@ export function compare(statements: Statement[], issue: Issue): Comparison {
     const a = known[i]!, b = known[j]!;
     if (a.source.refCode === b.source.refCode && a.source.chunkId === b.source.chunkId && a.effective === b.effective) continue;
     if (a.effective === b.effective) { if (a.source.refCode !== b.source.refCode) agreements.push(`${a.id} و${b.id}: ${a.source.title} و${b.source.title} على ${a.effective}`); continue; }
+    // «يجوز» and «لا يجب» do not contradict each other: no divergence is made of them (round 8, §3.3)
+    if (!contrary(a.effective, b.effective)) continue;
     const both = a.applies !== "does_not_apply" && b.applies !== "does_not_apply";
     const sameConds = JSON.stringify([...new Set(a.conditions.flatMap((c) => [...conceptsOf(c.text).keys()]))].sort()) === JSON.stringify([...new Set(b.conditions.flatMap((c) => [...conceptsOf(c.text).keys()]))].sort());
     const nature: Divergence["nature"] = both && sameConds ? "real" : !both || !sameConds ? "in_condition" : "unverified";
@@ -348,7 +475,82 @@ export function compare(statements: Statement[], issue: Issue): Comparison {
 
 // ───────────────────────── 4. preliminary weighing ─────────────────────────
 
-export function weigh(statements: Statement[], issue: Issue, cmp: Comparison): Weighing {
+/** The fiqh track: the school's books and contemporary books. Guidance and regulations are the regulatory track (§4). */
+export const FIQH_TRACK = new Set(["classical_fiqh", "contemporary_book"]);
+const DIMENSION: Record<Issue["asks"], Set<Polarity> | null> = { obligation: new Set(["oblige", "not_obliged"]), permission: new Set(["permit", "prohibit"]), unknown: null };
+
+/**
+ * The preliminary weighing, on the fiqh track only, robust to what the facts leave open (owner's order 2026-11-08, §3.1):
+ * every condition the facts do not settle is tried both ways; when the result changes with it, the result depends on
+ * that fact and is not given — «تتوقف النتيجة على استكمال هذه الواقعة» — with the fact and the question that supplies it.
+ * A missing fact is never evidence against a view, and a relied-upon view is never set aside because its condition is
+ * unknown.
+ */
+export function weigh(all: Statement[], issue: Issue, cmp: Comparison): Weighing {
+  const statements = all.filter((s) => FIQH_TRACK.has(s.source.refKind));
+  // the conditions the facts leave open, by their wording (the same words are the same fact)
+  const open = new Map<string, { text: string; concept: string | null }>();
+  for (const s of statements) for (const c of s.conditions) {
+    for (const u of c.parts?.length ? c.parts : [c]) if (u.status === "unknown") open.set(bare(u.text).trim(), { text: u.text, concept: [...conceptsOf(u.text).keys()][0] ?? null });
+  }
+  const base = weighCore(statements, issue, cmp);
+  if (!open.size || base.status === "needs_facts" && issue.missing.length) return base;
+  const keys = [...open.keys()];
+  const askFor = (ks: string[]) => ks.map((k) => {
+    const o = open.get(k)!;
+    const f = o.concept ? issue.factors.find((x) => x.key === o.concept) : undefined;
+    return f ? `«${o.text}» — ${f.question}` : `هل تحقق في الواقعة: «${o.text}»؟`;
+  });
+  const needs = (ks: string[], why: string): Weighing => ({
+    status: "needs_facts", reasons: ["تتوقف النتيجة على استكمال هذه الواقعة.", why], unresolved: askFor(ks),
+    humanReview: base.humanReview, by: "engine",
+  });
+  if (keys.length > 6) return needs(keys, "قيود كثيرة لم تبيّنها الوقائع.");
+  const outcome = (w: Weighing) => `${w.status}:${w.status === "weighed" ? w.leaning : ""}`;
+  const outcomes = new Set<string>();
+  let sample: Weighing | null = null;
+  for (let m = 0; m < 1 << keys.length; m++) {
+    const set = (st: Condition["status"], key: string) => (st === "unknown" && keys.includes(key) ? ((m >> keys.indexOf(key)) & 1 ? "met" : "unmet") : st);
+    const assumed = statements.map((s) => {
+      const conds = s.conditions.map((c) => {
+        if (c.parts?.length) { const parts = c.parts.map((u) => ({ ...u, status: set(u.status, bare(u.text).trim()) })); return { ...c, parts, status: combine(parts.map((u) => u.status), c.join!) }; }
+        return { ...c, status: set(c.status, bare(c.text).trim()) };
+      });
+      return { ...s, conditions: conds, ...evaluate(s.polarity, conds, s.exceptionStructure) };
+    });
+    const w = weighCore(assumed, issue, cmp);
+    outcomes.add(outcome(w));
+    sample ??= w;
+  }
+  if (outcomes.size > 1) {
+    // the facts whose value changes the result
+    const decisive = keys.filter((_, bit) => {
+      for (let m = 0; m < 1 << keys.length; m++) {
+        if ((m >> bit) & 1) continue;
+        const at = (mm: number) => {
+          const assumed = statements.map((s) => {
+            const st = (x: Condition["status"], key: string) => (x === "unknown" && keys.includes(key) ? ((mm >> keys.indexOf(key)) & 1 ? "met" : "unmet") : x);
+            const conds = s.conditions.map((c) => c.parts?.length ? (() => { const parts = c.parts!.map((u) => ({ ...u, status: st(u.status, bare(u.text).trim()) })); return { ...c, parts, status: combine(parts.map((u) => u.status), c.join!) }; })() : { ...c, status: st(c.status, bare(c.text).trim()) });
+            return { ...s, conditions: conds, ...evaluate(s.polarity, conds, s.exceptionStructure) };
+          });
+          return outcome(weighCore(assumed, issue, cmp));
+        };
+        if (at(m) !== at(m | (1 << bit))) return true;
+      }
+      return false;
+    });
+    return needs(decisive.length ? decisive : keys, "الحكم في المصادر معلق بقيد أو استثناء لم تبيّنه الوقائع، ويتغير الحكم بتحققه أو عدمه.");
+  }
+  // the result is the same whichever way the open facts go: it does not rest on them
+  if (outcome(base) === [...outcomes][0]) {
+    if (base.status === "weighed") base.uncertainty.push(`قيود لم تتبين من الوقائع ولا يتغير بها الحكم: ${[...open.values()].map((o) => o.text).join("؛ ")}`);
+    return base;
+  }
+  if (sample!.status === "weighed") sample!.uncertainty.push(`قيود لم تتبين من الوقائع ولا يتغير بها الحكم: ${[...open.values()].map((o) => o.text).join("؛ ")}`);
+  return sample!;
+}
+
+function weighCore(statements: Statement[], issue: Issue, cmp: Comparison): Weighing {
   const humanReview = ["اعتماد المراجع الشرعي المختص للنتيجة والاستدلال ومدى صحة الاستناد إلى كل مصدر"];
   const unreviewed = [...new Set(statements.filter((s) => s.source.status !== "approved").map((s) => `${s.source.title} — ${s.source.locator}`))];
   if (unreviewed.length) humanReview.push(`مراجعة النصوص المستخدمة غير المراجعة: ${unreviewed.join("؛ ")}`);
@@ -356,7 +558,12 @@ export function weigh(statements: Statement[], issue: Issue, cmp: Comparison): W
   if (issue.missing.length) {
     return { status: "needs_facts", reasons: ["لا يُرجَّح قبل استكمال الوقائع المؤثرة في الحكم."], unresolved: issue.missing, humanReview, by: "engine" };
   }
-  const allKnown = statements.filter((s) => s.effective !== "unknown" && s.applies !== "does_not_apply");
+  const unclear = statements.filter((s) => s.unclear);
+  for (const s of unclear) humanReview.push(`نص لم يُستخرج منه حكم لعدم وضوح تركيبه (${s.id}): ${s.unclear}`);
+  // a «يجوز» does not answer «يجب؟», nor a «لا يجب» answer «يجوز؟»
+  const dim = DIMENSION[issue.asks];
+  const offDimension = dim ? statements.filter((s) => s.effective !== "unknown" && !dim.has(s.effective)) : [];
+  const allKnown = statements.filter((s) => s.effective !== "unknown" && s.applies !== "does_not_apply" && (!dim || dim.has(s.effective)));
   // the school's books, where they speak to the facts, are what is weighed; guidance pages and contemporary books, and
   // statements whose conditions the facts leave open, are set beside them (listed among the other views), not against them
   const classicalApplying = allKnown.filter((s) => s.source.refKind === "classical_fiqh" && s.applies === "applies");
@@ -364,7 +571,9 @@ export function weigh(statements: Statement[], issue: Issue, cmp: Comparison): W
   if (!allKnown.length) {
     return {
       status: "insufficient",
-      reasons: statements.length ? ["لم يتبين من النصوص المسترجعة حكم ينطبق على الواقعة (الحكم أو القيد غير ظاهر في ألفاظها)."] : ["لم يُعثر في قاعدة المعرفة على نص في المسألة."],
+      reasons: !statements.length ? ["لم يُعثر في قاعدة المعرفة على نص في المسألة."]
+        : offDimension.length ? [`النصوص المسترجعة تتناول ${issue.asks === "obligation" ? "الجواز أو المنع لا الوجوب" : "الوجوب أو عدمه لا الجواز"}؛ لا يُستنتج منها جواب السؤال.`]
+          : ["لم يتبين من النصوص المسترجعة حكم ينطبق على الواقعة (الحكم أو القيد غير ظاهر في ألفاظها)."],
       unresolved: issue.subIssues, humanReview, by: "engine",
     };
   }
@@ -381,9 +590,18 @@ export function weigh(statements: Statement[], issue: Issue, cmp: Comparison): W
   let leaning: Polarity;
   const reasons: string[] = [];
   let differs = false;
+  // a view the book itself says is not the school's («وقيل … والمذهب خلافه») is never the basis by itself
+  if (known.every((s) => s.rank === "other")) {
+    const contrary = known.some((s) => s.schoolHoldsContrary);
+    return {
+      status: "unresolved",
+      reasons: [contrary ? "نصّ الكتاب على أن المذهب خلاف القول المتاح («والمذهب خلافه»)، ولم يرد في المقطع لفظ قول المذهب نفسه: لا يُبنى عليه ميل، ولا يُصاغ قول المذهب من غير نصه." : "الأقوال المتاحة خلاف المعتمد بنص الكتاب، والمعتمد لم يرد بلفظه في المقاطع."],
+      unresolved: issue.subIssues, humanReview, by: "engine",
+    };
+  }
   if (byPol.size === 1) {
     leaning = [...byPol.keys()][0]!;
-    reasons.push("اتفقت النصوص المنطبقة على الواقعة في الحكم.");
+    reasons.push("اتفقت نصوص الكتب الفقهية المنطبقة على الواقعة في الحكم (المسار الفقهي وحده؛ القيود النظامية تُعرض في مسارها).");
   } else if (mutamadApplying.length) {
     leaning = mutamadApplying[0]!.effective;
     reasons.push("القول المعتمد في المذهب — بنص الكتاب — منطبق على الواقعة بحسب قيوده.");
@@ -440,3 +658,40 @@ export const LIMITS = [
   "مطابقة القيود بالوقائع آلية مبدئية، والمراجع يقررها.",
   "لا يصدر عن المحرك حكم ولا فتوى؛ الاعتماد للمراجع الشرعي المختص وحده.",
 ];
+
+// ───────────────────────── 5. the regulatory track (§4) ─────────────────────────
+
+const DIRECTION = /يراعي|يراعى|ينبغي|يوصي|يوصى|يستحسن|يفضل|يحسن|يُستحسن|يُفضل/;
+/** The standing of a non-fiqh passage, from its source's kind and its own wording. */
+export function regulatoryStanding(refKind: string, text: string): RegulatoryStanding {
+  if (["statute", "regulation", "official_instruction"].includes(refKind)) return "binding";
+  if (refKind === "official_guide" || refKind === "professional_standard") return DIRECTION.test(bare(text)) ? "non_binding" : "guidance";
+  return "explanation";
+}
+
+/**
+ * The regulatory track beside the fiqh result: every regulatory and guidance statement kept with its standing; each set
+ * against the fiqh leaning (never declared in agreement: at most «no conflict seen» by the lexical matching); the
+ * combined effect; and a legal review whenever a binding text is involved or a conflict is seen.
+ */
+export function regulatoryTrack(all: Statement[], w: Weighing | null): RegulatoryTrack {
+  const items: RegulatoryItem[] = all.filter((s) => !FIQH_TRACK.has(s.source.refKind)).map((s) => ({
+    statementId: s.id, refCode: s.source.refCode, title: s.source.title, locator: s.source.locator,
+    standing: regulatoryStanding(s.source.refKind, s.text), polarity: s.effective, applies: s.applies, text: s.text,
+  }));
+  const leaning = w?.status === "weighed" ? w.leaning : null;
+  const relation = items.map((i) => {
+    if (i.polarity === "unknown" || !leaning || i.applies !== "applies") return { statementId: i.statementId, outcome: "undetermined" as const, note: !leaning ? "لا ميل فقهي يقابَل به" : i.polarity === "unknown" ? "أثر النص على الحكم غير متبين من ألفاظه" : i.applies === "unknown" ? "قيد النص أو استثناؤه لم يتبين من الوقائع: أثره معلق عليه" : "قيد النص غير متحقق في الواقعة بحسب المطابقة الآلية — يبقى معروضًا ولا يُسقط" };
+    if (contrary(i.polarity, leaning)) return { statementId: i.statementId, outcome: "conflict" as const, note: "يقابل الميل الفقهي: تعارض ظاهر يُعرض على المراجعة النظامية والشرعية؛ لا يُدّعى اتفاق" };
+    return { statementId: i.statementId, outcome: "no_conflict_seen" as const, note: "لا تعارض ظاهر بحسب المطابقة الآلية — ليس إثباتًا للاتفاق" };
+  });
+  const binding = items.filter((i) => i.standing === "binding");
+  const conflict = relation.some((r) => r.outcome === "conflict");
+  const combined: string[] = [];
+  combined.push(leaning ? "المسار الفقهي: ميل مبدئي من نصوص الكتب الفقهية وحدها؛ لا يُستدل عليه بالأدلة الإرشادية ولا بالأنظمة." : "المسار الفقهي: لا ميل مبدئي (انظر الترجيح).");
+  if (!items.length) combined.push("المسار النظامي: لم يُسترجع نص نظامي أو إرشادي في المسألة — لا يعني ذلك انتفاء القيود النظامية؛ يُتحقق منها قبل التطبيق.");
+  for (const b of binding) combined.push(`قيد نظامي ملزم يُراعى في التطبيق أيًّا كان الميل الفقهي، ولا يُنسب إلى المذهب: ${b.title} — ${b.locator}.`);
+  for (const g of items.filter((i) => i.standing !== "binding")) combined.push(`${g.standing === "guidance" ? "إرشاد رسمي" : g.standing === "non_binding" ? "توجيه غير ملزم" : "شرح"} يُستأنس به ولا يقوم مقام النص الملزم ولا يُثبت المعتمد: ${g.title} — ${g.locator}.`);
+  if (conflict) combined.push("يوجد تعارض ظاهر بين المسارين: لا يُدّعى الاتفاق، ويُعرض على المراجعة النظامية لتحديد الأثر.");
+  return { items, relation, combined, legalReview: !!binding.length || conflict, by: "engine" };
+}

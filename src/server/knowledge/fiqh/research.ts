@@ -6,13 +6,13 @@ import { canonical } from "@/server/lib/audit";
 import { sha256 } from "@/server/lib/crypto";
 import { DRAFT_FLAG_AR, type RefKind } from "../policy";
 import { retrieve, type Retrieved } from "../retrieve";
-import { analyzeIssue, compare, extractStatements, LIMITS, weigh } from "./analyze";
+import { analyzeIssue, compare, extractStatements, LIMITS, regulatoryTrack, weigh } from "./analyze";
 import { DOSSIER_STANDING, STAGES, type Fact, type FiqhDossier, type SourceRef, type Stage } from "./types";
 
-export const FIQH_ENGINE_VERSION = "fiqh-research/1";
+export const FIQH_ENGINE_VERSION = "fiqh-research/2";
 
 /** Kinds searched for a fiqh matter (§3.2): the school's books, contemporary books, and official guidance by its nature. */
-const FIQH_KINDS: RefKind[] = ["classical_fiqh", "contemporary_book", "official_guide"];
+const FIQH_KINDS: RefKind[] = ["classical_fiqh", "contemporary_book", "official_guide", "statute", "regulation", "official_instruction"];
 
 export type ResearchInput = { question: string; facts: Fact[]; service?: string; asOf: string; stage?: Stage; limit?: number; refCodes?: string[] };
 
@@ -30,7 +30,7 @@ export async function research(tx: Tx, x: ResearchInput): Promise<FiqhDossier> {
   const queries = [x.question, ...(issue.topic ? [`${issue.topic}: ${x.question}`] : [])];
   const seen = new Map<string, Retrieved>();
   // each kind searched on its own, so that guidance pages do not crowd out the school's books (§3.2: more than one source)
-  const groups: { kinds: RefKind[]; limit: number }[] = [{ kinds: ["classical_fiqh"], limit: x.limit ?? 8 }, { kinds: ["contemporary_book"], limit: 4 }, { kinds: ["official_guide"], limit: 3 }];
+  const groups: { kinds: RefKind[]; limit: number }[] = [{ kinds: ["classical_fiqh"], limit: x.limit ?? 8 }, { kinds: ["contemporary_book"], limit: 4 }, { kinds: ["official_guide"], limit: 3 }, { kinds: ["statute", "regulation", "official_instruction"], limit: 3 }];
   for (const q of queries) for (const g of groups) {
     const r = await retrieve(tx, { question: q, service, asOf: x.asOf, kinds: g.kinds.filter((k) => FIQH_KINDS.includes(k)), limit: g.limit, refCodes: x.refCodes });
     for (const u of r.usable) if (!seen.has(u.hit.chunkId)) seen.set(u.hit.chunkId, u);
@@ -54,7 +54,9 @@ export async function research(tx: Tx, x: ResearchInput): Promise<FiqhDossier> {
   const statements = atLeast("extraction") ? used.flatMap((u, i) => extractStatements(sources[i]!, u.hit.text, { question: x.question, facts: x.facts, idPrefix: `ق${i + 1}` })) : [];
   const comparison = atLeast("comparison") ? compare(statements, issue) : null;
   const weighing = atLeast("preliminary") && comparison ? weigh(statements, issue, comparison) : null;
-  return { kind: "fiqh_dossier", engineVersion: FIQH_ENGINE_VERSION, stage, asOf: x.asOf, service, issue, sources, statements, comparison, weighing, standing: DOSSIER_STANDING, limits: LIMITS };
+  // the regulatory track beside the fiqh result (§4): never weighed with it, never dropped
+  const regulatory = atLeast("comparison") ? regulatoryTrack(statements, weighing) : null;
+  return { kind: "fiqh_dossier", engineVersion: FIQH_ENGINE_VERSION, stage, asOf: x.asOf, service, issue, sources, statements, comparison, weighing, regulatory, standing: DOSSIER_STANDING, limits: LIMITS };
 }
 
 export const dossierSha256 = (d: FiqhDossier) => sha256(JSON.stringify(canonical(d)));
