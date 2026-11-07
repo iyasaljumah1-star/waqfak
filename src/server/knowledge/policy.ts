@@ -159,6 +159,7 @@ export function citationLabel(h: Pick<Hit, "refKind" | "title" | "locator" | "ve
     if (h.validTo) return `${base} — ${historical ? "نسخة سابقة، " : ""}سارية من ${h.validFrom} إلى ${h.validTo}`;
     return `${base} — سارية من ${h.validFrom}؛ تاريخ انتهاء السريان غير معلوم`;
   }
+  if (registered && !h.validFrom) return `${base} — تاريخ بدء السريان وانتهائه غير معلومين`;
   return `${base}${h.superseded ? " — نسخة سابقة" : ""}`;
 }
 

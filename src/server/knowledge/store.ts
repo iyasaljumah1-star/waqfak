@@ -38,14 +38,15 @@ export async function loadVersionStore(tx: Tx, registryIds: string[]): Promise<V
                       where ur.user_id = u.id and p.key = 'knowledge.review.legal')`)) as unknown as { rows: { id: string }[] }).rows.map((r) => r.id),
       )
     : new Set<string>();
-  // an acceptance counts only with its audit entry (recorded through knowledge/review.ts); a rejection always counts
+  // an acceptance counts only with its audit entry (recorded through knowledge/review.ts)
   // the text an acceptance attests is the compared version's text (its sha256): checked against the version now stored
   const versionOfRun = new Map(runs.map((r) => [r.id, r.versionId]));
   const shaOfVersion = new Map(versions.map((x) => [x.v.id, x.v.sha256]));
-  const audited = await auditedReviewIds(tx, "ref_match_review", all.filter((r) => r.decision === "accepted").map((r) => ({ id: r.id, reviewerUserId: r.reviewerUserId, decision: r.decision, target: r.runId, role: "legal", sessionId: r.sessionId, expectedTextSha256: shaOfVersion.get(versionOfRun.get(r.runId) ?? "") ?? "missing" })));
-  // a rejection always counts (it lowers a text's standing; it keeps its effect after its author loses the permission:
-  // independent review, round 6); an acceptance needs its author's permission now and its genuine, sealed audit entry
-  const reviews = all.filter((r) => (r.decision !== "accepted" ? true : allowed.has(r.reviewerUserId) && audited.has(r.id)));
+  const audited = await auditedReviewIds(tx, "ref_match_review", all.map((r) => ({ id: r.id, reviewerUserId: r.reviewerUserId, decision: r.decision, target: r.runId, role: "legal", sessionId: r.sessionId, expectedTextSha256: shaOfVersion.get(versionOfRun.get(r.runId) ?? "") ?? "missing" })));
+  // round 7: a rejection counts when it is genuine (sealed, audited, session-bound) or from a current holder of the
+  // legal field — not from any staff account (an unaudited rejection could block an article for good); none is dated in
+  // the future (the database refuses it)
+  const reviews = all.filter((r) => (r.decision !== "accepted" ? audited.has(r.id) || allowed.has(r.reviewerUserId) : allowed.has(r.reviewerUserId) && audited.has(r.id)));
   const confirmed = new Set(confirmations.map((c) => c.versionId));
   for (const { v, code } of versions) {
     store.addVersion({

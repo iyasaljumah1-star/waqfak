@@ -155,8 +155,15 @@ export function qualifiersMissing(question: string, text: string): string[] {
   for (const m of normForSearch(q).matchAll(/غير\s+(ال)?([ء-ي]{3,})/g)) {
     const w = m[2]!.replace(/(ين|ون|ات|ه|ة)$/, "");
     // «غري» is how some files' text layer renders «غير» (reversed ligature: «يف» for «في»), not another word
-    if (!new RegExp(`(?:غير|غري)\\s+(ال)?${w}`).test(t)) out.push(`«غير ${m[2]}»`);
+    // «من غير إذن» is «بلا إذن» / «بدون إذن» / «دون إذن» (independent review, round 7)
+    if (!new RegExp(`(?:غير|غري|بلا|بدون|دون)\\s+(ال)?${w}`).test(t)) out.push(`«غير ${m[2]}»`);
   }
+  // another school named in the question («عند الشافعية»): a Hanbali text does not answer it
+  for (const [re, name] of [[/الشافعي/, "الشافعية"], [/المالكي/, "المالكية"], [/الحنفي|الاحناف/, "الحنفية"], [/الظاهري/, "الظاهرية"]] as const)
+    if (re.test(normForSearch(q)) && !re.test(t)) out.push(`مذهب ${name}`);
+  // a population named in the question that the passage does not name (non-Saudis, women, residents…)
+  for (const w of ["الوافدين", "المقيمين", "الاناث", "النساء", "الذكور", "الرجال", "الاطفال", "الشباب", "كبار السن"])
+    if (normForSearch(q).includes(w) && !t.includes(w)) out.push(`«${w}»`);
   return out;
 }
 

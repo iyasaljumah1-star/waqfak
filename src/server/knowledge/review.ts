@@ -5,7 +5,7 @@ import { fiqhDossiers, fiqhReviews, kbChunks, kbSourceReviews, kbSources } from 
 import { refMatchReviews, refMatchRuns, refSources, refVersions } from "@/server/db/schema/references";
 import { audit, canonical } from "@/server/lib/audit";
 import { rowHash } from "@/server/modules/admin/audit/chain";
-import { lookupHash, sha256 } from "@/server/lib/crypto";
+import { lookupHash, sessionHash, sha256 } from "@/server/lib/crypto";
 import { DEFAULT_REVIEW_ROLE, passageStatus, type RefKind, type ReviewRole } from "./policy";
 
 /**
@@ -46,7 +46,8 @@ export type ReviewActor = { userId: string; sessionToken: string; ip?: string | 
  */
 export async function withSessionToken<T>(tx: Tx, token: string, fn: () => Promise<T>): Promise<T> {
   if (!token) throw new ReviewRefused("لا جلسة مصادقة لهذه المراجعة.");
-  await tx.execute(sql`select set_config('app.session_token', ${token}, true)`);
+  // the database receives the server's keyed hash of the cookie's token — never the token — and matches it to the session
+  await tx.execute(sql`select set_config('app.session_token', ${sessionHash(token)}, true)`);
   const out = await fn();
   await tx.execute(sql`select set_config('app.session_token', '', true)`);
   return out;

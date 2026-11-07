@@ -77,8 +77,8 @@ export const RANK_AR: Record<Rank, string> = {
   unverified: "مرتبته غير متحققة من النص المتاح",
 };
 
-export type Polarity = "permit" | "prohibit" | "oblige" | "unknown";
-export const POLARITY_AR: Record<Polarity, string> = { permit: "الجواز / الصحة", prohibit: "المنع / عدم الصحة", oblige: "الوجوب / اللزوم", unknown: "لم يتبين الحكم من النص" };
+export type Polarity = "permit" | "prohibit" | "oblige" | "not_obliged" | "unknown";
+export const POLARITY_AR: Record<Polarity, string> = { permit: "الجواز / الصحة", prohibit: "المنع / عدم الصحة", oblige: "الوجوب / اللزوم", not_obliged: "عدم الوجوب / عدم اللزوم", unknown: "لم يتبين الحكم من النص" };
 
 export type Condition = { text: string; kind: "condition" | "exception"; status: "met" | "unmet" | "unknown"; byFact?: string };
 

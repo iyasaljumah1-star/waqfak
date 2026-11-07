@@ -6,6 +6,7 @@
  */
 import { and, eq, isNull, sql } from "drizzle-orm";
 import type { Tx } from "../../src/server/db";
+import { sessionHash } from "../../src/server/lib/crypto";
 import { kbChunks, kbSources } from "../../src/server/db/schema";
 import { loadCatalog, unitsOf } from "../../src/server/knowledge/catalog";
 import { ingestUnits } from "../../src/server/knowledge/ingest";
@@ -13,7 +14,7 @@ import { ordinalHeadingValue } from "../../src/server/knowledge/ordinals";
 import { readyRefCodes, retrieve, type RetrieveQuery, type RetrieveResult } from "../../src/server/knowledge/retrieve";
 import { regulatoryBasisIn } from "../../src/server/modules/ai/regulatory";
 import { sectionQuestion } from "../../src/server/knowledge/question";
-import { acceptRegistry, actorOf, asUser, reviewEverything, reviewSource, testReviewer, testSession, TEST_ADMIN, TEST_REVIEWER } from "./cases";
+import { acceptRegistry, actorOf, asUser, reviewEverything, reviewSource, testAdmin, testReviewer, testSession, TEST_ADMIN, TEST_REVIEWER } from "./cases";
 
 const T = "2026-11-06";
 export type ProbeOut = { pass: boolean; output: unknown };
@@ -252,7 +253,7 @@ const ROUND4: Probe[] = [
       const sid = await lfsId(tx);
       // the strongest case: inside the reviewer's real authenticated session (its token), but bypassing review.ts
       await asUser(tx, TEST_REVIEWER, async () => {
-        await tx.execute(sql`select set_config('app.session_token', ${actorOf(TEST_REVIEWER).sessionToken}, true)`);
+        await tx.execute(sql`select set_config('app.session_token', ${sessionHash(actorOf(TEST_REVIEWER).sessionToken)}, true)`);
         const [row] = (await tx.execute(sql`insert into kb_source_reviews (source_id, reviewer_user_id, reviewer_role, decision, note) values (${sid}::uuid, ${TEST_REVIEWER}::uuid, 'data', 'accepted', 'مجس: إدراج مباشر بقيد تدقيق صحيح') returning id`)).rows as { id: string }[];
         await audit(tx, { actorUserId: TEST_REVIEWER, action: "knowledge.review.recorded", entityType: "kb_source_review", entityId: row!.id, after: { decision: "accepted", role: "data", textSha256: "x".repeat(64), seal: "forged" } });
       });
@@ -346,7 +347,7 @@ const ROUND4: Probe[] = [
       const sid = await lfsId(tx);
       const chunks = await tx.select({ id: kbChunks.id }).from(kbChunks).where(eq(kbChunks.sourceId, sid));
       await asUser(tx, TEST_REVIEWER, async () => {
-        await tx.execute(sql`select set_config('app.session_token', ${actorOf(TEST_REVIEWER).sessionToken}, true)`);
+        await tx.execute(sql`select set_config('app.session_token', ${sessionHash(actorOf(TEST_REVIEWER).sessionToken)}, true)`);
         for (const c of chunks) {
           const [row] = (await tx.execute<{ id: string; session_id: string }>(sql`insert into kb_source_reviews (source_id, chunk_id, reviewer_user_id, reviewer_role, decision, note) values (${sid}::uuid, ${c.id}::uuid, ${TEST_REVIEWER}::uuid, 'data', 'accepted', 'مجس: بصمة نص أخرى') returning id, session_id`)).rows;
           const textSha256 = "0".repeat(64); // the text of another passage, or a text since replaced
@@ -413,6 +414,80 @@ const ROUND4: Probe[] = [
       const pass = !off.nonSaudi.citable.some((x) => /الفقرة 4$/.test(x.hit.locator)) && off.y2019.citable.length === 0 && off.car.citable.length === 0
         && on.citable.some((x) => /^FQH-/.test(x.hit.refCode) && /مناقل|بيع|يباع/.test(x.hit.text));
       return { pass, output: { ...Object.fromEntries(Object.entries(off).map(([k, r]) => [k, brief(r)])), otherWords: brief(on) } };
+    },
+  },
+  // ───────── independent review, round 7 ─────────
+  {
+    id: "R7-session-forge", finding: "N5-2/R2 (الجولة 7، مرتفع)", title: "دور التطبيق ينشئ صف جلسة لمراجع برمز يعرفه (بصمة sha256 أو بصمة مخترعة)", criterion: "لا يقبلها الخادم ولا القاعدة: بصمة الجلسة مفتاحية بسرّ الخادم",
+    run: async (tx) => {
+      const { recordSourceReview } = await import("../../src/server/knowledge/review");
+      const { sha256 } = await import("../../src/server/lib/crypto");
+      await testReviewer(tx, TEST_REVIEWER, ["data"]);
+      const sid = await lfsId(tx);
+      const tok = "attacker-known-token";
+      await tx.execute(sql`insert into sessions (user_id, token_hash, mfa_verified, idle_expires_at, absolute_expires_at) values (${TEST_REVIEWER}::uuid, ${sha256(tok)}, true, now() + interval '1 hour', now() + interval '1 hour')`);
+      const viaServer = await attempt(tx, () => asUser(tx, TEST_REVIEWER, () => recordSourceReview(tx, { userId: TEST_REVIEWER, sessionToken: tok }, { sourceId: sid, decision: "accepted", note: "مجس: جلسة مصطنعة من قاعدة البيانات" })));
+      const r = await retrieve(tx, LFS_Q);
+      return { pass: viaServer !== "ACCEPTED" && r.citable.length === 0, output: { viaServer, citable: r.citable.length } };
+    },
+  },
+  {
+    id: "R7-users", finding: "2j (الجولة 7، مرتفع)", title: "مستخدم عادي يغير هاتف حساب آخر أو بريده أو بصمة كلمة مروره، أو يقرأ جلسات غيره", criterion: "تُرفض الكتابة، ولا يرى إلا جلساته",
+    run: async (tx) => {
+      const U = "00000000-0000-4000-8000-0000000aa071";
+      await testReviewer(tx, U, []);
+      await testReviewer(tx, TEST_REVIEWER, ["data"]);
+      const out = {
+        phone: await attempt(tx, () => asUser(tx, U, () => tx.execute(sql`update users set phone = '0599999999' where id = ${TEST_REVIEWER}::uuid`))),
+        email: await attempt(tx, () => asUser(tx, U, () => tx.execute(sql`update users set email = 'x@example.com' where id = ${TEST_REVIEWER}::uuid`))),
+        password: await attempt(tx, () => asUser(tx, U, () => tx.execute(sql`update users set password_hash = 'x' where id = ${TEST_REVIEWER}::uuid`))),
+      };
+      const seen = await asUser(tx, U, async () => (await tx.execute<{ n: number }>(sql`select count(*)::int as n from sessions where user_id <> ${U}::uuid`)).rows[0]!.n);
+      return { pass: Object.values(out).every((x) => x !== "ACCEPTED") && seen === 0, output: { ...out, othersSessionsVisible: seen } };
+    },
+  },
+  {
+    id: "R7-admin-sys", finding: "N5-1 (الجولة 7)", title: "سياق النظام بدور التطبيق يمنح super_admin أو يضيف admin.roles لدور، مع وجود مدير", criterion: "يُرفض؛ الاستثناء الوحيد أول مدير",
+    run: async (tx) => {
+      const X = "00000000-0000-4000-8000-0000000aa072";
+      await testReviewer(tx, X, []);
+      await testAdmin(tx);
+      const out = {
+        superAdmin: await attempt(tx, () => tx.execute(sql`insert into user_roles (user_id, role_id) select ${X}::uuid, id from roles where key = 'super_admin'`)),
+        adminRolesPerm: await attempt(tx, () => tx.execute(sql`insert into role_permissions (role_id, permission_id) select r.id, p.id from roles r, permissions p where r.key = 'viewer' and p.key = 'admin.roles'`)),
+      };
+      return { pass: Object.values(out).every((x) => x !== "ACCEPTED"), output: out };
+    },
+  },
+  {
+    id: "R7-registry-reject", finding: "الجولة 7", title: "رفض مقارنة نظامية غير مدقق من موظف بلا صلاحية نظامية، مؤرخ في المستقبل", criterion: "لا يُقبل التاريخ المستقبلي، ولا يُحتسب رفض غير مدقق من غير حامل الصلاحية",
+    run: async (tx) => {
+      const U = "00000000-0000-4000-8000-0000000aa073";
+      const runId = await NZR(tx);
+      await testReviewer(tx, U, []);
+      const future = await attempt(tx, () => asUser(tx, U, () => tx.execute(sql`insert into ref_match_reviews (run_id, reviewer_user_id, decision, note, reviewed_at) values (${runId}::uuid, ${U}::uuid, 'rejected', 'رفض مجس', '2100-01-01')`)));
+      const now = await attempt(tx, () => asUser(tx, U, () => tx.execute(sql`insert into ref_match_reviews (run_id, reviewer_user_id, decision, note, reviewed_at) values (${runId}::uuid, ${U}::uuid, 'rejected', 'رفض مجس', now() + interval '1 minute')`)));
+      const r = await retrieve(tx, Q163);
+      return { pass: future !== "ACCEPTED" && r.citable.length > 0, output: { future, now, citable: r.citable.length } };
+    },
+  },
+  {
+    id: "R7-dossier-author", finding: "الجولة 7", title: "مراجع يُدرج ملفًا بحثيًا بلا مؤلف (created_by فارغ) ليعتمده بنفسه", criterion: "يُرفض الإدراج",
+    run: async (tx) => {
+      await testReviewer(tx, TEST_REVIEWER, ["sharia"]);
+      const out = await attempt(tx, () => asUser(tx, TEST_REVIEWER, () => tx.execute(sql`insert into fiqh_dossiers (question, dossier, sha256, stage, engine_version) values ('مسألة مجس', '{}'::jsonb, 'x', 'draft', 'x')`)));
+      return { pass: out !== "ACCEPTED", output: { insert: out } };
+    },
+  },
+  {
+    id: "R7-rel", finding: "N2-b (الجولة 7)", title: "«من غير إذن» تجد «بلا إذن»؛ و«عند الشافعية» و«الإناث» و«الوافدين» لا تُجاب بنص لا يذكرها", criterion: "كما في المعيار",
+    run: async (tx) => {
+      await reviewEverything(tx);
+      const withoutPermission = await retrieve(tx, q("هل للناظر الاستدانة على الوقف من غير إذن الحاكم؟", { kinds: ["classical_fiqh"] }));
+      const shafii = await retrieve(tx, q("ما حكم وقف الدراهم عند الشافعية؟", { kinds: ["classical_fiqh"] }));
+      const women = await retrieve(tx, q("كم بلغ معدل البطالة بين الإناث السعوديات في الربع الأول من عام 2025؟", { service: "T02", refCodes: ["GASTAT-LFS"] }));
+      const pass = withoutPermission.citable.some((x) => /^FQH-KASHSHAF/.test(x.hit.refCode)) && shafii.citable.length === 0 && women.citable.length === 0;
+      return { pass, output: { withoutPermission: brief(withoutPermission), shafii: brief(shafii), women: brief(women) } };
     },
   },
   {

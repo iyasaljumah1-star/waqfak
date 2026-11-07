@@ -418,8 +418,35 @@ describe("9–10. isolation: manual services untouched, nothing reaches clients"
     expect(importers.filter((f) => !ALLOWED.has(f))).toEqual([]);
   });
 
+  it("transitively, a client-reachable file reaches the gateway only through the allowlisted server entries (each applies the policy or the review gate)", () => {
+    const exists = (f: string) => all.includes(f);
+    const resolve = (from: string, spec: string): string | null => {
+      let base: string;
+      if (spec.startsWith("@/")) base = `src/${spec.slice(2)}`;
+      else if (spec.startsWith(".")) base = path.posix.normalize(path.posix.join(path.posix.dirname(from), spec));
+      else return null;
+      for (const c of [base, `${base}.ts`, `${base}.tsx`, `${base}/index.ts`, `${base}/index.tsx`]) if (exists(c)) return c;
+      return null;
+    };
+    const edges = new Map(all.map((f) => [f, [...src(f).matchAll(/(?:from|import)\s*\(?\s*"([^"]+)"/g)].map((m) => resolve(f, m[1]!)).filter((x): x is string => !!x)]));
+    // the controlled entries: the assistant's route (cites only reviewed passages), the output review gate, the engine
+    // (drafts; finals gated), the reviewers' actions — traversal stops there
+    const ENTRIES = new Set(["src/server/modules/ai/regulatory.ts", "src/server/modules/outputs/quality.ts", "src/server/engine/pipeline/run.ts", "src/server/modules/admin/knowledge/actions.ts", "src/server/engine/knowledge/ingest.ts", "src/server/engine/verify/pure.ts"]);
+    const clientFacing = all.filter((f) => /^src\/app\//.test(f) && !/^src\/app\/admin\//.test(f) || /^src\/components\//.test(f));
+    const seen = new Set<string>();
+    const stack = [...clientFacing];
+    while (stack.length) {
+      const f = stack.pop()!;
+      if (seen.has(f) || ENTRIES.has(f)) continue; // a controlled entry: not traversed past
+      seen.add(f);
+      stack.push(...(edges.get(f) ?? []));
+    }
+    expect([...seen].filter((f) => GATEWAY.test(f) || f.startsWith("src/server/references/"))).toEqual([]);
+  });
+
   it("nothing a client can reach imports the reference engine or the knowledge gateway", () => {
-    const clientFacing = all.filter((f) => /^src\/(app\/(app|\(site\)|r|api)\/|components\/)/.test(f) || (/^src\/app\/[^/]+\.tsx?$/.test(f)));
+    // every route group outside /admin (client app, public site, sign-in, share links /r and /s, API) and all components
+    const clientFacing = all.filter((f) => /^src\/app\//.test(f) && !/^src\/app\/admin\//.test(f) || /^src\/components\//.test(f));
     expect(clientFacing.length).toBeGreaterThan(20);
     expect(clientFacing.filter((f) => importsReferences(f) || importsKnowledge(f))).toEqual([]);
   });

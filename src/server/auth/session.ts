@@ -4,7 +4,7 @@ import { cookies } from "next/headers";
 import { withSystem } from "../db";
 import { sessions, users } from "../db/schema";
 import { cookieSecure } from "../env";
-import { randomToken, sha256 } from "../lib/crypto";
+import { randomToken, sessionHash } from "../lib/crypto";
 
 export const SESSION_COOKIE = cookieSecure ? "__Host-wqf" : "wqf_s";
 const IDLE_MS = 30 * 60_000;
@@ -17,7 +17,7 @@ export async function createSession(userId: string, opts: { isStaff: boolean; mf
   await withSystem(async (tx) => {
     await tx.insert(sessions).values({
       userId,
-      tokenHash: sha256(token),
+      tokenHash: sessionHash(token),
       mfaVerified: opts.mfaVerified,
       ip: opts.ip,
       userAgent: opts.userAgent,
@@ -43,7 +43,7 @@ export async function readSession(): Promise<{ session: SessionRow; user: UserRo
   const jar = await cookies();
   const token = jar.get(SESSION_COOKIE)?.value;
   if (!token) return null;
-  const hash = sha256(token);
+  const hash = sessionHash(token);
   return withSystem(async (tx) => {
     const [row] = await tx
       .select({ session: sessions, user: users })
@@ -81,7 +81,7 @@ export async function destroyCurrentSession() {
   const token = jar.get(SESSION_COOKIE)?.value;
   if (token) {
     await withSystem((tx) =>
-      tx.update(sessions).set({ revokedAt: new Date(), revokeReason: "logout" }).where(eq(sessions.tokenHash, sha256(token))),
+      tx.update(sessions).set({ revokedAt: new Date(), revokeReason: "logout" }).where(eq(sessions.tokenHash, sessionHash(token))),
     );
   }
   jar.delete(SESSION_COOKIE);

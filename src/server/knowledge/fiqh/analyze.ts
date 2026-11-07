@@ -156,15 +156,22 @@ const STARTERS: { re: RegExp; kind: StatementKind }[] = [
   { re: /وجوز|وجوّز|واختار|وقال الشيخ|قال الشيخ|وقال شيخنا/, kind: "ikhtiyar" },
   { re: /وقال في|قال في/, kind: "naql" },
 ];
+// the school's verdict on what precedes («والمذهب خلافه»، «وهو المذهب»): a clause of its own, joined back to the view it
+// judges; «والصحيح من المذهب أنه…»، «والمذهب أنه…» starts the relied-upon view itself (independent review, round 7)
+STARTERS.push({ re: /والصحيح من المذهب|والمذهب|وهو المذهب|وهو الصحيح|والصحيح خلافه|وعليه الاصحاب|وعليه اكثر الاصحاب/, kind: "text" });
 const STARTER_RE = new RegExp(`(?:^|\\s)(?=${STARTERS.map((s) => s.re.source).join("|")})`, "g");
-const MUTAMAD = /الصحيح من المذهب|وهو المذهب|على المذهب|والمذهب|وعليه الاصحاب|وعليه جماهير الاصحاب|وعليه اكثر الاصحاب|المشهور في المذهب|المذهب انه/;
+const BACK_REF = /^(?:و?اختاره|وهو المذهب|وهو الصحيح|والمذهب خلافه|والصحيح خلافه|وهو خلاف المذهب|وعليه الاصحاب|وعليه اكثر الاصحاب)/;
+/** The text says the view it states is NOT the school's («والمذهب خلافه»): never read as the relied-upon view. */
+const NOT_MUTAMAD = /والمذهب خلافه|والصحيح خلافه|خلاف المذهب|خلاف الصحيح|والمشهور خلافه/;
+const MUTAMAD = /الصحيح من المذهب|وهو المذهب|وهي المذهب|وهي الصحيحه|وهي الصحيحة|على المذهب|والمذهب|وعليه الاصحاب|وعليه جماهير الاصحاب|وعليه اكثر الاصحاب|المشهور في المذهب|المذهب انه/;
 const NASS = /نص عليه|نص احمد|منصوص احمد|المنصوص/;
 
 function polarityOf(t: string): { polarity: Polarity; marker: string | null } {
   const tests: [Polarity, RegExp][] = [
-    ["prohibit", /(?:لم|لا)\s+(?:يصح|يجز|يجوز|تجوز|تصح|يستبدل|يبيع|يباع|يحل)|عدم (?:ال)?جواز|عدم (?:ال)?صح|يحرم|ليس له|ليس للناظر|يمنع|لا يملك/],
+    ["not_obliged", /(?:لا|لم|ليس)\s+(?:يجب|يلزم|يلزمه|يتعين|بواجب|بلازم)|عدم (?:ال)?وجوب|عدم (?:ال)?لزوم/],
+    ["prohibit", /(?:لم|لا)\s+(?:يصح|يجز|يجوز|تجوز|تصح|يستبدل|يبيع|يباع|يحل|يحق)|عدم (?:ال)?جواز|عدم (?:ال)?صح|يحرم|ليس له|ليس لل[ء-ي]+|ليس من حق|يمنع|لا يملك/],
     ["oblige", /يجب|يلزم|وجب|يتعين|فتعين|تعين/],
-    ["permit", /يصح|يجوز|جاز|جوز|تجوز|صح |فله|وله |للناظر|لم يكن جواز هذا بعيدا|جواز|الجواز|صحه|صحة/],
+    ["permit", /لا باس|يصح|يجوز|جاز|جوز|تجوز|صح |فله|وله |للناظر|يحق|لم يكن جواز هذا بعيدا|جواز|الجواز|صحه|صحة/],
   ];
   const found = tests.map(([p, re]) => ({ p, m: t.match(re) })).filter((x) => x.m).sort((a, b) => (a.m!.index ?? 0) - (b.m!.index ?? 0));
   return found.length ? { polarity: found[0]!.p, marker: found[0]!.m![0] } : { polarity: "unknown", marker: null };
@@ -187,16 +194,23 @@ function conditionsIn(t: string): { text: string; kind: Condition["kind"] }[] {
 }
 
 function attributionOf(t: string, kind: StatementKind): string | null {
-  // the names as the text writes them (no name is supplied that the text does not hold)
+  // the names as the text writes them (no name is supplied that the text does not hold); a riwaya is the imam's, and a
+  // scholar named after «اختاره» only chose it
+  if (kind === "riwaya" || kind === "nass") return riwayaOrNass(t, kind);
   const name = t.match(/(?:اختاره|واختار|اختار|وجوز|جوز|وقال|قال|وذكره|ذكره)\s+(الشيخ\s+تقي\s+الدين|شيخنا(?:\s+يعني\s+به\s+الشيخ\s+تقي\s+الدين)?|ابن\s+[ء-ي]+|ابو\s+[ء-ي]+|القاضي|الموفق|المجد|صاحب\s+[ء-ي]+|الشيخ)/);
-  if (name) return name[1]!.trim();
+  if (name) return name[1]!.trim() === "الشيخ" ? "«الشيخ» (لم يُسمَّ في النص)" : name[1]!.trim();
   if (kind === "naql") {
     const book = t.match(/قال في\s+([ء-ي]+)/);
     if (book) return `كتاب «${book[1]}»`;
   }
-  if (kind === "riwaya") return "الإمام أحمد (رواية)";
-  if (kind === "nass") return "الإمام أحمد (منصوص)";
   return null;
+}
+function riwayaOrNass(t: string, kind: "riwaya" | "nass"): string {
+  if (kind === "nass") return "الإمام أحمد (منصوص)";
+  {
+    const chose = t.match(/(?:اختاره|اختارها|واختاره)\s+(الشيخ\s+تقي\s+الدين|شيخنا(?:\s+يعني\s+به\s+الشيخ\s+تقي\s+الدين)?|ابن\s+[ء-ي]+|القاضي|الموفق|المجد)/);
+    return chose ? `الإمام أحمد (رواية) — اختارها ${chose[1]}` : "الإمام أحمد (رواية)";
+  }
 }
 
 const CONTEMPORARY_CHOICE = /الراجح|الارجح|الاظهر|الذي يظهر|الاقرب|يترجح|نرى|والصواب/;
@@ -230,10 +244,10 @@ export function extractStatements(source: SourceRef, text: string, ctx: { questi
       if (/^و?قال في\s+[ء-ي]+\s*$/.test(bare(pieces[k]!).trim()) && k + 1 < pieces.length) { pieces[k + 1] = `${pieces[k]} ${pieces[k + 1]}`; continue; }
       merged.push(pieces[k]!);
     }
-    // «واختاره فلان» refers back: the choice is of the statement before it, not a statement of its own
+    // «واختاره فلان», «وهو المذهب», «والمذهب خلافه» refer back: they judge the statement before them
     const joined: string[] = [];
     for (const x of merged) {
-      if (joined.length && /^و?اختاره/.test(bare(x))) joined[joined.length - 1] = `${joined[joined.length - 1]} ${x}`;
+      if (joined.length && BACK_REF.test(bare(x))) joined[joined.length - 1] = `${joined[joined.length - 1]} ${x}`;
       else joined.push(x);
     }
     pieces = joined.filter((x) => x.length > 8);
@@ -259,15 +273,18 @@ export function extractStatements(source: SourceRef, text: string, ctx: { questi
       if (/اختاره|واختار/.test(t) && kind === "text") { kind = "ikhtiyar"; markers.push(t.match(/اختاره|واختار/)![0]); }
     }
     let rank: Rank = "unverified";
-    if (!contemporary && MUTAMAD.test(t)) { rank = "mutamad"; markers.push(t.match(MUTAMAD)![0]); }
+    if (!contemporary && NOT_MUTAMAD.test(t)) { rank = "other"; markers.push(t.match(NOT_MUTAMAD)![0]); }
+    else if (!contemporary && MUTAMAD.test(t)) { rank = "mutamad"; markers.push(t.match(MUTAMAD)![0]); }
     const pol = polarityOf(t);
     if (pol.marker) markers.push(pol.marker);
     const conds: Condition[] = conditionsIn(t).map((c) => ({ ...c, ...conditionStatus(c.text, ctx.facts) }));
     const unmet = conds.some((c) => c.kind === "condition" && c.status === "unmet");
-    const exceptionMet = conds.some((c) => c.kind === "exception" && c.status === "met");
+    // «لا … إلا أن A، إلا أن B»: each exception met reverses the ruling once (an exception to the exception restores it)
+    const metExceptions = conds.filter((c) => c.kind === "exception" && c.status === "met").length;
+    const exceptionMet = metExceptions % 2 === 1;
     const unknown = conds.some((c) => c.status === "unknown");
     const reverse = (p: Polarity): Polarity => (p === "prohibit" ? "permit" : p === "permit" ? "prohibit" : p);
-    const applies: Statement["applies"] = exceptionMet ? "applies" : unmet ? "does_not_apply" : unknown ? "unknown" : "applies";
+    const applies: Statement["applies"] = metExceptions ? "applies" : unmet ? "does_not_apply" : unknown ? "unknown" : "applies";
     const via = !contemporary ? t.match(/^و?قال في\s+([ء-ي]+)/)?.[1] : undefined;
     return {
       id: `${ctx.idPrefix}.${i + 1}`, kind, rank, text: piece, element: contemporary && kind !== "naql" ? "author" : "quote",
@@ -276,7 +293,13 @@ export function extractStatements(source: SourceRef, text: string, ctx: { questi
     };
   });
   // a passage that names the relied-upon view makes the riwayat and «qila» views beside it the other views
-  if (statements.some((s) => s.rank === "mutamad")) for (const s of statements) if (s.rank === "unverified" && ["riwaya", "qila", "wajh", "takhrij", "ihtimal"].includes(s.kind)) s.rank = "other";
+  const mut = statements.filter((s) => s.rank === "mutamad");
+  if (mut.length) for (const s of statements) {
+    if (s.rank !== "unverified") continue;
+    // the passage names the relied-upon view: the riwayat and «qila» views beside it, and any statement of it with a
+    // contrary ruling, are the other views (as the passage itself presents them)
+    if (["riwaya", "qila", "wajh", "takhrij", "ihtimal"].includes(s.kind) || (s.polarity !== "unknown" && mut.every((m) => m.polarity !== "unknown" && m.polarity !== s.polarity))) s.rank = "other";
+  }
   return statements;
 }
 
@@ -284,7 +307,7 @@ export function extractStatements(source: SourceRef, text: string, ctx: { questi
 
 export function compare(statements: Statement[], issue: Issue): Comparison {
   const known = statements.filter((s) => s.effective !== "unknown");
-  const positions = (["permit", "prohibit", "oblige"] as Polarity[]).map((p) => {
+  const positions = (["permit", "prohibit", "oblige", "not_obliged"] as Polarity[]).map((p) => {
     const ss = known.filter((s) => s.effective === p);
     return { polarity: p, statementIds: ss.map((s) => s.id), refCodes: [...new Set(ss.map((s) => s.source.refCode))] };
   }).filter((x) => x.statementIds.length);

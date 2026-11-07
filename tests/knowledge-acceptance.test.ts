@@ -175,7 +175,7 @@ describe.skipIf(!enabled)("unified knowledge engine (dedicated test database)", 
       const id = await lfs(tx);
       await cases.asUser(tx, cases.TEST_REVIEWER, async () => {
         // in the reviewer's authenticated session (its token), so that what refuses it is the missing audit entry
-        await tx.execute(sql`select set_config('app.session_token', ${cases.actorOf(cases.TEST_REVIEWER).sessionToken}, true)`);
+        await tx.execute(sql`select set_config('app.session_token', ${(await import("../src/server/lib/crypto")).sessionHash(cases.actorOf(cases.TEST_REVIEWER).sessionToken)}, true)`);
         await tx.insert(schema.kbSourceReviews).values({ sourceId: id, reviewerUserId: cases.TEST_REVIEWER, reviewerRole: "data", decision: "accepted", note: "إدراج دون قيد في سجل التدقيق" });
       });
       await cases.checkDeferred(tx);

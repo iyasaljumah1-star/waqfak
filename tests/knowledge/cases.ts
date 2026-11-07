@@ -16,7 +16,7 @@ import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { Tx } from "../../src/server/db";
 import { auditLogs, kbChunks, kbSourceReviews, kbSources, users } from "../../src/server/db/schema";
 import { canonical } from "../../src/server/lib/audit";
-import { sha256 } from "../../src/server/lib/crypto";
+import { sessionHash, sha256 } from "../../src/server/lib/crypto";
 import { recordComparisonReview, recordSourceReview, reviewSeal, roleOf, sourceReviewText } from "../../src/server/knowledge/review";
 import { appendMatchRun, appendVersion, registerSource } from "../../src/server/references/db-store";
 import { getEntry } from "../../src/server/references/registry";
@@ -73,8 +73,8 @@ export async function testSession(tx: Tx, userId: string, o: { mfa?: boolean; ex
   const token = `test-session-${userId}-${o.mfa === false ? "nomfa" : ""}${o.expired ? "exp" : ""}${o.revoked ? "rev" : ""}`;
   const exp = o.expired ? sql`now() - interval '1 minute'` : sql`now() + interval '1 hour'`;
   await tx.execute(sql`insert into sessions (user_id, token_hash, mfa_verified, idle_expires_at, absolute_expires_at, revoked_at)
-    select ${userId}::uuid, ${sha256(token)}, ${o.mfa !== false}, ${exp}, ${exp}, ${o.revoked ? sql`now()` : sql`null`}
-    where not exists (select 1 from sessions where token_hash = ${sha256(token)})`);
+    select ${userId}::uuid, ${sessionHash(token)}, ${o.mfa !== false}, ${exp}, ${exp}, ${o.revoked ? sql`now()` : sql`null`}
+    where not exists (select 1 from sessions where token_hash = ${sessionHash(token)})`);
   if (!o.mfa && o.mfa !== false && !o.expired && !o.revoked) TOKENS.set(userId, token);
   return token;
 }
@@ -151,7 +151,7 @@ async function bulkReviews(tx: Tx, reviewer: string, items: { sourceId: string; 
   const texts = new Map<string, string>();
   for (let i = 0; i < chunkIds.length; i += 2000) for (const c of await tx.select({ id: kbChunks.id, text: kbChunks.text }).from(kbChunks).where(inArray(kbChunks.id, chunkIds.slice(i, i + 2000)))) texts.set(c.id, c.text);
   await asUser(tx, reviewer, async () => {
-    await tx.execute(sql`select set_config('app.session_token', ${actorOf(reviewer).sessionToken}, true)`);
+    await tx.execute(sql`select set_config('app.session_token', ${sessionHash(actorOf(reviewer).sessionToken)}, true)`);
     await tx.execute(sql`select pg_advisory_xact_lock(724501)`);
     let prev = ((await tx.execute<{ h: string | null }>(sql`select app_audit_last_hash() as h`)).rows[0]?.h) ?? "GENESIS";
     for (let i = 0; i < items.length; i += 500) {

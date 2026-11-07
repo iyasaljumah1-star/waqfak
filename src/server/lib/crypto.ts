@@ -83,3 +83,11 @@ export function decryptBuffer(ct: Buffer, key: Buffer, iv: string, tag: string):
 }
 
 export const masterDataKey = () => masterKey;
+
+/**
+ * What a session row stores of its token: the server's keyed hash (independent review, round 7). A connection to the
+ * database without the server's key can neither create a session the server accepts nor derive a cookie from a row.
+ */
+export function sessionHash(token: string): string {
+  return lookupHash(`session|${token}`);
+}

@@ -1,5 +1,5 @@
 {
- "ranAt": "2026-11-07T17:36:08.708Z",
+ "ranAt": "2026-11-07T18:10:37.648Z",
  "kb": {
   "cur": 49,
   "units": 2423
@@ -2015,7 +2015,7 @@
    "output": {
     "before": 2,
     "locked": 0,
-    "reactivate": "users: another account's status, lock, staff flag or second factor is changed only by admin.users",
+    "reactivate": "users: another account is changed only by admin.users",
     "staff": "ACCEPTED",
     "after": 0
    }
@@ -2034,7 +2034,7 @@
     "nomfa": "kb_source_reviews: a review is recorded only in the reviewer's own authenticated session (no valid session token)",
     "othersToken": "kb_source_reviews: a review is recorded only in the reviewer's own authenticated session (no valid session token)",
     "hashAsToken": "kb_source_reviews: a review is recorded only in the reviewer's own authenticated session (no valid session token)",
-    "validSession": "30613b69-ebbd-448f-a5d2-69341860b637"
+    "validSession": "ecace45a-4987-4f5c-b3cd-4923e73e4af7"
    }
   },
   {
@@ -2165,6 +2165,106 @@
       "FQH-INSAF ج16 ص523: not_relevant — FQH-INSAF ج16 ص523: يغطي 32٪ من كلمات السؤال",
       "FQH-INSAF ج16 ص528: not_relevant — FQH-INSAF ج16 ص528: يغطي 32٪ من كلمات السؤال",
       "FQH-INSAF ج16 ص445: not_relevant — FQH-INSAF ج16 ص445: يغطي 6٪ من كلمات السؤال"
+     ]
+    }
+   }
+  },
+  {
+   "id": "R7-session-forge",
+   "finding": "N5-2/R2 (الجولة 7، مرتفع)",
+   "title": "دور التطبيق ينشئ صف جلسة لمراجع برمز يعرفه (بصمة sha256 أو بصمة مخترعة)",
+   "criterion": "لا يقبلها الخادم ولا القاعدة: بصمة الجلسة مفتاحية بسرّ الخادم",
+   "pass": true,
+   "output": {
+    "viaServer": "kb_source_reviews: a review is recorded only in the reviewer's own authenticated session (no valid session token)",
+    "citable": 0
+   }
+  },
+  {
+   "id": "R7-users",
+   "finding": "2j (الجولة 7، مرتفع)",
+   "title": "مستخدم عادي يغير هاتف حساب آخر أو بريده أو بصمة كلمة مروره، أو يقرأ جلسات غيره",
+   "criterion": "تُرفض الكتابة، ولا يرى إلا جلساته",
+   "pass": true,
+   "output": {
+    "phone": "users: another account is changed only by admin.users",
+    "email": "users: another account is changed only by admin.users",
+    "password": "users: another account is changed only by admin.users",
+    "othersSessionsVisible": 0
+   }
+  },
+  {
+   "id": "R7-admin-sys",
+   "finding": "N5-1 (الجولة 7)",
+   "title": "سياق النظام بدور التطبيق يمنح super_admin أو يضيف admin.roles لدور، مع وجود مدير",
+   "criterion": "يُرفض؛ الاستثناء الوحيد أول مدير",
+   "pass": true,
+   "output": {
+    "superAdmin": "user_roles: an administrator role is granted from the system context only for the first administrator",
+    "adminRolesPerm": "role_permissions: an administrator permission is added only from an administrator's session"
+   }
+  },
+  {
+   "id": "R7-registry-reject",
+   "finding": "الجولة 7",
+   "title": "رفض مقارنة نظامية غير مدقق من موظف بلا صلاحية نظامية، مؤرخ في المستقبل",
+   "criterion": "لا يُقبل التاريخ المستقبلي، ولا يُحتسب رفض غير مدقق من غير حامل الصلاحية",
+   "pass": true,
+   "output": {
+    "future": "ref_match_reviews: a review is not dated in the future",
+    "now": "ACCEPTED",
+    "citable": 1
+   }
+  },
+  {
+   "id": "R7-dossier-author",
+   "finding": "الجولة 7",
+   "title": "مراجع يُدرج ملفًا بحثيًا بلا مؤلف (created_by فارغ) ليعتمده بنفسه",
+   "criterion": "يُرفض الإدراج",
+   "pass": true,
+   "output": {
+    "insert": "fiqh_dossiers: a dossier names its author (the session's user, or the engine's account)"
+   }
+  },
+  {
+   "id": "R7-rel",
+   "finding": "N2-b (الجولة 7)",
+   "title": "«من غير إذن» تجد «بلا إذن»؛ و«عند الشافعية» و«الإناث» و«الوافدين» لا تُجاب بنص لا يذكرها",
+   "criterion": "كما في المعيار",
+   "pass": true,
+   "output": {
+    "withoutPermission": {
+     "sufficient": true,
+     "reason": null,
+     "citable": [
+      "FQH-KASHSHAF-B21642 ج4 ص267 cov=1.00 [passage] | كتاب فقهي أصلي: كشاف القناع عن متن الإقناع — Turath 21642 — ج4 ص267 (طبعة Turath رقم 21642 (غير الطبعة المعتمد | [الاستدانة على الوقف] وَلِلنَّاظِرِ الِاسْتِدَانَةُ عَلَى الْوَقْفِ بِلَا إذْنِ حَاكِمٍ كَسَائِرِ تَصَرُّفَاتِهِ لِمَصْل",
+      "FQH-KASHSHAF ج10 ص55 cov=0.88 [passage] | كتاب فقهي أصلي: كشاف القناع عن متن الإقناع — ج10 ص55 (تحقيق لجنة متخصصة في وزارة العدل، الناشر وزارة العدل بال | [الاستدانة للوقف] وللناظر الاستدانة على الوقف بلا إذن حاكم كسائر تصرُّفاته لمصلحةٍ كشرائه للوقف نسيئة أو بنقد لم يعينه"
+     ],
+     "refused": [
+      "FQH-KASHSHAF ج10 ص59: not_relevant — FQH-KASHSHAF ج10 ص59: لا يتناول «غير اذن» الوارد في السؤال (اشتراك الألفاظ لا يث",
+      "FQH-SHARH-MUNTAHA ج2 ص414: not_relevant — FQH-SHARH-MUNTAHA ج2 ص414: لا يتناول «غير اذن» الوارد في السؤال (اشتراك الألفاظ ",
+      "FQH-SHARH-MUNTAHA ج2 ص425: not_relevant — FQH-SHARH-MUNTAHA ج2 ص425: لا يتناول «غير اذن» الوارد في السؤال (اشتراك الألفاظ "
+     ]
+    },
+    "shafii": {
+     "sufficient": false,
+     "reason": "المراجع غير كافية: لا مقطع قابل للاستشهاد (المقطع لا يغطي السؤال).",
+     "citable": [],
+     "refused": [
+      "FQH-INSAF ج16 ص377: not_relevant — FQH-INSAF ج16 ص377: لا يتناول مذهب الشافعية الوارد في السؤال (اشتراك الألفاظ لا ",
+      "FQH-INSAF ج16 ص378: not_relevant — FQH-INSAF ج16 ص378: لا يتناول مذهب الشافعية الوارد في السؤال (اشتراك الألفاظ لا ",
+      "FQH-INSAF-B21609 ج7 ص11: not_relevant — FQH-INSAF-B21609 ج7 ص11: لا يتناول مذهب الشافعية الوارد في السؤال (اشتراك الألفا",
+      "FQH-SHARH-MUNTAHA ج2 ص425: not_relevant — FQH-SHARH-MUNTAHA ج2 ص425: لا يتناول مذهب الشافعية الوارد في السؤال (اشتراك الأل",
+      "FQH-KASHSHAF ج10 ص55: not_relevant — FQH-KASHSHAF ج10 ص55: لا يتناول مذهب الشافعية الوارد في السؤال (اشتراك الألفاظ ل"
+     ]
+    },
+    "women": {
+     "sufficient": false,
+     "reason": "المراجع غير كافية: لا مقطع قابل للاستشهاد (المقطع لا يغطي السؤال).",
+     "citable": [],
+     "refused": [
+      "GASTAT-LFS خبر الهيئة 29-06-2025 (news/56)، الفقرة 1: not_relevant — GASTAT-LFS خبر الهيئة 29-06-2025 (news/56)، الفقرة 1: لا يتناول «الاناث» الوارد ",
+      "GASTAT-LFS خبر الهيئة 29-06-2025 (news/56)، الفقرة 4: not_relevant — GASTAT-LFS خبر الهيئة 29-06-2025 (news/56)، الفقرة 4: لا يتناول «الاناث» الوارد "
      ]
     }
    }

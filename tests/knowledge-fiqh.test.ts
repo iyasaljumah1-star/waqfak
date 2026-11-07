@@ -96,6 +96,27 @@ describe("fiqh analysis — synthetic test texts", () => {
     expect(conditionStatus("بشرط اذن الحاكم", []).status).toBe("unknown");
   });
 
+  it("round 7: the school's verdict on a view is read as such; a negated obligation is not an obligation; a riwaya stays the imam's", () => {
+    const a = run("ما حكم بيع الوقف؟", [], [{ s: src(), text: "يجوز بيعه وقيل لا يجوز والمذهب خلافه" }]).statements;
+    expect(a.find((x) => x.kind === "qila")).toMatchObject({ rank: "other" });
+    expect(a.some((x) => x.rank === "mutamad" && x.kind === "qila")).toBe(false);
+    const b = run("ما حكم بيع الوقف؟", [], [{ s: src(), text: "وعنه يجوز بيعه والصحيح من المذهب أنه لا يجوز" }]).statements;
+    expect(b).toEqual([expect.objectContaining({ kind: "riwaya", rank: "other", polarity: "permit" }), expect.objectContaining({ rank: "mutamad", polarity: "prohibit" })]);
+    expect(run("ما حكم ذلك؟", [], [{ s: src(), text: "لا يلزم الناظر ذلك" }]).statements[0]).toMatchObject({ polarity: "not_obliged" });
+    expect(run("ما حكم ذلك؟", [], [{ s: src(), text: "لا يحق للناظر بيعه إلا بإذن الحاكم" }]).statements[0]).toMatchObject({ polarity: "prohibit" });
+    expect(run("ما حكم وقف الدراهم؟", [], [{ s: src(), text: "وعنه يصح وقف الدراهم اختاره شيخنا" }]).statements[0]!.attributedTo).toBe("الإمام أحمد (رواية) — اختارها شيخنا");
+  });
+
+  it("round 7 (cont.): «وهي المذهب» makes the riwaya the relied-upon view and the contrary statement the other; nested exceptions; «لا بأس»; «ليس لل…»; an unnamed «الشيخ»", () => {
+    const a = run("ما حكم وقف الدراهم؟", [], [{ s: src(), text: "لا يصح وقف الدراهم. وعنه يصح، وهي المذهب عند المتأخرين." }]).statements;
+    expect(a).toEqual([expect.objectContaining({ rank: "other", polarity: "prohibit" }), expect.objectContaining({ kind: "riwaya", rank: "mutamad", polarity: "permit" })]);
+    const n = run("ما حكم بيع الوقف؟", [F("تعطلت منافع العقار كليًا"), F("اشترط الواقف ألا يباع الوقف بحال")], [{ s: src(), text: "لا يجوز بيعه إلا أن تتعطل منافعه، إلا أن يشترط الواقف ألا يباع بحال." }]).statements[0]!;
+    expect(n).toMatchObject({ polarity: "prohibit", effective: "prohibit" });
+    expect(run("ما حكم ذلك؟", [], [{ s: src(), text: "ولا بأس ببيع آلته إذا خربت" }]).statements[0]).toMatchObject({ polarity: "permit" });
+    expect(run("ما حكم ذلك؟", [], [{ s: src(), text: "وليس للواقف الرجوع في وقفه بعد لزومه" }]).statements[0]).toMatchObject({ polarity: "prohibit" });
+    expect(run("ما حكم ذلك؟", [], [{ s: src(), text: "قال الشيخ: يجوز إبداله لمصلحة راجحة" }]).statements[0]!.attributedTo).toMatch(/لم يُسمَّ/);
+  });
+
   it("a weighing is a research recommendation: never a ruling, never final", () => {
     const r = run("ما حكم إجارة الوقف؟", [F("لمصلحة")], [{ s: src(), text: "تصح إجارة الوقف" }]);
     expect(r.weighing.by).toBe("engine");
