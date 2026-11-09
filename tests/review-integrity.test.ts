@@ -259,4 +259,22 @@ describe.skipIf(!enabled)("review integrity (dedicated test database)", () => {
     expect(out.name).toBe("ACCEPTED");
     expect(out.system).toBe("ACCEPTED");
   }, 90_000);
+  it("R8-10: a registry rejection counts only when sealed — an unsealed row naming a current legal holder withdraws nothing; a genuine one does", async () => {
+    const { retrieve } = await import("../src/server/knowledge/retrieve");
+    const Q = { question: "ما نص المادة 16 الفقرة 3 من لائحة تنظيم أعمال النظارة؟", service: "I01", asOf: "2026-11-01", refCodes: ["NAZARA-REG"], needBinding: true } as const;
+    const out = await rolledBack(async (tx) => {
+      const runId = await C.acceptRegistry(tx, "NZR", "NZR/uqn-p18926", [8, 16], "2022-02-04"); // R holds «legal»
+      const before = (await retrieve(tx, { ...Q, refCodes: [...Q.refCodes] })).citable.length;
+      // an impersonation: a row naming R, inserted directly — no seal, no audit entry
+      const forged = await attempt(tx, () => tx.execute(sql`insert into ref_match_reviews (run_id, reviewer_user_id, decision, note) values (${runId}::uuid, ${R}::uuid, 'rejected', 'اختبار: رفض منتحل')`));
+      const afterForged = (await retrieve(tx, { ...Q, refCodes: [...Q.refCodes] })).citable.length;
+      await C.asUser(tx, R, () => RV.recordComparisonReview(tx, C.actorOf(R), { runId, decision: "rejected", note: "اختبار: رفض حقيقي من حساب اختبار" }));
+      const afterGenuine = (await retrieve(tx, { ...Q, refCodes: [...Q.refCodes] })).citable.length;
+      return { before, forged, afterForged, afterGenuine };
+    });
+    expect(out.before).toBeGreaterThan(0);
+    expect(out.forged).toBe("ACCEPTED"); // the table takes it (system context); the server does not count it
+    expect(out.afterForged).toBe(out.before);
+    expect(out.afterGenuine).toBe(0);
+  }, 90_000);
 });

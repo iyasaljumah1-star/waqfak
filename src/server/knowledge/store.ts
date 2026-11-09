@@ -43,10 +43,12 @@ export async function loadVersionStore(tx: Tx, registryIds: string[]): Promise<V
   const versionOfRun = new Map(runs.map((r) => [r.id, r.versionId]));
   const shaOfVersion = new Map(versions.map((x) => [x.v.id, x.v.sha256]));
   const audited = await auditedReviewIds(tx, "ref_match_review", all.map((r) => ({ id: r.id, reviewerUserId: r.reviewerUserId, decision: r.decision, target: r.runId, role: "legal", sessionId: r.sessionId, expectedTextSha256: shaOfVersion.get(versionOfRun.get(r.runId) ?? "") ?? "missing" })));
-  // round 7: a rejection counts when it is genuine (sealed, audited, session-bound) or from a current holder of the
-  // legal field — not from any staff account (an unaudited rejection could block an article for good); none is dated in
-  // the future (the database refuses it)
-  const reviews = all.filter((r) => (r.decision !== "accepted" ? audited.has(r.id) || allowed.has(r.reviewerUserId) : allowed.has(r.reviewerUserId) && audited.has(r.id)));
+  // a rejection counts only when it is genuine — sealed, audited, session-bound (R8-10, order of 2026-11-09 «تاسعاً»/4):
+  // an unsealed row, even one naming a current holder of the legal field, may be an impersonation and withdraws nothing
+  // (it stays in the table for the reviewer to see); a genuine rejection keeps counting after its author leaves the
+  // field. An acceptance needs both its seal and its author's current authority. None is dated in the future (the
+  // database refuses it)
+  const reviews = all.filter((r) => (r.decision !== "accepted" ? audited.has(r.id) : allowed.has(r.reviewerUserId) && audited.has(r.id)));
   const confirmed = new Set(confirmations.map((c) => c.versionId));
   for (const { v, code } of versions) {
     store.addVersion({
