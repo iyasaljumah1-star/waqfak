@@ -5,6 +5,7 @@ import { kbChunks, kbSources } from "@/server/db/schema";
 import { Bm25Index, type CorpusDoc } from "@/server/modules/ai/bm25";
 import { tokenize } from "@/server/modules/ai/text";
 import { arabicDescriptor } from "./descriptors";
+import { frameOf, judge, type Frame } from "./frame";
 import { articleNumber, normForSearch } from "@/server/engine/knowledge/pure";
 import { cite } from "@/server/references/citation";
 import { OFFICIAL_HOSTS, CITABLE_OUTCOMES } from "@/server/references/types";
@@ -129,7 +130,7 @@ const SYNONYM_GROUPS = [
   "استدانة الاستدانة يستدين يستدان اقتراض الاقتراض يقترض",
   "شرط شروط",
   // registration with the Authority: «قيد» there is the registration, «مهلة» the period (P1, P5)
-  "تسجيل يسجل التسجيل قيد",
+  "تسجيل يسجل التسجيل",
   "مدة المدة مهلة المهلة",
   "أعيان الأعيان أصول الأصول",
   "إجارة الإجارة تأجير التأجير يؤجر يؤجره",
@@ -194,34 +195,11 @@ function headOf(question: string, df?: Map<string, number>): string | null {
  * What must agree between a question and a passage beyond shared words (§2.4): a year named in the question (2019 is not
  * 2025), and a «غير X» qualifier (non-Saudis are not Saudis). Returns what the passage lacks.
  */
-/** The Kingdom's thirteen regions and their seats, normalised (normForSearch) without the article. */
-const PLACES = ["رياض", "مكه", "مدينه المنوره", "قصيم", "بريده", "شرقيه", "دمام", "عسير", "ابها", "تبوك", "حايل", "حائل", "حدود الشماليه", "عرعر", "جازان", "جيزان", "نجران", "باحه", "جوف", "سكاكا", "جده", "طايف", "طائف", "احساء"]
-  .map((p) => normForSearch(p));
-
-/** A stated period: a number (in digits or words) followed within a few words by a unit of time. */
-const PERIOD = /(?:\d+|واحد|اثن|ثلاث|اربع|خمس|ست|سبع|ثمان|تسع|عشر)\S*\s+(?:\S+\s+){0,5}?(?:يوم|ايام|اسبوع|اسابيع|شهر|اشهر|سنه|سنوات|سنتين|عام|اعوام)/;
-
-export function qualifiersMissing(question: string, text: string): string[] {
+export function qualifiersMissing(question: string, text: string, opts: { scope?: string; frame?: Frame; hasWord?: (w: string) => boolean } = {}): string[] {
   const q = asciiDigits(question);
-  const t = normForSearch(asciiDigits(text));
-  const out: string[] = [];
-  // a year named in the question must be in the passage; of several years (a comparison), at least one (P10)
-  const years = [...new Set(q.match(/(?<!\d)(1[34]\d\d|20\d\d|19\d\d)(?!\d)/g) ?? [])];
-  if (years.length === 1 && !t.includes(years[0]!)) out.push(`السنة ${years[0]}`);
-  if (years.length > 1 && !years.some((y) => t.includes(y))) out.push(`السنوات ${years.join("، ")}`);
-  // a place named in the question (a region or city of the Kingdom) must be named in the passage: the Kingdom's total
-  // does not answer «سكان الرياض» (7L negative). A closed list: the thirteen regions and their seats
-  if (tokenize(q).length <= LONG_QUESTION) for (const p of PLACES) if (new RegExp(`(?:^|\\s)(?:ال|بال|في|و)?${p}(?![ء-ي])`).test(normForSearch(q)) && !new RegExp(p).test(t)) out.push(`«${p}»`);
-  // a relative date («العام الماضي», «قبل عشر سنوات») cannot be placed against a passage's dates: never matched by
-  // guessing the year it means (X6c)
-  const rel = normForSearch(q).match(/(?:العام|السنه|الربع|الشهر)\s+(?:الماضي|السابق|المنصرم|الماضيه|السابقه)|قبل\s+(?:\S+\s+)?(?:سنه|سنوات|سنتين|اعوام|عام|اشهر|شهر)/);
-  if (rel) out.push(`التاريخ النسبي «${rel[0]}»`);
-  // what the question asks for must be of the kind the passage holds (X3): a penalty, a period, a number
-  const qn = normForSearch(q);
-  if (/عقوب|غرام|جزاء|يعاقب/.test(qn) && !/عقوب|غرام|جزاء|يعاقب|مخالف/.test(t)) out.push("العقوبة أو الغرامة المسؤول عنها");
-  if (/(?:خلال|في)\s+كم\s+(?:يوم|شهر|سنه)|ما المده|مهله|كم يوم/.test(qn) && !PERIOD.test(t)) out.push("المدة المسؤول عنها");
-  // «أجر» as reward (ثواب) is not «أجرة», the fee (X14)
-  if (/ثواب|عند الله|الاجر والثواب/.test(qn) && !/ثواب|عند الله|(?<![ء-ي])ال?اجر(?![هة ء-ي])/.test(t)) out.push("الأجر بمعنى الثواب");
+  const t = normForSearch(asciiDigits(opts.scope ?? text));
+  // the parts of the question (question.ts): dates, places, identifiers, the measured thing, senses, the answer type
+  const out: string[] = [...judge(opts.frame ?? frameOf(question), text, { scope: opts.scope, hasWord: opts.hasWord }).lacking];
   for (const m of normForSearch(q).matchAll(/غير\s+(ال)?([ء-ي]{3,})/g)) {
     const w = m[2]!.replace(/(ين|ون|ات|ه|ة)$/, "");
     // «غري» is how some files' text layer renders «غير» (reversed ligature: «يف» for «في»), not another word
@@ -372,8 +350,13 @@ function validityOn(c: Cache, picked: Row[], asOf: string): Map<string, Pick<Hit
 const normCmp = (s: string) => normForSearch(s).replace(/\s+/g, " ").trim();
 const refusalOf = (d: Decision) => (d.citable ? null : d.refusal);
 
-export async function retrieve(tx: Tx, q: RetrieveQuery): Promise<RetrieveResult> {
+export async function retrieve(tx: Tx, q0: RetrieveQuery): Promise<RetrieveResult> {
   const c = await index(tx);
+  // what the question asks (frame.ts): its parts judge every passage; an ambiguous word is read in the sense its
+  // context gives it — «قيد» of registration («قيد الوقف لدى الهيئة») is matched as «تسجيل», a «قيد» of restriction is
+  // not (N9-10)
+  const frame = frameOf(q0.question);
+  const q = frame.senses.qayd === "registration" ? { ...q0, question: q0.question.replace(/(^|\s)(و?ال)?قيد(?=\s|$)/g, "$1$2تسجيل") } : q0;
   const limit = q.limit ?? 6;
   const keep = (r: Row) => (!q.refCodes?.length || q.refCodes.includes(r.refCode)) && (!q.kinds?.length || q.kinds.includes(r.refKind)) && (q.historical || !r.superseded);
   const picked: { row: Row; score: number; coverage: number }[] = [];
@@ -491,11 +474,19 @@ export async function retrieve(tx: Tx, q: RetrieveQuery): Promise<RetrieveResult
     // beyond shared words: a year or a «غير X» qualifier of the question the passage lacks makes it not relevant (§2.4)
     // for a foreign-language passage the qualifiers are read on its specialist's Arabic descriptor, which states what
     // it answers (its English dateline «Riyadh» is not the population of Riyadh: 7L negatives)
-    const lacking = qualifiersMissing(q.question, descriptor ?? hit.text);
+    // the passage against the question's parts; a foreign passage is judged on its descriptor for what it is about
+    // and on its own text for the answer (its numbers)
+    const forms = new Set(tokenize(descriptor ?? hit.text).map((x) => canon(x, c.df)));
+    const hasWord = (w: string) => forms.has(canon(w, c.df));
+    const lacking = qualifiersMissing(q0.question, hit.text, { frame, scope: descriptor ?? undefined, hasWord });
+    const j = judge(frame, hit.text, { scope: descriptor ?? undefined, hasWord });
     if (lacking.length && !namedUnits?.has(row.chunkId)) {
       hit.coverage = Math.min(hit.coverage, MIN_COVERAGE - 0.2);
       hit.lacking = lacking;
     }
+    if (j.partial.length) hit.partial = j.partial;
+    hit.answers = j.answers;
+    hit.why = [...(hit.matchedVia === "descriptor" ? ["طوبق عبر الوصف العربي للمقطع الأجنبي"] : []), ...j.why];
     // a negated question («ألا يسجل») answered by a passage that states the act positively: kept (it answers the question)
     // but flagged, so the draft reads it as the answer, not as agreeing with the question's wording (X9)
     const neg = negatedAct(q.question);

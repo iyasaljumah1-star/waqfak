@@ -99,6 +99,12 @@ export type Hit = {
   provenance?: "guard" | "passage" | "stored_official";
   /** Matched through the specialist's Arabic descriptor of a foreign-language passage (7L), not through its own words. */
   matchedVia?: "descriptor";
+  /** What the passage answers of a comparison only in part (a year it does not name…): N9-10. */
+  partial?: string[];
+  /** Whether the passage holds the kind of answer asked (a number, a period, a penalty, a ruling) or only context. */
+  answers?: "direct" | "context";
+  /** Why it was retrieved: the parts of the question it meets (frame.ts). */
+  why?: string[];
   /** The question negates the act it asks about and the passage does not (or the reverse): X9. */
   negationMismatch?: boolean;
   /** What the passage lacks of the question's qualifiers (a year, «غير X»): not relevant whatever the shared words. */
@@ -229,7 +235,7 @@ export function passageStatus(h: Pick<Hit, "chunkId" | "reviewRole">, reviews: S
 }
 
 /** Why a passage is used in a draft with a warning: each flag is shown next to its use. */
-export type DraftFlag = "unreviewed" | "ocr" | "degraded" | "contemporary" | "not_school_attribution" | "registry_unconfirmed" | "earlier_version" | "descriptor_match" | "negation_mismatch";
+export type DraftFlag = "unreviewed" | "ocr" | "degraded" | "contemporary" | "not_school_attribution" | "registry_unconfirmed" | "earlier_version" | "descriptor_match" | "negation_mismatch" | "partial_answer" | "context_only";
 export const DRAFT_FLAG_AR: Record<DraftFlag, string> = {
   unreviewed: "مقطع غير مراجع: يلزم مراجعته قبل أي مستند نهائي",
   ocr: "نص مستخرج آليًا بالتعرف الضوئي: قد يحتوي أخطاء، ولا يُعامل نقلًا محققًا",
@@ -240,6 +246,8 @@ export const DRAFT_FLAG_AR: Record<DraftFlag, string> = {
   earlier_version: "نسخة سابقة",
   descriptor_match: "طوبق عبر الوصف العربي الذي سجله المختص للمقطع الأجنبي؛ النص المنقول بلغته الأصلية",
   negation_mismatch: "السؤال منفي والنص مثبت (أو العكس): يُقرأ النص جوابًا عن السؤال لا موافقة لصيغته",
+  partial_answer: "يجيب عن جزء من السؤال فقط؛ لا يُعرض سندًا للنتيجة كلها",
+  context_only: "يقدم سياقًا ولا يحمل نوع الجواب المسؤول عنه؛ لا يُعرض سندًا مؤيدًا للنتيجة",
 };
 export type DraftUse = { usable: true; status: Exclude<PassageStatus, "under_review">; flags: DraftFlag[]; label: string } | { usable: false; refusal: Refusal; detail: string };
 
@@ -272,6 +280,8 @@ export function draftUse(h: Hit, ctx: DecideContext, evidence: DecideEvidence & 
   if (h.superseded || h.validity === "earlier") flags.push("earlier_version");
   if (h.matchedVia === "descriptor") flags.push("descriptor_match");
   if (h.negationMismatch) flags.push("negation_mismatch");
+  if (h.partial?.length) flags.push("partial_answer");
+  if (h.answers === "context") flags.push("context_only");
   return { usable: true, status, flags: [...new Set(flags)], label: citationLabel(h, !!ctx.historical) };
 }
 
@@ -301,7 +311,11 @@ export function sufficiency(decided: { hit: Hit; decision: Decision }[], need: {
  */
 export function draftSufficiency(decided: { hit: Hit; draft: DraftUse }[], need: { binding: boolean; missingArticle?: string | null }): Sufficiency {
   if (need.missingArticle) return { sufficient: false, reason: `المراجع غير كافية: ${need.missingArticle} غير موجودة في النص المحفوظ.` };
-  const ok = decided.filter((d) => d.draft.usable);
+  const usable = decided.filter((d) => d.draft.usable);
+  // a passage that answers only part of the question, or only gives context, is shown with its flag but does not by
+  // itself make the basis sufficient (N9-10)
+  const ok = usable.filter((d) => !(d.draft as { flags?: string[] }).flags?.some((f) => f === "partial_answer" || f === "context_only"));
+  if (!ok.length && usable.length) return { sufficient: false, reason: "المراجع غير كافية: المقاطع المسترجعة تجيب عن جزء من السؤال أو تقدم سياقًا فقط." };
   if (!ok.length) {
     const why = [...new Set(decided.filter((d) => !d.draft.usable).map((d) => REFUSAL_AR[(d.draft as { refusal: Refusal }).refusal]))];
     return { sufficient: false, reason: decided.length ? `المراجع غير كافية حتى للمسودة: لا مقطع صالح (${why.join("؛ ")}).` : "المراجع غير كافية: لم يُعثر على نص ذي صلة في قاعدة المعرفة." };

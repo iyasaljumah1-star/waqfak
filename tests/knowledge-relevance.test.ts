@@ -149,6 +149,74 @@ describe.skipIf(!enabled)("relevance regressions (dedicated test database)", () 
     }
   }, 120_000);
 
+  // ── N9-10 (order of 2026-11-09, «سابعاً»): the question's parts, not its words ───────────────────────────────────
+  const NONE10: [string, string, string][] = [
+    ["N-D1", "كم بلغ عدد الإبل في المملكة في تعداد 2022؟", "المقيس غير المذكور في الوصف (الإبل)"],
+    ["N-D2", "كم بلغ عدد سكان الكويت في تعداد 2022؟", "بلد آخر"],
+    ["N-D5", "ما الوسيط العمري للإبل في تعداد 2022؟", "المقيس غير المذكور"],
+    ["N-D4", "ما تاريخ سريان FAS 38 بحسب أيوفي؟", "معيار آخر برقمه"],
+    ["N-R1", "كم بلغ معدل البطالة بين السعوديين في السنة الحالية؟", "تاريخ نسبي"],
+    ["N-R2", "كم بلغ معدل البطالة بين السعوديين هذا العام؟", "تاريخ نسبي"],
+    ["N-R3", "كم بلغ معدل البطالة بين السعوديين حاليا؟", "تاريخ نسبي"],
+  ];
+  for (const [id, q, why] of NONE10) {
+    it(`${id}: no usable passage (${why})`, async () => {
+      const r = await ask(q);
+      expect(r.usable.length, where(r)).toBe(0);
+    }, 90_000);
+  }
+
+  it("N-Q1: «قيد» of restriction is not «قيد» of registration (sense from context)", async () => {
+    const r = await ask("ما قيد جواز بيع الوقف عند الحنابلة؟");
+    expect(r.usable.some((u) => /تسجيل الوقف|المدد النظامية/.test(u.hit.text)), where(r)).toBe(false);
+    // in the registration sense it reaches the registration article (refused here only because the registry's official
+    // text is not stored in the test database) or the guide's table of periods
+    const reg = await ask("خلال كم يوم يجب قيد الوقف لدى الهيئة؟");
+    const first = reg.results[0]!;
+    expect(`${first.hit.refCode} ${first.hit.locator}`).toMatch(/NAZARA-REG م8|NAZIR-GUIDE ص 16/);
+    expect(first.hit.coverage).toBeGreaterThanOrEqual(0.5);
+  }, 90_000);
+
+  it("N-X14b: «أجر من أوقف ماله» is the reward — never the fee passages", async () => {
+    const r = await ask("ما أجر من أوقف ماله؟");
+    expect(r.usable.every((u) => !/اجرة الناظر|أجرة الناظر|أجرة المثل/.test(u.hit.text)), where(r)).toBe(true);
+  }, 90_000);
+
+  it("N-Y1: a comparison of two years — a passage on one of them is a partial answer, not sufficient", async () => {
+    const r = await ask("كم بلغ معدل البطالة بين السعوديين في 2019 مقارنة بعام 2025؟");
+    for (const u of r.usable) expect(u.draft.usable && u.draft.flags).toContain("partial_answer");
+    expect(r.draftSufficiency.sufficient).toBe(false);
+  }, 90_000);
+
+  it("explanation: every usable passage says why it was retrieved and whether it answers or gives context", async () => {
+    const r = await ask("كم بلغ إجمالي عدد سكان المملكة في تعداد 2022؟");
+    const u = r.usable[0]!;
+    expect(u.hit.answers).toBe("direct");
+    expect(u.hit.why?.join(" ")).toMatch(/المقيس|السنوات|طوبق عبر الوصف/);
+  }, 90_000);
+
+  it("pure N9-10: places as whole words; a penalty, a period and a number as such; identifiers", async () => {
+    const F = await import("../src/server/knowledge/frame");
+    const m = K.qualifiersMissing;
+    for (const [q, t] of [["كم سكان الباحة؟", "هذه المعاملة مباحة 5"], ["كم سكان الرياض؟", "الأندية الرياضية 7"], ["كم عدد سكان عسير؟", "رفع التعسير عن الناس 4"], ["كم سكان حائل؟", "منع التحايل 3"]] as const)
+      expect(m(q, t).join(" "), `${q} / ${t}`).toMatch(/المكان/);
+    expect(m("كم سكان الرياض؟", "سكان الرياض 7 ملايين")).toEqual([]);
+    expect(m("كم سكان الرياض؟", "بلغ عدد سكان مدينة الرياض 7 ملايين")).toEqual([]);
+    expect(m("ما عقوبة عدم تسجيل الوقف؟", "ولا يجوز مخالفة شرط الواقف")).toContain("العقوبة أو الغرامة المسؤول عنها");
+    expect(m("ما عقوبة عدم تسجيل الوقف؟", "يعاقب المخالف بغرامة")).toEqual([]);
+    expect(m("خلال كم يوم يسجل الوقف؟", "يصرف للمستفيد شهريا")).toContain("المدة المسؤول عنها");
+    expect(m("خلال كم يوم يسجل الوقف؟", "خلال ستين يوما من تاريخه")).toEqual([]);
+    expect(m("ما متطلبات FAS 38؟", "FAS 37 requires …")).toContain("FAS 38");
+    expect(m("ما متطلبات FAS 38؟", "FAS 38 requires …")).toEqual([]);
+    expect(m("ما متطلبات المعيار رقم 9؟", "المعيار رقم 9 يشترط")).toEqual([]);
+    expect(F.frameOf("ما قيد جواز بيع الوقف؟").senses.qayd).toBe("restriction");
+    expect(F.frameOf("خلال كم يوم يجب قيد الوقف لدى الهيئة؟").senses.qayd).toBe("registration");
+    expect(F.frameOf("ما أجر الناظر؟").senses.ajr).toBe("fee");
+    expect(F.frameOf("ما أجر من أوقف ماله؟").senses.ajr).toBe("reward");
+    expect(F.frameOf("هل يجوز للناظر الاستدانة من غير إذن الحاكم؟").answer).toBe("permission"); // «الحاكم» holds no «كم»
+    expect(F.placesIn("Riyadh, May 31, 2023 — the Kingdom's population").map((p) => p.key)).toEqual(expect.arrayContaining(["KSA", "الرياض"]));
+  });
+
   it("pure: negation helpers", () => {
     expect(K.negatedAct("هل يجب على الناظر ألا يسجل الوقف؟")).toBeTruthy();
     expect(K.negatedAct("هل يجب على الناظر أن يسجل الوقف؟")).toBeNull();
@@ -166,8 +234,9 @@ describe.skipIf(!enabled)("relevance regressions (dedicated test database)", () 
     expect(m("ما أجر الواقف عند الله؟", "يدوم أجرها وثوابها للواقف")).toEqual([]);
     expect(m("كم في 2025 مقارنة بعام 2024؟", "في الربع الأول من 2025")).toEqual([]);
     expect(m("كم في 2023 مقارنة بعام 2024؟", "في الربع الأول من 2025").length).toBe(1);
-    expect(m("كم سكان الرياض؟", "عدد سكان المملكة")).toContain("«رياض»");
-    expect(m("كم سكان المملكة؟", "عدد سكان المملكة")).toEqual([]);
+    expect(m("كم سكان الرياض؟", "عدد سكان المملكة")).toContain("المكان «الرياض»");
+    expect(m("كم سكان المملكة؟", "عدد سكان المملكة 32 مليونًا")).toEqual([]);
+    expect(m("كم سكان المملكة؟", "عدد سكان المملكة")).toContain("الرقم المسؤول عنه");
     expect(m("كم المعدل في العام الماضي؟", "المعدل 6.3%").some((x) => /التاريخ النسبي/.test(x))).toBe(true);
   });
 });
