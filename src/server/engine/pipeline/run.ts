@@ -18,6 +18,7 @@ import { draftInputs } from "@/server/modules/outputs/live";
 import { addVersion, ensureOutput, versionOf } from "@/server/modules/outputs/server";
 import { syncConflicts, transitionGate } from "@/server/modules/outputs/quality";
 import { mergeRegenerated } from "@/server/modules/outputs/pure";
+import { specialistBinding } from "@/server/modules/outputs/binding";
 import { readVersionPlain } from "@/server/modules/documents/core";
 import { extractText } from "@/server/modules/ai/extract";
 import { engineAuth } from "../actor";
@@ -246,7 +247,11 @@ export async function processRequest(job: ClaimedJob): Promise<RunOutcome> {
             const w = writerFor(packs, sec.key) ?? { section: "*", mode: "model" as const, requireCitation: true };
             if (w.mode === "template" && w.template) {
               const t = fillTemplate(w.template, R.facts, R.decisions);
-              if (!t.missing.length) { b.text = t.text; b.by = "engine"; b.runId = run.id; sectionLog.push({ section: sec.title, by: "template" }); }
+              if (!t.missing.length) {
+                b.text = t.text; b.by = "engine"; b.runId = run.id; b.writer = "template"; b.refs = []; b.basis = [];
+                b.binding = specialistBinding(b);
+                sectionLog.push({ section: sec.title, by: "template" });
+              }
               else problems.push(`${sec.title}: قالب القاعدة يحتاج ${t.missing.join("، ")}`);
               continue;
             }
@@ -300,6 +305,9 @@ export async function processRequest(job: ClaimedJob): Promise<RunOutcome> {
               const saved = await saveDossier(tx, dossier, { createdBy: eauth.user.id, requestId: rc.req.id, outputId: o.id });
               b.dossierId = saved.id;
             }
+            // text, run, references, basis and dossier bound together (N9-9): the final gate recomputes it
+            b.writer = "model";
+            b.binding = specialistBinding(b);
             sectionLog.push({ section: sec.title, by: provider.id, model: provider.model, cited: b.refs.map((r) => `${r.refCode} ${r.locator}`), rationale: result.rationale });
           }
         }

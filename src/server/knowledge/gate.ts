@@ -5,6 +5,7 @@ import { kbChunks, kbSources } from "@/server/db/schema";
 import type { OutputSection } from "@/server/db/schema";
 import { dossierStanding, passageStanding } from "./review";
 import { registryCitable } from "./retrieve";
+import { engineBlockErrors, type SpecialistBlock } from "@/server/modules/outputs/binding";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const STANDING_AR = { unreviewed: "غير مراجع", under_review: "قيد المراجعة", rejected: "مرفوض" } as const;
@@ -25,6 +26,15 @@ export async function finalBasisErrors(tx: Tx, sections: OutputSection[], asOf: 
     .filter((r) => { const k = `${r.section}|${r.chunkId}`; if (seenRef.has(k)) return false; seenRef.add(k); return true; });
   const dossiers = blocks.map(({ s, b }) => ({ section: s.title, id: (b as { dossierId?: string }).dossierId })).filter((x): x is { section: string; id: string } => !!x.id);
   const errors: string[] = [];
+  // every engine-written text bound to its run, references, basis and dossier (N9-9); a model's text never without them
+  for (const { s, b } of blocks) for (const e of engineBlockErrors(b as SpecialistBlock)) errors.push(`${s.title}: ${e}.`);
+  // a text that cites [n] carries the references it cites, whoever wrote it
+  for (const { s, b } of blocks) {
+    const sb = b as SpecialistBlock;
+    if (sb.by === "engine") continue;
+    const cited = [...sb.text.matchAll(/\[(\d+)\]/g)].map((m) => Number(m[1]));
+    if (cited.length && cited.some((n) => !(sb.refs ?? []).some((r) => r.n === n))) errors.push(`${s.title}: النص يستشهد برقم لا مرجع له.`);
+  }
   const ids = [...new Set(refs.map((r) => r.chunkId))];
   const uuidIds = ids.filter((x) => UUID.test(x));
   const [standing, registry] = await Promise.all([passageStanding(tx, uuidIds), registryCitable(tx, uuidIds, asOf)]);

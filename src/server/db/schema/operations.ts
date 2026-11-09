@@ -74,7 +74,13 @@ export type OutputBlock =
    *  «engine», the passages it rests on (`refs`, numbered as cited in the text) and the run that wrote it. */
   | { type: "specialist"; prompt: string; text: string; by?: "engine" | "person"; refs?: { n: number; refCode: string; version: string; locator: string; chunkId: string; status?: string; flags?: string[] }[];
       /** Every passage put before the model for this section, cited or not (N7-14): the final approval requires them all reviewed. */
-      basis?: { chunkId: string; refCode: string; locator: string }[]; runId?: string; dossierId?: string }
+      basis?: { chunkId: string; refCode: string; locator: string }[]; runId?: string; dossierId?: string;
+      /** How the engine wrote it: a model over retrieved passages, or a template over the request's data. */
+      writer?: "model" | "template";
+      /** sha256 binding text, run, writer, refs, basis and dossier together (modules/outputs/binding.ts — N9-9). */
+      binding?: string;
+      /** A person edited an engine text: the run it came from (its references stay, and stay subject to review). */
+      editedFromRun?: string }
   /** A drafted clause of a document (will, deed, policy): `generated` is the text built from the data; `text` is what
    *  the document says now (equal to `generated` until a person edits it). `refs` = where the rule behind it comes from. */
   | { type: "clause"; key: string; n: number; title: string; text: string; generated: string; prov: Provenance; refs?: string[]; data?: ClauseDatum[] }

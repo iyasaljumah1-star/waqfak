@@ -1123,6 +1123,40 @@ CREATE TRIGGER review_db_time BEFORE INSERT ON ref_match_reviews FOR EACH ROW EX
 DROP TRIGGER IF EXISTS review_db_time ON fiqh_reviews;
 CREATE TRIGGER review_db_time BEFORE INSERT ON fiqh_reviews FOR EACH ROW EXECUTE FUNCTION review_db_time();
 
+-- ═════════════ Phase 10, N9-9: an engine-written text is bound to its run, references, basis and dossier ═════════════
+-- The same canonical string as modules/outputs/binding.ts bindingInput(): text, run, writer, «n:chunk» by n, the basis
+-- chunks sorted (byte order) and deduplicated, the dossier — joined by newlines; its sha256 must equal the block's
+-- «binding». A model's text must also cite something, have a basis, cite only from its basis, and every [n] in the text
+-- must be a cited reference. Counted per faulty block; output_unreviewed_basis() adds it to the approval guard.
+CREATE OR REPLACE FUNCTION specialist_block_errors(secs jsonb) RETURNS integer LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+DECLARE b jsonb; n integer := 0; refs text; basis text; want text; bad boolean;
+BEGIN
+  IF secs IS NULL THEN RETURN 0; END IF;
+  FOR b IN SELECT x FROM jsonb_path_query(secs, '$[*] ? (!(exists(@.removed)) || @.removed != true).blocks[*] ? (@.type == "specialist")') x LOOP
+    -- a text that cites [n] carries the references it cites, whoever wrote it
+    IF EXISTS (SELECT 1 FROM regexp_matches(coalesce(b->>'text', ''), '\[(\d+)\]', 'g') m
+               WHERE NOT EXISTS (SELECT 1 FROM jsonb_array_elements(coalesce(b->'refs', '[]'::jsonb)) r WHERE (r->>'n') = m[1])) THEN
+      n := n + 1; CONTINUE;
+    END IF;
+    CONTINUE WHEN coalesce(b->>'by', '') <> 'engine' OR btrim(coalesce(b->>'text', '')) = '';
+    SELECT coalesce(string_agg((r->>'n') || ':' || (r->>'chunkId'), ',' ORDER BY (r->>'n')::int), '') INTO refs FROM jsonb_array_elements(coalesce(b->'refs', '[]'::jsonb)) r;
+    SELECT coalesce(string_agg(c, ',' ORDER BY c COLLATE "C"), '') INTO basis FROM (SELECT DISTINCT r->>'chunkId' AS c FROM jsonb_array_elements(coalesce(b->'basis', '[]'::jsonb)) r) x;
+    want := encode(sha256(convert_to(concat_ws(E'\n', b->>'text', coalesce(b->>'runId', ''), coalesce(b->>'writer', ''), refs, basis, coalesce(b->>'dossierId', '')), 'UTF8')), 'hex');
+    bad := b->>'runId' IS NULL OR coalesce(b->>'writer', '') NOT IN ('model', 'template') OR b->>'binding' IS DISTINCT FROM want;
+    IF NOT bad AND b->>'writer' = 'model' THEN
+      bad := jsonb_array_length(coalesce(b->'refs', '[]'::jsonb)) = 0 OR jsonb_array_length(coalesce(b->'basis', '[]'::jsonb)) = 0
+          OR EXISTS (SELECT 1 FROM jsonb_array_elements(b->'refs') r WHERE NOT EXISTS (SELECT 1 FROM jsonb_array_elements(b->'basis') x WHERE x->>'chunkId' = r->>'chunkId'));
+    END IF;
+    IF bad THEN n := n + 1; END IF;
+  END LOOP;
+  RETURN n;
+END $$;
+REVOKE ALL ON FUNCTION specialist_block_errors(jsonb) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION specialist_block_errors(jsonb) TO waqfak_app;
+CREATE OR REPLACE FUNCTION output_unreviewed_basis(oid uuid, ver integer) RETURNS integer LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+  SELECT coalesce((SELECT sections_unreviewed_basis(sections) + specialist_block_errors(sections) FROM output_versions WHERE output_id = oid AND version = ver), 0)
+$$;
+
 -- ═════════════ Phase 10 (owner's order of 2026-11-09), N9-1: no function resolves a name the caller can shadow ═════════════
 -- A function body names tables and functions without a schema; PostgreSQL resolves them by search_path at each call,
 -- and pg_temp — the caller's own temporary schema — is searched FIRST unless it is named. A definer function with

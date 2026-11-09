@@ -116,7 +116,8 @@ export function mergeRegenerated(prev: OutputSection[], fresh: OutputSection[], 
       out.push({ ...f, removed: true });
       continue;
     }
-    const specialistTexts = p.blocks.filter((b): b is Extract<OutputBlock, { type: "specialist" }> => b.type === "specialist").map((b) => b.text);
+    // the previous specialist blocks WHOLE — a text never travels without its run, refs, basis and dossier (N9-9)
+    const prevSpecialist = p.blocks.filter((b): b is Extract<OutputBlock, { type: "specialist" }> => b.type === "specialist");
     let si = 0;
     const editedFacts = new Map<string, { value: string; orig?: string }>();
     for (const b of p.blocks) if (b.type === "facts") for (const r of b.rows) if (r.prov === "specialist") editedFacts.set(r.label, { value: r.value, orig: r.ref });
@@ -131,9 +132,15 @@ export function mergeRegenerated(prev: OutputSection[], fresh: OutputSection[], 
         return { ...b, text: pc.text };
       }
       if (b.type === "specialist") {
-        const t = specialistTexts[si++] ?? "";
-        if (t) kept++;
-        return { ...b, text: t };
+        const pb = prevSpecialist[si++];
+        // nothing written before: the fresh block as it is (an engine text with its own run and references, or empty)
+        if (!pb || !pb.text.trim()) return b;
+        // the engine wrote both: the fresh run's block, whole (its text with its own references)
+        if (pb.by === "engine" && b.by === "engine" && b.text.trim()) return b;
+        // a person's text, or an engine text the fresh build did not rewrite: the previous block, whole — with the
+        // references, basis, run and dossier it was written with; the fresh prompt only
+        kept++;
+        return { ...pb, prompt: b.prompt };
       }
       if (b.type === "facts") {
         return {
@@ -213,6 +220,13 @@ export function applyEdits(sections: OutputSection[], fields: Record<string, str
           const t = fields[k].trim().slice(0, 20_000);
           if (t !== b.text) {
             changed = true;
+            // a person's text from now on: no longer the engine's (its binding is dropped); the references it was
+            // written from stay attached and stay subject to the final gate's review requirement
+            if (b.by === "engine") {
+              const { binding: _b, writer: _w, ...rest } = b;
+              void _b; void _w;
+              return { ...rest, text: t, by: "person" as const, editedFromRun: b.runId };
+            }
             return { ...b, text: t };
           }
         }
