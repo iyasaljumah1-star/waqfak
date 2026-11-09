@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "rs_token_uq" ON "report_shares" USING btree ("token_hash");

@@ -244,6 +244,21 @@ describe.skipIf(!devDb)("capability tokens — use paths on the development data
     expect(await withSystem(async (tx) => verifyCapability("report_share", token, binding, bindReportShare(row, await reportContent(tx, rep))))).toBe(false);
   });
 
+  it("N10b-2/N10b-3: a revoked report is not brought back; a second report-share row with the same token is refused", async () => {
+    const f = await fixtures();
+    const rep = crypto.randomUUID();
+    await withSystem((tx) => tx.insert(schema.reports).values({ id: rep, number: `TEST-N10B-${rep.slice(0, 6)}`, kind: "assessment", title: "تقرير اختبار", verificationCode: randomToken(9), revokedAt: new Date() }));
+    created.reports.push(rep);
+    const back = await tamper([`update reports set revoked_at = null where id = '${rep}'`], async () => null);
+    expect(back.refused).toMatch(/revocation is not undone/);
+    const lookup = capabilityLookup("report_share", randomToken(24));
+    const twice = await tamper([
+      `insert into report_shares (report_id, token_hash, binding, created_by, expires_at) values ('${rep}', '${lookup}', 'x', '${f.user}', now() + interval '1 day')`,
+      `insert into report_shares (report_id, token_hash, binding, created_by, expires_at) values ('${rep}', '${lookup}', 'y', '${f.user}', now() + interval '1 day')`,
+    ], async () => null);
+    expect(twice.refused).toMatch(/rs_token_uq|duplicate key/);
+  });
+
   it("I1/I2: an invitation accepted is not accepted again; its note, phone or role do not change after issue", async () => {
     const f = await fixtures();
     const waqfId = f.docs[0]!.d.waqfId!;

@@ -641,7 +641,8 @@ export const reportShares = pgTable("report_shares", {
   revokedAt: timestamp({ withTimezone: true }),
   views: integer().default(0).notNull(),
   createdAt: createdAt(),
-});
+  // one row per token, as for document shares and invitations (N10b-3): a decoy row with the same token is refused
+}, (t) => [uniqueIndex("rs_token_uq").on(t.tokenHash)]);
 
 export const sequences = pgTable("sequences", {
   key: text().primaryKey(), // e.g. WQ-2026, WQF, INV-2026

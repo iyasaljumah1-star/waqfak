@@ -121,7 +121,7 @@ export function frameOf(question: string): Frame {
   for (const x of q.matchAll(/(?:المعيار|معيار)\s+(?:رقم\s+)?\(?(\d{1,3})\)?/g)) identifiers.push({ kind: "المعيار", number: x[1]! });
   if (identifiers.length) why.push(`المعرّف: ${identifiers.map((i) => `${i.kind} ${i.number}`).join("، ")}`);
   // a long request text (a client's matter) names places and times as its context, not as what it asks about
-  if (tokenize(raw).length > LONG) return { answer, focus: [], senses, places: [], contextPlaces: named, years, relativeDate: null, identifiers, why: [...why, "نص طويل: الأماكن والأزمنة فيه سياق لا قيود"] };
+  if (tokenize(raw).length > LONG) return { answer, focus: [], senses, places: [], contextPlaces: [], years, relativeDate: null, identifiers, why: [...why, "نص طويل: الأماكن والأزمنة فيه سياق لا قيود"] };
   return { answer, focus, senses, places, contextPlaces: named.filter((p) => !places.includes(p)), years, relativeDate: rel?.[0] ?? null, identifiers, why };
 }
 
@@ -191,14 +191,41 @@ export function judge(f: Frame, text: string, opts: { scope?: string; hasWord?: 
   return { lacking, partial, answers: direct ? "direct" : "context", why };
 }
 
+/** Words that set a place as where the matter arises: «في الرياض»، «بجدة»، «مدينة الطائف»، «in Riyadh». */
+const CUE = /^(?:في|داخل|بمدينه|بمنطقه|بمحافظه|مدينه|منطقه|محافظه|in|at)$/i;
+const strip = (w: string) => normForSearch(w.replace(/[؟?!.,،:;«»"'()]+$/g, ""));
+
 /**
- * The question without the places it names as context (N10-7): «هل يجوز للناظر في الرياض بيع …» is matched as «هل
- * يجوز للناظر بيع …» — a passage on the ruling need not name the city to cover the question's matter.
+ * The question without the places it names as context (N10-7), in its own spelling (N10b-1: the article and school
+ * matchers read the original words). A place is removed only where a locative word sets it — «في الرياض», «بجدة»,
+ * «مدينة الطائف», «in Riyadh» — so a word that is also a place name used otherwise stays («يقف على جده», «حائل»
+ * as an adjective: N10b-4). Its trailing punctuation is kept.
  */
 export function withoutContextPlaces(question: string, f: Frame): string {
   if (!f.contextPlaces.length) return question;
-  let out = normForSearch(question);
-  for (const p of f.contextPlaces)
-    for (const n of p.ar) out = out.replace(new RegExp(`(?:^|\\s)(?:(?:في|ب|من|الى)\\s+)?(?:مدينه\\s+|منطقه\\s+|محافظه\\s+)?[وفبل]?(?:ال)?${normForSearch(n).replace(/^ال/, "")}(?![ء-ي])`, "g"), " ");
-  return out.replace(/\s+/g, " ").trim();
+  const words = question.split(/\s+/).filter(Boolean);
+  const names = f.contextPlaces.flatMap((p) => [...p.ar.map((n) => normForSearch(n).split(/\s+/)), ...p.en.map((n) => n.toLowerCase().split(/\s+/))]);
+  const drop = new Set<number>();
+  for (let i = 0; i < words.length; i++) {
+    for (const name of names) {
+      // the place's first word may carry the clitics (و، ف، ب، ل، ال) and «ب» may itself be the locative
+      const first = strip(words[i]!).toLowerCase();
+      const head = name[0]!.replace(/^ال/, "");
+      const m = first.match(new RegExp(`^([وف]?)(ب|ل)?(ال)?${head.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`));
+      if (!m) continue;
+      if (name.slice(1).some((n, k) => strip(words[i + 1 + k] ?? "").toLowerCase() !== n)) continue;
+      const cued = m[2] === "ب" || (i > 0 && CUE.test(strip(words[i - 1]!))) || (i > 1 && CUE.test(strip(words[i - 2]!)) && CUE.test(strip(words[i - 1]!)));
+      if (!cued) continue;
+      for (let k = 0; k < name.length; k++) drop.add(i + k);
+      for (let j = i - 1; j >= 0 && j >= i - 2 && CUE.test(strip(words[j]!)); j--) drop.add(j);
+      // the question mark (or other closing punctuation) on the last word removed stays with the sentence
+      const last = words[i + name.length - 1]!;
+      const tail = last.match(/[؟?!.]+$/)?.[0];
+      if (tail) {
+        words[i + name.length - 1] = tail;
+        drop.delete(i + name.length - 1);
+      }
+    }
+  }
+  return words.filter((_, i) => !drop.has(i)).join(" ").replace(/\s+([؟?!.])/g, "$1");
 }

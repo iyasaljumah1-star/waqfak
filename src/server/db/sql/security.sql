@@ -1209,6 +1209,18 @@ DROP TRIGGER IF EXISTS capability_row_guard ON report_shares;
 CREATE TRIGGER capability_row_guard BEFORE UPDATE ON report_shares FOR EACH ROW EXECUTE FUNCTION capability_row_guard();
 DROP TRIGGER IF EXISTS capability_row_guard ON invitations;
 CREATE TRIGGER capability_row_guard BEFORE UPDATE ON invitations FOR EACH ROW EXECUTE FUNCTION capability_row_guard();
+-- N10b-2 (independent review, round 10b): a revoked report is not brought back by the application — its share links
+-- would show it again (the share page reads reports.revoked_at); a revocation is a one-way act, as for the links
+CREATE OR REPLACE FUNCTION report_revocation_guard() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF session_user = 'waqfak_app' AND OLD.revoked_at IS NOT NULL AND NEW.revoked_at IS DISTINCT FROM OLD.revoked_at THEN
+    RAISE EXCEPTION 'reports: a revocation is not undone' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS report_revocation_guard ON reports;
+CREATE TRIGGER report_revocation_guard BEFORE UPDATE ON reports FOR EACH ROW EXECUTE FUNCTION report_revocation_guard();
+
 -- N10-1 (independent review, round 10): a row deleted and inserted again as it was issued would undo its revocation,
 -- its acceptance and its uses; the application never deletes a link or an invitation (it revokes them), so it may not
 CREATE OR REPLACE FUNCTION capability_no_delete() RETURNS trigger LANGUAGE plpgsql AS $$

@@ -186,6 +186,24 @@ describe.skipIf(!enabled)("relevance regressions (dedicated test database)", () 
     expect(abroad.usable.length, where(abroad)).toBe(0);
   }, 90_000);
 
+  it("N10b-1/N10b-4: the place is removed in the question's own spelling, only where a locative word sets it; article and school matching are unaffected", async () => {
+    const F = await import("../src/server/knowledge/frame");
+    const w = (q: string) => F.withoutContextPlaces(q, F.frameOf(q));
+    expect(w("ما حكم وقف النقود عند الحنابلة في الرياض؟")).toBe("ما حكم وقف النقود عند الحنابلة؟");
+    expect(w("هل يجب على الناظر بجدة تسجيل الوقف؟")).toBe("هل يجب على الناظر تسجيل الوقف؟");
+    expect(w("ما حكم وقف المصحف على مسجد في مدينة جدة؟")).toBe("ما حكم وقف المصحف على مسجد؟");
+    expect(w("هل يجوز للناظر في المدينة المنورة بيع الوقف؟")).toBe("هل يجوز للناظر بيع الوقف؟");
+    // a word that is also a place name, not set as a place, stays
+    expect(w("هل يجوز أن يقف الرجل على جده؟")).toBe("هل يجوز أن يقف الرجل على جده؟");
+    // the school question is still a school question, and refuses the same non-school sources with or without the city
+    const school = await ask("ما حكم وقف النقود عند الحنابلة؟");
+    const schoolCity = await ask("ما حكم وقف النقود عند الحنابلة في الرياض؟");
+    expect(schoolCity.usable.map((u) => u.hit.chunkId).sort(), where(schoolCity)).toEqual(school.usable.map((u) => u.hit.chunkId).sort());
+    // a named article with a city is still answered from that article only (or nothing)
+    const art = await ask("ما نص المادة 5 من نظام الهيئة العامة للأوقاف في جدة؟");
+    expect(art.usable.every((u) => u.hit.articleNo === 5), where(art)).toBe(true);
+  }, 90_000);
+
   it("N-X14b: «أجر من أوقف ماله» is the reward — never the fee passages", async () => {
     const r = await ask("ما أجر من أوقف ماله؟");
     expect(r.usable.every((u) => !/اجرة الناظر|أجرة الناظر|أجرة المثل/.test(u.hit.text)), where(r)).toBe(true);
