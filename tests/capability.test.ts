@@ -71,9 +71,13 @@ describe.skipIf(!devDb)("capability tokens — use paths on the development data
   afterAll(async () => {
     await withSystem(async (tx) => {
       // the use log is append-only for the application: the owner's cascade removes it with its share
-      if (created.invitations.length) await tx.delete(schema.invitations).where(inArray(schema.invitations.id, created.invitations));
       if (created.reports.length) await tx.delete(schema.reports).where(inArray(schema.reports.id, created.reports));
     });
+    // the application never deletes a link or an invitation (N10-1): the test rows are removed as the cluster's owner
+    if (created.invitations.length) {
+      const { execFileSync } = await import("node:child_process");
+      execFileSync("sudo", ["-n", "-u", "postgres", "psql", "-q", "-d", "waqfak_dev", "-c", `set session_replication_role = replica; delete from invitations where id in (${created.invitations.map((x) => `'${x}'`).join(",")})`]);
+    }
     if (created.shares.length) {
       const { execFileSync } = await import("node:child_process");
       execFileSync("sudo", ["-n", "-u", "postgres", "psql", "-q", "-d", "waqfak_dev", "-c", `set session_replication_role = replica; delete from document_share_uses where share_id in (${created.shares.map((x) => `'${x}'`).join(",")}); delete from document_shares where id in (${created.shares.map((x) => `'${x}'`).join(",")})`]);
@@ -187,6 +191,43 @@ describe.skipIf(!devDb)("capability tokens — use paths on the development data
     expect(k2.refused).toMatch(/revocation is not undone/);
     const k2b = await tamper([`update document_shares set expires_at = now() + interval '1 year' where id = '${r.row.id}'`], async () => null);
     expect(k2b.refused).toMatch(/does not change/);
+  });
+
+  it("N10-1: a revoked link, a used link or an accepted invitation is not deleted and inserted again as issued", async () => {
+    const f = await fixtures();
+    const r = await issueShare(f.docs[0]!, f.user);
+    await withSystem((tx) => tx.update(schema.documentShares).set({ revokedAt: new Date() }).where(eq(schema.documentShares.id, r.row.id)));
+    const reissue = (table: string, id: string, cols: string) =>
+      tamper([`with old as (delete from ${table} where id = '${id}' returning *) insert into ${table} (${cols}) select ${cols} from old`], async () => null);
+    const d = await reissue("document_shares", r.row.id, "id, document_id, waqf_id, token_hash, binding, created_by, expires_at, max_uses, created_at");
+    expect(d.refused).toMatch(/permission denied|never deleted/);
+    const plain = await tamper([`delete from document_shares where id = '${r.row.id}'`], async () => null);
+    expect(plain.refused).toMatch(/permission denied|never deleted/);
+    const token = randomToken(24);
+    const inv = { id: crypto.randomUUID(), waqfId: f.docs[0]!.d.waqfId!, phone: "0500000996", roleKey: "viewer", invitedBy: f.user, expiresAt: new Date(Date.now() + 86_400_000), scope: null, note: null };
+    await withSystem((tx) => tx.insert(schema.invitations).values({ ...inv, tokenHash: capabilityLookup("invitation", token), binding: capabilityBinding("invitation", token, bindInvitation(inv)), acceptedAt: new Date(), acceptedBy: f.user }));
+    created.invitations.push(inv.id);
+    const i = await reissue("invitations", inv.id, "id, waqf_id, phone, role_key, invited_by, expires_at, scope, note, token_hash, binding, created_at");
+    expect(i.refused).toMatch(/permission denied|never deleted/);
+    const rs = await tamper([`delete from report_shares where true`], async () => null);
+    expect(rs.refused).toMatch(/permission denied|never deleted/);
+    const tr = await tamper([`truncate document_shares cascade`], async () => null);
+    expect(tr.refused).toMatch(/permission denied|must be owner/);
+  });
+
+  it("a link the operator expired (owner) says it expired and opens nothing; an extended one is unknown", async () => {
+    const { viewShare, consumeShare } = await import("../src/server/modules/documents/share");
+    const { execFileSync } = await import("node:child_process");
+    const f = await fixtures();
+    const owner = (q: string) => execFileSync("sudo", ["-n", "-u", "postgres", "psql", "-q", "-d", "waqfak_dev", "-c", q]);
+    const a = await issueShare(f.docs[0]!, f.user);
+    owner(`update document_shares set expires_at = now() - interval '1 minute' where id = '${a.row.id}'`);
+    expect((await viewShare(a.token)).state).toBe("expired");
+    expect((await consumeShare(a.token, "127.0.0.1")).file).toBeNull();
+    const b = await issueShare(f.docs[0]!, f.user);
+    owner(`update document_shares set expires_at = now() + interval '1 year' where id = '${b.row.id}'`);
+    expect((await viewShare(b.token)).state).toBe("not_found");
+    expect((await consumeShare(b.token, "127.0.0.1")).file).toBeNull();
   });
 
   it("R1: a report share opens nothing once its report points at another assessment or the result is recomputed", async () => {

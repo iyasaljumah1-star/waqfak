@@ -24,6 +24,12 @@ const minimalPdf = (label: string) =>
   );
 
 /** Runs one query with global access (test assertions only). */
+/** A fixture change only the database owner may make (the application role cannot extend or shorten a link). */
+async function ownerQuery(text: string, params: unknown[] = []): Promise<void> {
+  const c = new Client({ connectionString: process.env.DATABASE_OWNER_URL });
+  await c.connect();
+  try { await c.query(text, params); } finally { await c.end(); }
+}
 async function sysQuery<T = Record<string, unknown>>(text: string, params: unknown[] = []): Promise<T[]> {
   const c = new Client({ connectionString: process.env.DATABASE_URL });
   await c.connect();
@@ -355,7 +361,9 @@ test.describe.serial("document access control", () => {
     await page.reload();
     await page.getByRole("button", { name: "أنشئ رابط مشاركة" }).click();
     const path2 = new URL(await page.getByTestId("share-url").inputValue()).pathname;
-    await sysQuery("update document_shares set expires_at = now() - interval '1 minute' where document_id = $1 and uses = 0 and revoked_at is null", [deedA]);
+    // what a link was issued for does not change for the application (capability_row_guard): the clock is moved as the
+    // database owner, which the guard leaves to the operator; the link then states that it expired and opens nothing
+    await ownerQuery("update document_shares set expires_at = now() - interval '1 minute' where document_id = $1 and uses = 0 and revoked_at is null", [deedA]);
     expect((await anon.get(`${path2}/file`, { maxRedirects: 0 })).status()).toBe(303);
     expect(await (await anon.get(path2)).text()).toContain("انتهت صلاحية هذا الرابط");
     expect((await anon.get("/s/not-a-real-token-000000000000/file", { maxRedirects: 0 })).status()).toBe(303);

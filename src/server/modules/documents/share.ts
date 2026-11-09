@@ -25,7 +25,14 @@ async function lookup(tx: Parameters<Parameters<typeof withSystem>[0]>[0], token
     .limit(1);
   const [row] = lock ? await q.for("update", { of: documentShares }) : await q;
   // a share row re-pointed to another document, extended, given more uses, or planted without the key: not found
-  if (!row || !verifyCapability("document_share", token, row.s.binding, bindDocumentShare(row.s, { doc: row.d, version: row.v }))) return { state: "not_found" as ShareState, row: null };
+  if (!row) return { state: "not_found" as ShareState, row: null };
+  if (!verifyCapability("document_share", token, row.s.binding, bindDocumentShare(row.s, { doc: row.d, version: row.v }))) {
+    // a row that says it is revoked or past its expiry opens nothing either way: saying so is harmless (a writer who
+    // shortens a link only disables it) and tells the holder the truth; anything else that fails the binding is unknown
+    if (row.s.revokedAt) return { state: "revoked" as ShareState, row: null };
+    if (row.s.expiresAt.getTime() <= Date.now()) return { state: "expired" as ShareState, row: null };
+    return { state: "not_found" as ShareState, row: null };
+  }
   // … and the content as issued: the same version (id, number, storage key, IV, tag, hash), the same waqf and
   // confidentiality — checked in the binding above (N9-2); a new version since is not opened by an old link
   const { s, d, v } = row;
