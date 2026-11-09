@@ -55,7 +55,7 @@ export async function research(tx: Tx, x: ResearchInput): Promise<FiqhDossier> {
   const comparison = atLeast("comparison") ? compare(statements, issue) : null;
   const weighing = atLeast("preliminary") && comparison ? weigh(statements, issue, comparison) : null;
   // the regulatory track beside the fiqh result (§4): never weighed with it, never dropped
-  const regulatory = atLeast("comparison") ? regulatoryTrack(statements, weighing) : null;
+  const regulatory = atLeast("comparison") ? regulatoryTrack(statements, weighing, sources) : null;
   return { kind: "fiqh_dossier", engineVersion: FIQH_ENGINE_VERSION, stage, asOf: x.asOf, service, issue, sources, statements, comparison, weighing, regulatory, standing: DOSSIER_STANDING, limits: LIMITS };
 }
 

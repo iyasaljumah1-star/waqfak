@@ -67,6 +67,7 @@ describe("capability tokens — pure", () => {
 const devDb = /waqfak_dev/.test(process.env.DATABASE_URL ?? "");
 describe.skipIf(!devDb)("capability tokens — use paths on the development database (synthetic rows)", () => {
   const created: { shares: string[]; invitations: string[]; reports: string[] } = { shares: [], invitations: [], reports: [] };
+  const copies: string[] = [];
   afterAll(async () => {
     await withSystem(async (tx) => {
       // the use log is append-only for the application: the owner's cascade removes it with its share
@@ -76,6 +77,10 @@ describe.skipIf(!devDb)("capability tokens — use paths on the development data
     if (created.shares.length) {
       const { execFileSync } = await import("node:child_process");
       execFileSync("sudo", ["-n", "-u", "postgres", "psql", "-q", "-d", "waqfak_dev", "-c", `set session_replication_role = replica; delete from document_share_uses where share_id in (${created.shares.map((x) => `'${x}'`).join(",")}); delete from document_shares where id in (${created.shares.map((x) => `'${x}'`).join(",")})`]);
+    }
+    if (copies.length) {
+      const { execFileSync } = await import("node:child_process");
+      execFileSync("sudo", ["-n", "-u", "postgres", "psql", "-q", "-d", "waqfak_dev", "-c", `set session_replication_role = replica; delete from document_access_log where document_id in (${copies.map((x) => `'${x}'`).join(",")}); delete from document_versions where document_id in (${copies.map((x) => `'${x}'`).join(",")}); delete from documents where id in (${copies.map((x) => `'${x}'`).join(",")})`]);
     }
   });
 
@@ -114,7 +119,21 @@ describe.skipIf(!devDb)("capability tokens — use paths on the development data
     const { viewShare, consumeShare } = await import("../src/server/modules/documents/share");
     const f = await fixtures();
     if (f.docs.length < 2) return expect.fail("development database lacks two clean documents");
-    const [a, b] = f.docs as [typeof f.docs[0], typeof f.docs[0]];
+    // private copies of two documents (same encrypted blobs, new rows): the tampering below never touches rows another
+    // test file may be reading at the same time
+    const { execFileSync: ex } = await import("node:child_process");
+    const own = (q: string) => ex("sudo", ["-n", "-u", "postgres", "psql", "-v", "ON_ERROR_STOP=1", "-q", "-d", "waqfak_dev", "-c", q]);
+    const copy = async (x: typeof f.docs[0]) => {
+      const d = crypto.randomUUID(), v = crypto.randomUUID();
+      own(`insert into documents select (jsonb_populate_record(d, jsonb_build_object('id', '${d}'))).* from documents d where id = '${x.d.id}';
+           insert into document_versions select (jsonb_populate_record(v, jsonb_build_object('id', '${v}', 'document_id', '${d}'))).* from document_versions v where id = '${x.v.id}'`);
+      copies.push(d);
+      return withSystem(async (tx) => {
+        const [r] = await tx.select({ d: schema.documents, v: schema.documentVersions }).from(schema.documents).innerJoin(schema.documentVersions, eq(schema.documentVersions.documentId, schema.documents.id)).where(eq(schema.documents.id, d));
+        return r!;
+      });
+    };
+    const [a, b] = [await copy(f.docs[0]!), await copy(f.docs[1]!)];
     const s = await issueShare(a, f.user);
     expect((await viewShare(s.token)).state).toBe("ok");
     // each change committed through the owner, checked, then put back

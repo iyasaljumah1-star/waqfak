@@ -276,6 +276,126 @@ describe("fiqh analysis — synthetic test texts", () => {
     expect(regulatoryTrack(run(q, facts, [{ s: src({ refKind: "official_guide", chunkId: "g2" }), text: "يراعى عند بيع الوقف تعطل منافعه." }]).statements, null).items[0]).toMatchObject({ standing: "non_binding" });
   });
 
+  // ── order of 2026-11-09: N9-4 … N9-8 ────────────────────────────────────────────────────────────────────────────
+  it("N9-4: not knowing is not «no» — unknown, unestablished or unclear facts leave the condition unknown; an explicit «no» stays «no»", () => {
+    const texts = [{ s: src(), text: "ولا يجوز بيعه إلا بإذن الحاكم على الصحيح من المذهب" }, { s: src({ refCode: "TEST-FQH-B", chunkId: "t2" }), text: "وعنه يجوز بيعه" }];
+    const q = "ما حكم بيع الوقف إذا تعطلت منافعه؟";
+    const base = [F("تعطلت منافع العقار كليًا"), F("لا شرط للواقف")];
+    for (const fact of ["لا نعلم هل صدر إذن من الحاكم", "لم يتبين صدور الإذن", "لا توجد لدينا معلومة عن الإذن", "لم يثبت لدينا حصول الإذن", "إذن الحاكم غير معلوم", "لا ندري أأذن القاضي أم لا", "لم يتضح بعد هل وافقت الجهة"]) {
+      const r = run(q, [...base, F(fact)], texts);
+      expect(r.statements[0]!.conditions[0]!.status, fact).toBe("unknown");
+      expect(r.weighing.status, fact).toBe("needs_facts");
+      expect(r.weighing.reasons[0], fact).toMatch(/تتوقف النتيجة/);
+    }
+    // naming the authority is not its permission
+    for (const fact of ["رفعت الهيئة تقريرًا عن حالة العقار", "راجع الناظر المحكمة بشأن العقار", "الحاكم على علم بحال الوقف"]) {
+      const r = run(q, [...base, F(fact)], texts);
+      expect(r.statements[0]!.conditions[0]!.status, fact).toBe("unknown");
+      expect(r.weighing.status, fact).not.toBe("weighed");
+    }
+    // an explicit «no» stays «no»; an explicit «yes» stays «yes»
+    for (const fact of ["لم يأذن الحاكم", "رفض القاضي الإذن بالبيع" /* a refusal: not a permission */, "لا يوجد إذن من الحاكم"]) {
+      const st = run(q, [...base, F(fact)], texts).statements[0]!.conditions[0]!.status;
+      expect(st === "unmet" || (fact.startsWith("رفض") && st !== "met"), fact).toBe(true);
+    }
+    for (const fact of ["أذن الحاكم بالبيع", "صدر إذن من المحكمة", "وافقت الهيئة على البيع"])
+      expect(run(q, [...base, F(fact)], texts).statements[0]!.conditions[0]!.status, fact).toBe("met");
+    // one fact, two clauses: a «لم» in one clause does not negate the other
+    const two = run(q, [F("منافع العقار قائمة ولم يشترط الواقف شيئًا")], [{ s: src(), text: "لا يجوز بيعه إلا أن تتعطل منافعه" }]);
+    expect(two.statements[0]!.conditions[0]!.status).toBe("unmet");
+    // a factor told as unknown stays missing
+    expect(analyzeIssue(q, [F("لم يتبين بعد هل تعطلت المنافع")]).missing.join(" ")).toMatch(/تعطلت منافع/);
+    // two facts that contradict each other: unknown, never one of them
+    expect(run(q, [...base, F("أذن الحاكم"), F("لم يأذن الحاكم")], texts).statements[0]!.conditions[0]!.status).toBe("unknown");
+  });
+
+  it("N9-7: whose «المذهب» — another school's view is never this school's; «ليس هذا هو المذهب» is a denial; two and three schools", () => {
+    const q = "ما حكم بيع الوقف إذا تعطلت منافعه؟";
+    const facts = [F("تعطلت منافع العقار كليًا"), F("لا شرط للواقف")];
+    const m4 = run(q, facts, [{ s: src(), text: "ويجوز بيعه إذا تعطلت منافعه. وقال الشافعي: لا يجوز بيعه، وهو المذهب عند الشافعية." }]);
+    const sh = m4.statements.find((x) => x.polarity === "prohibit")!;
+    expect(sh).toMatchObject({ otherSchool: expect.stringMatching(/الشافعي/) });
+    expect(sh.rank).not.toBe("mutamad");
+    expect(m4.statements.find((x) => x.polarity === "permit")!.rank).not.toBe("other");
+    expect(W(m4).leaning).toBe("permit");
+    expect(W(m4).mutamad).toEqual([]);
+    // three schools, an unqualified «والمذهب»: not certain whose — no relied-upon view
+    const three = run(q, facts, [{ s: src(), text: "يجوز بيعه إذا تعطلت منافعه. وعند الحنفية لا يجوز. وقال مالك لا يجوز. والمذهب الجواز." }]);
+    expect(three.statements.filter((x) => x.otherSchool)).toHaveLength(2);
+    expect(three.statements.some((x) => x.rank === "mutamad")).toBe(false);
+    // the Hanbali school named: «المذهب» is it
+    const named = run(q, facts, [{ s: src(), text: "يجوز بيعه إذا تعطلت منافعه. وعند الحنفية لا يجوز. والمذهب عند الحنابلة الجواز." }]);
+    expect(named.statements.some((x) => x.rank === "mutamad" && !x.otherSchool)).toBe(true);
+    // «خلافًا للشافعي» names the other school beside the book's own statement
+    expect(run(q, facts, [{ s: src(), text: "يجوز بيعه إذا تعطلت منافعه خلافا للشافعي" }]).statements[0]!.otherSchool).toBeUndefined();
+    // «ليس هذا هو المذهب» and its forms
+    for (const t of ["وعنه يجوز بيعه، وليس هذا هو المذهب.", "وعنه يجوز بيعه وليس بالمذهب", "وعنه يجوز بيعه، وليست هي المذهب"]) {
+      const r = run(q, facts, [{ s: src(), text: t }]);
+      expect(r.statements[0], t).toMatchObject({ rank: "other", schoolHoldsContrary: true });
+      expect(r.weighing.status, t).toBe("unresolved");
+    }
+    // a possibility derived «على المذهب» is not the relied-upon view
+    expect(run(q, facts, [{ s: src(), text: "ولا يجوز بيعه. ويحتمل أن يجوز تخريجًا على المذهب" }]).statements.some((x) => x.rank === "mutamad")).toBe(false);
+  });
+
+  it("N9-5: nested exceptions without a comma, «وإلا أن», «إن» and a leading «لو» as conditions, a concessive «ولو», a clause after the condition", () => {
+    const q = "ما حكم بيع الوقف إذا تعطلت منافعه؟";
+    const nested = run(q, [F("العين مسجد"), F("تعطلت منافعه")], [{ s: src(), text: "لا يجوز بيعه إلا أن تتعطل منافعه إلا أن يكون مسجدا فلا يباع بحال" }]);
+    expect(nested.statements[0]).toMatchObject({ exceptionStructure: "unclear", effective: "unknown" });
+    const wa = run(q, [F("منافع العقار قائمة")], [{ s: src(), text: "لا يجوز بيعه إلا أن تتعطل منافعه وإلا أن يأذن الحاكم" }]).statements[0]!;
+    expect(wa.conditions.filter((c) => c.kind === "exception")).toHaveLength(2);
+    expect(wa.exceptionStructure).toBe("unclear");
+    expect(run(q, [F("منافع العقار قائمة")], [{ s: src(), text: "يجوز بيعه إن تعطلت منافعه وإلا فلا" }]).statements[0]).toMatchObject({ applies: "does_not_apply" });
+    expect(run(q, [F("منافع العقار قائمة")], [{ s: src(), text: "ولو تعطلت منافعه جاز بيعه" }]).statements[0]).toMatchObject({ applies: "does_not_apply" });
+    // «ولا يجوز بيعه ولو تعطلت منافعه»: «even if» — no condition is made of it
+    const conc = run(q, [F("منافع العقار قائمة")], [{ s: src(), text: "ولا يجوز بيعه ولو تعطلت منافعه" }]).statements[0]!;
+    expect(conc.conditions).toEqual([]);
+    expect(conc).toMatchObject({ effective: "prohibit", applies: "applies" });
+    // «إن» without its hamza is not taken for the conditional
+    expect(run(q, [], [{ s: src(), text: "ولا يجوز ان يباع" }]).statements[0]!.conditions).toEqual([]);
+    // a condition ends where a new negated clause begins
+    const n7 = run(q, [F("تعطلت منافعه")], [{ s: src(), text: "ويجوز بيعه إذا تعطلت منافعه ولا يجوز هبته" }]).statements[0]!;
+    expect(n7.conditions.find((c) => c.kind === "condition")!.text).not.toMatch(/ولا/);
+  });
+
+  it("N9-6: questions without «؟» — أيجوز، وهل يجوز، أيلزم، فإن قيل — are not rulings; the answer after them is", () => {
+    for (const t of ["أيجوز بيع الوقف إذا تعطلت منافعه", "وهل يجوز بيعه لمجرد المصلحة", "أيلزم الناظر الإشهاد", "هل يلزم الناظر الإشهاد", "فإن قيل: يجوز بيعه إذا بقيت منافعه", "وهل يصح بيعه"])
+      expect(run("ما حكم بيع الوقف؟", [], [{ s: src(), text: t }]).statements[0], t).toMatchObject({ polarity: "unknown", unclear: expect.stringMatching(/سؤال/) });
+    const qa = run("ما حكم بيع الوقف إذا تعطلت منافعه؟", [F("تعطلت منافعه")], [{ s: src(), text: "ويجوز بيعه إذا تعطلت منافعه. فإن قيل: أيجوز إذا بقيت منافعه؟ قلنا: لا." }]);
+    expect(qa.statements[0]).toMatchObject({ polarity: "permit" });
+  });
+
+  it("N9-8: a binding text in other words, long, or with several rulings is kept with its standing — never «not retrieved»", () => {
+    const q = "ما حكم بيع الوقف إذا تعطلت منافعه؟";
+    const facts = [F("تعطلت منافع العقار كليًا"), F("لا شرط للواقف")];
+    const book = { s: src(), text: "ويجوز بيعه إذا تعطلت منافعه على الصحيح من المذهب" };
+    const reg = (text: string, kind = "statute") => ({ s: src({ refKind: kind, refCode: "TEST-REG", chunkId: "r1", title: "نظام اختبار" }), text });
+    for (const t of [
+      "لا يجوز التصرف في العين الموقوفة إلا بموافقة الهيئة.",
+      "المادة الأولى: تسري أحكام هذا النظام على الأوقاف العامة والخاصة والمشتركة. المادة الثانية: يلتزم الناظر بتسجيل الوقف خلال المدة المحددة. المادة الثالثة: لا يجوز التصرف في الأصول الموقوفة ببيع أو رهن إلا بعد موافقة الهيئة، ويعاقب المخالف.",
+      "يجب على الناظر الحصول على موافقة الهيئة قبل استبدال العين، ولا يجوز له شراء البدل لنفسه.",
+    ]) {
+      const r = run(q, facts, [book, reg(t)]);
+      const tr = regulatoryTrack(r.statements, r.weighing, r.statements.map((x) => x.source));
+      expect(tr.items.length, t).toBeGreaterThan(0);
+      expect(tr.items.every((i) => i.standing === "binding"), t).toBe(true);
+      expect(tr.combined.join(" "), t).not.toMatch(/لم يُسترجع/);
+      expect(tr.legalReview, t).toBe(true);
+      // the regulation never sets the fiqh result
+      expect(W(r).statementIds.every((id) => r.statements.find((x) => x.id === id)!.source.refKind === "classical_fiqh"), t).toBe(true);
+    }
+    // retrieved but no rule read from it: said so, not «not retrieved»
+    const silent = run(q, facts, [book]);
+    const retrieved = [src({ refKind: "statute", refCode: "TEST-REG", chunkId: "r2", title: "نظام اختبار", locator: "م5" })];
+    const ts = regulatoryTrack(silent.statements, silent.weighing, retrieved);
+    expect(ts.combined.join(" ")).toMatch(/استُرجع نص نظامي ملزم ولم يُستخرج منه حكم صريح/);
+    expect(ts.combined.join(" ")).not.toMatch(/لم يُسترجع/);
+    expect(ts.legalReview).toBe(true);
+    // a regulation on an unrelated matter is not pulled in
+    const other = run(q, facts, [book, reg("يجب على الجمعية رفع قوائمها المالية خلال ثلاثة أشهر من نهاية السنة.")]);
+    expect(regulatoryTrack(other.statements, other.weighing).items).toEqual([]);
+  });
+
   it("a weighing is a research recommendation: never a ruling, never final", () => {
     const r = run("ما حكم إجارة الوقف؟", [F("لمصلحة")], [{ s: src(), text: "تصح إجارة الوقف" }]);
     expect(r.weighing.by).toBe("engine");

@@ -139,6 +139,8 @@ export type Statement = {
   unclear?: string;
   /** The text says the school holds the contrary of this view («والمذهب خلافه») — without stating the school's view. */
   schoolHoldsContrary?: boolean;
+  /** The statement reports another school («وقال الشافعي…»، «وهو المذهب عند الشافعية»): never this school's view. */
+  otherSchool?: string;
   source: SourceRef;
   /** Words of the text that gave the kind, rank and polarity (so that the reviewer can check the reading). */
   markers: string[];
