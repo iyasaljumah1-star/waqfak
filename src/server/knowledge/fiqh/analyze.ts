@@ -412,7 +412,7 @@ export function extractStatements(source: SourceRef, text: string, ctx: { questi
         const b = bare(cur);
         if (polaritiesIn(b).length && conditionsIn(b).length) { out.push(cur); cur = ""; }
       }
-      if (cur) out.length ? out.push(cur) : out.push(cur);
+      if (cur) out.push(cur);
       return out.length > 1 && out.every((y) => polaritiesIn(bare(y)).length) ? out : [x];
     }).filter((x) => x.length > 8);
   }

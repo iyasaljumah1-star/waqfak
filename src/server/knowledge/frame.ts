@@ -24,11 +24,13 @@ const LONG = 25;
 const digits = (s: string) => s.replace(/[٠-٩]/g, (d) => String("٠١٢٣٤٥٦٧٨٩".indexOf(d)));
 
 export type AnswerType = "ruling" | "obligation" | "permission" | "period" | "penalty" | "quantity" | "rate" | "date" | "reward" | "open";
-export type Place = { key: string; ar: string[]; en: string[] };
+export type Place = { key: string; ar: string[]; en: string[]; domestic: boolean };
 
+/** How many of the entries below (in order) are the Kingdom's own regions and seats; the rest are other countries. */
+const DOMESTIC = 21;
 /** The Kingdom (named in many ways), its regions and seats, and countries a question may name instead. */
 const GAZETTEER: Place[] = [
-  { key: "KSA", ar: ["المملكه", "السعوديه", "المملكه العربيه السعوديه"], en: ["saudi", "kingdom", "ksa"] },
+  { key: "KSA", ar: ["المملكه", "السعوديه", "المملكه العربيه السعوديه"], en: ["saudi", "kingdom", "ksa"], domestic: true },
   ...([
     ["الرياض", "riyadh"], ["مكه", "makkah|mecca"], ["المدينه المنوره", "madinah|medina"], ["القصيم", "qassim"], ["بريده", "buraydah"], ["الشرقيه", "eastern province"],
     ["الدمام", "dammam"], ["عسير", "asir"], ["ابها", "abha"], ["تبوك", "tabuk"], ["حائل|حايل", "hail|ha'il"], ["الحدود الشماليه", "northern borders"], ["عرعر", "arar"],
@@ -37,7 +39,7 @@ const GAZETTEER: Place[] = [
     ["العراق", "iraq"], ["الاردن", "jordan"], ["مصر", "egypt"], ["سوريا", "syria"], ["لبنان", "lebanon"], ["المغرب", "morocco"], ["الجزائر", "algeria"], ["تونس", "tunisia"],
     ["ليبيا", "libya"], ["السودان", "sudan"], ["تركيا", "turkey|türkiye"], ["ايران", "iran"], ["باكستان", "pakistan"], ["ماليزيا", "malaysia"], ["اندونيسيا", "indonesia"],
     ["بريطانيا|المملكه المتحده", "britain|united kingdom|uk"], ["امريكا|الولايات المتحده", "united states|usa|america"],
-  ] as const).map(([ar, en]) => ({ key: ar.split("|")[0]!, ar: ar.split("|"), en: en.split("|") })),
+  ] as const).map(([ar, en], i) => ({ key: ar.split("|")[0]!, ar: ar.split("|"), en: en.split("|"), domestic: i < DOMESTIC })),
 ];
 /** A name as a whole word, with the clitics Arabic attaches (و، ف، ب، ل، ال، في …). */
 const arWord = (n: string) => new RegExp(`(?:^|[^ء-ي])(?:[وفبل]?(?:ال)?)${n.replace(/^ال/, "")}(?![ء-ي])`);
@@ -53,6 +55,8 @@ export type Frame = {
   focus: string[];
   senses: { qayd?: "registration" | "restriction"; ajr?: "reward" | "fee" | "ambiguous" };
   places: Place[];
+  /** Places named as where the matter arises (a city of the Kingdom in a normative question): context, not matter. */
+  contextPlaces: Place[];
   years: string[];
   relativeDate: string | null;
   identifiers: { kind: string; number: string }[];
@@ -99,7 +103,14 @@ export function frameOf(question: string): Frame {
     if (senses.ajr === "reward") answer = "reward";
   }
   // places, dates, identifiers
-  const places = placesIn(raw);
+  // a normative question (a ruling, a duty, a permission, a reward) asks what holds in the Kingdom: a city or region
+  // of the Kingdom named in it is where the matter arises, not a limit on the answer — the Kingdom's rule is one in
+  // all its regions (N10-7). Another country stays a qualifier: its law is not the Kingdom's. A factual question
+  // (a number, a rate, a date, a period, a penalty) keeps every place: Riyadh's population is not the Kingdom's
+  const normative = answer === "ruling" || answer === "obligation" || answer === "permission" || answer === "reward";
+  const named = placesIn(raw);
+  const places = normative ? named.filter((p) => !p.domestic) : named;
+  if (normative && places.length < named.length) why.push(`مكان في المملكة في سؤال حكم: سياق لا قيد (${named.filter((p) => p.domestic).map((p) => p.ar[0]).join("، ")})`);
   if (places.length) why.push(`المكان: ${places.map((p) => p.ar[0]).join("، ")}`);
   const years = [...new Set(raw.match(/(?<!\d)(1[34]\d\d|20\d\d|19\d\d)(?!\d)/g) ?? [])];
   if (years.length) why.push(`السنوات: ${years.join("، ")}`);
@@ -110,8 +121,8 @@ export function frameOf(question: string): Frame {
   for (const x of q.matchAll(/(?:المعيار|معيار)\s+(?:رقم\s+)?\(?(\d{1,3})\)?/g)) identifiers.push({ kind: "المعيار", number: x[1]! });
   if (identifiers.length) why.push(`المعرّف: ${identifiers.map((i) => `${i.kind} ${i.number}`).join("، ")}`);
   // a long request text (a client's matter) names places and times as its context, not as what it asks about
-  if (tokenize(raw).length > LONG) return { answer, focus: [], senses, places: [], years, relativeDate: null, identifiers, why: [...why, "نص طويل: الأماكن والأزمنة فيه سياق لا قيود"] };
-  return { answer, focus, senses, places, years, relativeDate: rel?.[0] ?? null, identifiers, why };
+  if (tokenize(raw).length > LONG) return { answer, focus: [], senses, places: [], contextPlaces: named, years, relativeDate: null, identifiers, why: [...why, "نص طويل: الأماكن والأزمنة فيه سياق لا قيود"] };
+  return { answer, focus, senses, places, contextPlaces: named.filter((p) => !places.includes(p)), years, relativeDate: rel?.[0] ?? null, identifiers, why };
 }
 
 export const ANSWER_AR: Record<AnswerType, string> = {
@@ -178,4 +189,16 @@ export function judge(f: Frame, text: string, opts: { scope?: string; hasWord?: 
   }
   if (!lacking.length) why.push(...f.why);
   return { lacking, partial, answers: direct ? "direct" : "context", why };
+}
+
+/**
+ * The question without the places it names as context (N10-7): «هل يجوز للناظر في الرياض بيع …» is matched as «هل
+ * يجوز للناظر بيع …» — a passage on the ruling need not name the city to cover the question's matter.
+ */
+export function withoutContextPlaces(question: string, f: Frame): string {
+  if (!f.contextPlaces.length) return question;
+  let out = normForSearch(question);
+  for (const p of f.contextPlaces)
+    for (const n of p.ar) out = out.replace(new RegExp(`(?:^|\\s)(?:(?:في|ب|من|الى)\\s+)?(?:مدينه\\s+|منطقه\\s+|محافظه\\s+)?[وفبل]?(?:ال)?${normForSearch(n).replace(/^ال/, "")}(?![ء-ي])`, "g"), " ");
+  return out.replace(/\s+/g, " ").trim();
 }

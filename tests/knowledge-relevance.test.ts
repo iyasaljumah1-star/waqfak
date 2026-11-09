@@ -177,6 +177,15 @@ describe.skipIf(!enabled)("relevance regressions (dedicated test database)", () 
     expect(first.hit.coverage).toBeGreaterThanOrEqual(0.5);
   }, 90_000);
 
+  it("N10-7: «في الرياض» in a ruling question keeps the ruling passages usable; «في الكويت» does not borrow them", async () => {
+    const plain = await ask("هل يجوز للناظر بيع الوقف إذا تعطلت منافعه؟");
+    const city = await ask("هل يجوز للناظر في الرياض بيع الوقف إذا تعطلت منافعه؟");
+    expect(plain.usable.length, where(plain)).toBeGreaterThan(0);
+    expect(city.usable.map((u) => u.hit.chunkId).sort(), where(city)).toEqual(plain.usable.map((u) => u.hit.chunkId).sort());
+    const abroad = await ask("هل يجوز بيع الوقف في الكويت إذا تعطلت منافعه؟");
+    expect(abroad.usable.length, where(abroad)).toBe(0);
+  }, 90_000);
+
   it("N-X14b: «أجر من أوقف ماله» is the reward — never the fee passages", async () => {
     const r = await ask("ما أجر من أوقف ماله؟");
     expect(r.usable.every((u) => !/اجرة الناظر|أجرة الناظر|أجرة المثل/.test(u.hit.text)), where(r)).toBe(true);
@@ -215,6 +224,22 @@ describe.skipIf(!enabled)("relevance regressions (dedicated test database)", () 
     expect(F.frameOf("ما أجر من أوقف ماله؟").senses.ajr).toBe("reward");
     expect(F.frameOf("هل يجوز للناظر الاستدانة من غير إذن الحاكم؟").answer).toBe("permission"); // «الحاكم» holds no «كم»
     expect(F.placesIn("Riyadh, May 31, 2023 — the Kingdom's population").map((p) => p.key)).toEqual(expect.arrayContaining(["KSA", "الرياض"]));
+  });
+
+  it("N10-7: a city of the Kingdom in a ruling question is where the matter arises, not a limit; another country and a factual question keep the place", async () => {
+    const F = await import("../src/server/knowledge/frame");
+    const m = K.qualifiersMissing;
+    const ruling = "هل يجوز للناظر في الرياض بيع الوقف إذا تعطلت منافعه؟";
+    expect(F.frameOf(ruling).places).toEqual([]);
+    expect(m(ruling, "ويجوز بيع الوقف إذا تعطلت منافعه بالكلية").join(" ")).not.toMatch(/المكان/);
+    expect(m("ما حكم وقف المصحف على مسجد في جدة؟", "ويصح وقف المصحف على المسجد").join(" ")).not.toMatch(/المكان/);
+    expect(m("هل يجب على الناظر في الأحساء تسجيل الوقف؟", "يجب على الناظر تسجيل الوقف").join(" ")).not.toMatch(/المكان/);
+    // another country is another law
+    expect(m("هل يجوز بيع الوقف في الكويت إذا تعطلت منافعه؟", "ويجوز بيع الوقف إذا تعطلت منافعه").join(" ")).toMatch(/المكان/);
+    // a factual question keeps the city
+    expect(m("كم عدد الأوقاف في الرياض؟", "بلغ عدد الأوقاف في المملكة 1200").join(" ")).toMatch(/المكان/);
+    expect(F.placesIn("الأحساء").every((p) => p.domestic)).toBe(true);
+    expect(F.placesIn("الكويت").every((p) => !p.domestic)).toBe(true);
   });
 
   it("pure: negation helpers", () => {

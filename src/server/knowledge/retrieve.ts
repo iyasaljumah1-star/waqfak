@@ -5,7 +5,7 @@ import { kbChunks, kbSources } from "@/server/db/schema";
 import { Bm25Index, type CorpusDoc } from "@/server/modules/ai/bm25";
 import { tokenize } from "@/server/modules/ai/text";
 import { arabicDescriptor } from "./descriptors";
-import { frameOf, judge, type Frame } from "./frame";
+import { frameOf, withoutContextPlaces, judge, type Frame } from "./frame";
 import { articleNumber, normForSearch } from "@/server/engine/knowledge/pure";
 import { cite } from "@/server/references/citation";
 import { OFFICIAL_HOSTS, CITABLE_OUTCOMES } from "@/server/references/types";
@@ -356,7 +356,8 @@ export async function retrieve(tx: Tx, q0: RetrieveQuery): Promise<RetrieveResul
   // context gives it — «قيد» of registration («قيد الوقف لدى الهيئة») is matched as «تسجيل», a «قيد» of restriction is
   // not (N9-10)
   const frame = frameOf(q0.question);
-  const q = frame.senses.qayd === "registration" ? { ...q0, question: q0.question.replace(/(^|\s)(و?ال)?قيد(?=\s|$)/g, "$1$2تسجيل") } : q0;
+  const q1 = frame.contextPlaces.length ? { ...q0, question: withoutContextPlaces(q0.question, frame) } : q0;
+  const q = frame.senses.qayd === "registration" ? { ...q1, question: q1.question.replace(/(^|\s)(و?ال)?قيد(?=\s|$)/g, "$1$2تسجيل") } : q1;
   const limit = q.limit ?? 6;
   const keep = (r: Row) => (!q.refCodes?.length || q.refCodes.includes(r.refCode)) && (!q.kinds?.length || q.kinds.includes(r.refKind)) && (q.historical || !r.superseded);
   const picked: { row: Row; score: number; coverage: number }[] = [];
