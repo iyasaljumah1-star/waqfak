@@ -29,7 +29,7 @@ const WAQF = "00000000-0000-4000-8000-0000000d0b01";
 const SENSITIVE = ["users", "sessions", "user_roles", "roles", "permissions", "role_permissions", "waqf_memberships", "waqfs", "audit_logs",
   "kb_source_reviews", "kb_sources", "kb_chunks", "ref_match_reviews", "ref_match_runs", "ref_versions", "ref_sources", "fiqh_reviews", "fiqh_dossiers", "outputs"];
 
-type Outcome = "refused" | "breached" | "no-effect" | "setup-failed" | "temp-refused";
+type Outcome = "refused" | "breached" | "no-effect" | "setup-failed" | "temp-refused" | "invalid-attack";
 type Attack = { id: string; what: string; run: string[]; breached: string };
 const sys = `select set_config('app.user_id', '', true), set_config('app.global_access', 'on', true)`;
 const as = (u: string) => `select set_config('app.user_id', '${u}', true), set_config('app.global_access', 'off', true)`;
@@ -42,7 +42,7 @@ const ATTACKS: Attack[] = [
     breached: `select exists (select 1 from public.role_permissions rp join public.roles r on r.id = rp.role_id join public.permissions p on p.id = rp.permission_id where r.key = 'viewer' and p.key = 'approvals.direct')` },
   { id: "T3/B1", what: "an account without a role changes the administrator's password", run: [as(ATTACKER), `update public.users set password_hash = 'attacker' where id = '${ADMIN}'`],
     breached: `select exists (select 1 from public.users where id = '${ADMIN}' and password_hash = 'attacker')` },
-  { id: "B2", what: "an account without a role suspends the administrator and changes the phone", run: [as(ATTACKER), `update public.users set status = 'suspended', phone = '0599990000' where id = '${ADMIN}'`],
+  { id: "B2", what: "an account without a role suspends the administrator and changes the phone", run: [as(ATTACKER), `update public.users set status = 'locked', phone = '0599990000' where id = '${ADMIN}'`],
     breached: `select exists (select 1 from public.users where id = '${ADMIN}' and phone = '0599990000')` },
   { id: "B5", what: "a pending account activates itself", run: [as(PENDING), `update public.users set status = 'active' where id = '${PENDING}'`],
     breached: `select exists (select 1 from public.users where id = '${PENDING}' and status = 'active')` },
@@ -78,7 +78,10 @@ async function attempt(c: Client | import("pg").PoolClient, a: Attack, before: s
     const v = Object.values(r.rows[0] ?? {})[0];
     return { o: v === true ? "breached" : "no-effect", detail: "" };
   } catch (e) {
-    return { o: "refused", detail: (e as Error).message.slice(0, 90) };
+    const m = (e as Error).message;
+    // an attack the database could not even parse proves nothing about a guard (N10-8): counted apart, never as refused
+    if (/invalid input value|syntax error|does not exist|violates (?:not-null|check) constraint/.test(m) && !/guard|bound identity|permission denied|not allowed|does not (?:change|make)/i.test(m)) return { o: "invalid-attack", detail: m.slice(0, 90) };
+    return { o: "refused", detail: m.slice(0, 90) };
   } finally {
     await c.query("rollback").catch(() => {});
   }
@@ -159,7 +162,7 @@ async function main() {
   }
   const breached = out.filter((r) => r.o === "breached");
   const by = (db: string, o: Outcome) => out.filter((r) => r.db === db && r.o === o).length;
-  for (const [db] of dbs) console.log(`${db}: ${out.filter((r) => r.db === db).length} attempts — refused ${by(db, "refused")}, no effect ${by(db, "no-effect")}, temp table refused ${by(db, "temp-refused")}, BREACHED ${by(db, "breached")}, setup failed ${by(db, "setup-failed")}`);
+  for (const [db] of dbs) console.log(`${db}: ${out.filter((r) => r.db === db).length} attempts — refused ${by(db, "refused")}, no effect ${by(db, "no-effect")}, temp table refused ${by(db, "temp-refused")}, BREACHED ${by(db, "breached")}, setup failed ${by(db, "setup-failed")}, invalid attack ${by(db, "invalid-attack")}`);
   for (const r of breached) console.log(`BREACHED | ${r.db} | ${r.mode} | ${r.table}/${r.shadow} | ${r.attack}`);
   // one line per attack × mode, for the report
   const seen = new Set<string>();
@@ -167,6 +170,9 @@ async function main() {
   const failed = out.filter((r) => r.o === "setup-failed");
   for (const r of failed.slice(0, 10)) console.log(`SETUP-FAILED | ${r.db} | ${r.mode} | ${r.table}/${r.shadow} | ${r.attack} | ${r.detail}`);
   console.log(`setup failures: ${failed.length}`);
-  process.exit(breached.length || failed.length ? 1 : 0);
+  const invalid = out.filter((r) => r.o === "invalid-attack");
+  for (const r of invalid.slice(0, 10)) console.log(`INVALID-ATTACK | ${r.db} | ${r.mode} | ${r.table}/${r.shadow} | ${r.attack} | ${r.detail}`);
+  console.log(`invalid attacks: ${invalid.length}`);
+  process.exit(breached.length || failed.length || invalid.length ? 1 : 0);
 }
 main().catch((e) => { console.error(e); process.exit(2); });

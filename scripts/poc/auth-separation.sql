@@ -24,8 +24,8 @@
 -- ── roles ──────────────────────────────────────────────────────────────────────────────────────────────────────────
 DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'waqfak_auth') THEN CREATE ROLE waqfak_auth NOLOGIN; END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'waqfak_authsvc') THEN CREATE ROLE waqfak_authsvc LOGIN PASSWORD 'poc-local-only' IN ROLE waqfak_auth; END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'waqfak_system') THEN CREATE ROLE waqfak_system LOGIN PASSWORD 'poc-local-only-system'; END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'waqfak_authsvc') THEN CREATE ROLE waqfak_authsvc NOLOGIN IN ROLE waqfak_auth; END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'waqfak_system') THEN CREATE ROLE waqfak_system NOLOGIN; END IF;
 END $$;
 GRANT CONNECT ON DATABASE waqfak_authpoc TO waqfak_system, waqfak_authsvc;
 GRANT USAGE ON SCHEMA public TO waqfak_auth, waqfak_system;

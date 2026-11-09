@@ -12,6 +12,7 @@ import "dotenv/config";
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import { randomBytes } from "node:crypto";
 import { Client, Pool } from "pg";
 import { sessionHash } from "../../src/server/lib/crypto";
 
@@ -20,8 +21,14 @@ const base = new URL(process.env.DATABASE_URL!);
 if (!["localhost", "127.0.0.1"].includes(base.hostname)) throw new Error("PoC runs on the local cluster only");
 const urlFor = (user: string, password: string) => { const u = new URL(base.toString()); u.pathname = `/${DB}`; u.username = user; u.password = password; return u.toString(); };
 const appUrl = (() => { const u = new URL(base.toString()); u.pathname = `/${DB}`; return u.toString(); })();
-const svcUrl = urlFor("waqfak_authsvc", "poc-local-only");
-const sysUrl = urlFor("waqfak_system", "poc-local-only-system");
+// the PoC's login roles get a password drawn for this run and lose LOGIN when it ends (N10-9): no known password
+// stays on the cluster, and a later real rollout cannot inherit one
+const RUN_PW = { svc: randomBytes(18).toString("base64url"), sys: randomBytes(18).toString("base64url") };
+const svcUrl = urlFor("waqfak_authsvc", RUN_PW.svc);
+const sysUrl = urlFor("waqfak_system", RUN_PW.sys);
+const lockRoles = () => su(`DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'waqfak_authsvc') THEN ALTER ROLE waqfak_authsvc NOLOGIN PASSWORD NULL; END IF;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'waqfak_system') THEN ALTER ROLE waqfak_system NOLOGIN PASSWORD NULL; END IF; END $$`);
 const su = (sqlText: string, db = "postgres") => execFileSync("sudo", ["-n", "-u", "postgres", "psql", "-v", "ON_ERROR_STOP=1", "-q", "-d", db, "-c", sqlText], { stdio: ["ignore", "pipe", "pipe"] }).toString();
 
 const ADMIN = "00000000-0000-4000-8000-0000000c0a01";
@@ -53,6 +60,7 @@ async function build(temp: boolean) {
       INSERT INTO documents (id, waqf_id, owner_user_id, doc_type, title, confidentiality) VALUES ('${DOC}', '${W2}', '${TARGET}', 'other', 'مستند سري لوقف آخر', 'secret');
       INSERT INTO document_shares (document_id, waqf_id, token_hash, created_by, expires_at, max_uses) VALUES ('${DOC}', '${W2}', 'poc-share-lookup', '${TARGET}', now() + interval '1 day', 3);`, DB);
   su(readFileSync(path.join(process.cwd(), "scripts/poc/auth-separation.sql"), "utf8"), DB);
+  su(`ALTER ROLE waqfak_authsvc LOGIN PASSWORD '${RUN_PW.svc}'; ALTER ROLE waqfak_system LOGIN PASSWORD '${RUN_PW.sys}'`);
   const svc = new Client({ connectionString: svcUrl }); await svc.connect();
   for (const [u, tok, mfa] of [[ADMIN, T.admin, true], [ADMIN, T.nomfa, false], [ATTACKER, T.atk, true], [MEMBER, T.member, true], [GLOBAL, T.global, true], [TARGET, T.target, true]] as const)
     await svc.query(`insert into public.sessions (user_id, token_hash, mfa_verified, idle_expires_at, absolute_expires_at) values ($1, $2, $3, now() + interval '1 hour', now() + interval '1 hour')`, [u, sessionHash(tok), mfa]);
@@ -175,6 +183,7 @@ async function main() {
   for (const r of rows) console.log(`${r.ok ? "PASS" : "FAIL"} | ${r.variant.padEnd(12)} | ${r.id.padEnd(24)} | ${r.expect.padEnd(7)} | ${r.case} | ${r.got}`);
   const failed = rows.filter((r) => !r.ok && r.id !== "X0d-setup").length;
   console.log(`\n${rows.length - failed}/${rows.length} as designed`);
+  lockRoles();
   process.exit(failed ? 1 : 0);
 }
-main().catch((e) => { console.error(e); try { su(`DROP DATABASE IF EXISTS ${DB} WITH (FORCE)`); } catch { /* */ } process.exit(1); });
+main().catch((e) => { console.error(e); try { su(`DROP DATABASE IF EXISTS ${DB} WITH (FORCE)`); lockRoles(); } catch { /* */ } process.exit(1); });
