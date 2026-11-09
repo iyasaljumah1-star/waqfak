@@ -1157,6 +1157,59 @@ CREATE OR REPLACE FUNCTION output_unreviewed_basis(oid uuid, ver integer) RETURN
   SELECT coalesce((SELECT sections_unreviewed_basis(sections) + specialist_block_errors(sections) FROM output_versions WHERE output_id = oid AND version = ver), 0)
 $$;
 
+-- ═════════════ Phase 10, N9-3: share uses, revocations and acceptances are not undone ═════════════
+-- The use log of a share link is append-only for the application (the limit counts its rows, not a column). The parts
+-- of a share or an invitation fixed at issue never change; a revocation is never cleared; an acceptance is never
+-- cleared or moved; the display counter of uses only grows. (The HMAC binding detects a changed row at use; these
+-- refuse the change itself — including the parts the binding cannot cover because they must change once.)
+ALTER TABLE document_share_uses ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS dsu_app ON document_share_uses;
+CREATE POLICY dsu_app ON document_share_uses FOR ALL TO waqfak_app USING (true) WITH CHECK (true);
+REVOKE UPDATE, DELETE, TRUNCATE ON document_share_uses FROM waqfak_app;
+DROP TRIGGER IF EXISTS document_share_uses_append_only ON document_share_uses;
+CREATE TRIGGER document_share_uses_append_only BEFORE UPDATE OR DELETE ON document_share_uses FOR EACH ROW EXECUTE FUNCTION waqfak_append_only();
+
+CREATE OR REPLACE FUNCTION capability_row_guard() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF session_user <> 'waqfak_app' THEN RETURN NEW; END IF;
+  IF NEW.token_hash IS DISTINCT FROM OLD.token_hash OR NEW.binding IS DISTINCT FROM OLD.binding OR NEW.expires_at IS DISTINCT FROM OLD.expires_at
+     OR NEW.waqf_id IS DISTINCT FROM OLD.waqf_id OR NEW.id IS DISTINCT FROM OLD.id
+     OR (TG_TABLE_NAME <> 'invitations' AND (to_jsonb(NEW)->>'created_by') IS DISTINCT FROM (to_jsonb(OLD)->>'created_by')) THEN
+    RAISE EXCEPTION '%: what a link was issued for does not change', TG_TABLE_NAME USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  IF OLD.revoked_at IS NOT NULL AND NEW.revoked_at IS DISTINCT FROM OLD.revoked_at THEN
+    RAISE EXCEPTION '%: a revocation is not undone', TG_TABLE_NAME USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  IF TG_TABLE_NAME = 'document_shares' THEN
+    IF NEW.document_id IS DISTINCT FROM OLD.document_id OR NEW.max_uses IS DISTINCT FROM OLD.max_uses OR NEW.uses < OLD.uses THEN
+      RAISE EXCEPTION 'document_shares: the document, the use limit and the uses made do not go back' USING ERRCODE = 'insufficient_privilege';
+    END IF;
+  ELSIF TG_TABLE_NAME = 'report_shares' THEN
+    IF NEW.report_id IS DISTINCT FROM OLD.report_id OR NEW.views < OLD.views THEN
+      RAISE EXCEPTION 'report_shares: the report and the views made do not go back' USING ERRCODE = 'insufficient_privilege';
+    END IF;
+  ELSIF TG_TABLE_NAME = 'invitations' THEN
+    IF NEW.phone IS DISTINCT FROM OLD.phone OR NEW.role_key IS DISTINCT FROM OLD.role_key OR NEW.invited_by IS DISTINCT FROM OLD.invited_by OR NEW.note IS DISTINCT FROM OLD.note THEN
+      RAISE EXCEPTION 'invitations: what an invitation was issued for does not change' USING ERRCODE = 'insufficient_privilege';
+    END IF;
+    -- the scope may only gain the decline record (declinedAt/declinedBy), together with the revocation
+    IF NEW.scope IS DISTINCT FROM OLD.scope AND NOT (NEW.revoked_at IS NOT NULL AND OLD.revoked_at IS NULL
+         AND (coalesce(NEW.scope, '{}'::jsonb) - 'declinedAt' - 'declinedBy') = coalesce(OLD.scope, '{}'::jsonb)) THEN
+      RAISE EXCEPTION 'invitations: what an invitation was issued for does not change' USING ERRCODE = 'insufficient_privilege';
+    END IF;
+    IF OLD.accepted_at IS NOT NULL AND (NEW.accepted_at IS DISTINCT FROM OLD.accepted_at OR NEW.accepted_by IS DISTINCT FROM OLD.accepted_by) THEN
+      RAISE EXCEPTION 'invitations: an acceptance is not undone or moved' USING ERRCODE = 'insufficient_privilege';
+    END IF;
+  END IF;
+  RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS capability_row_guard ON document_shares;
+CREATE TRIGGER capability_row_guard BEFORE UPDATE ON document_shares FOR EACH ROW EXECUTE FUNCTION capability_row_guard();
+DROP TRIGGER IF EXISTS capability_row_guard ON report_shares;
+CREATE TRIGGER capability_row_guard BEFORE UPDATE ON report_shares FOR EACH ROW EXECUTE FUNCTION capability_row_guard();
+DROP TRIGGER IF EXISTS capability_row_guard ON invitations;
+CREATE TRIGGER capability_row_guard BEFORE UPDATE ON invitations FOR EACH ROW EXECUTE FUNCTION capability_row_guard();
+
 -- ═════════════ Phase 10 (owner's order of 2026-11-09), N9-1: no function resolves a name the caller can shadow ═════════════
 -- A function body names tables and functions without a schema; PostgreSQL resolves them by search_path at each call,
 -- and pg_temp — the caller's own temporary schema — is searched FIRST unless it is named. A definer function with

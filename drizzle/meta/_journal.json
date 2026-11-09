@@ -134,6 +134,13 @@
       "when": 1794087975574,
       "tag": "0018_capability_binding",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1794258548158,
+      "tag": "0019_share_uses",
+      "breakpoints": true
     }
   ]
 }

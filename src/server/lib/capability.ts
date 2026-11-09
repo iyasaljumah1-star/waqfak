@@ -1,5 +1,6 @@
 /**
- * Capability tokens — invitations, document share links, report share links (owner's order 2026-11-08, «ثانياً»/2).
+ * Capability tokens — invitations, document share links, report share links (owner's order 2026-11-08, «ثانياً»/2;
+ * content binding, use log and immutability: order of 2026-11-09, «رابعاً» — N9-2, N9-3).
  *
  * Before: the row stored sha256(token), unkeyed. Anyone able to write the table (the application's database role, a
  * leaked backup restored elsewhere, an SQL injection) could plant a row for a token they chose, or re-point an existing
@@ -50,9 +51,29 @@ export function verifyCapability(purpose: CapabilityPurpose, token: string, stor
 }
 
 /** The contexts each purpose binds (one place, so that issue and use bind the same fields). */
-export const bindInvitation = (r: { id: string; waqfId: string; phone: string; roleKey: string; invitedBy: string; expiresAt: Date; scope: Record<string, unknown> | null }) =>
-  ({ id: r.id, waqfId: r.waqfId, phone: r.phone, roleKey: r.roleKey, invitedBy: r.invitedBy, expiresAt: r.expiresAt.toISOString(), scope: r.scope ?? null });
-export const bindDocumentShare = (r: { id: string; documentId: string; waqfId: string | null; createdBy: string; expiresAt: Date; maxUses: number }) =>
-  ({ id: r.id, documentId: r.documentId, waqfId: r.waqfId, createdBy: r.createdBy, expiresAt: r.expiresAt.toISOString(), maxUses: r.maxUses });
-export const bindReportShare = (r: { id: string; reportId: string; waqfId: string | null; createdBy: string; expiresAt: Date }) =>
-  ({ id: r.id, reportId: r.reportId, waqfId: r.waqfId, createdBy: r.createdBy, expiresAt: r.expiresAt.toISOString() });
+/** An invitation, with the note the invitee is shown (N9-3/I2: a note planted later is not shown as the inviter's). */
+export const bindInvitation = (r: { id: string; waqfId: string; phone: string; roleKey: string; invitedBy: string; expiresAt: Date; scope: Record<string, unknown> | null; note?: string | null }) =>
+  ({ id: r.id, waqfId: r.waqfId, phone: r.phone, roleKey: r.roleKey, invitedBy: r.invitedBy, expiresAt: r.expiresAt.toISOString(), scope: r.scope ?? null, note: r.note ?? null });
+/**
+ * A document share is bound to the CONTENT it was issued for (N9-2), not only to the document's id: the document's waqf
+ * (whose key decrypts it) and confidentiality, and the current version as it was — its id, number, storage key, IV,
+ * tag and content hash. A version swapped or moved underneath, a new version, another waqf, a confidentiality changed:
+ * the link no longer opens (it is reissued for the new content).
+ */
+export type ShareContent = {
+  doc: { id: string; waqfId: string | null; confidentiality: string; currentVersion: number | null };
+  version: { id: string; documentId: string; version: number; storageKey: string; sha256: string; iv: string | null; authTag: string | null } | null;
+};
+export const bindDocumentShare = (r: { id: string; documentId: string; waqfId: string | null; createdBy: string; expiresAt: Date; maxUses: number }, c: ShareContent) =>
+  ({
+    id: r.id, documentId: r.documentId, waqfId: r.waqfId, createdBy: r.createdBy, expiresAt: r.expiresAt.toISOString(), maxUses: r.maxUses,
+    content: {
+      docId: c.doc.id, docWaqf: c.doc.waqfId, confidentiality: c.doc.confidentiality, currentVersion: c.doc.currentVersion,
+      versionId: c.version?.id ?? null, versionDoc: c.version?.documentId ?? null, versionNo: c.version?.version ?? null,
+      storageKey: c.version?.storageKey ?? null, sha256: c.version?.sha256 ?? null, iv: c.version?.iv ?? null, authTag: c.version?.authTag ?? null,
+    },
+  });
+/** A report share is bound to the report and to the assessment and result it shows (N9-2: «reports.assessment_id»). */
+export type ReportContent = { reportWaqf: string | null; reportNumber: string; assessmentId: string | null; assessmentWaqf: string | null; resultAt: string | null };
+export const bindReportShare = (r: { id: string; reportId: string; waqfId: string | null; createdBy: string; expiresAt: Date }, c: ReportContent) =>
+  ({ id: r.id, reportId: r.reportId, waqfId: r.waqfId, createdBy: r.createdBy, expiresAt: r.expiresAt.toISOString(), content: c });

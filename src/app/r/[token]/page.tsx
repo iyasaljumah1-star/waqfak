@@ -5,6 +5,7 @@ import { ArrowLeft, LinkIcon } from "lucide-react";
 import { withSystem } from "@/server/db";
 import { assessments, reportShares, reports } from "@/server/db/schema";
 import { bindReportShare, capabilityLookup, verifyCapability } from "@/server/lib/capability";
+import { reportContent } from "@/server/modules/assessment/share-content";
 import { loadResultBundle } from "@/server/modules/assessment/queries";
 import { ResultView } from "@/components/assessment/result-view";
 import { Logo } from "@/components/brand";
@@ -29,7 +30,8 @@ export default async function SharedReport({ params }: { params: Promise<{ token
           .where(and(eq(reportShares.tokenHash, capabilityLookup("report_share", token)), isNull(reportShares.revokedAt), isNull(reports.revokedAt), gt(reportShares.expiresAt, new Date())))
           .limit(1);
         // re-pointed to another report, extended, or planted without the key: nothing shown
-        if (!s?.assessmentId || !verifyCapability("report_share", token, s.share.binding, bindReportShare(s.share))) return null;
+        // … or its report pointed at another assessment, or the result recomputed since (N9-2)
+        if (!s?.assessmentId || !verifyCapability("report_share", token, s.share.binding, bindReportShare(s.share, await reportContent(tx as never, s.share.reportId)))) return null;
         const [row] = await tx.select().from(assessments).where(eq(assessments.id, s.assessmentId)).limit(1);
         // a shared link shows only an approved result (owner's decision of 2026-11-01)
         if (!row || row.status !== "published") return null;

@@ -86,6 +86,14 @@ export const documentShares = pgTable("document_shares", {
   createdAt: createdAt(),
 }, (t) => [uniqueIndex("ds_token_uq").on(t.tokenHash)]);
 
+/** One row per use of a share link: append-only (security.sql) — the use limit counts these, not a column (N9-3). */
+export const documentShareUses = pgTable("document_share_uses", {
+  id: id(),
+  shareId: uuid().notNull().references(() => documentShares.id, { onDelete: "cascade" }),
+  ip: text(),
+  at: createdAt(),
+}, (t) => [index("dsu_share_idx").on(t.shareId)]);
+
 export const extractedFields = pgTable("extracted_fields", {
   id: id(),
   documentId: uuid().notNull().references(() => documents.id, { onDelete: "cascade" }),

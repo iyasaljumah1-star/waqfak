@@ -1,21 +1,29 @@
 /**
- * Capability tokens — invitations, document shares, report shares (owner's order 2026-11-08, «ثانياً»/2). Part 1: the
- * keyed lookup and the binding, pure. Part 2: on the development database (synthetic rows, removed afterwards), the
- * attack a database writer could make before — planting a row, re-pointing a share to another document, extending it,
- * raising its uses, changing an invitation's phone or role — now refused at use, with the application role.
+ * Capability tokens — invitations, document shares, report shares (orders of 2026-11-08 «ثانياً»/2 and 2026-11-09
+ * «رابعاً»: N9-2, N9-3). Part 1: the keyed lookup and the binding, pure. Part 2: on the development database, the
+ * round-9 attacks a database writer could make — K1 uses reset, K2 un-revoke, K3/K3b version content swapped or moved,
+ * K4 waqf changed, K5 confidentiality changed, R1 report re-pointed, I1 invitation accepted twice, I2 note changed — and
+ * the use limit under concurrent requests. Changes made through the share functions are committed and cleaned up;
+ * direct tampering runs in rolled-back transactions with the application role.
  */
 import "dotenv/config";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { and, eq, inArray, isNull, ne } from "drizzle-orm";
+import { Client } from "pg";
 
 vi.mock("server-only", () => ({}));
 
-import { bindDocumentShare, bindInvitation, bindReportShare, capabilityBinding, capabilityLookup, verifyCapability } from "../src/server/lib/capability";
+import { bindDocumentShare, bindInvitation, bindReportShare, capabilityBinding, capabilityLookup, verifyCapability, type ShareContent } from "../src/server/lib/capability";
 import { randomToken, sha256 } from "../src/server/lib/crypto";
 import { withSystem } from "../src/server/db";
 import * as schema from "../src/server/db/schema";
 
 const D = (s: string) => new Date(s);
+const U = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+const content = (o: Partial<ShareContent["doc"]> = {}, v: Partial<NonNullable<ShareContent["version"]>> = {}): ShareContent => ({
+  doc: { id: U(2), waqfId: U(3), confidentiality: "internal", currentVersion: 1, ...o },
+  version: { id: U(9), documentId: U(2), version: 1, storageKey: "k/1", sha256: "a".repeat(64), iv: "iv", authTag: "tag", ...v },
+});
 
 describe("capability tokens — pure", () => {
   const token = randomToken(24);
@@ -27,125 +35,181 @@ describe("capability tokens — pure", () => {
     expect(capabilityLookup("report_share", token)).not.toBe(a);
     expect(capabilityLookup("invitation", token)).toBe(a);
   });
-  it("the binding verifies the row as issued, and nothing else", () => {
-    const row = { id: "11111111-1111-4111-8111-111111111111", documentId: "22222222-2222-4222-8222-222222222222", waqfId: "33333333-3333-4333-8333-333333333333", createdBy: "44444444-4444-4444-8444-444444444444", expiresAt: D("2026-12-01T00:00:00Z"), maxUses: 3 };
-    const b = capabilityBinding("document_share", token, bindDocumentShare(row));
-    expect(verifyCapability("document_share", token, b, bindDocumentShare(row))).toBe(true);
-    for (const changed of [{ documentId: "55555555-5555-4555-8555-555555555555" }, { waqfId: null }, { expiresAt: D("2027-01-01T00:00:00Z") }, { maxUses: 50 }, { createdBy: "66666666-6666-4666-8666-666666666666" }, { id: "77777777-7777-4777-8777-777777777777" }])
-      expect(verifyCapability("document_share", token, b, bindDocumentShare({ ...row, ...changed })), JSON.stringify(changed)).toBe(false);
-    expect(verifyCapability("document_share", randomToken(24), b, bindDocumentShare(row))).toBe(false);
-    expect(verifyCapability("report_share", token, b, bindDocumentShare(row))).toBe(false);
-    expect(verifyCapability("document_share", token, null, bindDocumentShare(row))).toBe(false); // issued before the change
-    expect(verifyCapability("document_share", token, `${b}x`, bindDocumentShare(row))).toBe(false);
-    const inv = { id: row.id, waqfId: row.waqfId!, phone: "0500000001", roleKey: "viewer", invitedBy: row.createdBy, expiresAt: row.expiresAt, scope: { permissions: ["waqf.view"] } };
+  it("a document share is bound to the row AND to the content: version, storage, hash, waqf, confidentiality", () => {
+    const row = { id: U(1), documentId: U(2), waqfId: U(3), createdBy: U(4), expiresAt: D("2026-12-01T00:00:00Z"), maxUses: 3 };
+    const b = capabilityBinding("document_share", token, bindDocumentShare(row, content()));
+    expect(verifyCapability("document_share", token, b, bindDocumentShare(row, content()))).toBe(true);
+    for (const changed of [{ documentId: U(5) }, { waqfId: null }, { expiresAt: D("2027-01-01T00:00:00Z") }, { maxUses: 50 }, { createdBy: U(6) }])
+      expect(verifyCapability("document_share", token, b, bindDocumentShare({ ...row, ...changed }, content())), JSON.stringify(changed)).toBe(false);
+    for (const [d, v] of [[{ waqfId: U(7) }, {}], [{ confidentiality: "secret" }, {}], [{ currentVersion: 2 }, {}], [{}, { id: U(8) }], [{}, { storageKey: "k/other" }],
+      [{}, { sha256: "b".repeat(64) }], [{}, { iv: "iv2" }], [{}, { authTag: "tag2" }], [{}, { documentId: U(10) }]] as const)
+      expect(verifyCapability("document_share", token, b, bindDocumentShare(row, content(d, v))), JSON.stringify([d, v])).toBe(false);
+    expect(verifyCapability("document_share", token, b, bindDocumentShare(row, { ...content(), version: null }))).toBe(false);
+    expect(verifyCapability("document_share", randomToken(24), b, bindDocumentShare(row, content()))).toBe(false);
+    expect(verifyCapability("report_share", token, b, bindDocumentShare(row, content()))).toBe(false);
+    expect(verifyCapability("document_share", token, null, bindDocumentShare(row, content()))).toBe(false);
+  });
+  it("an invitation is bound to its phone, role, waqf, scope, expiry and note; a report share to its assessment and result", () => {
+    const inv = { id: U(1), waqfId: U(3), phone: "0500000001", roleKey: "viewer", invitedBy: U(4), expiresAt: D("2026-12-01T00:00:00Z"), scope: { permissions: ["waqf.view"] }, note: "مرحبًا" };
     const bi = capabilityBinding("invitation", token, bindInvitation(inv));
     expect(verifyCapability("invitation", token, bi, bindInvitation(inv))).toBe(true);
-    for (const changed of [{ phone: "0500000002" }, { roleKey: "nazir" }, { scope: { permissions: ["waqf.view", "waqf.edit"] } }, { waqfId: row.documentId }, { expiresAt: D("2027-06-01T00:00:00Z") }])
+    for (const changed of [{ phone: "0500000002" }, { roleKey: "nazir" }, { scope: { permissions: ["waqf.edit"] } }, { waqfId: U(2) }, { expiresAt: D("2027-06-01T00:00:00Z") }, { note: "افتح الرابط وأدخل رمزك" }])
       expect(verifyCapability("invitation", token, bi, bindInvitation({ ...inv, ...changed })), JSON.stringify(changed)).toBe(false);
-    const rs = { id: row.id, reportId: row.documentId, waqfId: row.waqfId, createdBy: row.createdBy, expiresAt: row.expiresAt };
-    const br = capabilityBinding("report_share", token, bindReportShare(rs));
-    expect(verifyCapability("report_share", token, br, bindReportShare(rs))).toBe(true);
-    expect(verifyCapability("report_share", token, br, bindReportShare({ ...rs, reportId: row.waqfId! }))).toBe(false);
+    const rs = { id: U(1), reportId: U(2), waqfId: U(3), createdBy: U(4), expiresAt: D("2026-12-01T00:00:00Z") };
+    const rc = { reportWaqf: U(3), reportNumber: "RPT-1", assessmentId: U(5), assessmentWaqf: U(3), resultAt: "2026-11-01T00:00:00.000Z" };
+    const br = capabilityBinding("report_share", token, bindReportShare(rs, rc));
+    expect(verifyCapability("report_share", token, br, bindReportShare(rs, rc))).toBe(true);
+    for (const changed of [{ assessmentId: U(6) }, { assessmentWaqf: U(7) }, { resultAt: "2026-11-02T00:00:00.000Z" }, { reportWaqf: null }])
+      expect(verifyCapability("report_share", token, br, bindReportShare(rs, { ...rc, ...changed })), JSON.stringify(changed)).toBe(false);
   });
 });
 
 const devDb = /waqfak_dev/.test(process.env.DATABASE_URL ?? "");
 describe.skipIf(!devDb)("capability tokens — use paths on the development database (synthetic rows)", () => {
-  const created: { shares: string[]; invitations: string[] } = { shares: [], invitations: [] };
+  const created: { shares: string[]; invitations: string[]; reports: string[] } = { shares: [], invitations: [], reports: [] };
   afterAll(async () => {
     await withSystem(async (tx) => {
-      if (created.shares.length) await tx.delete(schema.documentShares).where(inArray(schema.documentShares.id, created.shares));
+      // the use log is append-only for the application: the owner's cascade removes it with its share
       if (created.invitations.length) await tx.delete(schema.invitations).where(inArray(schema.invitations.id, created.invitations));
+      if (created.reports.length) await tx.delete(schema.reports).where(inArray(schema.reports.id, created.reports));
     });
+    if (created.shares.length) {
+      const { execFileSync } = await import("node:child_process");
+      execFileSync("sudo", ["-n", "-u", "postgres", "psql", "-q", "-d", "waqfak_dev", "-c", `set session_replication_role = replica; delete from document_share_uses where share_id in (${created.shares.map((x) => `'${x}'`).join(",")}); delete from document_shares where id in (${created.shares.map((x) => `'${x}'`).join(",")})`]);
+    }
   });
 
   async function fixtures() {
     return withSystem(async (tx) => {
-      const docs = await tx.select({ d: schema.documents }).from(schema.documents)
+      const docs = await tx.select({ d: schema.documents, v: schema.documentVersions }).from(schema.documents)
         .innerJoin(schema.documentVersions, and(eq(schema.documentVersions.documentId, schema.documents.id), eq(schema.documentVersions.version, schema.documents.currentVersion)))
         .where(and(eq(schema.documents.status, "active"), isNull(schema.documents.archivedAt), ne(schema.documents.confidentiality, "secret"), eq(schema.documentVersions.scanStatus, "clean"))).limit(2);
       const [u] = await tx.select({ id: schema.users.id }).from(schema.users).limit(1);
-      return { docs: docs.map((x) => x.d), user: u!.id };
+      return { docs, user: u!.id };
     });
   }
-
-  async function issueShare(documentId: string, waqfId: string | null, createdBy: string, maxUses = 2) {
+  async function issueShare(f: Awaited<ReturnType<typeof fixtures>>["docs"][number], createdBy: string, maxUses = 2) {
     const token = randomToken(24);
-    const row = { id: crypto.randomUUID(), documentId, waqfId, createdBy, expiresAt: new Date(Date.now() + 86_400_000), maxUses };
-    await withSystem((tx) => tx.insert(schema.documentShares).values({ ...row, tokenHash: capabilityLookup("document_share", token), binding: capabilityBinding("document_share", token, bindDocumentShare(row)) }));
+    const row = { id: crypto.randomUUID(), documentId: f.d.id, waqfId: f.d.waqfId, createdBy, expiresAt: new Date(Date.now() + 86_400_000), maxUses };
+    await withSystem((tx) => tx.insert(schema.documentShares).values({ ...row, tokenHash: capabilityLookup("document_share", token), binding: capabilityBinding("document_share", token, bindDocumentShare(row, { doc: f.d, version: f.v })) }));
     created.shares.push(row.id);
     return { token, row };
   }
+  /** A tampering statement then a check, with the application role in the system context, rolled back. */
+  async function tamper(stmts: string[], check: () => Promise<unknown>): Promise<{ refused: string | null; after: unknown }> {
+    const c = new Client({ connectionString: process.env.DATABASE_URL }); await c.connect();
+    await c.query("begin");
+    await c.query(`select set_config('app.user_id', '', true), set_config('app.global_access', 'on', true)`);
+    let refused: string | null = null;
+    try { for (const s of stmts) await c.query(s); } catch (e) { refused = (e as Error).message; }
+    // the check reads through the application's own path, which cannot see this uncommitted transaction: run the
+    // change for real only where the database accepted it, inside this same transaction, via a savepointless read
+    let after: unknown = null;
+    if (!refused) after = await check();
+    await c.query("rollback"); await c.end();
+    return { refused, after };
+  }
 
-  it("a share link works as issued; re-pointed, extended or given more uses by a database writer, it is refused", async () => {
+  it("works as issued; a version swapped or moved, a waqf or a confidentiality changed: the link opens nothing (K3, K3b, K4, K5)", async () => {
     const { viewShare, consumeShare } = await import("../src/server/modules/documents/share");
     const f = await fixtures();
     if (f.docs.length < 2) return expect.fail("development database lacks two clean documents");
     const [a, b] = f.docs as [typeof f.docs[0], typeof f.docs[0]];
-    const s = await issueShare(a.id, a.waqfId, f.user);
+    const s = await issueShare(a, f.user);
     expect((await viewShare(s.token)).state).toBe("ok");
-    // re-point to another document
-    await withSystem((tx) => tx.update(schema.documentShares).set({ documentId: b.id }).where(eq(schema.documentShares.id, s.row.id)));
-    expect((await viewShare(s.token)).state).toBe("not_found");
-    expect((await consumeShare(s.token, "127.0.0.1")).file).toBeNull();
-    // back, then extended
-    await withSystem((tx) => tx.update(schema.documentShares).set({ documentId: a.id, expiresAt: new Date(Date.now() + 365 * 86_400_000) }).where(eq(schema.documentShares.id, s.row.id)));
-    expect((await viewShare(s.token)).state).toBe("not_found");
-    // back, then more uses
-    await withSystem((tx) => tx.update(schema.documentShares).set({ expiresAt: s.row.expiresAt, maxUses: 50 }).where(eq(schema.documentShares.id, s.row.id)));
-    expect((await viewShare(s.token)).state).toBe("not_found");
-    await withSystem((tx) => tx.update(schema.documentShares).set({ maxUses: s.row.maxUses }).where(eq(schema.documentShares.id, s.row.id)));
+    // each change committed through the owner, checked, then put back
+    const { execFileSync } = await import("node:child_process");
+    const owner = (q: string) => execFileSync("sudo", ["-n", "-u", "postgres", "psql", "-v", "ON_ERROR_STOP=1", "-q", "-d", "waqfak_dev", "-c", q]);
+    const cases: [string, string, string][] = [
+      ["K3 content of B's version under A's", `update document_versions set storage_key = '${b.v.storageKey}', iv = ${b.v.iv ? `'${b.v.iv}'` : "null"}, auth_tag = ${b.v.authTag ? `'${b.v.authTag}'` : "null"}, sha256 = '${b.v.sha256}' where id = '${a.v.id}'`,
+        `update document_versions set storage_key = '${a.v.storageKey}', iv = ${a.v.iv ? `'${a.v.iv}'` : "null"}, auth_tag = ${a.v.authTag ? `'${a.v.authTag}'` : "null"}, sha256 = '${a.v.sha256}' where id = '${a.v.id}'`],
+      ["K3b B's version row moved under A as its current version", `update document_versions set document_id = '${a.d.id}', version = 9999 where id = '${b.v.id}'; update documents set current_version = 9999 where id = '${a.d.id}'`,
+        `update documents set current_version = ${a.d.currentVersion} where id = '${a.d.id}'; update document_versions set document_id = '${b.d.id}', version = ${b.v.version} where id = '${b.v.id}'`],
+      ["K4 waqf of the document changed", `update documents set waqf_id = ${b.d.waqfId && b.d.waqfId !== a.d.waqfId ? `'${b.d.waqfId}'` : `gen_random_uuid()`} where id = '${a.d.id}'`, `update documents set waqf_id = ${a.d.waqfId ? `'${a.d.waqfId}'` : "null"} where id = '${a.d.id}'`],
+      ["K5 confidentiality changed", `update documents set confidentiality = 'confidential' where id = '${a.d.id}'`, `update documents set confidentiality = '${a.d.confidentiality}' where id = '${a.d.id}'`],
+    ];
+    for (const [label, change, undo] of cases) {
+      owner(change);
+      try {
+        expect((await viewShare(s.token)).state, label).toBe("not_found");
+        expect((await consumeShare(s.token, "127.0.0.1")).file, label).toBeNull();
+      } finally { owner(undo); }
+    }
     expect((await viewShare(s.token)).state).toBe("ok");
   });
 
-  it("a share link's uses are limited, single uses not reusable, and revocation holds", async () => {
-    const { viewShare } = await import("../src/server/modules/documents/share");
+  it("one use: two concurrent requests on a single-use link — exactly one gets the file; the second and later are refused", async () => {
+    const { consumeShare, viewShare } = await import("../src/server/modules/documents/share");
     const f = await fixtures();
-    const a = f.docs[0]!;
-    const s = await issueShare(a.id, a.waqfId, f.user, 1);
-    // consume the one use directly (the decryption path is not the subject here): uses = maxUses
-    await withSystem((tx) => tx.update(schema.documentShares).set({ uses: 1 }).where(eq(schema.documentShares.id, s.row.id)));
+    const s = await issueShare(f.docs[0]!, f.user, 1);
+    const [r1, r2] = await Promise.all([consumeShare(s.token, "127.0.0.1"), consumeShare(s.token, "127.0.0.2")]);
+    expect([r1, r2].filter((r) => r.file).length).toBe(1);
+    expect([r1, r2].filter((r) => r.state === "used_up").length).toBe(1);
+    expect((await consumeShare(s.token, "127.0.0.3")).state).toBe("used_up");
     expect((await viewShare(s.token)).state).toBe("used_up");
-    const r = await issueShare(a.id, a.waqfId, f.user);
+    const uses = await withSystem((tx) => tx.select().from(schema.documentShareUses).where(eq(schema.documentShareUses.shareId, s.row.id)));
+    expect(uses).toHaveLength(1);
+  });
+
+  it("K1/K2: the use count, the use log and a revocation are not undone by a database writer", async () => {
+    const { consumeShare } = await import("../src/server/modules/documents/share");
+    const f = await fixtures();
+    const s = await issueShare(f.docs[0]!, f.user, 1);
+    expect((await consumeShare(s.token, "127.0.0.1")).file).not.toBeNull();
+    const k1 = await tamper([`update document_shares set uses = 0 where id = '${s.row.id}'`], async () => null);
+    expect(k1.refused).toMatch(/do not go back/);
+    const k1b = await tamper([`delete from document_share_uses where share_id = '${s.row.id}'`], async () => null);
+    expect(k1b.refused).toMatch(/permission denied|append-only|not allowed/i);
+    const k1c = await tamper([`update document_shares set max_uses = 50 where id = '${s.row.id}'`], async () => null);
+    expect(k1c.refused).toMatch(/do not go back/);
+    const r = await issueShare(f.docs[0]!, f.user);
     await withSystem((tx) => tx.update(schema.documentShares).set({ revokedAt: new Date() }).where(eq(schema.documentShares.id, r.row.id)));
-    expect((await viewShare(r.token)).state).toBe("revoked");
+    const k2 = await tamper([`update document_shares set revoked_at = null where id = '${r.row.id}'`], async () => null);
+    expect(k2.refused).toMatch(/revocation is not undone/);
+    const k2b = await tamper([`update document_shares set expires_at = now() + interval '1 year' where id = '${r.row.id}'`], async () => null);
+    expect(k2b.refused).toMatch(/does not change/);
   });
 
-  it("a row planted by a database writer (unkeyed, as before), or a token of another purpose, opens nothing", async () => {
-    const { viewShare } = await import("../src/server/modules/documents/share");
-    const { invitationByToken } = await import("../src/server/modules/waqf-core/queries");
-    const f = await fixtures();
-    const a = f.docs[0]!;
+  it("R1: a report share opens nothing once its report points at another assessment or the result is recomputed", async () => {
+    const { reportContent } = await import("../src/server/modules/assessment/share-content");
     const token = randomToken(24);
-    const id = crypto.randomUUID();
-    // the former scheme: sha256(token), no binding
-    await withSystem((tx) => tx.insert(schema.documentShares).values({ id, documentId: a.id, waqfId: a.waqfId, createdBy: f.user, expiresAt: new Date(Date.now() + 86_400_000), maxUses: 5, tokenHash: sha256(token) }));
-    created.shares.push(id);
-    expect((await viewShare(token)).state).toBe("not_found");
-    // the keyed lookup planted without the key's binding
-    const id2 = crypto.randomUUID();
-    await withSystem((tx) => tx.insert(schema.documentShares).values({ id: id2, documentId: a.id, waqfId: a.waqfId, createdBy: f.user, expiresAt: new Date(Date.now() + 86_400_000), maxUses: 5, tokenHash: capabilityLookup("document_share", `${token}2`), binding: "forged" }));
-    created.shares.push(id2);
-    expect((await viewShare(`${token}2`)).state).toBe("not_found");
-    // a valid share token is not an invitation token
-    const s = await issueShare(a.id, a.waqfId, f.user);
-    expect(await invitationByToken(s.token)).toBeNull();
+    const rep = crypto.randomUUID();
+    const f = await fixtures();
+    await withSystem((tx) => tx.insert(schema.reports).values({ id: rep, number: `TEST-R1-${rep.slice(0, 6)}`, kind: "assessment", title: "تقرير اختبار", verificationCode: randomToken(9), assessmentId: U(91) }));
+    created.reports.push(rep);
+    const row = { id: crypto.randomUUID(), reportId: rep, waqfId: null, createdBy: f.user, expiresAt: new Date(Date.now() + 86_400_000) };
+    const binding = await withSystem(async (tx) => capabilityBinding("report_share", token, bindReportShare(row, await reportContent(tx, rep))));
+    expect(await withSystem(async (tx) => verifyCapability("report_share", token, binding, bindReportShare(row, await reportContent(tx, rep))))).toBe(true);
+    await withSystem((tx) => tx.update(schema.reports).set({ assessmentId: U(92) }).where(eq(schema.reports.id, rep)));
+    expect(await withSystem(async (tx) => verifyCapability("report_share", token, binding, bindReportShare(row, await reportContent(tx, rep))))).toBe(false);
   });
 
-  it("an invitation is bound to its phone, role, waqf, scope and expiry", async () => {
-    const { invitationByToken } = await import("../src/server/modules/waqf-core/queries");
+  it("I1/I2: an invitation accepted is not accepted again; its note, phone or role do not change after issue", async () => {
     const f = await fixtures();
-    const waqfId = f.docs[0]!.waqfId!;
+    const waqfId = f.docs[0]!.d.waqfId!;
     const token = randomToken(24);
-    const row = { id: crypto.randomUUID(), waqfId, phone: "0500000999", roleKey: "viewer", invitedBy: f.user, expiresAt: new Date(Date.now() + 7 * 86_400_000), scope: null };
+    const row = { id: crypto.randomUUID(), waqfId, phone: "0500000999", roleKey: "viewer", invitedBy: f.user, expiresAt: new Date(Date.now() + 7 * 86_400_000), scope: null, note: "دعوة اختبار" };
+    await withSystem((tx) => tx.insert(schema.invitations).values({ ...row, tokenHash: capabilityLookup("invitation", token), binding: capabilityBinding("invitation", token, bindInvitation(row)), acceptedAt: new Date(), acceptedBy: f.user }));
+    created.invitations.push(row.id);
+    const i1 = await tamper([`update invitations set accepted_at = null, accepted_by = null where id = '${row.id}'`], async () => null);
+    expect(i1.refused).toMatch(/acceptance is not undone/);
+    const i2 = await tamper([`update invitations set note = 'ادخل على الرابط التالي' where id = '${row.id}'`], async () => null);
+    expect(i2.refused).toMatch(/does not change/);
+    const i2b = await tamper([`update invitations set phone = '0500000998', role_key = 'nazir' where id = '${row.id}'`], async () => null);
+    expect(i2b.refused).toMatch(/does not change/);
+    const { invitationByToken } = await import("../src/server/modules/waqf-core/queries");
+    expect(await invitationByToken(token)).toMatchObject({ id: row.id, note: "دعوة اختبار" });
+  });
+
+  it("a declined invitation records the decline (the only change allowed besides acceptance), once", async () => {
+    const f = await fixtures();
+    const row = { id: crypto.randomUUID(), waqfId: f.docs[0]!.d.waqfId!, phone: "0500000997", roleKey: "viewer", invitedBy: f.user, expiresAt: new Date(Date.now() + 86_400_000), scope: { a: 1 }, note: null };
+    const token = randomToken(24);
     await withSystem((tx) => tx.insert(schema.invitations).values({ ...row, tokenHash: capabilityLookup("invitation", token), binding: capabilityBinding("invitation", token, bindInvitation(row)) }));
     created.invitations.push(row.id);
-    expect(await invitationByToken(token)).toMatchObject({ id: row.id, phone: row.phone, roleKey: "viewer" });
-    for (const set of [{ phone: "0500000998" }, { roleKey: "nazir" }, { scope: { permissions: ["waqf.edit"] } }, { expiresAt: new Date(Date.now() + 90 * 86_400_000) }]) {
-      await withSystem((tx) => tx.update(schema.invitations).set(set).where(eq(schema.invitations.id, row.id)));
-      expect(await invitationByToken(token), JSON.stringify(set)).toBeNull();
-      await withSystem((tx) => tx.update(schema.invitations).set({ phone: row.phone, roleKey: row.roleKey, scope: null, expiresAt: row.expiresAt }).where(eq(schema.invitations.id, row.id)));
-    }
-    expect(await invitationByToken(token)).not.toBeNull();
+    const ok = await tamper([`update invitations set revoked_at = now(), scope = scope || '{"declinedAt":"2026-11-10","declinedBy":"x"}'::jsonb where id = '${row.id}'`], async () => null);
+    expect(ok.refused).toBeNull();
+    const bad = await tamper([`update invitations set scope = '{"a":2}'::jsonb where id = '${row.id}'`], async () => null);
+    expect(bad.refused).toMatch(/does not change/);
   });
 });

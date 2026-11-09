@@ -148,9 +148,12 @@ export async function createShareLink(_prev: ActionState, fd: FormData): Promise
     const expiresAt = new Date(Date.now() + days * 86_400_000);
     // bound to this document, its issuer, expiry and use limit (lib/capability.ts)
     const row = { id: randomUUID(), documentId: d.id, waqfId: d.waqfId, createdBy: c.auth.user.id, expiresAt, maxUses };
+    // … and to the content it opens: the current version as it is now (N9-2)
+    const [v] = await c.tx.select().from(documentVersions).where(and(eq(documentVersions.documentId, d.id), eq(documentVersions.version, d.currentVersion))).limit(1);
+    if (!v || v.scanStatus !== "clean") throw new UserError("لا تُشارك الوثيقة قبل اكتمال فحص نسختها الحالية.");
     const [s] = await c.tx
       .insert(documentShares)
-      .values({ ...row, tokenHash: capabilityLookup("document_share", token), binding: capabilityBinding("document_share", token, bindDocumentShare(row)) })
+      .values({ ...row, tokenHash: capabilityLookup("document_share", token), binding: capabilityBinding("document_share", token, bindDocumentShare(row, { doc: d, version: v })) })
       .returning({ id: documentShares.id });
     await logAccess(c.tx, { documentId: d.id, waqfId: d.waqfId, userId: c.auth.user.id, action: "share", ip: c.ip });
     await audit(c.tx, { actorUserId: c.auth.user.id, action: "documents.share", entityType: "document", entityId: d.id, waqfId: d.waqfId, ip: c.ip, userAgent: c.userAgent, after: { shareId: s.id, expiresAt, maxUses } });

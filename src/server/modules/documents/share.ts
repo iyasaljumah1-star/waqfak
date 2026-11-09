@@ -1,7 +1,7 @@
 import "server-only";
 import { and, eq, sql } from "drizzle-orm";
 import { withSystem } from "../../db";
-import { documents, documentShares, documentVersions } from "../../db/schema";
+import { documents, documentShares, documentShareUses, documentVersions } from "../../db/schema";
 import { bindDocumentShare, capabilityLookup, verifyCapability } from "../../lib/capability";
 import { logAccess, readVersionPlain } from "./service";
 
@@ -25,14 +25,18 @@ async function lookup(tx: Parameters<Parameters<typeof withSystem>[0]>[0], token
     .limit(1);
   const [row] = lock ? await q.for("update", { of: documentShares }) : await q;
   // a share row re-pointed to another document, extended, given more uses, or planted without the key: not found
-  if (!row || !verifyCapability("document_share", token, row.s.binding, bindDocumentShare(row.s))) return { state: "not_found" as ShareState, row: null };
+  if (!row || !verifyCapability("document_share", token, row.s.binding, bindDocumentShare(row.s, { doc: row.d, version: row.v }))) return { state: "not_found" as ShareState, row: null };
+  // … and the content as issued: the same version (id, number, storage key, IV, tag, hash), the same waqf and
+  // confidentiality — checked in the binding above (N9-2); a new version since is not opened by an old link
   const { s, d, v } = row;
+  // uses are counted from the append-only use log, not from a counter a database writer could reset (N9-3)
+  const [{ n }] = await tx.select({ n: sql<number>`count(*)::int` }).from(documentShareUses).where(eq(documentShareUses.shareId, s.id));
   let state: ShareState = "ok";
   if (s.revokedAt) state = "revoked";
   else if (s.expiresAt.getTime() <= Date.now()) state = "expired";
-  else if (s.uses >= s.maxUses) state = "used_up";
+  else if (n >= s.maxUses || s.uses >= s.maxUses) state = "used_up";
   else if (d.status !== "active" || d.archivedAt || d.confidentiality === "secret" || !v || v.scanStatus !== "clean") state = "unavailable";
-  return { state, row };
+  return { state, row: { ...row, used: n } };
 }
 
 /** Read-only view for the share page (does not count a use). */
@@ -49,7 +53,7 @@ export async function viewShare(token: string) {
         sizeBytes: row.v!.sizeBytes,
         mimeType: row.v!.mimeType,
         expiresAt: row.s.expiresAt,
-        remaining: row.s.maxUses - row.s.uses,
+        remaining: Math.max(0, row.s.maxUses - row.used),
       },
     };
   });
@@ -65,7 +69,9 @@ export async function consumeShare(token: string, ip: string) {
       await logAccess(tx, { documentId: row.d.id, waqfId: row.d.waqfId, userId: null, action: "denied", ip });
       return { state, file: null };
     }
-    await tx.update(documentShares).set({ uses: sql`${documentShares.uses} + 1` }).where(eq(documentShares.id, row.s.id));
+    // one use: a row in the append-only log (under the share row's lock), and the display counter
+    await tx.insert(documentShareUses).values({ shareId: row.s.id, ip });
+    await tx.update(documentShares).set({ uses: row.used + 1 }).where(eq(documentShares.id, row.s.id));
     const data = await readVersionPlain(tx, row.d, row.v!);
     await logAccess(tx, { documentId: row.d.id, versionId: row.v!.id, waqfId: row.d.waqfId, userId: null, action: "download", ip });
     return { state, file: { data, mime: row.v!.mimeType, name: row.v!.originalName } };

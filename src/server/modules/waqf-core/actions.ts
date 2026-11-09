@@ -280,11 +280,11 @@ async function createInvitation(
     .where(and(eq(invitations.waqfId, o.waqfId), eq(invitations.phone, o.phone), eq(invitations.roleKey, o.roleKey), isNull(invitations.acceptedAt), isNull(invitations.revokedAt)));
   const token = randomToken(24);
   // the token is bound to this invitation as issued: its waqf, phone, role, scope, inviter and expiry (lib/capability.ts)
-  const row = { id: randomUUID(), waqfId: o.waqfId, phone: o.phone, roleKey: o.roleKey, invitedBy: o.invitedBy, expiresAt: new Date(Date.now() + 7 * 86_400_000), scope: o.scope ?? null };
+  const row = { id: randomUUID(), waqfId: o.waqfId, phone: o.phone, roleKey: o.roleKey, invitedBy: o.invitedBy, expiresAt: new Date(Date.now() + 7 * 86_400_000), scope: o.scope ?? null, note: o.note ?? null };
   const [inv] = await tx
     .insert(invitations)
     .values({
-      ...row, tokenHash: capabilityLookup("invitation", token), binding: capabilityBinding("invitation", token, bindInvitation(row)), note: o.note ?? null,
+      ...row, tokenHash: capabilityLookup("invitation", token), binding: capabilityBinding("invitation", token, bindInvitation(row)),
     })
     .returning({ id: invitations.id });
   const link = `/app/invitations/${token}`;
