@@ -32,7 +32,7 @@ const DOMESTIC = 21;
 const GAZETTEER: Place[] = [
   { key: "KSA", ar: ["المملكه", "السعوديه", "المملكه العربيه السعوديه"], en: ["saudi", "kingdom", "ksa"], domestic: true },
   ...([
-    ["الرياض", "riyadh"], ["مكه", "makkah|mecca"], ["المدينه المنوره", "madinah|medina"], ["القصيم", "qassim"], ["بريده", "buraydah"], ["الشرقيه", "eastern province"],
+    ["الرياض", "riyadh"], ["مكه|مكه المكرمه", "makkah|mecca"], ["المدينه المنوره", "madinah|medina"], ["القصيم", "qassim"], ["بريده", "buraydah"], ["الشرقيه|المنطقه الشرقيه", "eastern province"],
     ["الدمام", "dammam"], ["عسير", "asir"], ["ابها", "abha"], ["تبوك", "tabuk"], ["حائل|حايل", "hail|ha'il"], ["الحدود الشماليه", "northern borders"], ["عرعر", "arar"],
     ["جازان|جيزان", "jazan|jizan"], ["نجران", "najran"], ["الباحه", "baha|al-baha"], ["الجوف", "jouf|al-jouf"], ["سكاكا", "sakaka"], ["جده", "jeddah"], ["الطائف|الطايف", "taif"],
     ["الاحساء", "ahsa|al-ahsa"], ["الكويت", "kuwait"], ["الامارات", "emirates|uae"], ["قطر", "qatar"], ["البحرين", "bahrain"], ["عمان|سلطنه عمان", "oman"], ["اليمن", "yemen"],
@@ -192,7 +192,7 @@ export function judge(f: Frame, text: string, opts: { scope?: string; hasWord?: 
 }
 
 /** Words that set a place as where the matter arises: «في الرياض»، «بجدة»، «مدينة الطائف»، «in Riyadh». */
-const CUE = /^(?:في|داخل|بمدينه|بمنطقه|بمحافظه|مدينه|منطقه|محافظه|in|at)$/i;
+const CUE = /^(?:[وف]?(?:في|داخل|من|الي|بمدينه|بمنطقه|بمحافظه|مدينه|منطقه|محافظه)|in|at|from)$/i;
 const strip = (w: string) => normForSearch(w.replace(/[؟?!.,،:;«»"'()]+$/g, ""));
 
 /**
@@ -204,28 +204,36 @@ const strip = (w: string) => normForSearch(w.replace(/[؟?!.,،:;«»"'()]+$/g, 
 export function withoutContextPlaces(question: string, f: Frame): string {
   if (!f.contextPlaces.length) return question;
   const words = question.split(/\s+/).filter(Boolean);
-  const names = f.contextPlaces.flatMap((p) => [...p.ar.map((n) => normForSearch(n).split(/\s+/)), ...p.en.map((n) => n.toLowerCase().split(/\s+/))]);
+  // every name of the gazetteer, longest first: a longer name wins where two overlap («المملكة المتحدة» is not «المملكة»)
+  const context = new Set(f.contextPlaces.map((p) => p.key));
+  const names = GAZETTEER.flatMap((p) => [...p.ar.map((n) => normForSearch(n).split(/\s+/)), ...p.en.map((n) => n.toLowerCase().split(/\s+/))].map((n) => ({ n, ctx: context.has(p.key) })))
+    .sort((a, b) => b.n.length - a.n.length);
   const drop = new Set<number>();
   for (let i = 0; i < words.length; i++) {
-    for (const name of names) {
-      // the place's first word may carry the clitics (و، ف، ب، ل، ال) and «ب» may itself be the locative
-      const first = strip(words[i]!).toLowerCase();
-      const head = name[0]!.replace(/^ال/, "");
-      const m = first.match(new RegExp(`^([وف]?)(ب|ل)?(ال)?${head.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`));
-      if (!m) continue;
-      if (name.slice(1).some((n, k) => strip(words[i + 1 + k] ?? "").toLowerCase() !== n)) continue;
-      const cued = m[2] === "ب" || (i > 0 && CUE.test(strip(words[i - 1]!))) || (i > 1 && CUE.test(strip(words[i - 2]!)) && CUE.test(strip(words[i - 1]!)));
-      if (!cued) continue;
-      for (let k = 0; k < name.length; k++) drop.add(i + k);
-      for (let j = i - 1; j >= 0 && j >= i - 2 && CUE.test(strip(words[j]!)); j--) drop.add(j);
-      // the question mark (or other closing punctuation) on the last word removed stays with the sentence
-      const last = words[i + name.length - 1]!;
-      const tail = last.match(/[؟?!.]+$/)?.[0];
-      if (tail) {
-        words[i + name.length - 1] = tail;
-        drop.delete(i + name.length - 1);
+    // the place's first word may carry the clitics (و، ف، ب، ل، ال); «ب» or «ل» on it is itself the locative
+    const first = strip(words[i]!).replace(/^[«"'(\[]+/, "").toLowerCase();
+    const hit = names.find(({ n }) => {
+      const head = n[0]!.replace(/^ال/, "");
+      return new RegExp(`^[وف]?(?:ب|ل|لل)?(?:ال)?${head.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`).test(first)
+        && n.slice(1).every((x, k) => strip(words[i + 1 + k] ?? "").replace(/^[«"'(\[]+/, "").toLowerCase() === x);
+    });
+    if (!hit) continue;
+    const len = hit.n.length;
+    if (hit.ctx) {
+      const own = /^[وف]?(?:ب|ل)/.test(first) && !new RegExp(`^[وف]?${hit.n[0]!.replace(/^ال/, "")}`).test(first.replace(/^ال/, ""));
+      const cued = own || (i > 0 && CUE.test(strip(words[i - 1]!))) || (i > 1 && CUE.test(strip(words[i - 2]!)) && CUE.test(strip(words[i - 1]!)));
+      if (cued) {
+        for (let k = 0; k < len; k++) drop.add(i + k);
+        for (let j = i - 1; j >= 0 && j >= i - 2 && CUE.test(strip(words[j]!)); j--) drop.add(j);
+        // the question mark (or other closing punctuation) on the last word removed stays with the sentence
+        const tail = words[i + len - 1]!.match(/[؟?!.]+$/)?.[0];
+        if (tail) {
+          words[i + len - 1] = tail;
+          drop.delete(i + len - 1);
+        }
       }
     }
+    i += len - 1;
   }
   return words.filter((_, i) => !drop.has(i)).join(" ").replace(/\s+([؟?!.])/g, "$1");
 }

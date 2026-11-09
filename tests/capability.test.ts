@@ -8,7 +8,7 @@
  */
 import "dotenv/config";
 import { afterAll, describe, expect, it, vi } from "vitest";
-import { and, eq, inArray, isNull, ne } from "drizzle-orm";
+import { and, eq, isNull, ne } from "drizzle-orm";
 import { Client } from "pg";
 
 vi.mock("server-only", () => ({}));
@@ -69,11 +69,11 @@ describe.skipIf(!devDb)("capability tokens — use paths on the development data
   const created: { shares: string[]; invitations: string[]; reports: string[] } = { shares: [], invitations: [], reports: [] };
   const copies: string[] = [];
   afterAll(async () => {
-    await withSystem(async (tx) => {
-      // the use log is append-only for the application: the owner's cascade removes it with its share
-      if (created.reports.length) await tx.delete(schema.reports).where(inArray(schema.reports.id, created.reports));
-    });
-    // the application never deletes a link or an invitation (N10-1): the test rows are removed as the cluster's owner
+    // the application never deletes a link, an invitation or a report (N10-1, N10c-2): test rows go as the cluster's owner
+    if (created.reports.length) {
+      const { execFileSync } = await import("node:child_process");
+      execFileSync("sudo", ["-n", "-u", "postgres", "psql", "-q", "-d", "waqfak_dev", "-c", `set session_replication_role = replica; delete from report_shares where report_id in (${created.reports.map((x) => `'${x}'`).join(",")}); delete from reports where id in (${created.reports.map((x) => `'${x}'`).join(",")})`]);
+    }
     if (created.invitations.length) {
       const { execFileSync } = await import("node:child_process");
       execFileSync("sudo", ["-n", "-u", "postgres", "psql", "-q", "-d", "waqfak_dev", "-c", `set session_replication_role = replica; delete from invitations where id in (${created.invitations.map((x) => `'${x}'`).join(",")})`]);
@@ -251,6 +251,10 @@ describe.skipIf(!devDb)("capability tokens — use paths on the development data
     created.reports.push(rep);
     const back = await tamper([`update reports set revoked_at = null where id = '${rep}'`], async () => null);
     expect(back.refused).toMatch(/revocation is not undone/);
+    const again = await tamper([`with old as (delete from reports where id = '${rep}' returning *) insert into reports (id, number, kind, title, verification_code) select id, number, kind, title, verification_code from old`], async () => null);
+    expect(again.refused).toMatch(/permission denied|never deleted/);
+    const renamed = await tamper([`update reports set number = number || '-old', verification_code = verification_code || 'x' where id = '${rep}'`], async () => null);
+    expect(renamed.refused).toMatch(/keeps its id, number and verification code/);
     const lookup = capabilityLookup("report_share", randomToken(24));
     const twice = await tamper([
       `insert into report_shares (report_id, token_hash, binding, created_by, expires_at) values ('${rep}', '${lookup}', 'x', '${f.user}', now() + interval '1 day')`,

@@ -38,6 +38,7 @@ describe.skipIf(!enabled)("relevance regressions (dedicated test database)", () 
     try {
       await db.transaction(async (tx) => {
         await tx.execute(sql`select set_config('app.user_id', '', true), set_config('app.global_access', 'on', true)`);
+        if (extra.reviewed) await (await import("./knowledge/cases")).reviewEverything(tx as never);
         out = await K.retrieve(tx as never, { question, service: "*", asOf: T, ...extra });
         throw new Rollback();
       });
@@ -195,13 +196,23 @@ describe.skipIf(!enabled)("relevance regressions (dedicated test database)", () 
     expect(w("هل يجوز للناظر في المدينة المنورة بيع الوقف؟")).toBe("هل يجوز للناظر بيع الوقف؟");
     // a word that is also a place name, not set as a place, stays
     expect(w("هل يجوز أن يقف الرجل على جده؟")).toBe("هل يجوز أن يقف الرجل على جده؟");
-    // the school question is still a school question, and refuses the same non-school sources with or without the city
-    const school = await ask("ما حكم وقف النقود عند الحنابلة؟");
-    const schoolCity = await ask("ما حكم وقف النقود عند الحنابلة في الرياض؟");
-    expect(schoolCity.usable.map((u) => u.hit.chunkId).sort(), where(schoolCity)).toEqual(school.usable.map((u) => u.hit.chunkId).sort());
-    // a named article with a city is still answered from that article only (or nothing)
-    const art = await ask("ما نص المادة 5 من نظام الهيئة العامة للأوقاف في جدة؟");
-    expect(art.usable.every((u) => u.hit.articleNo === 5), where(art)).toBe(true);
+    // with every source reviewed (so the school filter and the article constraint are what decide, N10c-3): the same
+    // passages are usable and citable with and without the city, in each of its common settings
+    const same = async (plain: string, withCity: string) => {
+      const [a, b] = [await ask(plain, { reviewed: true }), await ask(withCity, { reviewed: true })];
+      const ids = (r: R) => ({ usable: r.usable.map((u) => u.hit.chunkId).sort(), citable: r.citable.map((u) => u.hit.chunkId).sort() });
+      expect(ids(b), `${withCity}\n${where(b)}`).toEqual(ids(a));
+      return a;
+    };
+    const school = await same("ما حكم وقف النقود عند الحنابلة؟", "ما حكم وقف النقود عند الحنابلة في الرياض؟");
+    expect(school.usable.length, where(school)).toBeGreaterThan(0);
+    const sell = await same("هل يجوز للناظر بيع الوقف إذا تعطلت منافعه؟", "هل يجوز للناظر من الرياض بيع الوقف إذا تعطلت منافعه؟");
+    expect(sell.usable.length).toBeGreaterThan(0);
+    await same("هل يجوز للناظر بيع الوقف إذا تعطلت منافعه؟", "هل يجوز للناظر وفي مكة المكرمة بيع الوقف إذا تعطلت منافعه؟");
+    // a normative question naming an article: the article constraint holds with the city as without it
+    const art = await same("هل يجب على الناظر ما في المادة 8 من لائحة تنظيم أعمال النظارة؟", "هل يجب على الناظر في جدة ما في المادة 8 من لائحة تنظيم أعمال النظارة؟");
+    expect(art.usable.every((u) => u.hit.articleNo === 8), where(art)).toBe(true);
+    expect(K.namedArticle("هل يجب على الناظر في جدة ما في المادة 8 من لائحة تنظيم أعمال النظارة؟")).toEqual({ article: 8, paragraph: null });
   }, 90_000);
 
   it("N-X14b: «أجر من أوقف ماله» is the reward — never the fee passages", async () => {

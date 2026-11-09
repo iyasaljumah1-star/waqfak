@@ -1211,15 +1211,25 @@ DROP TRIGGER IF EXISTS capability_row_guard ON invitations;
 CREATE TRIGGER capability_row_guard BEFORE UPDATE ON invitations FOR EACH ROW EXECUTE FUNCTION capability_row_guard();
 -- N10b-2 (independent review, round 10b): a revoked report is not brought back by the application — its share links
 -- would show it again (the share page reads reports.revoked_at); a revocation is a one-way act, as for the links
+-- N10c-2: nor by deleting the row and inserting it again, nor by renaming it and inserting a copy under its number
+-- and verification code: the application never deletes a report, and a report's number and code do not change
 CREATE OR REPLACE FUNCTION report_revocation_guard() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
-  IF session_user = 'waqfak_app' AND OLD.revoked_at IS NOT NULL AND NEW.revoked_at IS DISTINCT FROM OLD.revoked_at THEN
+  IF session_user <> 'waqfak_app' THEN RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END; END IF;
+  IF TG_OP = 'DELETE' THEN
+    RAISE EXCEPTION 'reports: a report is revoked, never deleted' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  IF OLD.revoked_at IS NOT NULL AND NEW.revoked_at IS DISTINCT FROM OLD.revoked_at THEN
     RAISE EXCEPTION 'reports: a revocation is not undone' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  IF NEW.id IS DISTINCT FROM OLD.id OR NEW.number IS DISTINCT FROM OLD.number OR NEW.verification_code IS DISTINCT FROM OLD.verification_code THEN
+    RAISE EXCEPTION 'reports: a report keeps its id, number and verification code' USING ERRCODE = 'insufficient_privilege';
   END IF;
   RETURN NEW;
 END $$;
+REVOKE DELETE, TRUNCATE ON reports FROM waqfak_app;
 DROP TRIGGER IF EXISTS report_revocation_guard ON reports;
-CREATE TRIGGER report_revocation_guard BEFORE UPDATE ON reports FOR EACH ROW EXECUTE FUNCTION report_revocation_guard();
+CREATE TRIGGER report_revocation_guard BEFORE UPDATE OR DELETE ON reports FOR EACH ROW EXECUTE FUNCTION report_revocation_guard();
 
 -- N10-1 (independent review, round 10): a row deleted and inserted again as it was issued would undo its revocation,
 -- its acceptance and its uses; the application never deletes a link or an invitation (it revokes them), so it may not
