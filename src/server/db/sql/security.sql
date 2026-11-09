@@ -1122,3 +1122,25 @@ DROP TRIGGER IF EXISTS review_db_time ON ref_match_reviews;
 CREATE TRIGGER review_db_time BEFORE INSERT ON ref_match_reviews FOR EACH ROW EXECUTE FUNCTION review_db_time();
 DROP TRIGGER IF EXISTS review_db_time ON fiqh_reviews;
 CREATE TRIGGER review_db_time BEFORE INSERT ON fiqh_reviews FOR EACH ROW EXECUTE FUNCTION review_db_time();
+
+-- ═════════════ Phase 10 (owner's order of 2026-11-09), N9-1: no function resolves a name the caller can shadow ═════════════
+-- A function body names tables and functions without a schema; PostgreSQL resolves them by search_path at each call,
+-- and pg_temp — the caller's own temporary schema — is searched FIRST unless it is named. A definer function with
+-- «search_path = public» therefore read a temporary «user_roles» or «sessions» created by the application role
+-- (round 9, T1–T4). Every function of this schema — definer or invoker, guard or helper — now runs with
+-- «pg_catalog, public, pg_temp»: the catalog, then this schema, and the caller's temporary schema LAST (where nothing
+-- of ours is). Applied here, at the end, so that it covers every CREATE OR REPLACE above (which resets the setting),
+-- and checked: the migration fails if any function is left without it.
+DO $$
+DECLARE f record;
+BEGIN
+  FOR f IN SELECT p.oid::regprocedure AS sig FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace JOIN pg_language l ON l.oid = p.prolang
+           WHERE n.nspname = 'public' AND l.lanname IN ('plpgsql', 'sql') AND pg_get_userbyid(p.proowner) = current_user LOOP
+    EXECUTE format('ALTER FUNCTION %s SET search_path = pg_catalog, public, pg_temp', f.sig);
+  END LOOP;
+  IF EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace JOIN pg_language l ON l.oid = p.prolang
+             WHERE n.nspname = 'public' AND l.lanname IN ('plpgsql', 'sql')
+               AND NOT coalesce('search_path=pg_catalog, public, pg_temp' = ANY (p.proconfig), false)) THEN
+    RAISE EXCEPTION 'security.sql: a function of schema public runs without search_path = pg_catalog, public, pg_temp';
+  END IF;
+END $$;
