@@ -109,6 +109,20 @@ describe.skipIf(!enabled)("stage 11: authentication, system and application role
     } finally { await sys.query("rollback"); await auth.query("rollback"); }
   });
 
+  it("the sign-up path on the authentication login: it records the new account's consents and counts attempts, and reads no consent back", async () => {
+    await auth.query("begin");
+    try {
+      const ins = await tryQ(auth, `insert into consents (user_id, kind, version, granted) values ($1, 'privacy', 'test', true), ($1, 'terms', 'test', true)`, [ID]);
+      expect(ins.ok, ins.ok ? "" : ins.err).toBe(true);
+      const rl = await tryQ(auth, `insert into rate_limits (key, window_start, count) values ('stage11-test', now(), 1) on conflict (key, window_start) do update set count = rate_limits.count + 1`);
+      expect(rl.ok, rl.ok ? "" : rl.err).toBe(true);
+      const read = await tryQ(auth, `select count(*) from consents`);
+      expect(read.ok).toBe(false);
+    } finally {
+      await auth.query("rollback");
+    }
+  });
+
   it("asSystem refuses on the application's connection (no step believes itself elevated)", async () => {
     const { asSystem } = await import("../src/server/db/as-system");
     const schema = await import("../src/server/db/schema");

@@ -1390,11 +1390,15 @@ GRANT SELECT ON roles, user_roles, permissions, role_permissions TO waqfak_auth;
 GRANT INSERT ON consents, audit_logs TO waqfak_auth;
 GRANT EXECUTE ON FUNCTION app_audit_last_hash() TO waqfak_auth;
 DO $$ DECLARE t text; BEGIN
-  FOREACH t IN ARRAY ARRAY['sessions', 'audit_logs'] LOOP
+  FOREACH t IN ARRAY ARRAY['sessions', 'audit_logs', 'rate_limits'] LOOP
     EXECUTE format('DROP POLICY IF EXISTS auth_role ON %I', t);
     EXECUTE format('CREATE POLICY auth_role ON %I FOR ALL TO waqfak_auth USING (true) WITH CHECK (true)', t);
   END LOOP;
 END $$;
+-- the consents a new account gives at sign-up are recorded by the authentication login (it adds; it reads nothing):
+-- batch B put consents under row-level security, so the login needs its own policy (found by the desktop e2e)
+DROP POLICY IF EXISTS auth_role ON consents;
+CREATE POLICY auth_role ON consents FOR INSERT TO waqfak_auth WITH CHECK (true);
 
 -- ── what the application role can no longer do, bound or not ──
 -- sessions: it reads its person's own sessions (no token hash) and ends them; it never creates or extends one
