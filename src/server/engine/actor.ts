@@ -20,7 +20,9 @@ export async function engineAuth(tx: Tx): Promise<Auth> {
   const [u] = await tx.select(userColumns).from(users).where(eq(users.id, ENGINE_USER_ID)).limit(1);
   if (!u) throw new Error("engine account missing: run the seed");
   return {
-    user: { ...u, passwordHash: null },
+    // the engine's own account (no contact data is needed; stage 11)
+    user: { ...u, passwordHash: null, phone: "", email: null, idType: null, nationalIdEnc: null, nationalIdHash: null, birthDate: null, phoneVerifiedAt: null, emailVerifiedAt: null,
+      failedLoginCount: 0, lockedUntil: null, lastLoginAt: null, deletionRequestedAt: null, residesInKsa: null },
     session: { id: "00000000-0000-0000-0000-000000000000" } as Auth["session"],
     globalRoles: ["platform_engine"],
     perms: new Set(ENGINE_PERMS),

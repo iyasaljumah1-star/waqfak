@@ -201,10 +201,13 @@ export const breakGlassAccess = pgTable("break_glass_access", {
 });
 
 /**
- * The columns of `users` the application and system roles may read (stage 11): all but the password hash, which only
- * the authentication role reads. `tx.select(userColumns).from(users)` in place of `tx.select().from(users)`.
+ * The columns of `users` the application role may read (stage 11, N10-10): a person's name and standing — never their
+ * phone, e-mail, birth date, identity number, sign-in counters or password hash. Those come through the database's
+ * own checks (modules/people.ts: contactOf, privateOf, userByPhone). `tx.select(userColumns).from(users)`.
  */
-const { passwordHash: _passwordHash, ...userColumnsWithoutSecret } = getTableColumns(users);
-void _passwordHash;
-export const userColumns = userColumnsWithoutSecret;
-export type UserPublicRow = Omit<typeof users.$inferSelect, "passwordHash">;
+const c = getTableColumns(users);
+export const userColumns = {
+  id: c.id, fullName: c.fullName, isStaff: c.isStaff, status: c.status, locale: c.locale, numeralStyle: c.numeralStyle,
+  calendarPref: c.calendarPref, mfaEnabled: c.mfaEnabled, createdAt: c.createdAt, updatedAt: c.updatedAt, createdBy: c.createdBy, updatedBy: c.updatedBy,
+};
+export type UserPublicRow = Pick<typeof users.$inferSelect, keyof typeof userColumns>;

@@ -22,6 +22,7 @@ import { notify } from "../notify";
 import { parseForm, toState, userAction, UserError, waqfAction } from "../_shared";
 import { evidenceDocs } from "../establish/journey-server";
 import type { ActionState } from "@/lib/utils";
+import { userByPhone } from "@/server/modules/people";
 
 // ───────────── helpers ─────────────
 /** On failure, echo the submitted text values so the form can re-fill itself (React resets forms after an action). */
@@ -285,7 +286,7 @@ async function createInvitation(
     })
     .returning({ id: invitations.id });
   const link = `/app/invitations/${token}`;
-  const [existing] = await tx.select({ id: users.id }).from(users).where(eq(users.phone, o.phone)).limit(1);
+  const existing = await userByPhone(tx, o.phone); // stage 11: id and name only, through the database
   if (existing) {
     // waqfId stays null on purpose: the invitee cannot see this waqf's rows (RLS) until they accept.
     await notify(existing.id, "invitation", { waqf: o.waqfName, role: roleName(o.roleKey) }, { link, tx });
@@ -312,12 +313,11 @@ export async function inviteMember(_: ActionState, fd: FormData): Promise<Action
     d.waqfId,
     "waqf.members.manage",
     async ({ auth, access, tx, ip, userAgent }) => {
-      const [already] = await tx
-        .select({ id: waqfMemberships.id })
-        .from(waqfMemberships)
-        .innerJoin(users, eq(users.id, waqfMemberships.userId))
-        .where(and(eq(waqfMemberships.waqfId, d.waqfId), eq(users.phone, phone), eq(waqfMemberships.roleKey, d.roleKey), activeNow()))
-        .limit(1);
+      const holder = await userByPhone(tx, phone); // stage 11: the phone is not the application's column
+      const [already] = holder
+        ? await tx.select({ id: waqfMemberships.id }).from(waqfMemberships)
+          .where(and(eq(waqfMemberships.waqfId, d.waqfId), eq(waqfMemberships.userId, holder.id), eq(waqfMemberships.roleKey, d.roleKey), activeNow())).limit(1)
+        : [];
       if (already) throw new UserError(`صاحب هذا الرقم عضو في الوقف بدور «${roleName(d.roleKey)}» مسبقًا.`);
       const inv = await createInvitation(tx, { waqfId: d.waqfId, waqfName: access.waqf.name, phone, roleKey: d.roleKey, invitedBy: auth.user.id, note: d.note });
       await audit(tx, {
@@ -383,7 +383,8 @@ export async function createDelegation(_: ActionState, fd: FormData): Promise<Ac
     d.waqfId,
     "waqf.members.manage",
     async ({ auth, access, tx, ip, userAgent }) => {
-      const [agent] = await tx.select({ id: users.id, name: users.fullName }).from(users).where(eq(users.phone, phone)).limit(1);
+      const found = await userByPhone(tx, phone); // stage 11: id and name only, through the database
+      const agent = found ? { id: found.id, name: found.fullName } : undefined;
       if (agent?.id === auth.user.id) throw new UserError("لا يمكنك توكيل نفسك.");
       const terms = { permissions: scope, validFrom: d.validFrom, validTo: d.validTo, poaNo: d.poaNo, notes: d.notes, principalName: auth.user.fullName };
       if (!agent) {

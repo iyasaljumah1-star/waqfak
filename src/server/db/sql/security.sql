@@ -1366,6 +1366,7 @@ DO $$ BEGIN EXECUTE format('GRANT CONNECT ON DATABASE %I TO waqfak_system, waqfa
 GRANT USAGE ON SCHEMA public TO waqfak_auth;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO waqfak_auth;
 GRANT SELECT, INSERT, UPDATE ON users, sessions TO waqfak_auth;
+GRANT DELETE ON sessions TO waqfak_auth;  -- the retention purge of ended sessions
 GRANT SELECT, INSERT, UPDATE, DELETE ON mfa_factors, recovery_codes, otp_challenges, rate_limits TO waqfak_auth;
 GRANT SELECT ON roles, user_roles, permissions, role_permissions TO waqfak_auth;
 GRANT INSERT ON consents, audit_logs TO waqfak_auth;
@@ -1628,6 +1629,158 @@ GRANT EXECUTE ON FUNCTION app_waqf_number_taken(text, text) TO waqfak_app;
 GRANT EXECUTE ON FUNCTION app_client_completion(uuid, text, jsonb, text, text, timestamptz) TO waqfak_app;
 REVOKE ALL ON FUNCTION app_can_see_request(uuid), app_audit_mark(), app_waqf_frozen_outputs(uuid, text[]), app_waqf_completeness(uuid[]), app_request_output_states(uuid[]), app_request_client_revisions(uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION app_can_see_request(uuid), app_audit_mark(), app_waqf_frozen_outputs(uuid, text[]), app_waqf_completeness(uuid[]), app_request_output_states(uuid[]), app_request_client_revisions(uuid) TO waqfak_app;
+
+-- ═════════════ Stage 11, B: the tables without row-level security; another person's data; the first member ═════════════
+-- (classification: docs/stage-11/TABLES.md). Every one of the 52 tables that had no RLS is now in one of these:
+--   identity — the authentication role's (A above);  personal — the person's own rows, staff, the system;
+--   operational — the system's own (jobs, outbox, rate limits);  catalog — read by all, written by staff or the system.
+
+-- ── N10-10: another person's contact and identity data. The application role reads a person's name and standing,
+-- never their phone, e-mail, birth date or identity number — those through app_user_contact / app_user_private,
+-- which answer only for oneself, an authorized staff member, or the manager of a waqf both belong to.
+REVOKE SELECT ON users FROM waqfak_app;
+GRANT SELECT (id, full_name, is_staff, status, locale, numeral_style, calendar_pref, mfa_enabled, created_at, updated_at, created_by, updated_by) ON users TO waqfak_app;
+-- the system (notifications, jobs) reads the contact columns on its own grant
+GRANT SELECT (id, phone, email, full_name, id_type, birth_date, locale, numeral_style, calendar_pref, status, is_staff, mfa_enabled, phone_verified_at, email_verified_at, locked_until, last_login_at, deletion_requested_at, resides_in_ksa, created_at, updated_at, created_by, updated_by) ON users TO waqfak_system;
+
+CREATE OR REPLACE FUNCTION app_can_see_contact(target uuid) RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER AS $$
+  SELECT target IS NOT NULL AND (
+    app_is_system()
+    OR target = app_current_user()
+    OR (app_is_staff() AND (app_has_global_access() OR app_holds('admin.pii.view') OR app_holds('admin.users') OR app_holds('admin.clients.edit') OR app_holds('admin.notifications')))
+    -- the manager of a waqf (a role carrying waqf.members.manage there) sees its members' and agents' contacts
+    OR EXISTS (SELECT 1 FROM waqf_memberships mine JOIN roles r ON r.key = mine.role_key JOIN role_permissions rp ON rp.role_id = r.id
+                 JOIN permissions p ON p.id = rp.permission_id AND p.key = 'waqf.members.manage'
+               WHERE mine.user_id = app_current_user() AND mine.status = 'active' AND (mine.ends_at IS NULL OR mine.ends_at > now())
+                 AND (EXISTS (SELECT 1 FROM waqf_memberships theirs WHERE theirs.waqf_id = mine.waqf_id AND theirs.user_id = target)
+                      OR EXISTS (SELECT 1 FROM delegations d WHERE d.waqf_id = mine.waqf_id AND d.agent_user_id = target))))
+$$;
+CREATE OR REPLACE FUNCTION app_user_contact(ids uuid[]) RETURNS TABLE (id uuid, phone text, email text) LANGUAGE sql STABLE SECURITY DEFINER AS $$
+  SELECT u.id, u.phone, u.email FROM users u WHERE u.id = ANY (ids) AND app_can_see_contact(u.id)
+$$;
+-- the whole private record: oneself, or staff entitled to personal data (never another client)
+CREATE OR REPLACE FUNCTION app_user_private(target uuid)
+RETURNS TABLE (id uuid, phone text, email text, birth_date date, id_type text, national_id_enc text, resides_in_ksa boolean, phone_verified_at timestamptz,
+               email_verified_at timestamptz, last_login_at timestamptz, locked_until timestamptz, failed_login_count integer, deletion_requested_at timestamptz)
+LANGUAGE sql STABLE SECURITY DEFINER AS $$
+  SELECT u.id, u.phone, u.email, u.birth_date, u.id_type::text, u.national_id_enc, u.resides_in_ksa, u.phone_verified_at, u.email_verified_at, u.last_login_at,
+         u.locked_until, u.failed_login_count, u.deletion_requested_at
+    FROM users u WHERE u.id = target AND (app_is_system() OR u.id = app_current_user()
+      OR (app_is_staff() AND (app_holds('admin.pii.view') OR app_holds('admin.users') OR app_holds('admin.clients.edit') OR app_holds('admin.notifications'))))
+$$;
+-- does an account hold this phone (an invitation, a delegation, a screening)? its id and name, never its other data
+CREATE OR REPLACE FUNCTION app_user_by_phone(p text) RETURNS TABLE (id uuid, full_name text) LANGUAGE sql STABLE SECURITY DEFINER AS $$
+  SELECT u.id, u.full_name FROM users u WHERE u.phone = p AND (app_is_system() OR app_current_user() IS NOT NULL) LIMIT 1
+$$;
+-- staff search of accounts by name, phone or e-mail (lists and filters): ids only
+CREATE OR REPLACE FUNCTION app_user_search(term text) RETURNS TABLE (id uuid) LANGUAGE sql STABLE SECURITY DEFINER AS $$
+  SELECT u.id FROM users u WHERE (app_is_system() OR app_is_staff()) AND length(coalesce(term, '')) >= 2
+    AND (u.full_name ILIKE '%' || term || '%' OR u.email ILIKE '%' || term || '%' OR (length(regexp_replace(term, '\D', '', 'g')) >= 4 AND u.phone LIKE '%' || regexp_replace(term, '\D', '', 'g') || '%'))
+$$;
+-- an account by e-mail (sign-in identifier clashes, staff only)
+CREATE OR REPLACE FUNCTION app_user_by_email(e text) RETURNS TABLE (id uuid) LANGUAGE sql STABLE SECURITY DEFINER AS $$
+  SELECT u.id FROM users u WHERE lower(u.email) = lower(e) AND (app_is_system() OR app_is_staff()) LIMIT 1
+$$;
+-- the administrative columns of many accounts at once (staff lists): staff entitled to personal data only
+CREATE OR REPLACE FUNCTION app_user_admin_fields(ids uuid[])
+RETURNS TABLE (id uuid, phone text, email text, last_login_at timestamptz, locked_until timestamptz, deletion_requested_at timestamptz) LANGUAGE sql STABLE SECURITY DEFINER AS $$
+  SELECT u.id, u.phone, u.email, u.last_login_at, u.locked_until, u.deletion_requested_at FROM users u
+   WHERE u.id = ANY (ids) AND (app_is_system() OR (app_is_staff() AND (app_holds('admin.pii.view') OR app_holds('admin.users') OR app_holds('admin.clients.edit') OR app_holds('admin.notifications'))))
+$$;
+REVOKE ALL ON FUNCTION app_user_by_email(text), app_user_admin_fields(uuid[]) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION app_user_by_email(text), app_user_admin_fields(uuid[]) TO waqfak_app;
+REVOKE ALL ON FUNCTION app_can_see_contact(uuid), app_user_contact(uuid[]), app_user_private(uuid), app_user_by_phone(text), app_user_search(text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION app_can_see_contact(uuid), app_user_contact(uuid[]), app_user_private(uuid), app_user_by_phone(text), app_user_search(text) TO waqfak_app;
+
+-- ── N10-11: the first member of a waqf is its creator, for themselves, in the transaction that created it; nobody
+-- makes themselves a member of a waqf without members (or of anyone's, without its managers)
+DROP POLICY IF EXISTS wm_insert ON waqf_memberships;
+CREATE POLICY wm_insert ON waqf_memberships FOR INSERT TO waqfak_app
+  WITH CHECK (app_can_access_waqf(waqf_id) OR (
+    NOT app_waqf_has_members(waqf_id) AND user_id = app_current_user()
+    AND EXISTS (SELECT 1 FROM waqfs w WHERE w.id = waqf_id AND w.created_by = app_current_user() AND w.created_at = now())));
+-- and a member is added to an existing waqf by someone who manages its members (or staff, or the system) —
+-- not by any member: a beneficiary does not appoint a nazir
+CREATE OR REPLACE FUNCTION app_can_manage_members(w uuid) RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER AS $$
+  SELECT app_is_system() OR app_has_global_access()
+    OR EXISTS (SELECT 1 FROM waqf_memberships mine JOIN roles r ON r.key = mine.role_key JOIN role_permissions rp ON rp.role_id = r.id
+                 JOIN permissions p ON p.id = rp.permission_id AND p.key = 'waqf.members.manage'
+               WHERE mine.waqf_id = w AND mine.user_id = app_current_user() AND mine.status = 'active' AND (mine.ends_at IS NULL OR mine.ends_at > now()))
+$$;
+REVOKE ALL ON FUNCTION app_can_manage_members(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION app_can_manage_members(uuid) TO waqfak_app;
+DROP POLICY IF EXISTS wm_manage ON waqf_memberships;
+CREATE POLICY wm_manage ON waqf_memberships AS RESTRICTIVE FOR INSERT TO waqfak_app
+  WITH CHECK (app_can_manage_members(waqf_id) OR (
+    NOT app_waqf_has_members(waqf_id) AND user_id = app_current_user()
+    AND EXISTS (SELECT 1 FROM waqfs w WHERE w.id = waqf_id AND w.created_by = app_current_user() AND w.created_at = now()))
+    -- an invitation accepted by its invitee (the invitation, not the invitee, names the role)
+    OR EXISTS (SELECT 1 FROM invitations i WHERE i.waqf_id = waqf_memberships.waqf_id AND i.accepted_by = app_current_user()
+                 AND waqf_memberships.user_id = app_current_user() AND i.role_key = waqf_memberships.role_key AND i.revoked_at IS NULL));
+
+-- ── personal tables: the person's own rows, staff, the system ──
+DO $$ DECLARE t record; BEGIN
+  FOR t IN SELECT * FROM (VALUES
+      ('consents', 'user_id = app_current_user()', 'user_id = app_current_user()'),
+      ('notification_preferences', 'user_id = app_current_user()', 'user_id = app_current_user()'),
+      ('data_subject_requests', 'user_id = app_current_user()', 'user_id = app_current_user()'),
+      ('payments', 'user_id = app_current_user()', 'false'),
+      ('contract_signatures', 'user_id = app_current_user() OR EXISTS (SELECT 1 FROM contracts k WHERE k.id = contract_signatures.contract_id)', 'user_id = app_current_user()'),
+      ('facts', 'EXISTS (SELECT 1 FROM assessments a WHERE a.id = facts.assessment_id)', 'EXISTS (SELECT 1 FROM assessments a WHERE a.id = facts.assessment_id)')
+    ) AS x(tbl, own_read, own_write) LOOP
+    EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t.tbl);
+    EXECUTE format('DROP POLICY IF EXISTS personal_read ON %I', t.tbl);
+    EXECUTE format('DROP POLICY IF EXISTS personal_write ON %I', t.tbl);
+    EXECUTE format('DROP POLICY IF EXISTS personal_change ON %I', t.tbl);
+    EXECUTE format('CREATE POLICY personal_read ON %I FOR SELECT TO waqfak_app USING (app_is_system() OR app_is_staff() OR %s)', t.tbl, t.own_read);
+    EXECUTE format('CREATE POLICY personal_write ON %I FOR INSERT TO waqfak_app WITH CHECK (app_is_system() OR app_is_staff() OR %s)', t.tbl, t.own_write);
+    EXECUTE format('CREATE POLICY personal_change ON %I FOR UPDATE TO waqfak_app USING (app_is_system() OR app_is_staff() OR %s) WITH CHECK (app_is_system() OR app_is_staff() OR %s)', t.tbl, t.own_write, t.own_write);
+  END LOOP;
+END $$;
+-- deletions of personal rows: the system or staff only (a person withdraws a consent by a new row, never by erasing);
+-- one's own notification preferences and an assessment's own facts are the exception
+DO $$ DECLARE t text; BEGIN
+  FOREACH t IN ARRAY ARRAY['consents', 'data_subject_requests', 'payments', 'contract_signatures'] LOOP
+    EXECUTE format('DROP POLICY IF EXISTS personal_delete ON %I', t);
+    EXECUTE format('CREATE POLICY personal_delete ON %I FOR DELETE TO waqfak_app USING (app_is_system() OR app_is_staff())', t);
+  END LOOP;
+END $$;
+DROP POLICY IF EXISTS personal_delete ON notification_preferences;
+CREATE POLICY personal_delete ON notification_preferences FOR DELETE TO waqfak_app USING (app_is_system() OR app_is_staff() OR user_id = app_current_user());
+DROP POLICY IF EXISTS personal_delete ON facts;
+CREATE POLICY personal_delete ON facts FOR DELETE TO waqfak_app USING (app_is_system() OR app_is_staff() OR EXISTS (SELECT 1 FROM assessments a WHERE a.id = facts.assessment_id));
+
+-- ── operational tables of the system: outbox, rate limits, job runs; contact messages (staff reads, the system writes)
+DO $$ DECLARE t record; BEGIN
+  FOR t IN SELECT * FROM (VALUES
+      ('outbox_messages', 'app_holds(''admin.notifications'') OR app_holds(''admin.settings'')'),
+      ('rate_limits', 'app_holds(''admin.settings'')'),
+      ('job_runs', 'app_is_staff()'),
+      ('contact_messages', 'app_is_staff()')) AS x(tbl, staff) LOOP
+    EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t.tbl);
+    EXECUTE format('DROP POLICY IF EXISTS ops_access ON %I', t.tbl);
+    EXECUTE format('CREATE POLICY ops_access ON %I FOR ALL TO waqfak_app USING (app_is_system() OR %s) WITH CHECK (app_is_system() OR %s)', t.tbl, t.staff, t.staff);
+  END LOOP;
+END $$;
+
+-- ── unused by the application (no code path): the application role holds nothing on them; the system keeps them
+REVOKE ALL ON kyc_records, organization_members, devices, persons, organizations FROM waqfak_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON kyc_records, organization_members, devices, persons, organizations TO waqfak_system;
+
+-- ── catalogs and settings: read by everyone; written by staff (the action checks the exact permission) or the system
+DO $$ DECLARE t text; BEGIN
+  FOREACH t IN ARRAY ARRAY['assessment_axes', 'assessment_questions', 'compliance_change_log', 'content_items', 'content_reviews', 'contract_templates',
+      'critical_flag_defs', 'discounts', 'faqs', 'feature_flags', 'glossary_terms', 'holidays', 'needs', 'notification_templates', 'obligations',
+      'package_items', 'packages', 'penalty_schedule', 'price_change_log', 'question_bank_versions', 'recommendation_rules', 'regulatory_references',
+      'regulatory_requirements', 'service_categories', 'service_prices', 'services', 'settings', 'workflow_templates'] LOOP
+    EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
+    EXECUTE format('DROP POLICY IF EXISTS catalog_read ON %I', t);
+    EXECUTE format('DROP POLICY IF EXISTS catalog_write ON %I', t);
+    EXECUTE format('CREATE POLICY catalog_read ON %I FOR SELECT TO waqfak_app USING (true)', t);
+    EXECUTE format('CREATE POLICY catalog_write ON %I FOR ALL TO waqfak_app USING (app_is_system() OR app_is_staff()) WITH CHECK (app_is_system() OR app_is_staff())', t);
+  END LOOP;
+END $$;
+-- sequences: the numbering every writer advances (no person's data); left without RLS, documented in TABLES.md
 
 -- ═════════════ Phase 10 (owner's order of 2026-11-09), N9-1: no function resolves a name the caller can shadow ═════════════
 -- A function body names tables and functions without a schema; PostgreSQL resolves them by search_path at each call,

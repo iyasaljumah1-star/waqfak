@@ -56,6 +56,10 @@ async function fixtures(db: string) {
       await c.query(`insert into waqfs (id, internal_number, name, created_by) values ($1, $2, $3, $4) on conflict (id) do nothing`, [w, `T-${w.slice(-4)}`, n, U.other]);
     for (const [w, u, r] of [[W.a, U.client, "founder"], [W.b, U.other, "nazir"], [W.b, U.victim, "beneficiary"]])
       await c.query(`insert into waqf_memberships (waqf_id, user_id, role_key, status) values ($1, $2, $3, 'active') on conflict do nothing`, [w, u, r]);
+    // another person's private rows (for T1)
+    await c.query(`insert into consents (user_id, kind, version, granted) values ($1, 'privacy', 'v1', true)`, [U.victim]);
+    await c.query(`insert into data_subject_requests (user_id, kind, details) values ($1, 'access', 'اختبار')`, [U.victim]);
+    await c.query(`insert into notification_preferences (user_id, type, in_app, email, sms) values ($1, 'invitation', true, false, false) on conflict do nothing`, [U.victim]);
     await c.query("commit");
   } finally {
     await c.end();
@@ -114,6 +118,20 @@ const ATTACKS: Attack[] = [
   // ── data isolation for a bound person (N10-10 on the users table is batch B) ──
   { id: "D1", finding: "R8-1", what: "bound as the client: read the other waqf", run: async (x) => { await bind(x, "client"); return n(await x.q(`select count(*) from waqfs where id = $1`, [W.b])) > 0; } },
   { id: "D2", finding: "R8-1", what: "bound as the client: global access", run: async (x) => { await bind(x, "client"); return (await x.q(`select app_has_global_access() as g`)).rows[0]?.g === true; } },
+  // ── N10-10: another person's contact data; N10-11: making oneself a member (nazir) ──
+  { id: "N1", finding: "N10-10", what: "bound as a client: read another person's phone and e-mail from users", run: async (x) => { await bind(x, "client"); return (await x.q(`select phone, email from users where id = $1`, [U.victim])).rows.length > 0; } },
+  { id: "N2", finding: "N10-10", what: "bound as a client: read every account's phone (the whole table)", run: async (x) => { await bind(x, "client"); return n(await x.q(`select count(phone) from users`)) > 1; } },
+  { id: "N3", finding: "N10-10", what: "bound as a client: another person's contact through app_user_contact", run: async (x) => { await bind(x, "client"); return (await x.q(`select * from app_user_contact(array[$1]::uuid[])`, [U.victim])).rows.length > 0; } },
+  { id: "N4", finding: "N10-10", what: "bound as a client: another person's birth date / identity through app_user_private", run: async (x) => { await bind(x, "client"); return (await x.q(`select * from app_user_private($1)`, [U.victim])).rows.length > 0; } },
+  { id: "N5", finding: "N10-11", what: "bound as a client: make oneself nazir of a waqf that has no members", run: async (x) => { await bind(x, "client"); return ((await x.q(`insert into waqf_memberships (waqf_id, user_id, role_key, status) values ($1, $2, 'nazir', 'active')`, [W.empty, U.client])).rowCount ?? 0) > 0; } },
+  { id: "N6", finding: "N10-11", what: "bound as a client: make oneself nazir of another person's waqf", run: async (x) => { await bind(x, "client"); return ((await x.q(`insert into waqf_memberships (waqf_id, user_id, role_key, status) values ($1, $2, 'nazir', 'active')`, [W.b, U.client])).rowCount ?? 0) > 0; } },
+  { id: "N7", finding: "N10-11", what: "bound as a beneficiary of a waqf: appoint someone its nazir", run: async (x) => { await bind(x, "victim"); return ((await x.q(`insert into waqf_memberships (waqf_id, user_id, role_key, status) values ($1, $2, 'nazir', 'active')`, [W.b, U.client])).rowCount ?? 0) > 0; } },
+  // ── the tables without row-level security ──
+  { id: "T1", finding: "no-RLS", what: "bound as a client: read other people's consents, payments, privacy requests, preferences", run: async (x) => { await bind(x, "client"); return n(await x.q(`select (select count(*) from consents where user_id <> $1) + (select count(*) from payments where user_id <> $1) + (select count(*) from data_subject_requests where user_id <> $1) + (select count(*) from notification_preferences where user_id <> $1)`, [U.client])) > 0; } },
+  { id: "T2", finding: "no-RLS", what: "bound as a client: change a service, a setting or a feature flag", run: async (x) => { await bind(x, "client"); const a = (await x.q(`update services set name_ar = name_ar where true`)).rowCount ?? 0; const b = (await x.q(`update settings set value = value where true`)).rowCount ?? 0; const c = (await x.q(`update feature_flags set enabled = enabled where true`)).rowCount ?? 0; return a + b + c > 0; } },
+  { id: "T3", finding: "no-RLS", what: "bound as a client: read the outbox (other people's SMS and e-mails) or the rate limits", run: async (x) => { await bind(x, "client"); return n(await x.q(`select (select count(*) from outbox_messages) + (select count(*) from rate_limits)`)) > 0; } },
+  { id: "T4", finding: "no-RLS", what: "bound as a client: read KYC records, persons, organizations, devices", run: async (x) => { await bind(x, "client"); return n(await x.q(`select (select count(*) from kyc_records) + (select count(*) from persons) + (select count(*) from organizations) + (select count(*) from devices)`)) >= 0; } },
+  { id: "T5", finding: "no-RLS", what: "bound as a client: plant a contact message or a notification template", run: async (x) => { await bind(x, "client"); await x.q(`update notification_templates set title_ar = title_ar where true`).then((r) => { if ((r.rowCount ?? 0) === 0) throw new Error("no rows"); }); return true; } },
 ];
 
 /** Must work on the new layer: the legitimate paths still open. */
@@ -122,6 +140,9 @@ const CONTROLS: Attack[] = [
   { id: "P2", finding: "—", what: "bound client reads their own waqf and changes their own name", run: async (x) => { await bind(x, "client"); const r = n(await x.q(`select count(*) from waqfs where id = $1`, [W.a])); const u = (await x.q(`update users set full_name = 'اسم جديد' where id = $1`, [U.client])).rowCount; return r === 1 && u === 1; } },
   { id: "P3", finding: "—", what: "bound client ends their own session", run: async (x) => { await bind(x, "client"); return ((await x.q(`update sessions set revoked_at = now(), revoke_reason = 'logout' where user_id = $1`, [U.client])).rowCount ?? 0) > 0; } },
   { id: "P4", finding: "—", what: "bound administrator has global access; the binding names them", run: async (x) => { const u = await bind(x, "admin"); return u === U.admin && (await x.q(`select app_has_global_access() as g`)).rows[0]?.g === true; } },
+  { id: "P5", finding: "—", what: "the waqf's nazir sees its beneficiary's phone (app_user_contact); the client sees their own", run: async (x) => { await bind(x, "other"); const a = (await x.q(`select phone from app_user_contact(array[$1]::uuid[])`, [U.victim])).rows.length; await x.q("commit"); await x.q("begin"); await bind(x, "client"); const b = (await x.q(`select phone from app_user_contact(array[$1]::uuid[])`, [U.client])).rows.length; return a === 1 && b === 1; } },
+  { id: "P6", finding: "—", what: "the waqf's nazir adds a member; a creator becomes the first member of the waqf they create, in that transaction", run: async (x) => { await bind(x, "other"); const a = (await x.q(`insert into waqf_memberships (waqf_id, user_id, role_key, status) values ($1, $2, 'viewer', 'active') on conflict do nothing`, [W.b, U.client])).rowCount; await x.q("commit"); await x.q("begin"); await bind(x, "client"); const w = (await x.q(`insert into waqfs (internal_number, name, created_by) values ('T-NEW', 'وقف جديد', $1) returning id`, [U.client])).rows[0]!.id; const b = (await x.q(`insert into waqf_memberships (waqf_id, user_id, role_key, status) values ($1, $2, 'founder', 'active')`, [w, U.client])).rowCount; return a === 1 && b === 1; } },
+  { id: "P7", finding: "—", what: "a client reads the catalog (services, settings) and their own consents", run: async (x) => { await bind(x, "client"); const a = n(await x.q(`select count(*) from services`)); const b = n(await x.q(`select count(*) from settings`)); await x.q(`select count(*) from consents where user_id = $1`, [U.client]); return a > 0 && b > 0; } },
 ];
 
 async function battery(db: string, set: Attack[]) {

@@ -20,6 +20,7 @@ import { checkIntake, sanitizeAnswers, summaryText, type Answers, type DocMap, t
 import { formFor } from "./forms";
 import { contextFor } from "../context/map";
 import { waqfModeOf, type WaqfMode } from "../waqf-mode";
+import { contactOf } from "@/server/modules/people";
 
 export type IntakeData = { preferredContact?: string; formVersion?: number; waqfMode?: WaqfMode; answers?: Answers; docs?: DocMap };
 
@@ -31,7 +32,10 @@ export function serviceForm(svc: Pick<typeof services.$inferSelect, "code" | "au
 
 /** Values the waqf file and the account hold for the prefill keys (read live; also used to show where an answer came from). */
 export async function prefillSources(tx: Tx, userId: string | null, waqfId: string | null): Promise<Record<PrefillKey, string | null | undefined>> {
-  const [u] = userId ? await tx.select({ fullName: users.fullName, phone: users.phone, email: users.email }).from(users).where(eq(users.id, userId)).limit(1) : [];
+  // stage 11: the person's own contact data through the database's check (oneself, or entitled staff)
+  const [u0] = userId ? await tx.select({ fullName: users.fullName }).from(users).where(eq(users.id, userId)).limit(1) : [];
+  const c = userId ? (await contactOf(tx, [userId])).get(userId) : undefined;
+  const u = u0 ? { ...u0, phone: c?.phone ?? null, email: c?.email ?? null } : undefined;
   const [w] = waqfId
     ? await tx.select({ name: waqfs.name, sizeClass: waqfs.sizeClass, deedNo: waqfs.deedNo, registrationCertNo: waqfs.registrationCertNo, fiscalYearEnd: waqfs.fiscalYearEnd, nationalUnifiedNumber: waqfs.nationalUnifiedNumber, domicile: waqfs.domicile, hasForeignParty: waqfs.hasForeignParty, hasBeneficiariesAbroad: waqfs.hasBeneficiariesAbroad, collectsDonations: waqfs.collectsDonations }).from(waqfs).where(eq(waqfs.id, waqfId)).limit(1)
     : [];

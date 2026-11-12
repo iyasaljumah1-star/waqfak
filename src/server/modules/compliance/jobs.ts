@@ -1,6 +1,6 @@
 import "server-only";
 import { eq, lt, or, sql } from "drizzle-orm";
-import { withSystem, type Tx } from "../../db";
+import { withAuth, withSystem, type Tx } from "../../db";
 import { jobRuns, otpChallenges, rateLimits, sessions } from "../../db/schema";
 import { recomputeStatuses, resyncAll, sendReminders } from "./engine";
 
@@ -8,11 +8,14 @@ type Step = { name: string; run: (tx: Tx) => Promise<unknown> };
 
 /** Removes expired auth artefacts (kept one day after expiry for troubleshooting). */
 async function cleanup(tx: Tx) {
-  const s = await tx
-    .delete(sessions)
-    .where(or(lt(sessions.absoluteExpiresAt, sql`now() - interval '1 day'`), lt(sessions.idleExpiresAt, sql`now() - interval '1 day'`)))
-    .returning({ id: sessions.id });
-  const o = await tx.delete(otpChallenges).where(lt(otpChallenges.expiresAt, sql`now() - interval '1 day'`)).returning({ id: otpChallenges.id });
+  // stage 11: sessions and one-time codes are the authentication role's (the system role has no write on them)
+  const { s, o } = await withAuth(async (atx) => ({
+    s: await atx
+      .delete(sessions)
+      .where(or(lt(sessions.absoluteExpiresAt, sql`now() - interval '1 day'`), lt(sessions.idleExpiresAt, sql`now() - interval '1 day'`)))
+      .returning({ id: sessions.id }),
+    o: await atx.delete(otpChallenges).where(lt(otpChallenges.expiresAt, sql`now() - interval '1 day'`)).returning({ id: otpChallenges.id }),
+  }));
   const r = await tx.delete(rateLimits).where(lt(rateLimits.windowStart, sql`now() - interval '1 day'`)).returning({ key: rateLimits.key });
   return { sessions: s.length, otpChallenges: o.length, rateLimits: r.length };
 }

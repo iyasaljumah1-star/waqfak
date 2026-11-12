@@ -159,7 +159,7 @@ export default async function UserPage({ params, searchParams }: { params: Promi
                 fullName={u.fullName ?? ""}
                 email={pii ? u.email ?? "" : ""}
                 hasEmail={!!u.email}
-                phoneLocal={pii ? u.phone.replace(/^\+966/, "0") : ""}
+                phoneLocal={pii ? (u.phone ?? "").replace(/^\+966/, "0") : ""}
                 residesInKsa={u.residesInKsa}
                 canSeePii={pii}
               />

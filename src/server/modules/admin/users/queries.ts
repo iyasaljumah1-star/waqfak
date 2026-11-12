@@ -1,11 +1,11 @@
 import "server-only";
-import { and, asc, desc, eq, gt, ilike, inArray, isNull, like, or, type SQL , sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNull, like, or, sql, type SQL } from "drizzle-orm";
 import type { Auth } from "@/server/authz/context";
 import { auditLogs, breakGlassAccess, roles, sessions, userRoles, users, userColumns, waqfMemberships, waqfs } from "@/server/db/schema";
+import { adminFieldsOf, searchUserIds, withPrivate } from "@/server/modules/people";
 import { read } from "@/server/modules/_shared";
 import { audit } from "@/server/lib/audit";
 import { requestInfo } from "@/server/lib/request-info";
-import { likeTerm } from "../guard";
 
 export type UserListFilter = { q?: string; kind?: "staff" | "clients" | "all"; status?: string; role?: string };
 
@@ -16,9 +16,9 @@ export async function listUsers(auth: Auth, f: UserListFilter) {
     if (f.kind === "clients") conds.push(eq(users.isStaff, false));
     if (f.status) conds.push(eq(users.status, f.status as typeof users.$inferSelect.status));
     if (f.q?.trim()) {
-      const t = likeTerm(f.q);
-      const digits = f.q.replace(/\D/g, "").replace(/^0/, "");
-      conds.push(or(ilike(users.fullName, t), ilike(users.email, t), digits.length >= 4 ? like(users.phone, `%${digits}%`) : undefined));
+      // stage 11: by name, phone or e-mail through the database's staff search (the columns are not the application's)
+      const found = await searchUserIds(tx, f.q.trim().replace(/^0/, ""));
+      conds.push(found.length ? inArray(users.id, found) : sql`false`);
     }
     if (f.role) {
       const ids = tx.select({ id: userRoles.userId }).from(userRoles).innerJoin(roles, eq(roles.id, userRoles.roleId)).where(eq(roles.key, f.role));
@@ -26,8 +26,7 @@ export async function listUsers(auth: Auth, f: UserListFilter) {
     }
     const rows = await tx
       .select({
-        id: users.id, fullName: users.fullName, phone: users.phone, email: users.email, isStaff: users.isStaff, status: users.status,
-        mfaEnabled: users.mfaEnabled, lastLoginAt: users.lastLoginAt, lockedUntil: users.lockedUntil, createdAt: users.createdAt,
+        id: users.id, fullName: users.fullName, isStaff: users.isStaff, status: users.status, mfaEnabled: users.mfaEnabled, createdAt: users.createdAt,
       })
       .from(users)
       .where(and(...conds))
@@ -38,7 +37,11 @@ export async function listUsers(auth: Auth, f: UserListFilter) {
       : [];
     const byUser = new Map<string, string[]>();
     for (const r of roleRows) byUser.set(r.userId, [...(byUser.get(r.userId) ?? []), r.key]);
-    return rows.map((r) => ({ ...r, roles: byUser.get(r.id) ?? [] }));
+    const adm = await adminFieldsOf(tx, rows.map((r) => r.id));
+    return rows.map((r) => {
+      const a = adm.get(r.id);
+      return { ...r, phone: a?.phone ?? "", email: a?.email ?? null, lastLoginAt: a?.lastLoginAt ?? null, lockedUntil: a?.lockedUntil ?? null, roles: byUser.get(r.id) ?? [] };
+    });
   });
 }
 export type UserListRow = Awaited<ReturnType<typeof listUsers>>[number];
@@ -47,8 +50,9 @@ const LOGIN_ACTIONS = ["user.login", "user.logout", "user.mfa_verified", "user.r
 
 export async function userDetail(auth: Auth, id: string) {
   return read(auth, async (tx) => {
-    const [u] = await tx.select(userColumns).from(users).where(eq(users.id, id)).limit(1);
-    if (!u) return null;
+    const [u0] = await tx.select(userColumns).from(users).where(eq(users.id, id)).limit(1);
+    if (!u0) return null;
+    const u = await withPrivate(tx, u0); // stage 11: private columns through the database's check
     const [grants, allRoles, activeSessions, history, adminEvents, factors, , memberships, breakGlass] = await Promise.all([
       tx
         .select({ key: roles.key, nameAr: roles.nameAr, grantedAt: userRoles.grantedAt, grantedBy: userRoles.grantedBy })

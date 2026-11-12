@@ -23,6 +23,7 @@ import { companyProfile, consistencyFor, contractsOf, ledgerOf, prestartUnpaid, 
 import { readSetting } from "./catalog";
 import { checkIntake, sanitizeAnswers, summarize } from "./intake/engine";
 import { intakeOf, serviceForm, validDocMap } from "./intake/server";
+import { contactOf } from "@/server/modules/people";
 
 const listCols = {
   id: serviceRequests.id,
@@ -206,7 +207,9 @@ export async function requestDetail(auth: Auth, id: string, side: "client" | "st
     for (const e of itemEvents) if (e.actorUserId) ids.add(e.actorUserId);
     for (const q of allQuotes) for (const u of [q.preparedBy, q.approvedBy, q.respondedBy]) if (u) ids.add(u);
     if (staff) for (const v of Object.values(((rc.req.intake ?? {}) as { docReview?: Record<string, { by: string }> }).docReview ?? {})) ids.add(v.by);
-    const people = ids.size ? await tx.select({ id: users.id, name: users.fullName, isStaff: users.isStaff, phone: users.phone }).from(users).where(inArray(users.id, [...ids])) : [];
+    const people = ids.size ? await tx.select({ id: users.id, name: users.fullName, isStaff: users.isStaff }).from(users).where(inArray(users.id, [...ids])) : [];
+    // stage 11: the requester's phone through the database's check (staff entitled to it, the requester, the waqf's manager)
+    const requesterContact = (await contactOf(tx, [rc.req.requesterUserId])).get(rc.req.requesterUserId);
     const names = new Map(people.map((p) => [p.id, { name: p.name ?? "مستخدم", isStaff: p.isStaff }]));
     const requester = people.find((p) => p.id === rc.req.requesterUserId);
     const transitions = availableTransitions(rc.req.status as RequestStatus, rc.actors, { resumeTo: rc.resumeTo }).filter((t) => appliesTo(t, !!continuousSpec(rc.service.code)));
@@ -269,7 +272,7 @@ export async function requestDetail(auth: Auth, id: string, side: "client" | "st
     const vatRate = await readSetting<number | null>(tx, "requests.default_vat_rate", null);
     const validityDays = Number(await readSetting<number>(tx, "quotes.validity_days", 30)) || 30;
     return {
-      rc, stages, events, notes, deliverables: dels, docs, contract: cs, invoices: invs, payments: ledger.payments, names, requesterPhone: requester?.phone ?? null, transitions,
+      rc, stages, events, notes, deliverables: dels, docs, contract: cs, invoices: invs, payments: ledger.payments, names, requesterPhone: requester ? requesterContact?.phone ?? null : null, transitions,
       vatRate: vatRate === null ? null : Number(vatRate), items, itemEvents, counts, quotes: quotesV, contracts: contractsFull, company, companyGaps: company ? contractCompanyGaps(company) : [],
       invoicePolicy: company ? invoicePolicy(company) : null, consistency, next, form, answers, intakeSummary, intakeDocs, signers, validityDays, today, unpaidPrestart, states,
     };

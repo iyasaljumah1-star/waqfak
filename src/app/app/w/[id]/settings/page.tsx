@@ -46,7 +46,7 @@ export default async function WaqfSettings({ params }: { params: Promise<{ id: s
                 render: (m) => (
                   <div>
                     <p className="font-medium">{m.name ?? "—"}{m.userId === auth.user.id ? <span className="text-muted"> (أنت)</span> : null}</p>
-                    <p dir="ltr" className="tabular text-end text-[13px] text-muted md:text-start">{maskPhone(m.phone)}</p>
+                    <p dir="ltr" className="tabular text-end text-[13px] text-muted md:text-start">{m.phone ? maskPhone(m.phone) : "—"}</p>
                   </div>
                 ),
               },

@@ -1,10 +1,11 @@
 import "server-only";
-import { and, desc, eq, gte, ilike, inArray, isNull, like, lt, lte, or, type SQL } from "drizzle-orm";
+import { and, desc, eq, gte, ilike, inArray, isNull, like, lt, lte, or, sql, type SQL } from "drizzle-orm";
 import type { Auth } from "@/server/authz/context";
 import type { Tx } from "@/server/db";
 import { auditLogs, users, waqfs } from "@/server/db/schema";
 import { read } from "@/server/modules/_shared";
 import { likeTerm } from "../guard";
+import { searchUserIds } from "@/server/modules/people";
 
 export type AuditFilter = { actor?: string; action?: string; entity?: string; entityId?: string; waqf?: string; from?: string; to?: string; before?: string };
 
@@ -20,8 +21,9 @@ export async function auditPage(auth: Auth, f: AuditFilter) {
       if (f.actor === "system") conds.push(isNull(auditLogs.actorUserId));
       else if (UUID.test(f.actor)) conds.push(eq(auditLogs.actorUserId, f.actor));
       else {
-        const ids = tx.select({ id: users.id }).from(users).where(or(ilike(users.fullName, likeTerm(f.actor)), ilike(users.email, likeTerm(f.actor))));
-        conds.push(inArray(auditLogs.actorUserId, ids));
+        // stage 11: by name or e-mail through the database's staff search
+        const ids = await searchUserIds(tx, f.actor.trim());
+        conds.push(ids.length ? inArray(auditLogs.actorUserId, ids) : sql`false`);
       }
     }
     if (f.action?.trim()) {

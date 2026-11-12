@@ -12,6 +12,7 @@ import { COMPANY_FIELDS, GENERAL_SETTINGS, RETENTION_DEFAULTS, RETENTION_FIELDS,
 import type { License } from "./queries";
 import { SEPARATION_AR, SEPARATION_KEYS, separationPolicy } from "@/server/authz/separation";
 import { SEPARATION_SETTING } from "@/server/modules/approvals/policy";
+import { withAuth } from "@/server/db";
 
 const PATH = "/admin/settings";
 const NAZARA_LICENSE = "gaa_nazara_license";
@@ -171,11 +172,14 @@ export async function runRetention(_: ActionState, __?: FormData): Promise<Actio
   return staffAction("admin.settings", async ({ auth, tx, ip, userAgent }) => {
     const p = { ...RETENTION_DEFAULTS, ...(await readValue<Partial<RetentionPolicy>>(tx, "retention.policy", {})) };
     const ago = (days: number) => new Date(Date.now() - days * 86_400_000);
-    const s = await tx
-      .delete(sessions)
-      .where(or(and(isNotNull(sessions.revokedAt), lt(sessions.revokedAt, ago(p.sessionsDays))), lt(sessions.absoluteExpiresAt, ago(p.sessionsDays))))
-      .returning({ id: sessions.id });
-    const o = await tx.delete(otpChallenges).where(lt(otpChallenges.expiresAt, ago(p.otpDays))).returning({ id: otpChallenges.id });
+    // stage 11: ended sessions and old one-time codes are the authentication role's tables (the permission was checked)
+    const { s, o } = await withAuth(async (atx) => ({
+      s: await atx
+        .delete(sessions)
+        .where(or(and(isNotNull(sessions.revokedAt), lt(sessions.revokedAt, ago(p.sessionsDays))), lt(sessions.absoluteExpiresAt, ago(p.sessionsDays))))
+        .returning({ id: sessions.id }),
+      o: await atx.delete(otpChallenges).where(lt(otpChallenges.expiresAt, ago(p.otpDays))).returning({ id: otpChallenges.id }),
+    }));
     const m = await tx.delete(outboxMessages).where(lt(outboxMessages.createdAt, ago(p.outboxDays))).returning({ id: outboxMessages.id });
     const rl = await tx.delete(rateLimits).where(lt(rateLimits.windowStart, ago(1))).returning({ key: rateLimits.key });
     const after = { sessions: s.length, otpChallenges: o.length, outbox: m.length, rateLimitWindows: rl.length, policy: p };

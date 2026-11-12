@@ -47,9 +47,10 @@ export async function audit(tx: Tx, e: AuditEntry) {
   // The previous hash is read through a SECURITY DEFINER function so the chain is linear regardless of the caller's RLS view.
   const last = await tx.execute<{ h: string | null }>(sql`select app_audit_last_hash() as h`);
   const prevHash = last.rows[0]?.h ?? "GENESIS";
-  // The roles the actor held at that moment (set on the transaction from the session); empty for system jobs.
-  const r = e.actorUserId ? await tx.execute<{ r: string | null }>(sql`select current_setting('app.actor_roles', true) as r`) : null;
-  const actorRoles = r?.rows[0]?.r ? r.rows[0].r.split(",").filter(Boolean) : null;
+  // The roles the actor held at that moment; empty for system jobs. Stage 11: the database's own answer — for the
+  // application role, the BOUND person's roles (never a variable the connection sets); for the system, what it declared.
+  const r = e.actorUserId ? await tx.execute<{ r: string[] | null }>(sql`select app_actor_roles() as r`) : null;
+  const actorRoles = r?.rows[0]?.r?.length ? r.rows[0].r.filter(Boolean) : null;
   const before = redact(plain(e.before));
   const after = redact(plain(e.after));
   const at = new Date().toISOString();

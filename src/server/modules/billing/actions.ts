@@ -22,6 +22,7 @@ import { companyProfile, consistencyFor, ledgerOf, settingNumber, signaturesOf, 
 import { canPayInvoice, loadInvoice } from "./access";
 import { einvoiceState } from "./einvoice";
 import { computeInvoice, round2 } from "./calc";
+import { contactOf } from "@/server/modules/people";
 
 type Ctx = Parameters<Parameters<typeof userAction>[0]>[0];
 const uuid = z.string().uuid("قيمة غير صالحة.");
@@ -193,7 +194,7 @@ export async function sendInvoice(_: ActionState, fd: FormData): Promise<ActionS
     const today = todayISO();
     const dueDays = await settingNumber(c.tx, "invoices.due_days", 14);
     const zatca = (await einvoiceState(c.tx)).active;
-    const [client] = await c.tx.select({ phone: users.phone, email: users.email }).from(users).where(eq(users.id, inv.userId));
+    const client = inv.userId ? (await contactOf(c.tx, [inv.userId])).get(inv.userId) : undefined; // stage 11: through the database's check
     const kindLabel = INVOICE_KIND_LABEL[inv.kind as keyof typeof INVOICE_KIND_LABEL] ?? "فاتورة";
     await c.tx.update(invoices).set({
       status: "issued", issuedOn: today, dueOn: inv.kind === "proforma" ? null : addDays(today, dueDays), sentAt: new Date(), sentBy: c.auth.user.id,

@@ -11,6 +11,7 @@ import {
 import { withSystem } from "../../db";
 import { read } from "../_shared";
 import { OPEN_REQUEST_EXCLUDED } from "../portal/queries";
+import { contactOf } from "@/server/modules/people";
 
 /** requireWaqf, de-duplicated within one request (layout + page share the result). */
 export const waqfAccess = cache((auth: Auth, waqfId: string, perm: Permission = "waqf.view") => requireWaqf(auth, waqfId, perm));
@@ -61,17 +62,20 @@ export async function waqfOverview(auth: Auth, waqfId: string) {
 }
 
 export async function waqfMembers(auth: Auth, waqfId: string, activeOnly = false) {
-  return read(auth, (tx) =>
-    tx
+  return read(auth, async (tx) => {
+    const rows = await tx
       .select({
         id: waqfMemberships.id, userId: waqfMemberships.userId, roleKey: waqfMemberships.roleKey, isIndependent: waqfMemberships.isIndependent,
-        status: waqfMemberships.status, startsAt: waqfMemberships.startsAt, endsAt: waqfMemberships.endsAt, name: users.fullName, phone: users.phone,
+        status: waqfMemberships.status, startsAt: waqfMemberships.startsAt, endsAt: waqfMemberships.endsAt, name: users.fullName,
       })
       .from(waqfMemberships)
       .innerJoin(users, eq(users.id, waqfMemberships.userId))
       .where(and(eq(waqfMemberships.waqfId, waqfId), activeOnly ? eq(waqfMemberships.status, "active") : undefined))
-      .orderBy(sql`case when ${waqfMemberships.status} = 'active' then 0 else 1 end`, asc(waqfMemberships.startsAt)),
-  );
+      .orderBy(sql`case when ${waqfMemberships.status} = 'active' then 0 else 1 end`, asc(waqfMemberships.startsAt));
+    // stage 11 (N10-10): phones through the database's check — the member's own, or the waqf's manager, or entitled staff
+    const contact = await contactOf(tx, rows.map((r) => r.userId));
+    return rows.map((r) => ({ ...r, phone: contact.get(r.userId)?.phone ?? null }));
+  });
 }
 
 export async function waqfSettingsData(auth: Auth, waqfId: string) {
@@ -89,18 +93,20 @@ export async function waqfSettingsData(auth: Auth, waqfId: string) {
         .orderBy(desc(invitations.createdAt))
         .limit(30),
     ),
-    read(auth, (tx) =>
-      tx
+    read(auth, async (tx) => {
+      const rows = await tx
         .select({
-          id: delegations.id, agentUserId: delegations.agentUserId, agentName: users.fullName, agentPhone: users.phone, scope: delegations.scope,
+          id: delegations.id, agentUserId: delegations.agentUserId, agentName: users.fullName, scope: delegations.scope,
           validFrom: delegations.validFrom, validTo: delegations.validTo, status: delegations.status, poaNo: delegations.powerOfAttorneyNo,
           principalName: delegations.principalName, createdAt: delegations.createdAt,
         })
         .from(delegations)
         .innerJoin(users, eq(users.id, delegations.agentUserId))
         .where(eq(delegations.waqfId, waqfId))
-        .orderBy(desc(delegations.createdAt)),
-    ),
+        .orderBy(desc(delegations.createdAt));
+      const contact = await contactOf(tx, rows.map((r) => r.agentUserId)); // stage 11: through the database's check
+      return rows.map((r) => ({ ...r, agentPhone: contact.get(r.agentUserId)?.phone ?? null }));
+    }),
   ]);
   return { members, invites, delegs };
 }

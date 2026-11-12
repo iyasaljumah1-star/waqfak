@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import type { Tx } from "@/server/db";
 import { roles, sessions, userRoles, users, userColumns } from "@/server/db/schema";
+import { userByPhone, userIdByEmail, withPrivate } from "@/server/modules/people";
 import { rolePermissionMap, type Auth } from "@/server/authz/context";
 import { normalizeSaudiMobile } from "@/server/auth/otp";
 import { sendSms } from "@/server/adapters/messaging";
@@ -20,7 +21,7 @@ const reason = z.string().trim().min(10, "اكتب سببًا واضحًا لا 
 async function loadTarget(tx: Tx, id: string) {
   const [u] = await tx.select(userColumns).from(users).where(eq(users.id, id)).limit(1);
   if (!u) throw new UserError("لم نجد هذا المستخدم.");
-  return u;
+  return withPrivate(tx, u); // stage 11: the private columns through the database's check of the administrator
 }
 
 async function roleKeysOf(tx: Tx, userId: string) {
@@ -204,10 +205,10 @@ export async function inviteStaff(_: ActionState, fd: FormData): Promise<ActionS
     const [role] = await tx.select().from(roles).where(eq(roles.key, d.roleKey)).limit(1);
     if (!role || role.scope !== "global") throw new UserError("اختر دورًا من أدوار فريق وقفك.");
     await assertCanManageRole(auth, d.roleKey);
-    const [byPhone] = await tx.select({ id: users.id }).from(users).where(eq(users.phone, phone)).limit(1);
+    const byPhone = await userByPhone(tx, phone); // stage 11: through the database
     if (byPhone) return { error: "هذا الرقم مسجل لحساب قائم. افتح صفحة المستخدم وامنحه الدور من هناك.", data: { existingId: byPhone.id } };
     if (d.email) {
-      const [byEmail] = await tx.select({ id: users.id }).from(users).where(eq(users.email, d.email)).limit(1);
+      const byEmail = await userIdByEmail(tx, d.email);
       if (byEmail) return { error: "راجع الحقول المظللة.", fieldErrors: { email: "البريد مستخدم في حساب آخر." } };
     }
     const c = await tx.execute<{ id: string }>(sql`select admin_create_user(${phone}, ${d.fullName}, ${d.email || null}, true) as id`);
@@ -267,11 +268,13 @@ export async function updateAccount(_: ActionState, fd: FormData): Promise<Actio
       return { error: "راجع الحقول المظللة.", fieldErrors: { reason: "تغيير الجوال أو البريد يتطلب سببًا واضحًا لا يقل عن 10 أحرف." } };
     }
     if (phoneChanged) {
-      const [clash] = await tx.select({ id: users.id }).from(users).where(and(eq(users.phone, newPhone!), ne(users.id, u.id))).limit(1);
+      const owner = await userByPhone(tx, newPhone!);
+      const clash = owner && owner.id !== u.id ? owner : null;
       if (clash) return { error: "راجع الحقول المظللة.", fieldErrors: { phone: "هذا الرقم مسجل لحساب آخر." } };
     }
     if (emailChanged && email) {
-      const [clash] = await tx.select({ id: users.id }).from(users).where(and(eq(users.email, email), ne(users.id, u.id))).limit(1);
+      const ownerId = await userIdByEmail(tx, email);
+      const clash = ownerId && ownerId !== u.id ? { id: ownerId } : null;
       if (clash) return { error: "راجع الحقول المظللة.", fieldErrors: { email: "البريد مستخدم في حساب آخر." } };
     }
     const resides = d.residesInKsa === "yes" ? true : d.residesInKsa === "no" ? false : u.residesInKsa;
@@ -298,7 +301,7 @@ export async function updateAccount(_: ActionState, fd: FormData): Promise<Actio
     });
     if (phoneChanged) {
       notices = [
-        { to: u.phone, text: "وقفك: نُقل حسابك إلى رقم جوال آخر بطلب من فريق الدعم. إن لم تطلب ذلك فتواصل معنا فورًا." },
+        ...(u.phone ? [{ to: u.phone, text: "وقفك: نُقل حسابك إلى رقم جوال آخر بطلب من فريق الدعم. إن لم تطلب ذلك فتواصل معنا فورًا." }] : []),
         { to: newPhone!, text: `وقفك: أصبح هذا الرقم رقم الدخول إلى حسابك. ادخل من ${env.APP_URL}/login برمز يصلك عليه لتأكيده.` },
       ];
     }

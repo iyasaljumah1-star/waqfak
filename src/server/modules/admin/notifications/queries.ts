@@ -4,6 +4,7 @@ import type { Auth } from "@/server/authz/context";
 import { dataSubjectRequests, notificationTemplates, outboxMessages, users, waqfMemberships } from "@/server/db/schema";
 import { read } from "@/server/modules/_shared";
 import { likeTerm } from "../guard";
+import { adminFieldsOf } from "@/server/modules/people";
 
 export async function listTemplates(auth: Auth) {
   return read(auth, (tx) => tx.select().from(notificationTemplates).orderBy(desc(notificationTemplates.locked), asc(notificationTemplates.key)));
@@ -50,7 +51,7 @@ export async function dsrQueue(auth: Auth, status?: string) {
         id: dataSubjectRequests.id, userId: dataSubjectRequests.userId, kind: dataSubjectRequests.kind, status: dataSubjectRequests.status,
         details: dataSubjectRequests.details, retainedDataNote: dataSubjectRequests.retainedDataNote, requestedAt: dataSubjectRequests.requestedAt,
         dueAt: dataSubjectRequests.dueAt, completedAt: dataSubjectRequests.completedAt,
-        name: users.fullName, phone: users.phone, userStatus: users.status, deletionRequestedAt: users.deletionRequestedAt,
+        name: users.fullName, userStatus: users.status,
       })
       .from(dataSubjectRequests)
       .leftJoin(users, eq(users.id, dataSubjectRequests.userId))
@@ -66,6 +67,7 @@ export async function dsrQueue(auth: Auth, status?: string) {
       : [];
     const rolesBy = new Map<string, string[]>();
     for (const h of holders) rolesBy.set(h.userId, [...(rolesBy.get(h.userId) ?? []), h.roleKey]);
-    return rows.map((r) => ({ ...r, activeRoles: rolesBy.get(r.userId) ?? [] }));
+    const adm = await adminFieldsOf(tx, [...new Set(rows.map((r) => r.userId))]); // stage 11: through the database's check
+    return rows.map((r) => ({ ...r, phone: adm.get(r.userId)?.phone ?? null, deletionRequestedAt: adm.get(r.userId)?.deletionRequestedAt ?? null, activeRoles: rolesBy.get(r.userId) ?? [] }));
   });
 }

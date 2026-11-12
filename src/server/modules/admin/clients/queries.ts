@@ -1,21 +1,22 @@
 import "server-only";
-import { and, asc, desc, eq, ilike, inArray, like, notInArray, or, sql, type SQL } from "drizzle-orm";
+import { adminFieldsOf, searchUserIds, withPrivate } from "@/server/modules/people";
+import { and, asc, desc, eq, inArray, notInArray, sql, type SQL } from "drizzle-orm";
 import type { Auth } from "@/server/authz/context";
 import {
   contactMessages, dataSubjectRequests, invoices, serviceRequests, services, users, userColumns, waqfMemberships, waqfs,
 } from "@/server/db/schema";
 import { read } from "@/server/modules/_shared";
-import { likeTerm } from "../guard";
 
 export async function listClients(auth: Auth, q?: string) {
   return read(auth, async (tx) => {
     const conds: (SQL | undefined)[] = [eq(users.isStaff, false), notInArray(users.status, ["deleted"])];
     if (q?.trim()) {
-      const digits = q.replace(/\D/g, "").replace(/^0/, "");
-      conds.push(or(ilike(users.fullName, likeTerm(q)), ilike(users.email, likeTerm(q)), digits.length >= 4 ? like(users.phone, `%${digits}%`) : undefined));
+      // stage 11: the database's staff search (phones and e-mails are not the application's columns)
+      const found = await searchUserIds(tx, q.trim().replace(/^0/, ""));
+      conds.push(found.length ? inArray(users.id, found) : sql`false`);
     }
     const rows = await tx
-      .select({ id: users.id, fullName: users.fullName, phone: users.phone, email: users.email, status: users.status, createdAt: users.createdAt, lastLoginAt: users.lastLoginAt })
+      .select({ id: users.id, fullName: users.fullName, status: users.status, createdAt: users.createdAt })
       .from(users)
       .where(and(...conds))
       .orderBy(desc(users.createdAt))
@@ -50,8 +51,10 @@ export async function listClients(auth: Auth, q?: string) {
     const m = new Map(mem.map((x) => [x.userId, x.n]));
     const r = new Map(reqs.map((x) => [x.userId, x]));
     const i = new Map(invs.map((x) => [x.userId, x]));
+    const adm = await adminFieldsOf(tx, ids);
     return rows.map((u) => ({
       ...u,
+      phone: adm.get(u.id)?.phone ?? "", email: adm.get(u.id)?.email ?? null, lastLoginAt: adm.get(u.id)?.lastLoginAt ?? null,
       waqfs: m.get(u.id) ?? 0,
       requests: r.get(u.id)?.total ?? 0,
       openRequests: r.get(u.id)?.open ?? 0,
@@ -63,8 +66,9 @@ export async function listClients(auth: Auth, q?: string) {
 
 export async function clientDetail(auth: Auth, id: string) {
   return read(auth, async (tx) => {
-    const [u] = await tx.select(userColumns).from(users).where(eq(users.id, id)).limit(1);
-    if (!u) return null;
+    const [u0] = await tx.select(userColumns).from(users).where(eq(users.id, id)).limit(1);
+    if (!u0) return null;
+    const u = await withPrivate(tx, u0); // stage 11: private columns through the database's check
     const [mems, reqs, invs, dsrs] = await Promise.all([
       tx
         .select({ waqfId: waqfMemberships.waqfId, roleKey: waqfMemberships.roleKey, status: waqfMemberships.status, startsAt: waqfMemberships.startsAt, name: waqfs.name, number: waqfs.internalNumber, waqfStatus: waqfs.status })

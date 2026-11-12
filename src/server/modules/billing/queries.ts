@@ -11,6 +11,7 @@ import { canPayInvoice, canSeeInvoice, effectiveStatus, loadInvoice } from "./ac
 import { einvoiceState } from "./einvoice";
 import { AGING_LABEL, agingBucket, zatcaTlvBase64, type AgingBucket } from "./calc";
 import { invoiceBalance } from "@/server/modules/commerce/pure";
+import { contactOf } from "@/server/modules/people";
 export { AGING_LABEL, type AgingBucket };
 
 const PAYABLE = ["tax_invoice", "non_tax_invoice"];
@@ -52,7 +53,7 @@ export async function invoiceView(auth: Auth, id: string) {
     const pays = await tx.select().from(payments).where(eq(payments.invoiceId, inv.id)).orderBy(desc(payments.createdAt));
     const [req] = inv.requestId ? await tx.select({ id: serviceRequests.id, number: serviceRequests.number }).from(serviceRequests).where(eq(serviceRequests.id, inv.requestId)) : [];
     const [waqf] = inv.waqfId ? await tx.select({ name: waqfs.name }).from(waqfs).where(eq(waqfs.id, inv.waqfId)) : [];
-    const [billed] = await tx.select({ phone: users.phone, email: users.email }).from(users).where(eq(users.id, inv.userId));
+    const billed = inv.userId ? (await contactOf(tx, [inv.userId])).get(inv.userId) : undefined; // stage 11: through the database's check
     const [credited] = inv.creditOfId ? await tx.select({ id: invoices.id, number: invoices.number }).from(invoices).where(eq(invoices.id, inv.creditOfId)) : [];
     const sellerName = company.nameAr || "وقفك";
     const vatNumber = company.vatNumber?.trim() || "";
