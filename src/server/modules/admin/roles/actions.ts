@@ -1,6 +1,6 @@
 "use server";
 
-import { and, count, eq } from "drizzle-orm";
+import { and, count, eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { permissions, rolePermissions, roles } from "@/server/db/schema";
 import { invalidateRoleCache } from "@/server/authz/context";
@@ -31,17 +31,15 @@ export async function setRolePermission(roleKey: string, permKey: string, grant:
       if (auth.globalRoles.includes(roleKey) && !grant) throw new UserError("لا يمكنك تقليص صلاحيات دور تحمله أنت؛ اطلب ذلك من مسؤول آخر.");
     }
     // Lock the role row so concurrent toggles on the same role serialize.
-    await tx.select({ id: roles.id }).from(roles).where(eq(roles.id, role.id)).for("update");
+    // (stage 11: the application role has no write on roles, so no row lock: a transaction-scoped advisory lock per role)
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`role:${role.id}`}))`);
     const [{ n }] = await tx.select({ n: count() }).from(rolePermissions).where(eq(rolePermissions.roleId, role.id));
     const [has] = await tx.select().from(rolePermissions).where(and(eq(rolePermissions.roleId, role.id), eq(rolePermissions.permissionId, perm.id))).limit(1);
     if (grant === !!has) return { ok: true, message: "لا تغيير." };
-    if (grant) {
-      await tx.insert(rolePermissions).values({ roleId: role.id, permissionId: perm.id });
-    } else {
-      // A role with no rows falls back to the code catalog defaults, which would silently restore every permission.
-      if (n <= 1) throw new UserError("يجب أن يبقى للدور صلاحية واحدة على الأقل. لإيقاف الدور اسحبه من حامليه.");
-      await tx.delete(rolePermissions).where(and(eq(rolePermissions.roleId, role.id), eq(rolePermissions.permissionId, perm.id)));
-    }
+    // A role with no rows falls back to the code catalog defaults, which would silently restore every permission.
+    if (!grant && n <= 1) throw new UserError("يجب أن يبقى للدور صلاحية واحدة على الأقل. لإيقاف الدور اسحبه من حامليه.");
+    // stage 11: through the database's check of the bound administrator (admin.roles, second factor)
+    await tx.execute(sql`select admin_set_role_permission(${roleKey}, ${permKey}, ${grant})`);
     await audit(tx, {
       actorUserId: auth.user.id, action: grant ? "admin.role.permission_granted" : "admin.role.permission_revoked", entityType: "role", entityId: roleKey, ip, userAgent,
       before: { role: roleKey, permission: permKey, granted: !!has }, after: { role: roleKey, permission: permKey, granted: grant },

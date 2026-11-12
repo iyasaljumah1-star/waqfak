@@ -1,7 +1,6 @@
 import "server-only";
-import { and, asc, desc, eq, inArray, isNotNull } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import type { Tx } from "@/server/db";
-import { asSystem } from "@/server/db/as-system";
 import { dataConflicts, documents, requestFieldStates, requestItems, requestNotes, requestRevisions, tasks, users, waqfs } from "@/server/db/schema";
 import { todayISO } from "@/server/engines/dates";
 import type { RequestCtx } from "./access";
@@ -37,9 +36,9 @@ export async function fieldWorkspace(tx: Tx, rc: RequestCtx, audience: "staff" |
         .from(requestRevisions).leftJoin(users, eq(users.id, requestRevisions.actorUserId)).where(eq(requestRevisions.requestId, rc.req.id)).orderBy(asc(requestRevisions.at))
       // the client sees corrections made to their own answers (who: the team, not a person; why; before and after),
       // read after the request access check, limited to field corrections
-      : asSystem(tx, () => tx.select({ kind: requestRevisions.kind, target: requestRevisions.target, at: requestRevisions.at, actor: requestRevisions.kind, reason: requestRevisions.reason, before: requestRevisions.before, after: requestRevisions.after })
-        .from(requestRevisions).where(and(eq(requestRevisions.requestId, rc.req.id), inArray(requestRevisions.kind, ["intake_edit", "client_completion"]))).orderBy(asc(requestRevisions.at)))
-        .then((xs) => xs.map((x) => ({ ...x, actor: x.kind === "client_completion" ? "أنت" : "فريق وقفك" }))),
+      // (stage 11: through a function that checks the caller is a party to the request)
+      : tx.execute<{ kind: string; target: string | null; at: Date; reason: string; before: unknown; after: unknown }>(sql`select * from app_request_client_revisions(${rc.req.id}::uuid)`)
+        .then((r) => r.rows.map((x) => ({ kind: x.kind as typeof requestRevisions.$inferSelect.kind, target: x.target, at: new Date(x.at), reason: x.reason, before: x.before as typeof requestRevisions.$inferSelect.before, after: x.after as typeof requestRevisions.$inferSelect.after, actor: x.kind === "client_completion" ? "أنت" : "فريق وقفك" }))),
     tx.select({ seq: requestItems.seq, fieldKey: requestItems.fieldKey, status: requestItems.status, title: requestItems.title, visibility: requestItems.visibility }).from(requestItems).where(eq(requestItems.requestId, rc.req.id)),
     audience === "staff"
       ? tx.select({ key: dataConflicts.conflictKey, label: dataConflicts.label, fields: dataConflicts.fields, status: dataConflicts.status, severity: dataConflicts.severity, action: dataConflicts.action }).from(dataConflicts).where(eq(dataConflicts.requestId, rc.req.id))

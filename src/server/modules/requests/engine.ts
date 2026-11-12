@@ -2,11 +2,10 @@ import "server-only";
 import { readSeparationPolicy } from "@/server/modules/approvals/policy";
 import { makerChecker } from "@/server/authz/separation";
 import { and, asc, eq, inArray } from "drizzle-orm";
-import type { Tx } from "@/server/db";
+import { afterCommit, withSystem, type Tx } from "@/server/db";
 import { deliverables, documents, holidays, quotes, requestEvents, requestItems, requestStages, roles, serviceRequests, services, tasks, userRoles, users, workflowTemplates } from "@/server/db/schema";
 import { prestartUnpaid } from "@/server/modules/commerce/state";
 import { installmentsDueOn, unbilledOf } from "@/server/modules/billing/schedule";
-import { asSystem } from "@/server/db/as-system";
 import { FIELD_REVIEW_SERVICES, fieldRelease, fieldReleaseBlock } from "./field-policy";
 import { blocking } from "./items-pure";
 import { formFor } from "./intake/forms";
@@ -275,8 +274,13 @@ export async function transition(c: ActCtx, rc: RequestCtx, input: TransitionInp
   // installments that become due with the delivery: due date set, one mandatory finance task each (idempotent)
   // The transition itself was authorized above; the schedule and the finance task are bookkeeping the row-level policy
   // reserves to staff (the client's approval is what makes a «completion» installment due).
-  if (to === "awaiting_client_approval") await asSystem(tx, () => installmentsDueOn(tx, rc.req, "delivery", auth.user.id));
-  if (to === "completed") await asSystem(tx, () => installmentsDueOn(tx, rc.req, "completion", auth.user.id));
+  // Stage 11: a staff actor (or the engine) writes them in this transaction; when the client's act triggers them, they
+  // follow on the system login once this transaction committed (idempotent; never on the application's connection).
+  const due = (event: "delivery" | "completion") =>
+    auth.isStaff || auth.db.systemActor ? installmentsDueOn(tx, rc.req, event, auth.user.id)
+      : (afterCommit(tx, () => withSystem((stx) => installmentsDueOn(stx, rc.req, event, auth.user.id))), Promise.resolve());
+  if (to === "awaiting_client_approval") await due("delivery");
+  if (to === "completed") await due("completion");
   if (to === "awaiting_client_approval") {
     await releaseApprovedOutputs(tx, rc, auth.user.id, { ip: c.ip, userAgent: c.userAgent });
     // files of the delivered work become visible to the client now (they were internal while in preparation)

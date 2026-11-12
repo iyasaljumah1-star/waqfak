@@ -1,7 +1,7 @@
 import "server-only";
 import { and, eq, isNull, ne } from "drizzle-orm";
 import { cookies } from "next/headers";
-import { withSystem } from "../db";
+import { withAuth } from "../db";
 import { sessions, users } from "../db/schema";
 import { cookieSecure } from "../env";
 import { randomToken, sessionHash } from "../lib/crypto";
@@ -14,7 +14,7 @@ const ABSOLUTE_MS = 12 * 60 * 60_000;
 export async function createSession(userId: string, opts: { isStaff: boolean; mfaVerified: boolean; ip: string; userAgent: string }) {
   const token = randomToken(32);
   const now = Date.now();
-  await withSystem(async (tx) => {
+  await withAuth(async (tx) => {
     await tx.insert(sessions).values({
       userId,
       tokenHash: sessionHash(token),
@@ -44,7 +44,7 @@ export async function readSession(): Promise<{ session: SessionRow; user: UserRo
   const token = jar.get(SESSION_COOKIE)?.value;
   if (!token) return null;
   const hash = sessionHash(token);
-  return withSystem(async (tx) => {
+  return withAuth(async (tx) => {
     const [row] = await tx
       .select({ session: sessions, user: users })
       .from(sessions)
@@ -73,14 +73,14 @@ export async function readSession(): Promise<{ session: SessionRow; user: UserRo
 }
 
 export async function markSessionMfa(sessionId: string) {
-  await withSystem((tx) => tx.update(sessions).set({ mfaVerified: true }).where(eq(sessions.id, sessionId)));
+  await withAuth((tx) => tx.update(sessions).set({ mfaVerified: true }).where(eq(sessions.id, sessionId)));
 }
 
 export async function destroyCurrentSession() {
   const jar = await cookies();
   const token = jar.get(SESSION_COOKIE)?.value;
   if (token) {
-    await withSystem((tx) =>
+    await withAuth((tx) =>
       tx.update(sessions).set({ revokedAt: new Date(), revokeReason: "logout" }).where(eq(sessions.tokenHash, sessionHash(token))),
     );
   }
@@ -88,7 +88,7 @@ export async function destroyCurrentSession() {
 }
 
 export async function revokeAllSessions(userId: string, reason: string, exceptSessionId?: string) {
-  await withSystem((tx) =>
+  await withAuth((tx) =>
     tx
       .update(sessions)
       .set({ revokedAt: new Date(), revokeReason: reason })

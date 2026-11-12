@@ -3,7 +3,8 @@ import { contextFor } from "./context/map";
 import { resolveContext } from "./context/resolve";
 import { periodFor } from "./context/types";
 import { withServerAnswers } from "./intake/server";
-import { and, asc, desc, eq, gte, inArray, isNull, lt, lte, notInArray, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNull, lt, lte, notInArray, sql, type SQL } from "drizzle-orm";
+import type { OutputStatus } from "@/server/db/schema/operations";
 import {
   deliverables, documents, recommendations, requestEvents, requestItemEvents, requestItems, requestNotes, requestStages, roles, serviceRequests, services, userRoles, users,
   waqfMemberships, waqfs,
@@ -393,13 +394,12 @@ export async function homeRequests(auth: Auth): Promise<HomeRequest[]> {
   if (!rows.length) return [];
   const ids = rows.map((r) => r.id);
   return read(auth, async (tx) => {
-    const { asSystem } = await import("@/server/db/as-system");
-    const { outputs } = await import("@/server/db/schema");
     const { clientPhase } = await import("./phase");
     const [items, outs] = await Promise.all([
       tx.select({ r: requestItems.requestId, status: requestItems.status, visibility: requestItems.visibility }).from(requestItems).where(inArray(requestItems.requestId, ids)),
       // output states only (never notes, versions or reviewers), for requests already visible to me above
-      asSystem(tx, () => tx.select({ r: outputs.requestId, status: outputs.status, documentId: outputs.documentId }).from(outputs).where(inArray(outputs.requestId, ids))),
+      tx.execute<{ request_id: string; status: string; delivered: boolean }>(sql`select * from app_request_output_states(${`{${ids.join(",")}}`}::uuid[])`)
+        .then((x) => x.rows.map((o) => ({ r: o.request_id, status: o.status as OutputStatus, documentId: o.delivered ? "delivered" : null }))),
     ]);
     return rows.map((r) => {
       const open = items.filter((i) => i.r === r.id && i.visibility === "client" && ["open", "correction_requested"].includes(i.status)).length;

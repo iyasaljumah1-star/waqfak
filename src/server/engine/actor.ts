@@ -1,7 +1,7 @@
 import "server-only";
 import { eq } from "drizzle-orm";
 import type { Tx } from "@/server/db";
-import { users } from "@/server/db/schema";
+import { users, userColumns } from "@/server/db/schema";
 import type { Auth } from "@/server/authz/context";
 import { ENGINE_USER_ID } from "./constants";
 
@@ -17,15 +17,15 @@ import { ENGINE_USER_ID } from "./constants";
 export const ENGINE_PERMS = ["admin.requests.all", "admin.waqfs.all", "staff.requests.assigned", "staff.deliver"] as const;
 
 export async function engineAuth(tx: Tx): Promise<Auth> {
-  const [u] = await tx.select().from(users).where(eq(users.id, ENGINE_USER_ID)).limit(1);
+  const [u] = await tx.select(userColumns).from(users).where(eq(users.id, ENGINE_USER_ID)).limit(1);
   if (!u) throw new Error("engine account missing: run the seed");
   return {
-    user: u,
+    user: { ...u, passwordHash: null },
     session: { id: "00000000-0000-0000-0000-000000000000" } as Auth["session"],
     globalRoles: ["platform_engine"],
     perms: new Set(ENGINE_PERMS),
     globalAccess: true,
     isStaff: true,
-    db: { userId: ENGINE_USER_ID, globalAccess: true, roles: ["platform_engine"] },
+    db: { userId: ENGINE_USER_ID, globalAccess: true, roles: ["platform_engine"], systemActor: true },
   };
 }

@@ -1,7 +1,6 @@
 "use server";
 
 import { and, count, eq, gt, isNull, ne, or, sql } from "drizzle-orm";
-import { asSystem as withSystemCheck } from "../../db/as-system";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { withSystem, type Tx } from "../../db";
@@ -123,11 +122,9 @@ export async function registerWaqf(_: ActionState, fd: FormData): Promise<Action
       const norm = (v: string | null | undefined) => (v ? v.replace(/[\s\-/]/g, "").toLowerCase() : null);
       if (d.deedNo || d.nationalUnifiedNumber) {
         const deed = norm(d.deedNo);
-        const dup = await withSystemCheck(tx, async () => {
-          const rows = await tx.select({ deedNo: waqfs.deedNo, nun: waqfs.nationalUnifiedNumber }).from(waqfs)
-            .where(or(d.nationalUnifiedNumber ? eq(waqfs.nationalUnifiedNumber, d.nationalUnifiedNumber) : sql`false`, deed ? sql`regexp_replace(lower(coalesce(${waqfs.deedNo}, '')), '[[:space:]/-]', '', 'g') = ${deed}` : sql`false`)).limit(1);
-          return rows.length > 0;
-        });
+        // across the platform, through a function that answers yes or no (stage 11)
+        const r = await tx.execute<{ t: boolean }>(sql`select app_waqf_number_taken(${deed}, ${d.nationalUnifiedNumber || null}) as t`);
+        const dup = !!r.rows[0]?.t;
         if (dup) throw new UserError("يوجد في المنصة ملف وقف بهذا الرقم. لا يُنشأ ملف مكرر: اطلب من ناظر الوقف دعوتك إلى ملفه.");
       }
       // started from a request about an unregistered waqf: only the requester, and only that kind of request

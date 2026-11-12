@@ -4,6 +4,10 @@ import { z } from "zod";
 const schema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   DATABASE_URL: z.string().min(1),
+  /** Stage 11: the sign-in's own login (sessions, codes, second factor, accounts) — scripts/db-bootstrap.sql. */
+  AUTH_DATABASE_URL: z.string().min(1),
+  /** Stage 11: the system context's own login (jobs, public reads, link pages) — never the application's. */
+  SYSTEM_DATABASE_URL: z.string().min(1),
   APP_URL: z.string().url().default("http://localhost:3000"),
   MASTER_KEY: z.string().min(40),
   HASH_KEY: z.string().min(40),
@@ -40,7 +44,7 @@ const schema = z.object({
 // `next build` evaluates server modules to collect page config; real secrets are only needed at runtime.
 // During the build phase only, placeholders satisfy the schema (they are never used to serve requests).
 const BUILD_PLACEHOLDERS = process.env.NEXT_PHASE === "phase-production-build"
-  ? { DATABASE_URL: "postgres://build@localhost/build", MASTER_KEY: "b".repeat(44), HASH_KEY: "b".repeat(44), SESSION_SECRET: "b".repeat(44) }
+  ? { DATABASE_URL: "postgres://build@localhost/build", AUTH_DATABASE_URL: "postgres://build@localhost/build", SYSTEM_DATABASE_URL: "postgres://build@localhost/build", MASTER_KEY: "b".repeat(44), HASH_KEY: "b".repeat(44), SESSION_SECRET: "b".repeat(44) }
   : {};
 export const env = schema.parse({ ...BUILD_PLACEHOLDERS, ...process.env });
 export const isProd = env.NODE_ENV === "production";

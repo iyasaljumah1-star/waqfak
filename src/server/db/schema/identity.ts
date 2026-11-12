@@ -1,6 +1,7 @@
 import {
   boolean, date, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid,
 } from "drizzle-orm/pg-core";
+import { getTableColumns } from "drizzle-orm";
 import { createdAt, id, tracking, updatedAt } from "./_common";
 import { idType, membershipStatus, mfaType, otpPurpose, roleScope, userStatus } from "./enums";
 
@@ -198,3 +199,12 @@ export const breakGlassAccess = pgTable("break_glass_access", {
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });
+
+/**
+ * The columns of `users` the application and system roles may read (stage 11): all but the password hash, which only
+ * the authentication role reads. `tx.select(userColumns).from(users)` in place of `tx.select().from(users)`.
+ */
+const { passwordHash: _passwordHash, ...userColumnsWithoutSecret } = getTableColumns(users);
+void _passwordHash;
+export const userColumns = userColumnsWithoutSecret;
+export type UserPublicRow = Omit<typeof users.$inferSelect, "passwordHash">;

@@ -31,7 +31,7 @@ async function ownerQuery(text: string, params: unknown[] = []): Promise<void> {
   try { await c.query(text, params); } finally { await c.end(); }
 }
 async function sysQuery<T = Record<string, unknown>>(text: string, params: unknown[] = []): Promise<T[]> {
-  const c = new Client({ connectionString: process.env.DATABASE_URL });
+  const c = new Client({ connectionString: process.env.SYSTEM_DATABASE_URL ?? process.env.DATABASE_URL });
   await c.connect();
   try {
     await c.query("begin");

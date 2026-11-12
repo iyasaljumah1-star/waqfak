@@ -2,7 +2,6 @@ import "server-only";
 import { revalidatePath } from "next/cache";
 import { ZodError, type ZodType } from "zod";
 import { withContext, type Tx } from "../db";
-import { asSystem } from "../db/as-system";
 import { audit } from "../lib/audit";
 import { ForbiddenError, loadWaqfAccess, requireAuth, type Auth, type WaqfAccess } from "../authz/context";
 import { FILE_CONTENT_PERMS, type Permission } from "../authz/catalog";
@@ -94,7 +93,7 @@ async function recordDenial(auth: Auth | null, e: unknown, where: string) {
   if (!(e instanceof ForbiddenError) || !auth) return;
   try {
     const { ip, userAgent } = await requestInfo();
-    await withContext(auth.db, (tx) => asSystem(tx, () => audit(tx, { actorUserId: auth.user.id, action: "authz.denied", entityType: "action", entityId: null, ip, userAgent, after: { where, reason: e.message.slice(0, 200) } })));
+    await withContext(auth.db, (tx) => (async () => audit(tx, { actorUserId: auth.user.id, action: "authz.denied", entityType: "action", entityId: null, ip, userAgent, after: { where, reason: e.message.slice(0, 200) } }))());
   } catch (err) {
     console.error("[authz.denied] not recorded", err);
   }

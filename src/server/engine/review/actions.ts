@@ -182,15 +182,14 @@ export async function requestCorrection(_: ActionState, fd: FormData): Promise<A
     const rc = await loadRequestCtx(c.tx, c.auth, r.data.id, "client");
     if (!rc.isRequester && !rc.memberCreate) throw new ForbiddenError("لا تملك صلاحية طلب تصحيح على هذا الطلب.");
     if (!["completed", "closed"].includes(rc.req.status)) throw new UserError("يُطلب التصحيح بعد اعتماد النتيجة.");
-    const { asSystem } = await import("@/server/db/as-system");
-    await asSystem(c.tx, async () => {
+    await (async () => {
       await c.tx.insert(tasks).values({
         requestId: rc.req.id, waqfId: rc.req.waqfId, kind: "correction_request", title: `طلب تصحيح من العميل على الطلب ${rc.req.number}`,
         description: r.data.details, status: "todo", priority: "high", visibility: "internal", createdBy: c.auth.user.id,
       } as typeof tasks.$inferInsert);
       for (const uid of await finalApproverIds(c.tx))
         await notify(uid, "request.status", { number: rc.req.number, status: "طلب تصحيح من العميل بعد الاعتماد" }, { waqfId: rc.req.waqfId, link: `/admin/review/${rc.req.id}`, tx: c.tx });
-    });
+    })();
     await logEvent(c.tx, rc.req, c.auth.user.id, "قدّم العميل طلب تصحيح على النتيجة المعتمدة");
     await audit(c.tx, { actorUserId: c.auth.user.id, action: "requests.correction_requested", entityType: "service_request", entityId: rc.req.id, waqfId: rc.req.waqfId, ip: c.ip, userAgent: c.userAgent, after: { details: r.data.details } });
     return { ok: true, message: "وصل طلب التصحيح إلى مدير النظام، وتصلك نتيجته. تبقى الوثيقة المعتمدة كما هي حتى يُعتمد تصحيحها بنسخة جديدة." };

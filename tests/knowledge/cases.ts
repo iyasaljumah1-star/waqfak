@@ -41,8 +41,24 @@ const TODAY = "2026-11-06";
 
 const ROLE_OF: Record<ReviewRole, string> = { legal: "reviewer_legal", sharia: "reviewer_sharia", accounting: "reviewer_accounting", data: "reviewer_data", investment: "reviewer_investment" };
 
+/**
+ * Stage 11: the cases run as the system role (SET LOCAL ROLE waqfak_system on the owner's connection, test cluster
+ * only) — which, like the application role, creates no account, grants no role and makes no session. The synthetic
+ * fixtures (test accounts, their roles and sessions) are written as the owner, inside the same rolled-back case, then
+ * the case returns to the system role.
+ */
+export async function asOwner<T>(tx: Tx, fn: () => Promise<T>): Promise<T> {
+  await tx.execute(sql`reset role`);
+  const out = await fn();
+  await tx.execute(sql`set local role waqfak_system`);
+  return out;
+}
+
 /** A test account holding the catalog's reviewer roles for these fields (inside the caller's rolled-back transaction). */
 export async function testReviewer(tx: Tx, id = TEST_REVIEWER, fields: ReviewRole[] = ["sharia", "accounting", "legal", "data", "investment"]) {
+  await asOwner(tx, () => testReviewerFixture(tx, id, fields));
+}
+async function testReviewerFixture(tx: Tx, id: string, fields: ReviewRole[]) {
   await tx.insert(users).values({ id, phone: `05${id.slice(-8).replace(/[^0-9]/g, "0")}`, fullName: "حساب اختبار (ليس مراجعًا بشريًا)", isStaff: true }).onConflictDoNothing();
   for (const f of fields) {
     // the roles and permissions come from the catalog, seeded with the owner role (the application role cannot create
@@ -51,15 +67,18 @@ export async function testReviewer(tx: Tx, id = TEST_REVIEWER, fields: ReviewRol
     if (!ok.rows[0]?.n) throw new Error(`the test database is not seeded: role ${ROLE_OF[f]} with knowledge.review.${f} is missing (run scripts/seed.ts)`);
     // a reviewer is named by an administrator from their own session (holder of admin.roles), never from the system
     // context (security.sql reviewer_grant_guard) — so the test does it the same way, with a test administrator
-    await testAdmin(tx);
+    await testAdminFixture(tx);
     await asUser(tx, TEST_ADMIN, () => tx.execute(sql`insert into user_roles (user_id, role_id) select ${id}::uuid, r.id from roles r where r.key = ${ROLE_OF[f]} on conflict do nothing`));
   }
-  await testSession(tx, id);
+  await testSessionFixture(tx, id, {});
 }
 
 /** TEST ACCOUNT of an administrator (super_admin), who names the test reviewers. */
 export const TEST_ADMIN = "00000000-0000-4000-8000-00000000ad01";
 export async function testAdmin(tx: Tx) {
+  await asOwner(tx, () => testAdminFixture(tx));
+}
+async function testAdminFixture(tx: Tx) {
   await tx.insert(users).values({ id: TEST_ADMIN, phone: "0500000ad1", fullName: "حساب اختبار مدير (ليس شخصًا)", isStaff: true }).onConflictDoNothing();
   await tx.execute(sql`insert into user_roles (user_id, role_id) select ${TEST_ADMIN}::uuid, r.id from roles r where r.key = 'super_admin' on conflict do nothing`);
 }
@@ -70,6 +89,9 @@ export async function testAdmin(tx: Tx) {
  */
 const TOKENS = new Map<string, string>();
 export async function testSession(tx: Tx, userId: string, o: { mfa?: boolean; expired?: boolean; revoked?: boolean } = {}) {
+  return asOwner(tx, () => testSessionFixture(tx, userId, o));
+}
+async function testSessionFixture(tx: Tx, userId: string, o: { mfa?: boolean; expired?: boolean; revoked?: boolean }) {
   const token = `test-session-${userId}-${o.mfa === false ? "nomfa" : ""}${o.expired ? "exp" : ""}${o.revoked ? "rev" : ""}`;
   const exp = o.expired ? sql`now() - interval '1 minute'` : sql`now() + interval '1 hour'`;
   await tx.execute(sql`insert into sessions (user_id, token_hash, mfa_verified, idle_expires_at, absolute_expires_at, revoked_at)

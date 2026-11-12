@@ -1,6 +1,6 @@
 import "server-only";
 import { and, eq, inArray, max, notInArray } from "drizzle-orm";
-import { withContext, type Tx } from "@/server/db";
+import { withContext, withSystem, type Tx } from "@/server/db";
 import {
   documentVersions, documents, featureFlags, outputs, permissions, processingRuns, processingSteps, requestItems, requestStages,
   rolePermissions, serviceRequests, userRoles, users, waqfs,
@@ -54,7 +54,7 @@ export type RunOutcome = { status: "ready" | "needs_client" | "waiting" | "block
 const WORKABLE = ["submitted", "triage", "awaiting_client", "in_progress"];
 
 export async function processRequest(job: ClaimedJob): Promise<RunOutcome> {
-  const eauth = await withContext({ userId: null, globalAccess: true }, (tx) => engineAuth(tx));
+  const eauth = await withSystem((tx) => engineAuth(tx));
   const ctx = (fn: (tx: Tx) => Promise<unknown>) => withContext(eauth.db, fn);
 
   // the run row first (its own transaction), so that even a failure leaves a trace

@@ -13,8 +13,8 @@ import { KIND_AR, POLARITY_AR, RANK_AR, type Fact } from "../../src/server/knowl
 import { FIQH_CASES } from "../../tests/knowledge/fiqh-cases";
 
 async function main() {
-  const url = process.env.KE_TEST_DATABASE_URL;
-  if (!url || !/_test(\?|$)/.test(url)) throw new Error("KE_TEST_DATABASE_URL must name a _test database");
+  const url = process.env.KE_TEST_DATABASE_OWNER_URL; // stage 11: cases run as the system role (SET LOCAL ROLE waqfak_system on the owner's connection, test cluster only); the fixtures reset to the owner
+  if (!url || !/_test(\?|$)/.test(url)) throw new Error("KE_TEST_DATABASE_OWNER_URL must name a _test database");
   const pool = new Pool({ connectionString: url });
   const db = drizzle(pool, { schema, casing: "snake_case" });
   const out: unknown[] = [];

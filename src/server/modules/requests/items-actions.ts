@@ -1,12 +1,10 @@
 "use server";
 
-import { and, desc, eq, max } from "drizzle-orm";
+import { and, desc, eq, max, sql } from "drizzle-orm";
 import { z } from "zod";
 import { enqueueProcessing } from "@/server/engine/queue/queue";
-import { documents, requestEvents, requestItemEvents, requestItems, requestRevisions, serviceRequests } from "@/server/db/schema";
-import { asSystem } from "@/server/db/as-system";
+import { documents, requestEvents, requestItemEvents, requestItems, serviceRequests } from "@/server/db/schema";
 import { intakeOf, serviceForm } from "./intake/server";
-import { recordFieldState } from "./field-state";
 import type { RequestItemKind } from "@/server/db/schema/commerce";
 import { ForbiddenError } from "@/server/authz/context";
 import { audit } from "@/server/lib/audit";
@@ -178,11 +176,9 @@ async function applyCompletion(c: ActCtx, rc: RequestCtx, fieldKey: string, resp
   if (err) return `لم يُحدَّث الحقل تلقائيًا (${err})؛ يطبّق الفريق ردك.`;
   if (JSON.stringify(answers[f.key] ?? null) === JSON.stringify(next[f.key] ?? null)) return null;
   // the client may answer; the bookkeeping rows are team records, written after this check with the system context
-  await asSystem(c.tx, async () => {
-    await c.tx.update(serviceRequests).set({ intake: { ...intake, answers: next }, updatedBy: c.auth.user.id }).where(eq(serviceRequests.id, rc.req.id));
-    await c.tx.insert(requestRevisions).values({ requestId: rc.req.id, waqfId: rc.req.waqfId, kind: "client_completion", target: f.key, reason: `رد العميل على طلب الاستكمال #${seq}`, before: { [f.key]: answers[f.key] ?? null }, after: { [f.key]: next[f.key] ?? null }, impact: [], actorUserId: c.auth.user.id });
-    await recordFieldState(c.tx, rc, f.key, { at: new Date().toISOString(), by: c.auth.user.id, action: "changed", note: `استكمال العميل (#${seq})`, value: next[f.key] ?? null }, "needs_review");
-  });
+  // stage 11: the three writes go through one function that checks the caller is a party to the request and changes
+  // this one field only (no system context on the application's connection)
+  await c.tx.execute(sql`select app_client_completion(${rc.req.id}::uuid, ${f.key}, ${JSON.stringify(next[f.key] ?? null)}::jsonb, ${`رد العميل على طلب الاستكمال #${seq}`}, ${`استكمال العميل (#${seq})`}, now())`);
   await audit(c.tx, { actorUserId: c.auth.user.id, action: "requests.client_completion", entityType: "service_request", entityId: rc.req.id, waqfId: rc.req.waqfId, ip: c.ip, userAgent: c.userAgent, after: { field: f.key, item: seq } });
   return true;
 }

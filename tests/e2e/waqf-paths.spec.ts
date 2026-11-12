@@ -19,7 +19,7 @@ import { demo, loginAs, INTAKE_SUBMIT } from "./helpers";
 const ex = expect;
 let pool: pg.Pool | null = null;
 async function sql<T = Record<string, unknown>>(q: string, params: unknown[] = []): Promise<T[]> {
-  pool ??= new pg.Pool({ connectionString: process.env.DATABASE_URL, max: 2 });
+  pool ??= new pg.Pool({ connectionString: process.env.SYSTEM_DATABASE_URL ?? process.env.DATABASE_URL, max: 2 });
   const c = await pool.connect();
   try {
     await c.query("select set_config('app.global_access', 'on', false)");

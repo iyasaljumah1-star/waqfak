@@ -28,7 +28,7 @@ async function sql<T = Record<string, unknown>>(q: string, params: unknown[] = [
   try { return (await db.query(q, params)).rows as T[]; } finally { await db.end(); }
 }
 async function asUser<T = Record<string, unknown>>(userId: string, q: string, params: unknown[] = []): Promise<T[]> {
-  const db = new pg.Client({ connectionString: envLine("DATABASE_URL") });
+  const db = new pg.Client({ connectionString: (process.env.SYSTEM_DATABASE_URL ?? envLine("DATABASE_URL")) });
   await db.connect();
   try {
     await db.query("begin");

@@ -106,9 +106,10 @@ describe.skipIf(!devDb)("capability tokens — use paths on the development data
   }
   /** A tampering statement then a check, with the application role in the system context, rolled back. */
   async function tamper(stmts: string[], check: () => Promise<unknown>): Promise<{ refused: string | null; after: unknown }> {
-    const c = new Client({ connectionString: process.env.DATABASE_URL }); await c.connect();
+    const c = new Client({ connectionString: process.env.DATABASE_OWNER_URL }); await c.connect(); // stage 11: cases run as the system role (SET LOCAL ROLE waqfak_system on the owner's connection, test cluster only); the fixtures reset to the owner
     await c.query("begin");
     await c.query(`select set_config('app.user_id', '', true), set_config('app.global_access', 'on', true)`);
+    await c.query(`set local role waqfak_system`);
     let refused: string | null = null;
     try { for (const s of stmts) await c.query(s); } catch (e) { refused = (e as Error).message; }
     // the check reads through the application's own path, which cannot see this uncommitted transaction: run the

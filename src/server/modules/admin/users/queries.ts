@@ -1,7 +1,7 @@
 import "server-only";
-import { and, asc, desc, eq, gt, ilike, inArray, isNull, like, or, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gt, ilike, inArray, isNull, like, or, type SQL , sql } from "drizzle-orm";
 import type { Auth } from "@/server/authz/context";
-import { auditLogs, breakGlassAccess, mfaFactors, recoveryCodes, roles, sessions, userRoles, users, waqfMemberships, waqfs } from "@/server/db/schema";
+import { auditLogs, breakGlassAccess, roles, sessions, userRoles, users, userColumns, waqfMemberships, waqfs } from "@/server/db/schema";
 import { read } from "@/server/modules/_shared";
 import { audit } from "@/server/lib/audit";
 import { requestInfo } from "@/server/lib/request-info";
@@ -47,9 +47,9 @@ const LOGIN_ACTIONS = ["user.login", "user.logout", "user.mfa_verified", "user.r
 
 export async function userDetail(auth: Auth, id: string) {
   return read(auth, async (tx) => {
-    const [u] = await tx.select().from(users).where(eq(users.id, id)).limit(1);
+    const [u] = await tx.select(userColumns).from(users).where(eq(users.id, id)).limit(1);
     if (!u) return null;
-    const [grants, allRoles, activeSessions, history, adminEvents, factors, codes, memberships, breakGlass] = await Promise.all([
+    const [grants, allRoles, activeSessions, history, adminEvents, factors, , memberships, breakGlass] = await Promise.all([
       tx
         .select({ key: roles.key, nameAr: roles.nameAr, grantedAt: userRoles.grantedAt, grantedBy: userRoles.grantedBy })
         .from(userRoles)
@@ -73,8 +73,9 @@ export async function userDetail(auth: Auth, id: string) {
         .where(and(eq(auditLogs.entityType, "user"), eq(auditLogs.entityId, id), like(auditLogs.action, "admin.%")))
         .orderBy(desc(auditLogs.id))
         .limit(30),
-      tx.select({ id: mfaFactors.id, type: mfaFactors.type, verifiedAt: mfaFactors.verifiedAt, lastUsedAt: mfaFactors.lastUsedAt }).from(mfaFactors).where(eq(mfaFactors.userId, id)),
-      tx.select({ usedAt: recoveryCodes.usedAt }).from(recoveryCodes).where(eq(recoveryCodes.userId, id)),
+      // stage 11: the second factor is the authentication role's; staff see its state through a function (no secrets)
+      tx.execute<{ factor_id: string | null; kind: string | null; verified_at: Date | null; last_used_at: Date | null; codes_total: number; codes_used: number }>(sql`select * from admin_mfa_state(${id}::uuid)`).then((r) => r.rows),
+      Promise.resolve(null),
       tx
         .select({ waqfId: waqfMemberships.waqfId, roleKey: waqfMemberships.roleKey, status: waqfMemberships.status, name: waqfs.name, number: waqfs.internalNumber })
         .from(waqfMemberships)
@@ -96,7 +97,10 @@ export async function userDetail(auth: Auth, id: string) {
       activeSessions,
       history,
       adminEvents,
-      mfa: { factors: factors.filter((f) => f.verifiedAt), recoveryLeft: codes.filter((c) => !c.usedAt).length },
+      mfa: {
+        factors: factors.filter((f) => f.factor_id && f.verified_at).map((f) => ({ id: f.factor_id!, type: f.kind as "totp", verifiedAt: f.verified_at, lastUsedAt: f.last_used_at })),
+        recoveryLeft: factors.length ? Number(factors[0]!.codes_total) - Number(factors[0]!.codes_used) : 0,
+      },
       memberships,
       breakGlass,
       names: new Map(actors.map((a) => [a.id, a.name ?? "—"])),

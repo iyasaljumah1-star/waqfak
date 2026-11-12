@@ -1,10 +1,10 @@
 "use server";
 
-import { and, eq, isNull, ne, notInArray } from "drizzle-orm";
+import { and, eq, isNull, ne, notInArray, sql } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import type { Tx } from "@/server/db";
-import { mfaFactors, recoveryCodes, roles, sessions, userRoles, users } from "@/server/db/schema";
+import { roles, sessions, userRoles, users, userColumns } from "@/server/db/schema";
 import { rolePermissionMap, type Auth } from "@/server/authz/context";
 import { normalizeSaudiMobile } from "@/server/auth/otp";
 import { sendSms } from "@/server/adapters/messaging";
@@ -18,7 +18,7 @@ const uuid = z.string().uuid("معرّف غير صالح.");
 const reason = z.string().trim().min(10, "اكتب سببًا واضحًا لا يقل عن 10 أحرف.").max(500, "السبب طويل جدًا.");
 
 async function loadTarget(tx: Tx, id: string) {
-  const [u] = await tx.select().from(users).where(eq(users.id, id)).limit(1);
+  const [u] = await tx.select(userColumns).from(users).where(eq(users.id, id)).limit(1);
   if (!u) throw new UserError("لم نجد هذا المستخدم.");
   return u;
 }
@@ -75,9 +75,9 @@ export async function grantRole(_: ActionState, fd: FormData): Promise<ActionSta
     if (target.status === "deleted") throw new UserError("الحساب محذوف؛ لا يمكن منحه أدوارًا.");
     const before = await roleKeysOf(tx, userId);
     if (before.includes(roleKey)) throw new UserError("المستخدم يحمل هذا الدور مسبقًا.");
-    await tx.insert(userRoles).values({ userId, roleId: role.id, grantedBy: auth.user.id });
-    // A global role makes the account a staff account; staff must enroll MFA before reaching the admin panel.
-    if (!target.isStaff) await tx.update(users).set({ isStaff: true, updatedBy: auth.user.id }).where(eq(users.id, userId));
+    // stage 11: through the database's own check of the bound administrator (admin.roles, second factor); a global
+    // role makes the account a staff account there, which must then enroll the second factor
+    await tx.execute(sql`select admin_grant_role(${userId}::uuid, ${roleKey})`);
     await audit(tx, {
       actorUserId: auth.user.id, action: "admin.user.role_granted", entityType: "user", entityId: userId, ip, userAgent,
       before: { roles: before }, after: { roles: [...before, roleKey], granted: roleKey, madeStaff: !target.isStaff },
@@ -98,12 +98,13 @@ export async function revokeRole(_: ActionState, fd: FormData): Promise<ActionSt
     if (roleKey === "super_admin") {
       if (userId === auth.user.id) throw new UserError("لا يمكنك سحب دور «مسؤول النظام الأعلى» من نفسك. اطلب ذلك من مسؤول أعلى آخر.");
       // serialize concurrent revocations so two admins cannot remove the last two super admins at once
-      await tx.select({ id: roles.id }).from(roles).where(eq(roles.key, "super_admin")).for("update");
+      // (stage 11: no row lock on roles for the application role: a transaction-scoped advisory lock instead)
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext('role:super_admin'))`);
       if ((await otherActiveSuperAdmins(tx, userId)) < 1) throw new UserError("يجب أن يبقى مسؤول نظام أعلى واحد نشط على الأقل.");
     }
     const before = await roleKeysOf(tx, userId);
     if (!before.includes(roleKey)) throw new UserError("المستخدم لا يحمل هذا الدور.");
-    await tx.delete(userRoles).where(and(eq(userRoles.userId, userId), eq(userRoles.roleId, role.id)));
+    await tx.execute(sql`select admin_revoke_role(${userId}::uuid, ${roleKey})`);
     await audit(tx, {
       actorUserId: auth.user.id, action: "admin.user.role_revoked", entityType: "user", entityId: userId, ip, userAgent,
       before: { roles: before }, after: { roles: before.filter((k) => k !== roleKey), revoked: roleKey },
@@ -129,8 +130,8 @@ export async function lockUser(_: ActionState, fd: FormData): Promise<ActionStat
       if (!isSuperAdmin(auth)) throw new UserError("قفل حساب مسؤول نظام أعلى مقصور على مسؤول نظام أعلى.");
       if ((await otherActiveSuperAdmins(tx, userId)) < 1) throw new UserError("هذا آخر مسؤول نظام أعلى نشط؛ لا يمكن قفله.");
     }
-    await tx.update(users).set({ status: "locked", updatedBy: auth.user.id }).where(eq(users.id, userId));
     const n = await revokeSessions(tx, userId, "admin_lock");
+    await tx.execute(sql`select admin_set_standing(${userId}::uuid, 'locked', null, false)`);
     await audit(tx, { actorUserId: auth.user.id, action: "admin.user.locked", entityType: "user", entityId: userId, ip, userAgent, before: { status: u.status }, after: { status: "locked", reason: why, sessionsRevoked: n } });
     return { ok: true, message: `قُفل الحساب وأُنهيت ${n} من جلساته.` };
   }, `/admin/users/${userId}`);
@@ -143,7 +144,7 @@ export async function unlockUser(_: ActionState, fd: FormData): Promise<ActionSt
   return staffAction("admin.users", async ({ auth, tx, ip, userAgent }) => {
     const u = await loadTarget(tx, userId);
     if (u.status !== "locked" && !(u.lockedUntil && u.lockedUntil > new Date())) throw new UserError("الحساب غير مقفل.");
-    await tx.update(users).set({ status: "active", lockedUntil: null, failedLoginCount: 0, updatedBy: auth.user.id }).where(eq(users.id, userId));
+    await tx.execute(sql`select admin_set_standing(${userId}::uuid, 'active', null, false)`);
     await audit(tx, { actorUserId: auth.user.id, action: "admin.user.unlocked", entityType: "user", entityId: userId, ip, userAgent, before: { status: u.status, lockedUntil: u.lockedUntil }, after: { status: "active", reason: why } });
     return { ok: true, message: "فُتح الحساب. يستطيع صاحبه الدخول الآن." };
   }, `/admin/users/${userId}`);
@@ -171,10 +172,9 @@ export async function resetMfa(_: ActionState, fd: FormData): Promise<ActionStat
     const u = await loadTarget(tx, userId);
     const keys = await roleKeysOf(tx, userId);
     if (keys.includes("super_admin") && !isSuperAdmin(auth)) throw new UserError("إعادة ضبط التحقق لمسؤول نظام أعلى مقصورة على مسؤول نظام أعلى.");
-    const factors = await tx.delete(mfaFactors).where(eq(mfaFactors.userId, userId)).returning({ id: mfaFactors.id });
-    await tx.delete(recoveryCodes).where(eq(recoveryCodes.userId, userId));
-    await tx.update(users).set({ mfaEnabled: false, updatedBy: auth.user.id }).where(eq(users.id, userId));
     const n = await revokeSessions(tx, userId, "admin_mfa_reset");
+    const r = await tx.execute<{ n: number }>(sql`select admin_set_standing(${userId}::uuid, null, null, true) as n`);
+    const factors = { length: Number(r.rows[0]?.n ?? 0) };
     await audit(tx, {
       actorUserId: auth.user.id, action: "admin.user.mfa_reset", entityType: "user", entityId: userId, ip, userAgent,
       before: { mfaEnabled: u.mfaEnabled, factors: factors.length }, after: { mfaEnabled: false, reason: why, sessionsRevoked: n },
@@ -210,11 +210,9 @@ export async function inviteStaff(_: ActionState, fd: FormData): Promise<ActionS
       const [byEmail] = await tx.select({ id: users.id }).from(users).where(eq(users.email, d.email)).limit(1);
       if (byEmail) return { error: "راجع الحقول المظللة.", fieldErrors: { email: "البريد مستخدم في حساب آخر." } };
     }
-    const [u] = await tx
-      .insert(users)
-      .values({ phone, fullName: d.fullName, email: d.email || null, isStaff: true, status: "active", createdBy: auth.user.id, updatedBy: auth.user.id })
-      .returning({ id: users.id });
-    await tx.insert(userRoles).values({ userId: u.id, roleId: role.id, grantedBy: auth.user.id });
+    const c = await tx.execute<{ id: string }>(sql`select admin_create_user(${phone}, ${d.fullName}, ${d.email || null}, true) as id`);
+    const u = { id: c.rows[0]!.id };
+    await tx.execute(sql`select admin_grant_role(${u.id}::uuid, ${d.roleKey})`);
     await audit(tx, {
       actorUserId: auth.user.id, action: "admin.user.staff_invited", entityType: "user", entityId: u.id, ip, userAgent,
       after: { fullName: d.fullName, email: d.email || null, role: d.roleKey },
@@ -277,9 +275,9 @@ export async function updateAccount(_: ActionState, fd: FormData): Promise<Actio
       if (clash) return { error: "راجع الحقول المظللة.", fieldErrors: { email: "البريد مستخدم في حساب آخر." } };
     }
     const resides = d.residesInKsa === "yes" ? true : d.residesInKsa === "no" ? false : u.residesInKsa;
-    const patch: Partial<typeof users.$inferInsert> = { fullName: d.fullName, residesInKsa: resides, updatedBy: auth.user.id };
-    if (phoneChanged) Object.assign(patch, { phone: newPhone!, phoneVerifiedAt: null });
-    if (emailChanged) Object.assign(patch, { email, emailVerifiedAt: null });
+    const patch: Record<string, unknown> = { full_name: d.fullName, resides_in_ksa: resides };
+    if (phoneChanged) Object.assign(patch, { phone: newPhone! });
+    if (emailChanged) Object.assign(patch, { email, email_verified_at: null });
 
     const changed: string[] = [];
     if (d.fullName !== (u.fullName ?? "")) changed.push("fullName");
@@ -288,7 +286,7 @@ export async function updateAccount(_: ActionState, fd: FormData): Promise<Actio
     if (emailChanged) changed.push("email");
     if (!changed.length) return { ok: true, message: "لا تغييرات للحفظ." };
 
-    await tx.update(users).set(patch).where(eq(users.id, u.id));
+    await tx.execute(sql`select admin_update_profile(${u.id}::uuid, ${JSON.stringify(patch)}::jsonb)`);
     const revoked = phoneChanged || emailChanged ? await revokeSessions(tx, u.id, "admin_identifier_changed") : 0;
     const mask = (p: string | null) => (p ? `${p.slice(0, 5)}•••••${p.slice(-3)}` : null);
     const maskMail = (e: string | null) => (e ? e.replace(/^(.)[^@]*(@.*)$/, "$1•••$2") : null);

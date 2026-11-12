@@ -2,7 +2,7 @@ import "server-only";
 import { and, asc, desc, eq, ilike, inArray, like, notInArray, or, sql, type SQL } from "drizzle-orm";
 import type { Auth } from "@/server/authz/context";
 import {
-  contactMessages, dataSubjectRequests, invoices, serviceRequests, services, users, waqfMemberships, waqfs,
+  contactMessages, dataSubjectRequests, invoices, serviceRequests, services, users, userColumns, waqfMemberships, waqfs,
 } from "@/server/db/schema";
 import { read } from "@/server/modules/_shared";
 import { likeTerm } from "../guard";
@@ -63,7 +63,7 @@ export async function listClients(auth: Auth, q?: string) {
 
 export async function clientDetail(auth: Auth, id: string) {
   return read(auth, async (tx) => {
-    const [u] = await tx.select().from(users).where(eq(users.id, id)).limit(1);
+    const [u] = await tx.select(userColumns).from(users).where(eq(users.id, id)).limit(1);
     if (!u) return null;
     const [mems, reqs, invs, dsrs] = await Promise.all([
       tx

@@ -11,7 +11,7 @@ import { Pool } from "pg";
 vi.mock("server-only", () => ({}));
 
 const OWNER = process.env.REFS_TEST_DATABASE_OWNER_URL;
-const APP = process.env.REFS_TEST_DATABASE_URL;
+const APP = process.env.REFS_TEST_DATABASE_OWNER_URL; // stage 11: cases run as the system role (SET LOCAL ROLE waqfak_system on the owner's connection, test cluster only); the fixtures reset to the owner
 const enabled = !!OWNER && !!APP && /refs_test/.test(OWNER) && /refs_test/.test(APP);
 
 describe.skipIf(!enabled)("reference registry (dedicated test database)", () => {
@@ -46,6 +46,7 @@ describe.skipIf(!enabled)("reference registry (dedicated test database)", () => 
     try {
       await db.transaction(async (tx) => {
         await tx.execute(sql`select set_config('app.user_id', '', true), set_config('app.global_access', 'on', true)`);
+        await tx.execute(sql`set local role waqfak_system`);
         await fn(tx as unknown as import("../src/server/db").Tx);
         throw new Rollback();
       });
@@ -115,6 +116,7 @@ describe.skipIf(!enabled)("reference registry (dedicated test database)", () => 
     const c = await app.connect();
     try {
       await c.query("begin");
+      await c.query(`set local role waqfak_system`); // stage 11: a writer that is not the owner
       await c.query(`select set_config('app.global_access','on',true)`);
       await c.query(`insert into ref_sources (code, official_name, kind, binding, status_recorded, facts, candidate_services) values ('SYN-RLS','x','regulation','binding','unknown','{}','{}')`);
       await c.query(`select set_config('app.user_id','00000000-0000-4000-8000-000000000002',true), set_config('app.global_access','off',true)`);

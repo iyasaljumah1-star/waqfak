@@ -19,14 +19,15 @@ import { CASES, KNOWN_LIMITS, runActual, runCase, type ActualRow, type CaseRow }
 import { pipelineMeasure, PROBES } from "../../tests/knowledge/probes";
 
 async function main() {
-  const url = process.env.KE_TEST_DATABASE_URL ?? "";
-  if (!/ke_test/.test(url)) throw new Error("KE_TEST_DATABASE_URL must name the ke_test database");
+  const url = process.env.KE_TEST_DATABASE_OWNER_URL ?? ""; // stage 11: cases run as the system role (SET LOCAL ROLE waqfak_system on the owner's connection, test cluster only); the fixtures reset to the owner
+  if (!/ke_test/.test(url)) throw new Error("KE_TEST_DATABASE_OWNER_URL must name the ke_test database");
   const pool = new Pool({ connectionString: url });
   const db = drizzle(pool, { schema, casing: "snake_case" });
   async function rb<T>(fn: (tx: import("../../src/server/db").Tx) => Promise<T>): Promise<T> {
     let out: T | undefined;
     await db.transaction(async (tx) => {
       await tx.execute(sql`select set_config('app.user_id', '', true), set_config('app.global_access', 'on', true)`);
+        await tx.execute(sql`set local role waqfak_system`);
       out = await fn(tx as never);
       tx.rollback();
     }).catch((e) => { if (!/rollback/i.test(String(e?.message ?? e))) throw e; });

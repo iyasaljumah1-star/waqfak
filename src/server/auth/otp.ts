@@ -1,6 +1,6 @@
 import "server-only";
 import { and, desc, eq, gt, isNull } from "drizzle-orm";
-import { withSystem } from "../db";
+import { withAuth } from "../db";
 import { otpChallenges } from "../db/schema";
 import { sendSms } from "../adapters/messaging";
 import { showOtpOnScreen } from "../env";
@@ -37,7 +37,7 @@ export async function issueOtp(target: string, purpose: OtpPurpose, ip: string, 
   await enforceRateLimit(`otp:target:${target}`, 4, 600);
   await enforceRateLimit(`otp:ip:${ip}`, 20, 600);
   const code = numericCode(6);
-  const rows = await withSystem((tx) =>
+  const rows = await withAuth((tx) =>
     tx
       .insert(otpChallenges)
       .values({
@@ -57,7 +57,7 @@ export async function issueOtp(target: string, purpose: OtpPurpose, ip: string, 
 export type OtpResult = { ok: true; context: Record<string, unknown> | null } | { ok: false; reason: "invalid" | "expired" | "locked" };
 
 export async function verifyOtp(challengeId: string, target: string, purpose: OtpPurpose, code: string): Promise<OtpResult> {
-  return withSystem(async (tx) => {
+  return withAuth(async (tx) => {
     const [ch] = await tx
       .select()
       .from(otpChallenges)

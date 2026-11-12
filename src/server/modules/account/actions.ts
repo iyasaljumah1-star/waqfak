@@ -3,7 +3,7 @@
 import { and, eq, inArray, isNull, ne } from "drizzle-orm";
 import { z } from "zod";
 import {
-  consents, dataSubjectRequests, mfaFactors, notificationPreferences, notifications, notificationTemplates, sessions, users,
+  consents, dataSubjectRequests, notificationPreferences, notifications, notificationTemplates, sessions, users,
 } from "../../db/schema";
 import { confirmTotpEnrollment, disableMfa, hashPassword, passwordProblems, startTotpEnrollment, verifyPassword, verifyUserTotp } from "../../auth/mfa";
 import { revokeAllSessions } from "../../auth/session";
@@ -56,10 +56,8 @@ export async function updateProfile(_: ActionState, fd: FormData): Promise<Actio
 
 // ───────────── Two-factor authentication (TOTP) ─────────────
 export async function startTotp(): Promise<ActionState> {
-  return userAction(async ({ auth, tx }) => {
+  return userAction(async ({ auth }) => {
     if (auth.user.mfaEnabled) throw new UserError("التحقق بخطوتين مفعّل مسبقًا.");
-    // drop abandoned, never-confirmed enrollments
-    await tx.delete(mfaFactors).where(and(eq(mfaFactors.userId, auth.user.id), isNull(mfaFactors.verifiedAt)));
     const label = auth.user.email ?? auth.user.phone;
     const { factorId, secret, qr } = await startTotpEnrollment(auth.user.id, label);
     return { ok: true, data: { factorId, secret, qr } };

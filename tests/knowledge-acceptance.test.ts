@@ -14,7 +14,7 @@ import { Pool } from "pg";
 vi.mock("server-only", () => ({}));
 
 const OWNER = process.env.KE_TEST_DATABASE_OWNER_URL;
-const APP = process.env.KE_TEST_DATABASE_URL;
+const APP = process.env.KE_TEST_DATABASE_OWNER_URL; // stage 11: cases run as the system role (SET LOCAL ROLE waqfak_system on the owner's connection, test cluster only); the fixtures reset to the owner
 const enabled = !!OWNER && !!APP && /ke_test/.test(OWNER) && /ke_test/.test(APP);
 
 describe.skipIf(!enabled)("unified knowledge engine (dedicated test database)", () => {
@@ -47,6 +47,7 @@ describe.skipIf(!enabled)("unified knowledge engine (dedicated test database)", 
     try {
       await db.transaction(async (tx) => {
         await tx.execute(sql`select set_config('app.user_id', '', true), set_config('app.global_access', 'on', true)`);
+        await tx.execute(sql`set local role waqfak_system`);
         out = await fn(tx as unknown as import("../src/server/db").Tx);
         throw new Rollback();
       });
@@ -137,7 +138,7 @@ describe.skipIf(!enabled)("unified knowledge engine (dedicated test database)", 
     // P6c: a user with no role (and locked) — refused by the application and by the database
     const e0 = await rolledBack(async (tx) => {
       await cases.testReviewer(tx, NOPERM, []);
-      await tx.execute(sql`update users set locked_until = now() + interval '1 day' where id = ${NOPERM}::uuid`);
+      await cases.asOwner(tx, () => tx.execute(sql`update users set locked_until = now() + interval '1 day' where id = ${NOPERM}::uuid`)); // stage 11: a fixture
       const id = await lfs(tx);
       await cases.asUser(tx, NOPERM, () => rv.recordSourceReview(tx, cases.actorOf(NOPERM), { sourceId: id, decision: "accepted", note: "مراجعة من مستخدم بلا دور ومقفل" }));
     }).catch((e) => e);
@@ -150,7 +151,7 @@ describe.skipIf(!enabled)("unified knowledge engine (dedicated test database)", 
     expect(msg(e1)).toMatch(/lacks knowledge.review.data/);
     const e2 = await rolledBack(async (tx) => {
       await cases.testReviewer(tx, NOPERM, ["data"]);
-      await tx.execute(sql`update users set locked_until = now() + interval '1 day' where id = ${NOPERM}::uuid`);
+      await cases.asOwner(tx, () => tx.execute(sql`update users set locked_until = now() + interval '1 day' where id = ${NOPERM}::uuid`)); // stage 11: a fixture
       const id = await lfs(tx);
       await cases.asUser(tx, NOPERM, () => tx.insert(schema.kbSourceReviews).values({ sourceId: id, reviewerUserId: NOPERM, reviewerRole: "data", decision: "accepted", note: "إدراج مباشر من مستخدم مقفل" }));
     }).catch((e) => e);
@@ -207,7 +208,7 @@ describe.skipIf(!enabled)("unified knowledge engine (dedicated test database)", 
         await cases.reviewSource(tx, "GASTAT-LFS");
         const q = { question: "كم بلغ معدل البطالة بين السعوديين في الربع الأول من عام 2025؟", service: "T02", asOf: "2026-11-06", kinds: ["statistical_source" as const] };
         expect((await ke.retrieve(tx, q)).citable.length).toBeGreaterThan(0);
-        await tx.execute(withdraw);
+        await cases.asOwner(tx, () => tx.execute(withdraw)); // stage 11: a fixture (the system role writes no identity rows)
         expect((await ke.retrieve(tx, q)).citable).toEqual([]);
       });
     }
@@ -216,7 +217,7 @@ describe.skipIf(!enabled)("unified knowledge engine (dedicated test database)", 
       await cases.acceptRegistry(tx, "NZR", "NZR/uqn-p18926", [8, 16], "2022-02-04");
       const q = { question: "ما نص المادة 16 الفقرة 3 من لائحة تنظيم أعمال النظارة؟", service: "I01", asOf: "2026-11-06", refCodes: ["NAZARA-REG"] };
       expect((await ke.retrieve(tx, q)).citable.length).toBeGreaterThan(0);
-      await tx.execute(sql`delete from user_roles where user_id = ${cases.TEST_REVIEWER}::uuid`);
+      await cases.asOwner(tx, () => tx.execute(sql`delete from user_roles where user_id = ${cases.TEST_REVIEWER}::uuid`)); // stage 11: a fixture
       expect((await ke.retrieve(tx, q)).citable).toEqual([]);
     });
   }, 120_000);
@@ -293,6 +294,7 @@ describe.skipIf(!enabled)("unified knowledge engine (dedicated test database)", 
     expect(String((err as Error & { cause?: Error })?.cause?.message ?? err)).toMatch(/append-only|permission denied/);
     const db = drizzle(app, { schema, casing: "snake_case" });
     await expect(db.transaction(async (tx) => {
+      await tx.execute(sql`set local role waqfak_system`); // stage 11: a writer that is not the owner
       await tx.execute(sql`select set_config('app.user_id', '00000000-0000-4000-8000-000000000001', true), set_config('app.global_access', '', true)`);
       await tx.update(schema.kbChunks).set({ text: "عبث" }).where(sql`true`);
       const [r] = (await tx.execute(sql`select count(*)::int as n from kb_chunks where text = 'عبث'`)).rows as { n: number }[];

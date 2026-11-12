@@ -1,7 +1,7 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
-import { withContext } from "@/server/db";
+import { withSystem } from "@/server/db";
 import { serviceRequests } from "@/server/db/schema";
 import { audit } from "@/server/lib/audit";
 import { notify } from "@/server/modules/notify";
@@ -37,7 +37,7 @@ export async function drain(opts: { max?: number; workerId?: string } = {}): Pro
 
 /** A job that gave up after its last attempt is never silent: recorded in the audit log, and the final approvers are told. */
 async function reportDead(job: { id: string; requestId: string; waqfId: string | null; attempts: number }, e: unknown) {
-  await withContext({ userId: null, globalAccess: true }, async (tx) => {
+  await withSystem(async (tx) => {
     const [r] = await tx.select({ number: serviceRequests.number }).from(serviceRequests).where(eq(serviceRequests.id, job.requestId)).limit(1);
     await audit(tx, { actorUserId: ENGINE_USER_ID, action: "engine.job_dead", entityType: "service_request", entityId: job.requestId, waqfId: job.waqfId, ip: "engine", userAgent: ENGINE_VERSION, after: { job: job.id, attempts: job.attempts, error: safeError(e) } });
     if (!r) return;

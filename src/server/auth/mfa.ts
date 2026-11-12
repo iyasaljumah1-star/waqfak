@@ -3,7 +3,7 @@ import { hash, verify } from "@node-rs/argon2";
 import { and, eq, isNotNull, isNull } from "drizzle-orm";
 import { generateSecret, generateURI, verify as verifyTotp } from "otplib";
 import QRCode from "qrcode";
-import { withSystem } from "../db";
+import { withAuth } from "../db";
 import { mfaFactors, recoveryCodes, users } from "../db/schema";
 import { decryptString, encryptString, lookupHash, randomToken } from "../lib/crypto";
 
@@ -20,16 +20,18 @@ export function passwordProblems(pw: string): string | null {
 
 export async function startTotpEnrollment(userId: string, label: string) {
   const secret = generateSecret();
-  const [factor] = await withSystem((tx) =>
-    tx.insert(mfaFactors).values({ userId, type: "totp", secretEnc: encryptString(secret), label: "تطبيق المصادقة" }).returning({ id: mfaFactors.id }),
-  );
+  const [factor] = await withAuth(async (tx) => {
+    // drop abandoned, never-confirmed enrollments (the second factor is the authentication role's: stage 11)
+    await tx.delete(mfaFactors).where(and(eq(mfaFactors.userId, userId), isNull(mfaFactors.verifiedAt)));
+    return tx.insert(mfaFactors).values({ userId, type: "totp", secretEnc: encryptString(secret), label: "تطبيق المصادقة" }).returning({ id: mfaFactors.id });
+  });
   const uri = generateURI({ issuer: "Waqfak وقفك", label, secret });
   const qr = await QRCode.toDataURL(uri, { margin: 1, width: 220 });
   return { factorId: factor.id, secret, qr };
 }
 
 export async function confirmTotpEnrollment(userId: string, factorId: string, token: string): Promise<string[] | null> {
-  return withSystem(async (tx) => {
+  return withAuth(async (tx) => {
     const [f] = await tx.select().from(mfaFactors).where(and(eq(mfaFactors.id, factorId), eq(mfaFactors.userId, userId))).limit(1);
     if (!f) return null;
     const res = await verifyTotp({ secret: decryptString(f.secretEnc), token: token.trim() });
@@ -45,7 +47,7 @@ export async function confirmTotpEnrollment(userId: string, factorId: string, to
 }
 
 export async function verifyUserTotp(userId: string, token: string): Promise<boolean> {
-  return withSystem(async (tx) => {
+  return withAuth(async (tx) => {
     const factors = await tx.select().from(mfaFactors).where(and(eq(mfaFactors.userId, userId), isNotNull(mfaFactors.verifiedAt)));
     for (const f of factors) {
       const res = await verifyTotp({ secret: decryptString(f.secretEnc), token: token.trim() });
@@ -59,7 +61,7 @@ export async function verifyUserTotp(userId: string, token: string): Promise<boo
 }
 
 export async function useRecoveryCode(userId: string, code: string): Promise<boolean> {
-  return withSystem(async (tx) => {
+  return withAuth(async (tx) => {
     const [rc] = await tx
       .select()
       .from(recoveryCodes)
@@ -72,7 +74,7 @@ export async function useRecoveryCode(userId: string, code: string): Promise<boo
 }
 
 export async function disableMfa(userId: string) {
-  await withSystem(async (tx) => {
+  await withAuth(async (tx) => {
     await tx.delete(mfaFactors).where(eq(mfaFactors.userId, userId));
     await tx.delete(recoveryCodes).where(eq(recoveryCodes.userId, userId));
     await tx.update(users).set({ mfaEnabled: false }).where(eq(users.id, userId));

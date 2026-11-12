@@ -1,8 +1,8 @@
 "use server";
 
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
-import { dataSubjectRequests, notificationTemplates, outboxMessages, sessions, users, waqfMemberships } from "@/server/db/schema";
+import { dataSubjectRequests, notificationTemplates, outboxMessages, users, userColumns, waqfMemberships } from "@/server/db/schema";
 import { sendEmail, sendSms } from "@/server/adapters/messaging";
 import { audit } from "@/server/lib/audit";
 import { parseForm, UserError } from "@/server/modules/_shared";
@@ -99,7 +99,7 @@ export async function processDsr(_: ActionState, fd: FormData): Promise<ActionSt
     }
     if (op === "reject") {
       await tx.update(dataSubjectRequests).set({ status: "rejected", retainedDataNote: note, completedAt: now }).where(eq(dataSubjectRequests.id, id));
-      if (d.kind === "delete") await tx.update(users).set({ deletionRequestedAt: null, updatedBy: auth.user.id }).where(eq(users.id, d.userId));
+      if (d.kind === "delete") await tx.execute(sql`select admin_update_profile(${d.userId}::uuid, '{"deletion_requested_at": null}'::jsonb)`);
       await audit(tx, { actorUserId: auth.user.id, action: "admin.dsr.rejected", entityType: "data_subject_request", entityId: id, ip, userAgent, before: { status: d.status }, after: { status: "rejected", note } });
       await notifyIfTemplate(tx, d.userId, "privacy.request_closed", { status: "مرفوض", note }, { link: "/app/privacy" });
       return { ok: true, message: "رُفض الطلب وأُبلغ صاحبه." };
@@ -111,7 +111,7 @@ export async function processDsr(_: ActionState, fd: FormData): Promise<ActionSt
       const grace = ({ ...RETENTION_DEFAULTS, ...((rp?.v ?? {}) as Partial<RetentionPolicy>) }).deletedAccountGraceDays;
       const readyAt = new Date(d.requestedAt.getTime() + grace * 86_400_000);
       if (readyAt > now) throw new UserError(`لم تنقضِ مهلة التراجع (${grace} يومًا). يمكن التنفيذ بعد ${readyAt.toLocaleDateString("ar-SA-u-nu-latn", { timeZone: "Asia/Riyadh" })}.`);
-      const [u] = await tx.select().from(users).where(eq(users.id, d.userId)).limit(1);
+      const [u] = await tx.select(userColumns).from(users).where(eq(users.id, d.userId)).limit(1);
       if (!u) throw new UserError("الحساب غير موجود.");
       if (u.isStaff) throw new UserError("حساب موظف: أنهِ أدواره وسلّم أعماله أولًا ثم نفّذ الحذف.");
       const held = await tx
@@ -121,14 +121,8 @@ export async function processDsr(_: ActionState, fd: FormData): Promise<ActionSt
       if (held.length) throw new UserError("يحمل صاحب الطلب دور نظارة أو إدارة في وقف قائم. تُنقل النظارة أو تُنهى العضوية من ملف الوقف أولًا، ثم يُنفذ الحذف.");
       // Anonymize the person; waqf records that reference the account are regulated records and are retained.
       const ended = await tx.update(waqfMemberships).set({ status: "ended", endsAt: now, updatedBy: auth.user.id }).where(and(eq(waqfMemberships.userId, d.userId), eq(waqfMemberships.status, "active"))).returning({ id: waqfMemberships.id });
-      await tx
-        .update(users)
-        .set({
-          status: "deleted", fullName: "حساب محذوف", email: null, phone: `deleted:${u.id}`, passwordHash: null, nationalIdEnc: null, nationalIdHash: null,
-          birthDate: null, mfaEnabled: false, updatedBy: auth.user.id,
-        })
-        .where(eq(users.id, d.userId));
-      await tx.update(sessions).set({ revokedAt: now, revokeReason: "account_deleted" }).where(eq(sessions.userId, d.userId));
+      // stage 11: through the database's check of the bound holder of admin.notifications (second factor)
+      await tx.execute(sql`select admin_anonymize_user(${d.userId}::uuid)`);
       extra = { anonymized: true, membershipsEnded: ended.length };
     }
     await tx.update(dataSubjectRequests).set({ status: "completed", retainedDataNote: note, completedAt: now }).where(eq(dataSubjectRequests.id, id));

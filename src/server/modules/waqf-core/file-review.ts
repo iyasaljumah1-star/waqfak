@@ -1,8 +1,7 @@
 import "server-only";
 import { and, desc, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import type { Tx } from "@/server/db";
-import { asSystem } from "@/server/db/as-system";
-import { auditLogs, outputs, roles, serviceRequests, services, tasks, userRoles, users } from "@/server/db/schema";
+import { auditLogs, roles, tasks, userRoles, users } from "@/server/db/schema";
 import { rolePermissionMap } from "@/server/authz/context";
 import type { Auth, WaqfAccess } from "@/server/authz/context";
 import { notify } from "@/server/modules/notify";
@@ -26,19 +25,16 @@ const DEED_SERVICES = ["T03", "T04"];
 
 /** The last audit row id (the changes of this action are those written after it). */
 export async function auditMark(tx: Tx): Promise<number> {
-  const r = await asSystem(tx, () => tx.execute<{ m: string | null }>(sql`select max(id)::text as m from audit_logs`));
+  const r = await tx.execute<{ m: string | null }>(sql`select app_audit_mark()::text as m`);
   return Number(r.rows[0]?.m ?? 0);
 }
 
 /** Approved deed outputs that used this waqf's data (their text is frozen; listed so the reviewer weighs the change). */
 async function approvedDeedOutputs(tx: Tx, waqfId: string) {
-  return asSystem(tx, () =>
-    tx.select({ id: outputs.id, number: outputs.number, title: outputs.title, requestId: outputs.requestId, requestNumber: serviceRequests.number })
-      .from(outputs)
-      .innerJoin(serviceRequests, eq(serviceRequests.id, outputs.requestId))
-      .innerJoin(services, eq(services.id, serviceRequests.serviceId))
-      .where(and(eq(outputs.waqfId, waqfId), eq(outputs.status, "approved"), inArray(services.code, DEED_SERVICES))),
-  );
+  // outputs are staff rows: read through a function that checks the caller's access to the waqf (stage 11)
+  const r = await tx.execute<{ id: string; number: string; title: string; request_id: string; request_number: string }>(
+    sql`select * from app_waqf_frozen_outputs(${waqfId}::uuid, ${`{${DEED_SERVICES.join(",")}}`}::text[])`);
+  return r.rows.map((x) => ({ id: x.id, number: x.number, title: x.title, requestId: x.request_id, requestNumber: x.request_number }));
 }
 
 export async function reviewerIds(tx: Tx) {
@@ -57,12 +53,10 @@ export async function reviewerIds(tx: Tx) {
 export async function recordFileChanges(tx: Tx, auth: Auth, access: WaqfAccess, sinceAuditId: number): Promise<string | null> {
   const w = access.waqf;
   const holdsNazara = access.roles.includes("nazir") || access.roles.includes("board_chair");
-  const rows = await asSystem(tx, () =>
-    tx.select({ id: auditLogs.id, action: auditLogs.action, entityType: auditLogs.entityType, entityId: auditLogs.entityId, before: auditLogs.before, after: auditLogs.after })
-      .from(auditLogs)
-      .where(and(gt(auditLogs.id, sinceAuditId), eq(auditLogs.waqfId, w.id), eq(auditLogs.actorUserId, auth.user.id)))
-      .orderBy(auditLogs.id),
-  );
+  const rows = await tx.select({ id: auditLogs.id, action: auditLogs.action, entityType: auditLogs.entityType, entityId: auditLogs.entityId, before: auditLogs.before, after: auditLogs.after })
+    .from(auditLogs)
+    .where(and(gt(auditLogs.id, sinceAuditId), eq(auditLogs.waqfId, w.id), eq(auditLogs.actorUserId, auth.user.id)))
+    .orderBy(auditLogs.id);
   const changes = rows.map((r) => ({ ...r, section: reviewSection(r.action) })).filter((r) => r.section);
   if (!changes.length) return null;
   const used = await approvedDeedOutputs(tx, w.id);
@@ -79,13 +73,11 @@ export async function recordFileChanges(tx: Tx, auth: Auth, access: WaqfAccess, 
     `السبب: ${why}`,
     `سجل التدقيق: ${changes.map((c) => `#${c.id} ${c.action}`).join("، ")}`,
   ].join("\n");
-  const [t] = await asSystem(tx, () =>
-    tx.insert(tasks).values({
+  const [t] = await tx.insert(tasks).values({
       waqfId: w.id, sourceType: "waqf", sourceId: w.id, kind: "file_review", outputKey: `filechange:${changes[0].id}`,
       title, description, priority: trigger === "approved_output" ? "high" : "normal", visibility: "internal", createdBy: auth.user.id, updatedBy: auth.user.id,
-    }).returning({ id: tasks.id }),
-  );
-  for (const u of await asSystem(tx, () => reviewerIds(tx))) {
+    }).returning({ id: tasks.id });
+  for (const u of await reviewerIds(tx)) {
     if (u === auth.user.id) continue;
     await notify(u, "waqf.file_review_due", { waqf: w.name, what: sections.join("، "), by: auth.user.fullName ?? by, why }, { waqfId: w.id, link: `/admin/waqfs/${w.id}#file-reviews`, tx });
   }
@@ -106,7 +98,7 @@ export type FileReview = {
 
 /** Review tasks of a waqf's file, newest first, with the changes (before/after) they cover. Read with the system context. */
 export async function fileReviews(tx: Tx, waqfId: string, opts: { openOnly?: boolean; limit?: number } = {}): Promise<FileReview[]> {
-  return asSystem(tx, async () => {
+  return (async () => {
     const list = await tx.select({
       kind: tasks.kind, id: tasks.id, title: tasks.title, description: tasks.description, status: tasks.status, priority: tasks.priority, createdAt: tasks.createdAt, createdBy: tasks.createdBy,
       completedAt: tasks.completedAt, completedBy: tasks.completedBy, checklist: tasks.checklist,
@@ -135,17 +127,15 @@ export async function fileReviews(tx: Tx, waqfId: string, opts: { openOnly?: boo
       });
     }
     return out;
-  });
+  })();
 }
 
 /** Open review tasks per waqf (for lists). */
 export async function openReviewCounts(tx: Tx, waqfIds: string[]) {
   if (!waqfIds.length) return new Map<string, number>();
-  const rows = await asSystem(tx, () =>
-    tx.select({ w: tasks.waqfId, n: sql<number>`count(*)::int` }).from(tasks)
-      .where(and(inArray(tasks.waqfId, waqfIds), inArray(tasks.kind, [...REVIEW_KINDS]), inArray(tasks.status, ["todo", "in_progress"]), isNull(tasks.requestId)))
-      .groupBy(tasks.waqfId),
-  );
+  const rows = await tx.select({ w: tasks.waqfId, n: sql<number>`count(*)::int` }).from(tasks)
+    .where(and(inArray(tasks.waqfId, waqfIds), inArray(tasks.kind, [...REVIEW_KINDS]), inArray(tasks.status, ["todo", "in_progress"]), isNull(tasks.requestId)))
+    .groupBy(tasks.waqfId);
   return new Map(rows.map((r) => [r.w!, Number(r.n)]));
 }
 

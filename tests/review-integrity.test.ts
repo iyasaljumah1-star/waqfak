@@ -12,7 +12,7 @@ import { Pool } from "pg";
 
 vi.mock("server-only", () => ({}));
 
-const APP = process.env.KE_TEST_DATABASE_URL;
+const APP = process.env.KE_TEST_DATABASE_OWNER_URL; // stage 11: cases run as the system role (SET LOCAL ROLE waqfak_system on the owner's connection, test cluster only); the fixtures reset to the owner
 const enabled = !!APP && /ke_test/.test(APP) && !!process.env.KE_TEST_DATABASE_OWNER_URL;
 type Tx = import("../src/server/db").Tx;
 
@@ -38,6 +38,7 @@ describe.skipIf(!enabled)("review integrity (dedicated test database)", () => {
     try {
       await db.transaction(async (tx) => {
         await tx.execute(sql`select set_config('app.user_id', '', true), set_config('app.global_access', 'on', true)`);
+        await tx.execute(sql`set local role waqfak_system`);
         out = await fn(tx as unknown as Tx);
         throw new Rollback();
       });
@@ -137,7 +138,8 @@ describe.skipIf(!enabled)("review integrity (dedicated test database)", () => {
       const c = await passage(tx);
       // the database cannot tell this session from a real one (no key): it records the review — the server's seal is
       // what refuses it (the residual named in the report: closing it in the database needs the role separation)
-      await tx.execute(sql`insert into sessions (user_id, token_hash, mfa_verified, idle_expires_at, absolute_expires_at) values (${R}::uuid, 'forged-hash', true, now() + interval '1 hour', now() + interval '1 hour')`);
+      // stage 11: neither the application nor the system role can write a session row; the forger here is the owner
+      await C.asOwner(tx, () => tx.execute(sql`insert into sessions (user_id, token_hash, mfa_verified, idle_expires_at, absolute_expires_at) values (${R}::uuid, 'forged-hash', true, now() + interval '1 hour', now() + interval '1 hour')`));
       const ins = await attempt(tx, () => direct(tx, c, () => null, { token: "forged-hash" }));
       return { ins, standing: await standing(tx, c.id) };
     });
@@ -242,7 +244,7 @@ describe.skipIf(!enabled)("review integrity (dedicated test database)", () => {
   it("B5: an account does not change its own status (pending → active), staff flag or verification; its name it may", async () => {
     const out = await rolledBack(async (tx) => {
       const U = "00000000-0000-4000-8000-0000000aa093";
-      await tx.insert(schema.users).values({ id: U, phone: "0500aa0093", fullName: "حساب اختبار", status: "pending" });
+      await C.asOwner(tx, () => tx.insert(schema.users).values({ id: U, phone: "0500aa0093", fullName: "حساب اختبار", status: "pending" })); // stage 11: a fixture
       const self = (q: ReturnType<typeof sql>) => attempt(tx, () => C.asUser(tx, U, () => tx.execute(q)));
       return {
         status: await self(sql`update users set status = 'active' where id = ${U}::uuid`),
@@ -251,13 +253,15 @@ describe.skipIf(!enabled)("review integrity (dedicated test database)", () => {
         counter: await self(sql`update users set failed_login_count = 0 where id = ${U}::uuid and failed_login_count <> 0 or id = ${U}::uuid and false`),
         phoneVerified: await self(sql`update users set phone_verified_at = now() where id = ${U}::uuid`),
         name: await self(sql`update users set full_name = 'اسم اختبار آخر' where id = ${U}::uuid`),
-        // the sign-in flows run in the system context and are unaffected
+        // stage 11: the sign-in flows run on the authentication login; the system role (like the application role)
+        // changes no account's standing at all (tests/db-roles.test.ts proves the authentication login can)
         system: await attempt(tx, () => tx.execute(sql`update users set status = 'active', phone_verified_at = now() where id = ${U}::uuid`)),
       };
     });
-    for (const k of ["status", "staff", "mfa", "phoneVerified"] as const) expect(out[k], k).toMatch(/does not (change its own|make itself)/);
+    // refused by the column privilege (stage 11) or, behind it, by the guard
+    for (const k of ["status", "staff", "mfa", "phoneVerified"] as const) expect(out[k], k).toMatch(/does not (change its own|make itself)|permission denied for table users/);
     expect(out.name).toBe("ACCEPTED");
-    expect(out.system).toBe("ACCEPTED");
+    expect(out.system).toMatch(/permission denied for table users/);
   }, 90_000);
   it("R8-10: a registry rejection counts only when sealed — an unsealed row naming a current legal holder withdraws nothing; a genuine one does", async () => {
     const { retrieve } = await import("../src/server/knowledge/retrieve");

@@ -14,7 +14,7 @@ import { ordinalHeadingValue } from "../../src/server/knowledge/ordinals";
 import { readyRefCodes, retrieve, type RetrieveQuery, type RetrieveResult } from "../../src/server/knowledge/retrieve";
 import { regulatoryBasisIn } from "../../src/server/modules/ai/regulatory";
 import { sectionQuestion } from "../../src/server/knowledge/question";
-import { acceptRegistry, actorOf, asUser, reviewEverything, reviewSource, testAdmin, testReviewer, testSession, TEST_ADMIN, TEST_REVIEWER } from "./cases";
+import { acceptRegistry, actorOf, asOwner, asUser, reviewEverything, reviewSource, testAdmin, testReviewer, testSession, TEST_ADMIN, TEST_REVIEWER } from "./cases";
 
 const T = "2026-11-06";
 export type ProbeOut = { pass: boolean; output: unknown };
@@ -239,7 +239,7 @@ const ROUND4: Probe[] = [
     run: async (tx) => {
       const U = "00000000-0000-4000-8000-0000000aa0c1";
       await testReviewer(tx, U, []);
-      await tx.execute(sql`insert into user_roles (user_id, role_id) select ${U}::uuid, id from roles where key = 'viewer' on conflict do nothing`);
+      await asOwner(tx, () => tx.execute(sql`insert into user_roles (user_id, role_id) select ${U}::uuid, id from roles where key = 'viewer' on conflict do nothing`));  // stage 11: a fixture (the system role writes no identity rows)
       const rename = await attempt(tx, () => asUser(tx, U, () => tx.execute(sql`update permissions set key = 'knowledge.review.data' where key = 'waqf.view'`)));
       const add = await attempt(tx, () => asUser(tx, U, () => tx.execute(sql`insert into permissions (key, name_ar, domain) values ('admin.roles2', 'x', 'admin')`)));
       return { pass: rename !== "ACCEPTED" && add !== "ACCEPTED", output: { rename, add } };
@@ -268,7 +268,7 @@ const ROUND4: Probe[] = [
     id: "N5-4", finding: "N5-4", title: "مستخدم مقفل يرفع القفل عن نفسه أو يجعل نفسه موظفًا", criterion: "تُرفض",
     run: async (tx) => {
       const U = "00000000-0000-4000-8000-0000000aa0c4";
-      await tx.execute(sql`insert into users (id, phone, full_name, locked_until) values (${U}::uuid, '0500000444', 'مجس', now() + interval '1 day')`);
+      await asOwner(tx, () => tx.execute(sql`insert into users (id, phone, full_name, locked_until) values (${U}::uuid, '0500000444', 'مجس', now() + interval '1 day')`));  // stage 11: a fixture (the system role writes no identity rows)
       const unlock = await attempt(tx, () => asUser(tx, U, () => tx.execute(sql`update users set locked_until = null where id = ${U}::uuid`)));
       const staff = await attempt(tx, () => asUser(tx, U, () => tx.execute(sql`update users set is_staff = true where id = ${U}::uuid`)));
       return { pass: unlock !== "ACCEPTED" && staff !== "ACCEPTED", output: { unlock, staff } };
@@ -288,7 +288,7 @@ const ROUND4: Probe[] = [
     run: async (tx) => {
       const U = "00000000-0000-4000-8000-0000000aa061";
       await testReviewer(tx, U, []);
-      await tx.execute(sql`insert into user_roles (user_id, role_id) select ${U}::uuid, id from roles where key = 'viewer' on conflict do nothing`);
+      await asOwner(tx, () => tx.execute(sql`insert into user_roles (user_id, role_id) select ${U}::uuid, id from roles where key = 'viewer' on conflict do nothing`));  // stage 11: a fixture (the system role writes no identity rows)
       const out = {
         renameRole: await attempt(tx, () => asUser(tx, U, () => tx.execute(sql`update roles set key = 'super_admin_x' where key = 'viewer'`))),
         renameRoleSys: await attempt(tx, () => tx.execute(sql`update roles set key = 'super_admin' where key = 'viewer'`)),
@@ -307,7 +307,7 @@ const ROUND4: Probe[] = [
       await testReviewer(tx, U, []);
       await reviewSource(tx, "GASTAT-LFS");
       const before = (await retrieve(tx, LFS_Q)).citable.length;
-      await tx.execute(sql`update users set status = 'locked' where id = ${TEST_REVIEWER}::uuid`);
+      await asOwner(tx, () => tx.execute(sql`update users set status = 'locked' where id = ${TEST_REVIEWER}::uuid`));  // stage 11: a fixture (the system role writes no identity rows)
       const locked = (await retrieve(tx, LFS_Q)).citable.length;
       const reactivate = await attempt(tx, () => asUser(tx, U, () => tx.execute(sql`update users set status = 'active', locked_until = null where id = ${TEST_REVIEWER}::uuid`)));
       const staff = await attempt(tx, () => asUser(tx, U, () => tx.execute(sql`update users set is_staff = true where id = ${TEST_ADMIN}::uuid and false or id = ${U}::uuid and false or id = '00000000-0000-4000-8000-0000000aa063'::uuid`)));
@@ -331,7 +331,7 @@ const ROUND4: Probe[] = [
       const out = {
         none: await try_(""), forged: await try_("not-a-real-token"), expired: await try_(expired), revoked: await try_(revoked), nomfa: await try_(nomfa),
         othersToken: await try_(actorOf(other).sessionToken),
-        hashAsToken: await try_(((await tx.execute<{ h: string }>(sql`select token_hash as h from sessions where user_id = ${TEST_REVIEWER}::uuid and revoked_at is null and mfa_verified limit 1`)).rows[0]?.h) ?? "x"),
+        hashAsToken: await try_(((await asOwner(tx, () => tx.execute<{ h: string }>(sql`select token_hash as h from sessions where user_id = ${TEST_REVIEWER}::uuid and revoked_at is null and mfa_verified limit 1`))).rows[0]?.h) ?? "x"),
       };
       const ok = await asUser(tx, TEST_REVIEWER, () => recordSourceReview(tx, actorOf(TEST_REVIEWER), { sourceId: sid, decision: "accepted", note: "مجس: مراجعة في جلسة صالحة" }));
       const [row] = (await tx.execute<{ s: string | null }>(sql`select session_id as s from kb_source_reviews where id = ${ok.id}::uuid`)).rows;
@@ -372,7 +372,7 @@ const ROUND4: Probe[] = [
       const chunks = await tx.select({ id: kbChunks.id }).from(kbChunks).where(eq(kbChunks.sourceId, sid));
       for (const c of chunks) await asUser(tx, R2, () => recordSourceReview(tx, actorOf(R2), { sourceId: sid, chunkId: c.id, decision: "rejected", note: "مجس: رفض المقطع بعد قبوله" }));
       const rejected = (await retrieve(tx, LFS_Q)).citable.length;
-      await tx.execute(sql`delete from user_roles where user_id = ${R2}::uuid`);
+      await asOwner(tx, () => tx.execute(sql`delete from user_roles where user_id = ${R2}::uuid`));  // stage 11: a fixture (the system role writes no identity rows)
       const afterWithdraw = (await retrieve(tx, LFS_Q)).citable.length;
       return { pass: before > 0 && rejected === 0 && afterWithdraw === 0, output: { before, rejected, afterWithdraw } };
     },
@@ -425,7 +425,7 @@ const ROUND4: Probe[] = [
       await testReviewer(tx, TEST_REVIEWER, ["data"]);
       const sid = await lfsId(tx);
       const tok = "attacker-known-token";
-      await tx.execute(sql`insert into sessions (user_id, token_hash, mfa_verified, idle_expires_at, absolute_expires_at) values (${TEST_REVIEWER}::uuid, ${sha256(tok)}, true, now() + interval '1 hour', now() + interval '1 hour')`);
+      await asOwner(tx, () => tx.execute(sql`insert into sessions (user_id, token_hash, mfa_verified, idle_expires_at, absolute_expires_at) values (${TEST_REVIEWER}::uuid, ${sha256(tok)}, true, now() + interval '1 hour', now() + interval '1 hour')`));  // stage 11: a fixture (the system role writes no identity rows)
       const viaServer = await attempt(tx, () => asUser(tx, TEST_REVIEWER, () => recordSourceReview(tx, { userId: TEST_REVIEWER, sessionToken: tok }, { sourceId: sid, decision: "accepted", note: "مجس: جلسة مصطنعة من قاعدة البيانات" })));
       const r = await retrieve(tx, LFS_Q);
       return { pass: viaServer !== "ACCEPTED" && r.citable.length === 0, output: { viaServer, citable: r.citable.length } };
@@ -604,7 +604,7 @@ export const PROBES: Probe[] = [
       const out: Record<string, string> = {};
       const U = "00000000-0000-4000-8000-00000000ae09";
       await testReviewer(tx, U, []);
-      await tx.execute(sql`update users set locked_until = now() + interval '1 day' where id = ${U}::uuid`);
+      await asOwner(tx, () => tx.execute(sql`update users set locked_until = now() + interval '1 day' where id = ${U}::uuid`));  // stage 11: a fixture (the system role writes no identity rows)
       const [s] = await tx.select({ id: kbSources.id }).from(kbSources).where(and(eq(kbSources.refCode, "GASTAT-LFS"), isNull(kbSources.supersededAt))).limit(1);
       for (const [k, who, ctx] of [["roleless_locked", U, U], ["system_context", TEST_REVIEWER, ""]] as const) {
         await tx.execute(sql`savepoint p6c`);
@@ -629,10 +629,10 @@ export const PROBES: Probe[] = [
       await reviewSource(tx, "GASTAT-LFS");
       const before = (await retrieve(tx, Q)).citable.length;
       await tx.execute(sql`savepoint d`);
-      await tx.execute(sql`delete from user_roles where user_id = ${TEST_REVIEWER}::uuid`);
+      await asOwner(tx, () => tx.execute(sql`delete from user_roles where user_id = ${TEST_REVIEWER}::uuid`));  // stage 11: a fixture (the system role writes no identity rows)
       const afterWithdraw = (await retrieve(tx, Q)).citable.length;
       await tx.execute(sql`rollback to savepoint d`);
-      await tx.execute(sql`update users set status = 'locked' where id = ${TEST_REVIEWER}::uuid`);
+      await asOwner(tx, () => tx.execute(sql`update users set status = 'locked' where id = ${TEST_REVIEWER}::uuid`));  // stage 11: a fixture (the system role writes no identity rows)
       const afterDisable = (await retrieve(tx, Q)).citable.length;
       return { pass: before > 0 && afterWithdraw === 0 && afterDisable === 0, output: { before, afterWithdraw, afterDisable } };
     },

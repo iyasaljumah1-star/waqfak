@@ -38,8 +38,7 @@ export async function requestFileChange(_: ActionState, fd: FormData): Promise<A
       priority: "normal", visibility: "internal", createdBy: auth.user.id, updatedBy: auth.user.id,
     }).returning({ id: tasks.id });
     await audit(tx, { actorUserId: auth.user.id, action: "waqf.change_requested", entityType: "task", entityId: t.id, waqfId: w.id, ip, userAgent, after: { section: d.section, details: d.details, reason: d.reason } });
-    const { asSystem } = await import("@/server/db/as-system");
-    for (const u of await asSystem(tx, () => reviewerIds(tx)))
+    for (const u of await reviewerIds(tx))
       await notify(u, "waqf.file_review_due", { waqf: w.name, what: `طلب تعديل: ${d.section}`, by: auth.user.fullName ?? "الواقف", why: d.reason }, { waqfId: w.id, link: `/admin/waqfs/${w.id}#file-reviews`, tx });
     return { ok: true, message: "أُرسل طلب التعديل إلى فريق «وقفك». تبقى بيانات الملف كما هي حتى ينفذه الفريق، وتصلك نتيجته." };
   }, [`/app/w/${d.waqfId}`, `/admin/waqfs/${d.waqfId}`]);

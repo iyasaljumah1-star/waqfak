@@ -31,7 +31,7 @@ async function withClient<T>(url: string, fn: (c: pg.Client) => Promise<T>): Pro
 const sql = <T = Record<string, unknown>>(q: string, p: unknown[] = []) => withClient(envLine("DATABASE_OWNER_URL"), async (c) => (await c.query(q, p)).rows as T[]);
 /** The application role under a user's RLS context, as the web process uses it. */
 const asUserDb = <T = Record<string, unknown>>(userId: string, q: string, p: unknown[] = []) =>
-  withClient(envLine("DATABASE_URL"), async (c) => {
+  withClient((process.env.SYSTEM_DATABASE_URL ?? envLine("DATABASE_URL")), async (c) => {
     await c.query("begin");
     try {
       await c.query("select set_config('app.user_id', $1, true), set_config('app.global_access', 'off', true)", [userId]);
@@ -215,7 +215,7 @@ test.describe("processing core: automatic processing, final approval, release", 
     await ex(ops.getByRole("button", { name: /^اعتمد/ })).toHaveCount(0);
     // the database trigger: approving an engine output needs outputs.final_approve
     const opsId = demo().users.ops.id;
-    const err = await withClient(envLine("DATABASE_URL"), async (c) => {
+    const err = await withClient((process.env.SYSTEM_DATABASE_URL ?? envLine("DATABASE_URL")), async (c) => {
       await c.query("begin");
       try {
         await c.query("select set_config('app.user_id', $1, true), set_config('app.global_access', 'on', true)", [opsId]);

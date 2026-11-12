@@ -15,6 +15,14 @@ LANGUAGE sql STABLE AS $$
   SELECT coalesce(current_setting('app.global_access', true), 'off') = 'on'
 $$;
 
+-- Stage 11: «the system» is a connection that is neither the application's nor the authentication's and declares no
+-- person — the owner (migrations, seed) and the system role (jobs, public reads). The application role is never the
+-- system: unbound, it is an anonymous visitor (redefined with the binding at the end of this file).
+CREATE OR REPLACE FUNCTION app_is_system() RETURNS boolean
+LANGUAGE sql STABLE AS $$
+  SELECT session_user NOT IN ('waqfak_app', 'waqfak_auth') AND NULLIF(current_setting('app.user_id', true), '') IS NULL
+$$;
+
 -- SECURITY DEFINER so it can read memberships without recursing into their own policies.
 CREATE OR REPLACE FUNCTION app_can_access_waqf(w uuid) RETURNS boolean
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
@@ -49,7 +57,7 @@ $$;
 
 REVOKE ALL ON FUNCTION app_can_access_waqf(uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION app_waqf_has_members(uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION app_can_access_waqf(uuid), app_waqf_has_members(uuid), app_current_user(), app_has_global_access() TO waqfak_app;
+GRANT EXECUTE ON FUNCTION app_can_access_waqf(uuid), app_waqf_has_members(uuid), app_current_user(), app_has_global_access(), app_is_system() TO waqfak_app;
 
 -- ───────────── Grants ─────────────
 GRANT USAGE ON SCHEMA public TO waqfak_app;
@@ -101,7 +109,7 @@ DROP POLICY IF EXISTS waqf_insert ON waqfs;
 DROP POLICY IF EXISTS waqf_update ON waqfs;
 DROP POLICY IF EXISTS waqf_delete ON waqfs;
 CREATE POLICY waqf_select ON waqfs FOR SELECT TO waqfak_app USING (app_can_access_waqf(id) OR NOT app_waqf_has_members(id) AND created_by = app_current_user());
-CREATE POLICY waqf_insert ON waqfs FOR INSERT TO waqfak_app WITH CHECK (app_current_user() IS NOT NULL OR app_has_global_access());
+CREATE POLICY waqf_insert ON waqfs FOR INSERT TO waqfak_app WITH CHECK (NOT app_is_system() OR app_has_global_access());
 CREATE POLICY waqf_update ON waqfs FOR UPDATE TO waqfak_app USING (app_can_access_waqf(id)) WITH CHECK (app_can_access_waqf(id));
 CREATE POLICY waqf_delete ON waqfs FOR DELETE TO waqfak_app USING (app_has_global_access());
 
@@ -151,9 +159,9 @@ CREATE TRIGGER minutes_lock BEFORE UPDATE OR DELETE ON minutes
 DROP POLICY IF EXISTS notif_owner_sel ON notifications;
 DROP POLICY IF EXISTS notif_owner_upd ON notifications;
 DROP POLICY IF EXISTS notif_owner_del ON notifications;
-CREATE POLICY notif_owner_sel ON notifications AS RESTRICTIVE FOR SELECT TO waqfak_app USING (app_current_user() IS NULL OR user_id = app_current_user());
-CREATE POLICY notif_owner_upd ON notifications AS RESTRICTIVE FOR UPDATE TO waqfak_app USING (app_current_user() IS NULL OR user_id = app_current_user());
-CREATE POLICY notif_owner_del ON notifications AS RESTRICTIVE FOR DELETE TO waqfak_app USING (app_current_user() IS NULL OR user_id = app_current_user());
+CREATE POLICY notif_owner_sel ON notifications AS RESTRICTIVE FOR SELECT TO waqfak_app USING (app_is_system() OR user_id = app_current_user());
+CREATE POLICY notif_owner_upd ON notifications AS RESTRICTIVE FOR UPDATE TO waqfak_app USING (app_is_system() OR user_id = app_current_user());
+CREATE POLICY notif_owner_del ON notifications AS RESTRICTIVE FOR DELETE TO waqfak_app USING (app_is_system() OR user_id = app_current_user());
 
 -- Audit chain head, read outside the caller's RLS view (writers hold advisory lock 724501).
 CREATE OR REPLACE FUNCTION app_audit_last_hash() RETURNS text LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
@@ -204,7 +212,7 @@ BEGIN
   LOOP
     EXECUTE format('DROP POLICY IF EXISTS nullwaqf_owner ON %I', p.tbl);
     EXECUTE format(
-      'CREATE POLICY nullwaqf_owner ON %I AS RESTRICTIVE FOR ALL TO waqfak_app USING (waqf_id IS NOT NULL OR app_current_user() IS NULL OR app_has_global_access() OR %s) WITH CHECK (waqf_id IS NOT NULL OR app_current_user() IS NULL OR app_has_global_access() OR %s)',
+      'CREATE POLICY nullwaqf_owner ON %I AS RESTRICTIVE FOR ALL TO waqfak_app USING (waqf_id IS NOT NULL OR app_is_system() OR app_has_global_access() OR %s) WITH CHECK (waqf_id IS NOT NULL OR app_is_system() OR app_has_global_access() OR %s)',
       p.tbl, p.expr, p.expr);
   END LOOP;
 END $$;
@@ -220,54 +228,54 @@ REVOKE ALL ON FUNCTION app_is_staff() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION app_is_staff() TO waqfak_app;
 
 DROP POLICY IF EXISTS staff_only ON outputs;
-CREATE POLICY staff_only ON outputs AS RESTRICTIVE FOR ALL TO waqfak_app USING (app_current_user() IS NULL OR app_is_staff()) WITH CHECK (app_current_user() IS NULL OR app_is_staff());
+CREATE POLICY staff_only ON outputs AS RESTRICTIVE FOR ALL TO waqfak_app USING (app_is_system() OR app_is_staff()) WITH CHECK (app_is_system() OR app_is_staff());
 DROP POLICY IF EXISTS staff_only ON output_versions;
-CREATE POLICY staff_only ON output_versions AS RESTRICTIVE FOR ALL TO waqfak_app USING (app_current_user() IS NULL OR app_is_staff()) WITH CHECK (app_current_user() IS NULL OR app_is_staff());
+CREATE POLICY staff_only ON output_versions AS RESTRICTIVE FOR ALL TO waqfak_app USING (app_is_system() OR app_is_staff()) WITH CHECK (app_is_system() OR app_is_staff());
 DROP POLICY IF EXISTS staff_only ON task_events;
 -- Platform rules running in a client's action (e.g. submission creates the intake task) may write events; only staff read them.
-CREATE POLICY staff_only ON task_events AS RESTRICTIVE FOR SELECT TO waqfak_app USING (request_id IS NULL OR app_current_user() IS NULL OR app_is_staff());
+CREATE POLICY staff_only ON task_events AS RESTRICTIVE FOR SELECT TO waqfak_app USING (request_id IS NULL OR app_is_system() OR app_is_staff());
 
 -- ───────────── Processing engine and the final approval (owner's order of 2026-11-01, phase 2) ─────────────
 -- Nothing of an output reaches the client before the system administrator's final approval, whatever the route.
 -- The processing record (jobs, runs, steps) belongs to the team.
 DROP POLICY IF EXISTS staff_only ON processing_runs;
-CREATE POLICY staff_only ON processing_runs AS RESTRICTIVE FOR ALL TO waqfak_app USING (app_current_user() IS NULL OR app_is_staff()) WITH CHECK (app_current_user() IS NULL OR app_is_staff());
+CREATE POLICY staff_only ON processing_runs AS RESTRICTIVE FOR ALL TO waqfak_app USING (app_is_system() OR app_is_staff()) WITH CHECK (app_is_system() OR app_is_staff());
 DROP POLICY IF EXISTS staff_only ON processing_steps;
-CREATE POLICY staff_only ON processing_steps AS RESTRICTIVE FOR ALL TO waqfak_app USING (app_current_user() IS NULL OR app_is_staff()) WITH CHECK (app_current_user() IS NULL OR app_is_staff());
+CREATE POLICY staff_only ON processing_steps AS RESTRICTIVE FOR ALL TO waqfak_app USING (app_is_system() OR app_is_staff()) WITH CHECK (app_is_system() OR app_is_staff());
 -- The client's submission queues the first job (written in the client's transaction); only staff read the queue.
 DROP POLICY IF EXISTS staff_only ON processing_jobs;
-CREATE POLICY staff_only ON processing_jobs AS RESTRICTIVE FOR SELECT TO waqfak_app USING (app_current_user() IS NULL OR app_is_staff());
+CREATE POLICY staff_only ON processing_jobs AS RESTRICTIVE FOR SELECT TO waqfak_app USING (app_is_system() OR app_is_staff());
 DROP POLICY IF EXISTS staff_update ON processing_jobs;
-CREATE POLICY staff_update ON processing_jobs AS RESTRICTIVE FOR UPDATE TO waqfak_app USING (app_current_user() IS NULL OR app_is_staff());
+CREATE POLICY staff_update ON processing_jobs AS RESTRICTIVE FOR UPDATE TO waqfak_app USING (app_is_system() OR app_is_staff());
 DROP POLICY IF EXISTS staff_delete ON processing_jobs;
-CREATE POLICY staff_delete ON processing_jobs AS RESTRICTIVE FOR DELETE TO waqfak_app USING (app_current_user() IS NULL OR app_is_staff());
+CREATE POLICY staff_delete ON processing_jobs AS RESTRICTIVE FOR DELETE TO waqfak_app USING (app_is_system() OR app_is_staff());
 
 -- A delivery record exists for the client only once released: a cycle delivery once sent (released_at), any other one
 -- once the request reached the client's side (legacy manual flow: awaiting the client's approval, completed, closed).
 DROP POLICY IF EXISTS released_or_staff ON deliverables;
 CREATE POLICY released_or_staff ON deliverables AS RESTRICTIVE FOR SELECT TO waqfak_app USING (
-  app_current_user() IS NULL OR app_is_staff() OR released_at IS NOT NULL
+  app_is_system() OR app_is_staff() OR released_at IS NOT NULL
   OR (cycle_id IS NULL AND status <> 'draft' AND EXISTS (
     SELECT 1 FROM service_requests r WHERE r.id = deliverables.request_id AND r.status IN ('awaiting_client_approval', 'completed', 'closed'))));
 
 -- A deliverable file of a request is hidden from the client until it is approved (released), unless the client owns it.
 DROP POLICY IF EXISTS unreleased_staff_only ON documents;
 CREATE POLICY unreleased_staff_only ON documents AS RESTRICTIVE FOR SELECT TO waqfak_app USING (
-  app_current_user() IS NULL OR app_is_staff() OR owner_user_id = app_current_user()
+  app_is_system() OR app_is_staff() OR owner_user_id = app_current_user()
   OR NOT (doc_type = 'deliverable' AND request_id IS NOT NULL AND approval_status IS DISTINCT FROM 'approved'));
 
 -- Team-side events of a request (output preparation, approvals, engine steps) are never read by the client.
 DROP POLICY IF EXISTS internal_staff_only ON request_events;
 CREATE POLICY internal_staff_only ON request_events AS RESTRICTIVE FOR SELECT TO waqfak_app USING (
-  internal = false OR app_current_user() IS NULL OR app_is_staff());
+  internal = false OR app_is_system() OR app_is_staff());
 
 -- Corrections and rollbacks of a request are team records.
 DROP POLICY IF EXISTS staff_only ON request_revisions;
-CREATE POLICY staff_only ON request_revisions AS RESTRICTIVE FOR ALL TO waqfak_app USING (app_current_user() IS NULL OR app_is_staff()) WITH CHECK (app_current_user() IS NULL OR app_is_staff());
+CREATE POLICY staff_only ON request_revisions AS RESTRICTIVE FOR ALL TO waqfak_app USING (app_is_system() OR app_is_staff()) WITH CHECK (app_is_system() OR app_is_staff());
 
 -- An invoice exists for the client only once it is sent: drafts and approved-but-unsent invoices are team records.
 DROP POLICY IF EXISTS unsent_staff_only ON invoices;
-CREATE POLICY unsent_staff_only ON invoices AS RESTRICTIVE FOR SELECT TO waqfak_app USING (status NOT IN ('draft', 'approved') OR app_current_user() IS NULL OR app_is_staff());
+CREATE POLICY unsent_staff_only ON invoices AS RESTRICTIVE FOR SELECT TO waqfak_app USING (status NOT IN ('draft', 'approved') OR app_is_system() OR app_is_staff());
 
 
 -- Continuous services: the client reads a delivery cycle only once it was made available to them (its preparation,
@@ -275,17 +283,17 @@ CREATE POLICY unsent_staff_only ON invoices AS RESTRICTIVE FOR SELECT TO waqfak_
 -- already made available (enforced in the server actions); terms are written by staff only.
 DROP POLICY IF EXISTS sent_or_staff ON service_cycles;
 CREATE POLICY sent_or_staff ON service_cycles AS RESTRICTIVE FOR ALL TO waqfak_app
-  USING (sent_at IS NOT NULL OR app_current_user() IS NULL OR app_is_staff()) WITH CHECK (sent_at IS NOT NULL OR app_current_user() IS NULL OR app_is_staff());
+  USING (sent_at IS NOT NULL OR app_is_system() OR app_is_staff()) WITH CHECK (sent_at IS NOT NULL OR app_is_system() OR app_is_staff());
 DROP POLICY IF EXISTS staff_write ON service_terms;
 CREATE POLICY staff_write ON service_terms AS RESTRICTIVE FOR ALL TO waqfak_app
-  USING (true) WITH CHECK (app_current_user() IS NULL OR app_is_staff());
+  USING (true) WITH CHECK (app_is_system() OR app_is_staff());
 
 -- Payment schedule: created when a contract is executed (by whichever party signs last); changed by staff only.
 DROP POLICY IF EXISTS staff_update ON payment_schedule;
 CREATE POLICY staff_update ON payment_schedule AS RESTRICTIVE FOR UPDATE TO waqfak_app
-  USING (app_current_user() IS NULL OR app_is_staff()) WITH CHECK (app_current_user() IS NULL OR app_is_staff());
+  USING (app_is_system() OR app_is_staff()) WITH CHECK (app_is_system() OR app_is_staff());
 DROP POLICY IF EXISTS staff_delete ON payment_schedule;
-CREATE POLICY staff_delete ON payment_schedule AS RESTRICTIVE FOR DELETE TO waqfak_app USING (app_current_user() IS NULL OR app_is_staff());
+CREATE POLICY staff_delete ON payment_schedule AS RESTRICTIVE FOR DELETE TO waqfak_app USING (app_is_system() OR app_is_staff());
 
 -- ───────────── Output quality: conflicts, specialist findings, official documentation ─────────────
 -- Team records: clients never read conflicts, findings or the review trail (they receive the approved document only).
@@ -293,11 +301,11 @@ REVOKE UPDATE, DELETE, TRUNCATE ON output_reviews FROM waqfak_app;
 REVOKE UPDATE, DELETE, TRUNCATE ON output_official_records FROM waqfak_app;
 REVOKE DELETE, TRUNCATE ON data_conflicts FROM waqfak_app;
 DROP POLICY IF EXISTS staff_only ON data_conflicts;
-CREATE POLICY staff_only ON data_conflicts AS RESTRICTIVE FOR ALL TO waqfak_app USING (app_current_user() IS NULL OR app_is_staff()) WITH CHECK (app_current_user() IS NULL OR app_is_staff());
+CREATE POLICY staff_only ON data_conflicts AS RESTRICTIVE FOR ALL TO waqfak_app USING (app_is_system() OR app_is_staff()) WITH CHECK (app_is_system() OR app_is_staff());
 DROP POLICY IF EXISTS staff_only ON output_reviews;
-CREATE POLICY staff_only ON output_reviews AS RESTRICTIVE FOR ALL TO waqfak_app USING (app_current_user() IS NULL OR app_is_staff()) WITH CHECK (app_current_user() IS NULL OR app_is_staff());
+CREATE POLICY staff_only ON output_reviews AS RESTRICTIVE FOR ALL TO waqfak_app USING (app_is_system() OR app_is_staff()) WITH CHECK (app_is_system() OR app_is_staff());
 DROP POLICY IF EXISTS staff_only ON output_official_records;
-CREATE POLICY staff_only ON output_official_records AS RESTRICTIVE FOR ALL TO waqfak_app USING (app_current_user() IS NULL OR app_is_staff()) WITH CHECK (app_current_user() IS NULL OR app_is_staff());
+CREATE POLICY staff_only ON output_official_records AS RESTRICTIVE FOR ALL TO waqfak_app USING (app_is_system() OR app_is_staff()) WITH CHECK (app_is_system() OR app_is_staff());
 DO $$
 DECLARE
   p record;
@@ -310,7 +318,7 @@ BEGIN
   LOOP
     EXECUTE format('DROP POLICY IF EXISTS nullwaqf_owner ON %I', p.tbl);
     EXECUTE format(
-      'CREATE POLICY nullwaqf_owner ON %I AS RESTRICTIVE FOR ALL TO waqfak_app USING (waqf_id IS NOT NULL OR app_current_user() IS NULL OR app_has_global_access() OR %s) WITH CHECK (waqf_id IS NOT NULL OR app_current_user() IS NULL OR app_has_global_access() OR %s)',
+      'CREATE POLICY nullwaqf_owner ON %I AS RESTRICTIVE FOR ALL TO waqfak_app USING (waqf_id IS NOT NULL OR app_is_system() OR app_has_global_access() OR %s) WITH CHECK (waqf_id IS NOT NULL OR app_is_system() OR app_has_global_access() OR %s)',
       p.tbl, p.expr, p.expr);
   END LOOP;
 END $$;
@@ -381,12 +389,12 @@ CREATE TRIGGER outputs_transition_guard BEFORE UPDATE OF status, current_version
 -- Clients read the review state of their request's fields (e.g. «approved by the team»); only staff write it.
 DROP POLICY IF EXISTS nullwaqf_owner ON request_field_states;
 CREATE POLICY nullwaqf_owner ON request_field_states AS RESTRICTIVE FOR ALL TO waqfak_app
-  USING (waqf_id IS NOT NULL OR app_current_user() IS NULL OR app_has_global_access() OR EXISTS (SELECT 1 FROM service_requests r WHERE r.id = request_field_states.request_id AND (r.requester_user_id = app_current_user() OR r.assigned_to_user_id = app_current_user())))
-  WITH CHECK (waqf_id IS NOT NULL OR app_current_user() IS NULL OR app_has_global_access() OR EXISTS (SELECT 1 FROM service_requests r WHERE r.id = request_field_states.request_id AND (r.requester_user_id = app_current_user() OR r.assigned_to_user_id = app_current_user())));
+  USING (waqf_id IS NOT NULL OR app_is_system() OR app_has_global_access() OR EXISTS (SELECT 1 FROM service_requests r WHERE r.id = request_field_states.request_id AND (r.requester_user_id = app_current_user() OR r.assigned_to_user_id = app_current_user())))
+  WITH CHECK (waqf_id IS NOT NULL OR app_is_system() OR app_has_global_access() OR EXISTS (SELECT 1 FROM service_requests r WHERE r.id = request_field_states.request_id AND (r.requester_user_id = app_current_user() OR r.assigned_to_user_id = app_current_user())));
 DROP POLICY IF EXISTS staff_insert ON request_field_states;
-CREATE POLICY staff_insert ON request_field_states AS RESTRICTIVE FOR INSERT TO waqfak_app WITH CHECK (app_current_user() IS NULL OR app_is_staff());
+CREATE POLICY staff_insert ON request_field_states AS RESTRICTIVE FOR INSERT TO waqfak_app WITH CHECK (app_is_system() OR app_is_staff());
 DROP POLICY IF EXISTS staff_update ON request_field_states;
-CREATE POLICY staff_update ON request_field_states AS RESTRICTIVE FOR UPDATE TO waqfak_app USING (app_current_user() IS NULL OR app_is_staff()) WITH CHECK (app_current_user() IS NULL OR app_is_staff());
+CREATE POLICY staff_update ON request_field_states AS RESTRICTIVE FOR UPDATE TO waqfak_app USING (app_is_system() OR app_is_staff()) WITH CHECK (app_is_system() OR app_is_staff());
 REVOKE DELETE, TRUNCATE ON request_field_states FROM waqfak_app;
 
 -- ───────────── Reference registry (phase 1): system context only; history append-only ─────────────
@@ -429,7 +437,7 @@ BEGIN
   FOREACH t IN ARRAY ARRAY['kb_sources','kb_chunks','kb_source_reviews'] LOOP
     EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
     EXECUTE format('DROP POLICY IF EXISTS kb_read ON %I', t);
-    EXECUTE format('CREATE POLICY kb_read ON %I FOR SELECT TO waqfak_app USING (app_has_global_access() OR app_current_user() IS NULL OR app_is_staff())', t);
+    EXECUTE format('CREATE POLICY kb_read ON %I FOR SELECT TO waqfak_app USING (app_has_global_access() OR app_is_system() OR app_is_staff())', t);
     EXECUTE format('DROP POLICY IF EXISTS kb_write ON %I', t);
     EXECUTE format('CREATE POLICY kb_write ON %I FOR ALL TO waqfak_app USING (app_has_global_access()) WITH CHECK (app_has_global_access())', t);
   END LOOP;
@@ -598,7 +606,7 @@ GRANT EXECUTE ON FUNCTION app_holds(text) TO waqfak_app;
 CREATE OR REPLACE FUNCTION user_roles_guard() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 DECLARE r record;
 BEGIN
-  IF app_current_user() IS NULL THEN RETURN coalesce(NEW, OLD); END IF;
+  IF app_is_system() THEN RETURN coalesce(NEW, OLD); END IF;
   IF NOT app_holds('admin.roles') THEN
     RAISE EXCEPTION 'user_roles: changing roles needs admin.roles' USING ERRCODE = 'insufficient_privilege';
   END IF;
@@ -615,7 +623,7 @@ CREATE TRIGGER user_roles_guard BEFORE INSERT OR UPDATE OR DELETE ON user_roles 
 
 CREATE OR REPLACE FUNCTION role_permissions_guard() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 BEGIN
-  IF app_current_user() IS NULL THEN RETURN coalesce(NEW, OLD); END IF;
+  IF app_is_system() THEN RETURN coalesce(NEW, OLD); END IF;
   IF NOT app_holds('admin.roles') THEN
     RAISE EXCEPTION 'role_permissions: changing permissions needs admin.roles' USING ERRCODE = 'insufficient_privilege';
   END IF;
@@ -633,7 +641,7 @@ CREATE TRIGGER role_permissions_guard BEFORE INSERT OR UPDATE OR DELETE ON role_
 -- renames or removes a permission (renaming one held into «knowledge.review.*» or «admin.roles» would grant it).
 CREATE OR REPLACE FUNCTION permissions_guard() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
-  IF app_current_user() IS NOT NULL THEN
+  IF NOT app_is_system() THEN
     RAISE EXCEPTION 'permissions: the permission catalog is changed only by the system (seed)' USING ERRCODE = 'insufficient_privilege';
   END IF;
   RETURN coalesce(NEW, OLD);
@@ -645,7 +653,7 @@ CREATE TRIGGER permissions_guard BEFORE INSERT OR UPDATE OR DELETE ON permission
 -- themselves staff (an administrator does it for others, audited).
 CREATE OR REPLACE FUNCTION users_self_guard() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
-  IF app_current_user() IS NOT NULL AND app_current_user() = OLD.id THEN
+  IF NOT app_is_system() AND app_current_user() = OLD.id THEN
     IF NEW.locked_until IS DISTINCT FROM OLD.locked_until AND (NEW.locked_until IS NULL OR NEW.locked_until < coalesce(OLD.locked_until, '-infinity')) THEN
       RAISE EXCEPTION 'users: an account does not lift its own lock' USING ERRCODE = 'insufficient_privilege';
     END IF;
@@ -730,7 +738,7 @@ BEGIN
   FOREACH t IN ARRAY ARRAY['fiqh_dossiers','fiqh_reviews'] LOOP
     EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
     EXECUTE format('DROP POLICY IF EXISTS fiqh_read ON %I', t);
-    EXECUTE format('CREATE POLICY fiqh_read ON %I FOR SELECT TO waqfak_app USING (app_current_user() IS NULL OR app_is_staff())', t);
+    EXECUTE format('CREATE POLICY fiqh_read ON %I FOR SELECT TO waqfak_app USING (app_is_system() OR app_is_staff())', t);
     EXECUTE format('DROP TRIGGER IF EXISTS ref_append_only ON %I', t);
     EXECUTE format('CREATE TRIGGER ref_append_only BEFORE UPDATE OR DELETE ON %I FOR EACH ROW EXECUTE FUNCTION ref_append_only()', t);
     EXECUTE format('DROP TRIGGER IF EXISTS ref_no_truncate ON %I', t);
@@ -739,7 +747,7 @@ BEGIN
   END LOOP;
 END $$;
 DROP POLICY IF EXISTS fiqh_dossier_insert ON fiqh_dossiers;
-CREATE POLICY fiqh_dossier_insert ON fiqh_dossiers FOR INSERT TO waqfak_app WITH CHECK (app_current_user() IS NULL OR app_is_staff());
+CREATE POLICY fiqh_dossier_insert ON fiqh_dossiers FOR INSERT TO waqfak_app WITH CHECK (app_is_system() OR app_is_staff());
 DROP POLICY IF EXISTS fiqh_review_insert ON fiqh_reviews;
 CREATE POLICY fiqh_review_insert ON fiqh_reviews FOR INSERT TO waqfak_app WITH CHECK (reviewer_user_id = app_current_user() AND app_is_staff());
 
@@ -859,7 +867,7 @@ CREATE TRIGGER outputs_basis_guard BEFORE UPDATE OF status ON outputs FOR EACH R
 -- of «admin.users» — an ordinary user could reactivate a locked reviewer, whose reviews then counted again.
 CREATE OR REPLACE FUNCTION users_standing_guard() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
-  IF app_current_user() IS NOT NULL AND app_current_user() <> OLD.id
+  IF NOT app_is_system() AND app_current_user() IS DISTINCT FROM OLD.id
      AND (NEW.status IS DISTINCT FROM OLD.status OR NEW.locked_until IS DISTINCT FROM OLD.locked_until
           OR NEW.is_staff IS DISTINCT FROM OLD.is_staff OR NEW.mfa_enabled IS DISTINCT FROM OLD.mfa_enabled
           OR NEW.failed_login_count IS DISTINCT FROM OLD.failed_login_count)
@@ -877,7 +885,7 @@ CREATE TRIGGER users_standing_guard BEFORE UPDATE ON users FOR EACH ROW EXECUTE 
 -- session (holder of admin.roles, not for themselves). The seed runs with the owner role and is unaffected.
 CREATE OR REPLACE FUNCTION reviewer_grant_guard() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 BEGIN
-  IF session_user = 'waqfak_app' AND app_current_user() IS NULL AND TG_OP <> 'DELETE' THEN
+  IF session_user = 'waqfak_app' AND app_is_system() AND TG_OP <> 'DELETE' THEN
     IF TG_TABLE_NAME = 'user_roles' THEN
       IF EXISTS (SELECT 1 FROM role_permissions rp JOIN permissions p ON p.id = rp.permission_id WHERE rp.role_id = (to_jsonb(NEW)->>'role_id')::uuid AND p.key LIKE 'knowledge.review.%') THEN
         RAISE EXCEPTION 'user_roles: a reviewer role is granted only from an administrator''s session' USING ERRCODE = 'insufficient_privilege';
@@ -898,13 +906,13 @@ CREATE TRIGGER reviewer_grant_guard BEFORE INSERT OR UPDATE ON role_permissions 
 -- Sessions: a user session sees and changes only its own sessions; the system context (login, logout, expiry) all.
 ALTER TABLE sessions ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS sessions_own ON sessions;
-CREATE POLICY sessions_own ON sessions FOR ALL TO waqfak_app USING (app_current_user() IS NULL OR user_id = app_current_user()) WITH CHECK (app_current_user() IS NULL OR user_id = app_current_user());
+CREATE POLICY sessions_own ON sessions FOR ALL TO waqfak_app USING (app_is_system() OR user_id = app_current_user()) WITH CHECK (app_is_system() OR user_id = app_current_user());
 
 -- 2j, extended: from a user session, another account's row is changed only by a holder of «admin.users» (or
 -- «admin.notifications», which carries out data-subject requests) — not its phone, e-mail, password or identity either.
 CREATE OR REPLACE FUNCTION users_standing_guard() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
-  IF app_current_user() IS NOT NULL AND app_current_user() <> OLD.id
+  IF NOT app_is_system() AND app_current_user() IS DISTINCT FROM OLD.id
      AND (to_jsonb(NEW) - 'updated_at' - 'updated_by' - 'last_login_at') IS DISTINCT FROM (to_jsonb(OLD) - 'updated_at' - 'updated_by' - 'last_login_at')
      AND NOT (app_holds('admin.users') OR app_holds('admin.notifications')) THEN
     RAISE EXCEPTION 'users: another account is changed only by admin.users' USING ERRCODE = 'insufficient_privilege';
@@ -917,7 +925,7 @@ END $$;
 -- an administrator from their own session.
 CREATE OR REPLACE FUNCTION admin_grant_guard() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 BEGIN
-  IF session_user = 'waqfak_app' AND app_current_user() IS NULL
+  IF session_user = 'waqfak_app' AND app_is_system()
      AND EXISTS (SELECT 1 FROM role_permissions rp JOIN permissions p ON p.id = rp.permission_id WHERE rp.role_id = NEW.role_id AND p.key IN ('admin.roles', 'outputs.final_approve', 'approvals.direct'))
      AND EXISTS (SELECT 1 FROM user_roles ur JOIN role_permissions rp ON rp.role_id = ur.role_id JOIN permissions p ON p.id = rp.permission_id JOIN users u ON u.id = ur.user_id
                  WHERE p.key = 'admin.roles' AND u.status = 'active' AND ur.user_id <> NEW.user_id) THEN
@@ -930,7 +938,7 @@ CREATE TRIGGER admin_grant_guard BEFORE INSERT OR UPDATE ON user_roles FOR EACH 
 -- and «admin.roles» is never added to a role from the system context with the application role
 CREATE OR REPLACE FUNCTION admin_perm_guard() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 BEGIN
-  IF session_user = 'waqfak_app' AND app_current_user() IS NULL AND EXISTS (SELECT 1 FROM permissions p WHERE p.id = NEW.permission_id AND p.key IN ('admin.roles', 'admin.users', 'outputs.final_approve', 'approvals.direct')) THEN
+  IF session_user = 'waqfak_app' AND app_is_system() AND EXISTS (SELECT 1 FROM permissions p WHERE p.id = NEW.permission_id AND p.key IN ('admin.roles', 'admin.users', 'outputs.final_approve', 'approvals.direct')) THEN
     RAISE EXCEPTION 'role_permissions: an administrator permission is added only from an administrator''s session' USING ERRCODE = 'insufficient_privilege';
   END IF;
   RETURN NEW;
@@ -953,7 +961,7 @@ CREATE TRIGGER ref_review_time BEFORE INSERT ON ref_match_reviews FOR EACH ROW E
 -- dossier without an author could be approved by whoever inserted it.
 CREATE OR REPLACE FUNCTION fiqh_dossier_author() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
-  IF NEW.created_by IS NULL OR (app_current_user() IS NOT NULL AND NEW.created_by <> app_current_user()) THEN
+  IF NEW.created_by IS NULL OR (NOT app_is_system() AND NEW.created_by IS DISTINCT FROM app_current_user()) THEN
     RAISE EXCEPTION 'fiqh_dossiers: a dossier names its author (the session''s user, or the engine''s account)' USING ERRCODE = 'insufficient_privilege';
   END IF;
   RETURN NEW;
@@ -1093,7 +1101,7 @@ END $$;
 -- verified. Those are set by the sign-in and verification flows (system context) or by an administrator for others.
 CREATE OR REPLACE FUNCTION users_self_standing_guard() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
-  IF app_current_user() IS NOT NULL AND app_current_user() = OLD.id AND (
+  IF NOT app_is_system() AND app_current_user() = OLD.id AND (
        NEW.status IS DISTINCT FROM OLD.status OR NEW.is_staff IS DISTINCT FROM OLD.is_staff
     OR NEW.mfa_enabled IS DISTINCT FROM OLD.mfa_enabled OR NEW.failed_login_count IS DISTINCT FROM OLD.failed_login_count
     OR NEW.phone IS DISTINCT FROM OLD.phone OR NEW.phone_verified_at IS DISTINCT FROM OLD.phone_verified_at
@@ -1110,7 +1118,7 @@ CREATE TRIGGER users_self_standing_guard BEFORE UPDATE ON users FOR EACH ROW EXE
 -- application role.
 CREATE OR REPLACE FUNCTION review_db_time() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
-  IF session_user = 'waqfak_app' THEN
+  IF current_user IN ('waqfak_app', 'waqfak_system') THEN  -- stage 11: every non-owner writer
     -- the wall clock (clock_timestamp), not the transaction's start: two reviews in one transaction keep their order
     IF TG_TABLE_NAME = 'ref_match_reviews' THEN NEW.reviewed_at := clock_timestamp(); ELSE NEW.at := clock_timestamp(); END IF;
   END IF;
@@ -1171,7 +1179,7 @@ CREATE TRIGGER document_share_uses_append_only BEFORE UPDATE OR DELETE ON docume
 
 CREATE OR REPLACE FUNCTION capability_row_guard() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
-  IF session_user <> 'waqfak_app' THEN RETURN NEW; END IF;
+  IF current_user NOT IN ('waqfak_app', 'waqfak_system') THEN RETURN NEW; END IF;  -- stage 11: every non-owner writer
   IF NEW.token_hash IS DISTINCT FROM OLD.token_hash OR NEW.binding IS DISTINCT FROM OLD.binding OR NEW.expires_at IS DISTINCT FROM OLD.expires_at
      OR NEW.waqf_id IS DISTINCT FROM OLD.waqf_id OR NEW.id IS DISTINCT FROM OLD.id
      OR (TG_TABLE_NAME <> 'invitations' AND (to_jsonb(NEW)->>'created_by') IS DISTINCT FROM (to_jsonb(OLD)->>'created_by')) THEN
@@ -1215,7 +1223,7 @@ CREATE TRIGGER capability_row_guard BEFORE UPDATE ON invitations FOR EACH ROW EX
 -- and verification code: the application never deletes a report, and a report's number and code do not change
 CREATE OR REPLACE FUNCTION report_revocation_guard() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
-  IF session_user <> 'waqfak_app' THEN RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END; END IF;
+  IF current_user NOT IN ('waqfak_app', 'waqfak_system') THEN RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END; END IF;
   IF TG_OP = 'DELETE' THEN
     RAISE EXCEPTION 'reports: a report is revoked, never deleted' USING ERRCODE = 'insufficient_privilege';
   END IF;
@@ -1235,7 +1243,7 @@ CREATE TRIGGER report_revocation_guard BEFORE UPDATE OR DELETE ON reports FOR EA
 -- its acceptance and its uses; the application never deletes a link or an invitation (it revokes them), so it may not
 CREATE OR REPLACE FUNCTION capability_no_delete() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
-  IF session_user = 'waqfak_app' THEN
+  IF current_user IN ('waqfak_app', 'waqfak_system') THEN  -- stage 11: every non-owner writer
     RAISE EXCEPTION '%: a link or an invitation is revoked, never deleted', TG_TABLE_NAME USING ERRCODE = 'insufficient_privilege';
   END IF;
   RETURN OLD;
@@ -1247,6 +1255,379 @@ DO $$ DECLARE t text; BEGIN
     EXECUTE format('CREATE TRIGGER capability_no_delete BEFORE DELETE ON %I FOR EACH ROW EXECUTE FUNCTION capability_no_delete()', t);
   END LOOP;
 END $$;
+
+-- ═════════════ Stage 11 (owner's decision of 2026-11-12), A: the identity is bound, never declared ═════════════
+-- R8-1 / G10. Until now every policy and guard read the person and their latitude from variables the application set
+-- (app.user_id, app.global_access, app.actor_roles): whoever held the application's connection — an injected query, a
+-- leaked credential — could name any person, or none (the system), and the database believed it. Now:
+--   • the application role (waqfak_app) names nobody: it BINDS a person with auth_bind(), which needs the keyed hash
+--     of a live session's token — the server computes it from the request's cookie with HASH_KEY, which the database
+--     never holds, and the application role cannot read the stored hashes. Unbound, it is an anonymous visitor.
+--   • global latitude follows the bound person's roles (auth.global_roles), never a variable;
+--   • the system context (jobs, public reads, link pages) is a different login, waqfak_system, and the sign-in,
+--     sessions, codes and second factor are a third, waqfak_auth. The application role is a member of neither.
+-- The owner keeps the variables (migrations, seed, test fixtures run as the owner or the system role).
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'waqfak_auth') OR NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'waqfak_system') THEN
+    RAISE EXCEPTION 'security.sql: the roles waqfak_auth and waqfak_system must exist first (scripts/db-bootstrap.sql, run by the DBA)';
+  END IF;
+  IF pg_has_role('waqfak_app', 'waqfak_system', 'MEMBER') OR pg_has_role('waqfak_app', 'waqfak_auth', 'MEMBER') THEN
+    RAISE EXCEPTION 'security.sql: the application role must not be a member of waqfak_system or waqfak_auth';
+  END IF;
+  IF NOT pg_has_role('waqfak_system', 'waqfak_app', 'MEMBER') THEN
+    RAISE EXCEPTION 'security.sql: waqfak_system must be a member of waqfak_app (it uses the same policies, as the system)';
+  END IF;
+END $$;
+
+CREATE SCHEMA IF NOT EXISTS auth;
+REVOKE ALL ON SCHEMA auth FROM PUBLIC;
+CREATE TABLE IF NOT EXISTS auth.context (
+  pid integer PRIMARY KEY, xact xid8 NOT NULL, user_id uuid NOT NULL, session_id uuid NOT NULL, mfa boolean NOT NULL,
+  bound_at timestamptz NOT NULL DEFAULT clock_timestamp());
+REVOKE ALL ON auth.context FROM PUBLIC;
+-- the roles that see every waqf — authz/catalog.ts «globalAccess: true» (a test keeps the two lists equal)
+CREATE TABLE IF NOT EXISTS auth.global_roles (role_key text PRIMARY KEY);
+REVOKE ALL ON auth.global_roles FROM PUBLIC;
+DELETE FROM auth.global_roles WHERE role_key NOT IN ('super_admin', 'management', 'ops_manager', 'nazara_manager');
+INSERT INTO auth.global_roles VALUES ('super_admin'), ('management'), ('ops_manager'), ('nazara_manager') ON CONFLICT DO NOTHING;
+
+-- token_hash: lib/crypto lookupHash of the session cookie (keyed). Binds this transaction of this backend only.
+CREATE OR REPLACE FUNCTION auth_bind(token_hash text) RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER AS $$
+DECLARE s record;
+BEGIN
+  DELETE FROM auth.context WHERE pid = pg_backend_pid();
+  IF token_hash IS NULL OR length(token_hash) < 32 THEN RETURN NULL; END IF;
+  SELECT x.id, x.user_id, x.mfa_verified INTO s FROM sessions x JOIN users u ON u.id = x.user_id
+   WHERE x.token_hash = auth_bind.token_hash AND x.revoked_at IS NULL AND x.idle_expires_at > now() AND x.absolute_expires_at > now()
+     AND u.status = 'active' AND (u.locked_until IS NULL OR u.locked_until < now());
+  IF NOT FOUND THEN RETURN NULL; END IF;
+  INSERT INTO auth.context (pid, xact, user_id, session_id, mfa) VALUES (pg_backend_pid(), pg_current_xact_id(), s.user_id, s.id, s.mfa_verified);
+  RETURN s.user_id;
+END $$;
+REVOKE ALL ON FUNCTION auth_bind(text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION auth_bind(text) TO waqfak_app;
+
+CREATE OR REPLACE FUNCTION app_bound() RETURNS auth.context LANGUAGE sql STABLE SECURITY DEFINER AS $$
+  SELECT c FROM auth.context c WHERE c.pid = pg_backend_pid() AND c.xact = pg_current_xact_id_if_assigned()
+$$;
+REVOKE ALL ON FUNCTION app_bound() FROM PUBLIC;
+
+CREATE OR REPLACE FUNCTION app_current_user() RETURNS uuid LANGUAGE plpgsql STABLE SECURITY DEFINER AS $$
+BEGIN
+  IF session_user = 'waqfak_app' THEN RETURN (app_bound()).user_id; END IF;
+  IF session_user = 'waqfak_auth' THEN RETURN NULL; END IF;
+  RETURN NULLIF(current_setting('app.user_id', true), '')::uuid;
+END $$;
+
+CREATE OR REPLACE FUNCTION app_bound_mfa() RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER AS $$
+  SELECT CASE WHEN session_user = 'waqfak_app' THEN coalesce((app_bound()).mfa, false) ELSE true END
+$$;
+
+CREATE OR REPLACE FUNCTION app_has_global_access() RETURNS boolean LANGUAGE plpgsql STABLE SECURITY DEFINER AS $$
+BEGIN
+  IF session_user = 'waqfak_app' THEN
+    RETURN EXISTS (SELECT 1 FROM user_roles ur JOIN roles r ON r.id = ur.role_id JOIN auth.global_roles g ON g.role_key = r.key
+                   JOIN users u ON u.id = ur.user_id
+                   WHERE ur.user_id = (app_bound()).user_id AND u.status = 'active' AND (u.locked_until IS NULL OR u.locked_until < now()));
+  END IF;
+  IF session_user = 'waqfak_auth' THEN RETURN false; END IF;
+  RETURN coalesce(current_setting('app.global_access', true), 'off') = 'on';
+END $$;
+
+CREATE OR REPLACE FUNCTION app_is_system() RETURNS boolean LANGUAGE sql STABLE AS $$
+  SELECT session_user NOT IN ('waqfak_app', 'waqfak_auth') AND NULLIF(current_setting('app.user_id', true), '') IS NULL
+$$;
+
+-- the roles recorded with an audit entry: the bound person's, for the application role
+CREATE OR REPLACE FUNCTION app_actor_roles() RETURNS text[] LANGUAGE sql STABLE SECURITY DEFINER AS $$
+  SELECT CASE WHEN session_user = 'waqfak_app'
+    THEN coalesce((SELECT array_agg(r.key ORDER BY r.key) FROM user_roles ur JOIN roles r ON r.id = ur.role_id WHERE ur.user_id = (app_bound()).user_id), '{}')
+    ELSE string_to_array(NULLIF(current_setting('app.actor_roles', true), ''), ',') END
+$$;
+REVOKE ALL ON FUNCTION app_current_user(), app_bound_mfa(), app_has_global_access(), app_is_system(), app_actor_roles() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION app_current_user(), app_bound_mfa(), app_has_global_access(), app_is_system(), app_actor_roles() TO waqfak_app, waqfak_auth, waqfak_mlro;
+
+-- an audit entry written by the application role names the bound person as its actor (or nobody, for an anonymous
+-- visitor), with that person's roles — not whom the connection says
+CREATE OR REPLACE FUNCTION audit_actor_bound() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF session_user = 'waqfak_app' AND NEW.actor_user_id IS DISTINCT FROM app_current_user() THEN
+    RAISE EXCEPTION 'audit_logs: the actor of an entry is the bound person' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS audit_actor_bound ON audit_logs;
+CREATE TRIGGER audit_actor_bound BEFORE INSERT ON audit_logs FOR EACH ROW EXECUTE FUNCTION audit_actor_bound();
+
+-- ── the system role: the same policies as the application, as the system (it is a member of waqfak_app) ──
+DO $$ BEGIN EXECUTE format('GRANT CONNECT ON DATABASE %I TO waqfak_system, waqfak_auth', current_database()); END $$;
+
+-- ── the authentication role: sign-in, sessions, one-time codes, second factor, account creation ──
+GRANT USAGE ON SCHEMA public TO waqfak_auth;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO waqfak_auth;
+GRANT SELECT, INSERT, UPDATE ON users, sessions TO waqfak_auth;
+GRANT SELECT, INSERT, UPDATE, DELETE ON mfa_factors, recovery_codes, otp_challenges, rate_limits TO waqfak_auth;
+GRANT SELECT ON roles, user_roles, permissions, role_permissions TO waqfak_auth;
+GRANT INSERT ON consents, audit_logs TO waqfak_auth;
+GRANT EXECUTE ON FUNCTION app_audit_last_hash() TO waqfak_auth;
+DO $$ DECLARE t text; BEGIN
+  FOREACH t IN ARRAY ARRAY['sessions', 'audit_logs'] LOOP
+    EXECUTE format('DROP POLICY IF EXISTS auth_role ON %I', t);
+    EXECUTE format('CREATE POLICY auth_role ON %I FOR ALL TO waqfak_auth USING (true) WITH CHECK (true)', t);
+  END LOOP;
+END $$;
+
+-- ── what the application role can no longer do, bound or not ──
+-- sessions: it reads its person's own sessions (no token hash) and ends them; it never creates or extends one
+REVOKE ALL ON sessions FROM waqfak_app;
+GRANT SELECT (id, user_id, mfa_verified, ip, user_agent, device_id, created_at, last_seen_at, idle_expires_at, absolute_expires_at, revoked_at, revoke_reason) ON sessions TO waqfak_app;
+GRANT UPDATE (revoked_at, revoke_reason) ON sessions TO waqfak_app;
+DROP POLICY IF EXISTS sessions_own ON sessions;
+CREATE POLICY sessions_own ON sessions FOR ALL TO waqfak_app
+  USING (app_is_system() OR user_id = app_current_user() OR app_holds('admin.users'))
+  WITH CHECK (app_is_system() OR user_id = app_current_user() OR app_holds('admin.users'));
+-- a session is ended, never revived
+CREATE OR REPLACE FUNCTION sessions_no_revive() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF OLD.revoked_at IS NOT NULL AND NEW.revoked_at IS DISTINCT FROM OLD.revoked_at THEN
+    RAISE EXCEPTION 'sessions: an ended session is not revived' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS sessions_no_revive ON sessions;
+CREATE TRIGGER sessions_no_revive BEFORE UPDATE ON sessions FOR EACH ROW EXECUTE FUNCTION sessions_no_revive();
+-- users: no account is created, deleted, or has its credentials, phone, standing or second factor changed by the
+-- application role; profile columns only (the guards above still apply to them). An administrator's changes to
+-- another account go through admin_* functions below, which check the bound administrator.
+REVOKE ALL ON users FROM waqfak_app;
+GRANT SELECT (id, phone, email, full_name, id_type, national_id_enc, national_id_hash, birth_date, locale, numeral_style, calendar_pref, status, is_staff, mfa_enabled, phone_verified_at, email_verified_at, locked_until, last_login_at, deletion_requested_at, resides_in_ksa, created_at, updated_at, created_by, updated_by) ON users TO waqfak_app;
+GRANT UPDATE (full_name, email, email_verified_at, numeral_style, calendar_pref, locale, deletion_requested_at, id_type, national_id_enc, national_id_hash, birth_date, resides_in_ksa, updated_at, updated_by) ON users TO waqfak_app;
+-- roles and permissions: granted only through admin_grant_role / admin_revoke_role; the catalogs are the seed's
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON user_roles, role_permissions, roles, permissions FROM waqfak_app;
+-- second factor, recovery codes, one-time codes, rate limits: the authentication role's
+REVOKE ALL ON mfa_factors, recovery_codes, otp_challenges FROM waqfak_app;
+-- MLRO: SET ROLE waqfak_mlro alone opens nothing; the restricted rows need a bound MLRO with the second factor
+DO $$ DECLARE t record; BEGIN
+  FOR t IN SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'restricted' AND c.relkind = 'r' LOOP
+    EXECUTE format('ALTER TABLE restricted.%I ENABLE ROW LEVEL SECURITY', t.relname);
+    EXECUTE format('DROP POLICY IF EXISTS mlro_bound ON restricted.%I', t.relname);
+    EXECUTE format('CREATE POLICY mlro_bound ON restricted.%I FOR ALL TO waqfak_mlro USING (app_is_system() OR (app_holds(''mlro.access'') AND app_bound_mfa())) WITH CHECK (app_is_system() OR (app_holds(''mlro.access'') AND app_bound_mfa()))', t.relname);
+  END LOOP;
+END $$;
+GRANT EXECUTE ON FUNCTION app_holds(text) TO waqfak_mlro, waqfak_auth;
+
+-- ── administrators act on other accounts through these, from their own bound session with the second factor ──
+CREATE OR REPLACE FUNCTION admin_bound(perm text) RETURNS uuid LANGUAGE plpgsql STABLE SECURITY DEFINER AS $$
+DECLARE me uuid := app_current_user();
+BEGIN
+  IF app_is_system() THEN RETURN NULL; END IF;
+  IF me IS NULL OR NOT app_holds(perm) OR NOT app_bound_mfa() THEN
+    RAISE EXCEPTION 'needs a bound administrator holding % with the second factor', perm USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  RETURN me;
+END $$;
+REVOKE ALL ON FUNCTION admin_bound(text) FROM PUBLIC;
+
+CREATE OR REPLACE FUNCTION admin_grant_role(target uuid, role_key text) RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER AS $$
+DECLARE me uuid := admin_bound('admin.roles'); rid uuid; n integer;
+BEGIN
+  SELECT r.id INTO rid FROM roles r WHERE r.key = role_key;
+  IF rid IS NULL THEN RAISE EXCEPTION 'unknown role %', role_key; END IF;
+  -- the guards on user_roles (no reviewer role for oneself, administrators named by an administrator) still run
+  INSERT INTO user_roles (user_id, role_id, granted_by) VALUES (target, rid, me) ON CONFLICT DO NOTHING;
+  GET DIAGNOSTICS n = ROW_COUNT;
+  -- a role of the platform's team makes the account a staff account (which then must enroll the second factor)
+  IF n > 0 AND EXISTS (SELECT 1 FROM roles r WHERE r.id = rid AND r.scope = 'global') THEN
+    UPDATE users SET is_staff = true, updated_at = now(), updated_by = me WHERE id = target AND NOT is_staff;
+  END IF;
+  RETURN n > 0;
+END $$;
+CREATE OR REPLACE FUNCTION admin_revoke_role(target uuid, role_key text) RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER AS $$
+DECLARE me uuid := admin_bound('admin.roles'); n integer;
+BEGIN
+  DELETE FROM user_roles ur USING roles r WHERE ur.role_id = r.id AND ur.user_id = target AND r.key = role_key;
+  GET DIAGNOSTICS n = ROW_COUNT;
+  RETURN n > 0;
+END $$;
+-- standing of another account: lock, unlock, staff flag, second factor reset
+DROP FUNCTION IF EXISTS admin_set_standing(uuid, text, boolean, boolean);
+CREATE FUNCTION admin_set_standing(target uuid, new_status text, staff boolean, reset_mfa boolean) RETURNS integer LANGUAGE plpgsql SECURITY DEFINER AS $$
+DECLARE me uuid := admin_bound('admin.users'); n integer := 0;
+BEGIN
+  IF me IS NOT NULL AND target = me THEN RAISE EXCEPTION 'an administrator does not change their own standing' USING ERRCODE = 'insufficient_privilege'; END IF;
+  IF new_status IS NOT NULL AND new_status NOT IN ('active', 'locked') THEN RAISE EXCEPTION 'admin_set_standing: active or locked'; END IF;
+  UPDATE users SET
+    status = coalesce(new_status::user_status, status),
+    locked_until = CASE WHEN new_status = 'active' THEN NULL ELSE locked_until END,
+    failed_login_count = CASE WHEN new_status = 'active' THEN 0 ELSE failed_login_count END,
+    is_staff = coalesce(staff, is_staff),
+    mfa_enabled = CASE WHEN reset_mfa THEN false ELSE mfa_enabled END,
+    updated_at = now(), updated_by = me
+  WHERE id = target;
+  IF reset_mfa THEN
+    DELETE FROM mfa_factors WHERE user_id = target;
+    GET DIAGNOSTICS n = ROW_COUNT;
+    DELETE FROM recovery_codes WHERE user_id = target;
+  END IF;
+  IF new_status = 'locked' OR reset_mfa THEN
+    UPDATE sessions SET revoked_at = now(), revoke_reason = CASE WHEN reset_mfa THEN 'admin_mfa_reset' ELSE 'admin_lock' END WHERE user_id = target AND revoked_at IS NULL;
+  END IF;
+  RETURN n;
+END $$;
+-- an account created by an administrator (a staff member or a client on their behalf); its owner signs in by phone
+CREATE OR REPLACE FUNCTION admin_create_user(phone text, full_name text, email text, staff boolean) RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER AS $$
+DECLARE me uuid := admin_bound('admin.users'); id uuid;
+BEGIN
+  INSERT INTO users (phone, full_name, email, is_staff, status, created_by, updated_by)
+  VALUES (phone, full_name, email, coalesce(staff, false), 'active', me, me) RETURNING users.id INTO id;
+  RETURN id;
+END $$;
+-- another account's profile (data-subject requests, corrections): never its phone, standing or credentials
+CREATE OR REPLACE FUNCTION admin_update_profile(target uuid, patch jsonb) RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$
+DECLARE me uuid;
+BEGIN
+  IF app_is_system() THEN me := NULL;
+  ELSIF app_holds('admin.users') OR app_holds('admin.notifications') OR app_holds('admin.clients.edit') THEN me := app_current_user();
+    IF NOT app_bound_mfa() THEN RAISE EXCEPTION 'needs the second factor' USING ERRCODE = 'insufficient_privilege'; END IF;
+  ELSE RAISE EXCEPTION 'needs admin.users, admin.notifications or admin.clients.edit' USING ERRCODE = 'insufficient_privilege'; END IF;
+  IF me IS NOT NULL AND target = me THEN RAISE EXCEPTION 'an administrator edits their own account from their own page' USING ERRCODE = 'insufficient_privilege'; END IF;
+  IF EXISTS (SELECT 1 FROM jsonb_object_keys(patch) k WHERE k NOT IN ('full_name', 'email', 'email_verified_at', 'deletion_requested_at', 'birth_date', 'national_id_enc', 'national_id_hash', 'id_type', 'phone', 'resides_in_ksa')) THEN
+    RAISE EXCEPTION 'admin_update_profile: only profile fields' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  UPDATE users SET
+    full_name = CASE WHEN patch ? 'full_name' THEN patch->>'full_name' ELSE full_name END,
+    email = CASE WHEN patch ? 'email' THEN patch->>'email' ELSE email END,
+    email_verified_at = CASE WHEN patch ? 'email_verified_at' THEN (patch->>'email_verified_at')::timestamptz ELSE email_verified_at END,
+    deletion_requested_at = CASE WHEN patch ? 'deletion_requested_at' THEN (patch->>'deletion_requested_at')::timestamptz ELSE deletion_requested_at END,
+    birth_date = CASE WHEN patch ? 'birth_date' THEN (patch->>'birth_date')::date ELSE birth_date END,
+    national_id_enc = CASE WHEN patch ? 'national_id_enc' THEN patch->>'national_id_enc' ELSE national_id_enc END,
+    national_id_hash = CASE WHEN patch ? 'national_id_hash' THEN patch->>'national_id_hash' ELSE national_id_hash END,
+    id_type = CASE WHEN patch ? 'id_type' THEN (patch->>'id_type')::id_type ELSE id_type END,
+    -- a new phone is a new sign-in identifier: unverified until its next one-time code
+    phone = CASE WHEN patch ? 'phone' THEN patch->>'phone' ELSE phone END,
+    phone_verified_at = CASE WHEN patch ? 'phone' AND patch->>'phone' IS DISTINCT FROM phone THEN NULL ELSE phone_verified_at END,
+    resides_in_ksa = CASE WHEN patch ? 'resides_in_ksa' THEN (patch->>'resides_in_ksa')::boolean ELSE resides_in_ksa END,
+    updated_at = now(), updated_by = me
+  WHERE id = target;
+END $$;
+-- a role's permissions (the matrix): only a bound holder of admin.roles; the other guards on role_permissions still run
+CREATE OR REPLACE FUNCTION admin_set_role_permission(role_key text, perm_key text, grant_it boolean) RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER AS $$
+DECLARE me uuid := admin_bound('admin.roles'); rid uuid; pid uuid; n integer;
+BEGIN
+  SELECT id INTO rid FROM roles WHERE key = role_key;
+  SELECT id INTO pid FROM permissions WHERE key = perm_key;
+  IF rid IS NULL OR pid IS NULL THEN RAISE EXCEPTION 'unknown role or permission'; END IF;
+  IF grant_it THEN INSERT INTO role_permissions (role_id, permission_id) VALUES (rid, pid) ON CONFLICT DO NOTHING;
+  ELSE DELETE FROM role_permissions WHERE role_id = rid AND permission_id = pid; END IF;
+  GET DIAGNOSTICS n = ROW_COUNT;
+  RETURN n > 0;
+END $$;
+-- a data-subject deletion carried out: the person is anonymized, their sessions end (records they appear in are kept)
+CREATE OR REPLACE FUNCTION admin_anonymize_user(target uuid) RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$
+DECLARE me uuid;
+BEGIN
+  IF app_is_system() THEN me := NULL;
+  ELSIF app_holds('admin.notifications') AND app_bound_mfa() THEN me := app_current_user();
+  ELSE RAISE EXCEPTION 'needs a bound holder of admin.notifications with the second factor' USING ERRCODE = 'insufficient_privilege'; END IF;
+  IF EXISTS (SELECT 1 FROM users WHERE id = target AND is_staff) THEN RAISE EXCEPTION 'a staff account is not anonymized here'; END IF;
+  UPDATE users SET status = 'deleted', full_name = 'حساب محذوف', email = NULL, phone = 'deleted:' || id::text, password_hash = NULL,
+    national_id_enc = NULL, national_id_hash = NULL, birth_date = NULL, mfa_enabled = false, updated_at = now(), updated_by = me WHERE id = target;
+  DELETE FROM mfa_factors WHERE user_id = target;
+  DELETE FROM recovery_codes WHERE user_id = target;
+  UPDATE sessions SET revoked_at = now(), revoke_reason = 'account_deleted' WHERE user_id = target AND revoked_at IS NULL;
+END $$;
+-- what an administrator's page shows of another account's second factor: counts and dates, never secrets
+CREATE OR REPLACE FUNCTION admin_mfa_state(target uuid)
+RETURNS TABLE (factor_id uuid, kind text, verified_at timestamptz, last_used_at timestamptz, codes_total integer, codes_used integer) LANGUAGE plpgsql STABLE SECURITY DEFINER AS $$
+BEGIN
+  IF NOT (app_is_system() OR app_is_staff()) THEN
+    RAISE EXCEPTION 'staff only' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  RETURN QUERY SELECT f.id, f.type::text, f.verified_at, f.last_used_at,
+    (SELECT count(*)::int FROM recovery_codes c WHERE c.user_id = target), (SELECT count(*)::int FROM recovery_codes c WHERE c.user_id = target AND c.used_at IS NOT NULL)
+  FROM mfa_factors f WHERE f.user_id = target
+  UNION ALL SELECT NULL, NULL, NULL, NULL, (SELECT count(*)::int FROM recovery_codes c WHERE c.user_id = target), (SELECT count(*)::int FROM recovery_codes c WHERE c.user_id = target AND c.used_at IS NOT NULL)
+  WHERE NOT EXISTS (SELECT 1 FROM mfa_factors f WHERE f.user_id = target);
+END $$;
+REVOKE ALL ON FUNCTION admin_set_role_permission(text, text, boolean), admin_anonymize_user(uuid), admin_mfa_state(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION admin_set_role_permission(text, text, boolean), admin_anonymize_user(uuid), admin_mfa_state(uuid) TO waqfak_app;
+REVOKE ALL ON FUNCTION admin_grant_role(uuid, text), admin_revoke_role(uuid, text), admin_set_standing(uuid, text, boolean, boolean), admin_create_user(text, text, text, boolean), admin_update_profile(uuid, jsonb) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION admin_grant_role(uuid, text), admin_revoke_role(uuid, text), admin_set_standing(uuid, text, boolean, boolean), admin_create_user(text, text, text, boolean), admin_update_profile(uuid, jsonb) TO waqfak_app;
+
+-- ── Stage 11 / A: what the former «asSystem» steps read, as narrow functions that check the bound caller ──
+-- (the system context no longer exists on the application's connection). Each returns only what its screen shows.
+CREATE OR REPLACE FUNCTION app_can_see_request(rid uuid) RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER AS $$
+  SELECT EXISTS (SELECT 1 FROM service_requests r WHERE r.id = rid AND (
+    app_is_system()
+    OR (r.waqf_id IS NOT NULL AND app_can_access_waqf(r.waqf_id))
+    OR (r.waqf_id IS NULL AND (app_has_global_access() OR r.requester_user_id = app_current_user() OR r.assigned_to_user_id = app_current_user() OR r.created_by = app_current_user()))))
+$$;
+-- the last audit entry's id: a watermark (the entries written after it are this action's)
+CREATE OR REPLACE FUNCTION app_audit_mark() RETURNS bigint LANGUAGE sql STABLE SECURITY DEFINER AS $$
+  SELECT coalesce(max(id), 0) FROM audit_logs
+$$;
+-- approved outputs of a waqf's deed services: their text is frozen; a change to the file is weighed against them
+CREATE OR REPLACE FUNCTION app_waqf_frozen_outputs(w uuid, codes text[])
+RETURNS TABLE (id uuid, number text, title text, request_id uuid, request_number text) LANGUAGE sql STABLE SECURITY DEFINER AS $$
+  SELECT o.id, o.number, o.title, o.request_id, r.number FROM outputs o JOIN service_requests r ON r.id = o.request_id JOIN services sv ON sv.id = r.service_id
+   WHERE o.waqf_id = w AND o.status = 'approved' AND sv.code = ANY (codes) AND w IS NOT NULL AND app_can_access_waqf(w)
+$$;
+-- completeness counts of the waqfs the caller can see (no row data)
+CREATE OR REPLACE FUNCTION app_waqf_completeness(ids uuid[])
+RETURNS TABLE (id uuid, status text, archived boolean, deed boolean, assets integer, classes integer, trustees integer, board integer) LANGUAGE sql STABLE SECURITY DEFINER AS $$
+  SELECT w.id, w.status::text, (w.archived_at IS NOT NULL),
+    EXISTS (SELECT 1 FROM documents d WHERE d.waqf_id = w.id AND d.doc_type = 'waqf_deed' AND d.status = 'active' AND d.archived_at IS NULL),
+    (SELECT count(*)::int FROM assets a WHERE a.waqf_id = w.id AND a.archived_at IS NULL),
+    (SELECT count(*)::int FROM beneficiary_classes c WHERE c.waqf_id = w.id),
+    (SELECT count(*)::int FROM trustees t WHERE t.waqf_id = w.id AND t.status = 'active'),
+    (SELECT count(*)::int FROM body_memberships m JOIN bodies b ON b.id = m.body_id
+      WHERE b.waqf_id = w.id AND b.kind = 'board' AND coalesce(m.status, 'active') = 'active' AND (m.ends_on IS NULL OR m.ends_on >= current_date))
+  FROM waqfs w WHERE w.id = ANY (ids) AND (app_can_access_waqf(w.id) OR (NOT app_waqf_has_members(w.id) AND w.created_by = app_current_user()))
+$$;
+-- the review state of a request's outputs, for the client's phase: status and delivered only
+CREATE OR REPLACE FUNCTION app_request_output_states(ids uuid[])
+RETURNS TABLE (request_id uuid, status text, delivered boolean) LANGUAGE sql STABLE SECURITY DEFINER AS $$
+  SELECT o.request_id, o.status::text, o.document_id IS NOT NULL FROM outputs o WHERE o.request_id = ANY (ids) AND app_can_see_request(o.request_id)
+$$;
+-- the corrections the team made to the client's own answers (and the client's completions): what, why, before, after
+CREATE OR REPLACE FUNCTION app_request_client_revisions(rid uuid)
+RETURNS TABLE (kind text, target text, at timestamptz, reason text, before jsonb, after jsonb) LANGUAGE sql STABLE SECURITY DEFINER AS $$
+  SELECT v.kind::text, v.target, v.at, v.reason, v.before, v.after FROM request_revisions v
+   WHERE v.request_id = rid AND v.kind IN ('intake_edit', 'client_completion') AND app_can_see_request(rid) ORDER BY v.at
+$$;
+-- a client's reply to a completion item, applied to that one field of their own request: the previous value is kept
+-- in a revision, the field goes to the team's review. The server validated the value against the form first.
+CREATE OR REPLACE FUNCTION app_client_completion(rid uuid, field text, val jsonb, reason text, note text, at timestamptz)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$
+DECLARE me uuid := app_current_user(); r service_requests; prev jsonb; ev jsonb;
+BEGIN
+  SELECT * INTO r FROM service_requests WHERE id = rid FOR UPDATE;
+  IF me IS NULL OR r.id IS NULL OR NOT (r.requester_user_id = me OR (r.waqf_id IS NOT NULL AND app_can_access_waqf(r.waqf_id))) THEN
+    RAISE EXCEPTION 'app_client_completion: not a party to this request' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  IF field IS NULL OR field !~ '^[A-Za-z0-9_.-]{1,80}$' THEN RAISE EXCEPTION 'app_client_completion: bad field'; END IF;
+  prev := r.intake -> 'answers' -> field;
+  UPDATE service_requests SET intake = jsonb_set(coalesce(intake, '{}'::jsonb), ARRAY['answers'], coalesce(intake -> 'answers', '{}'::jsonb) || jsonb_build_object(field, val), true),
+    updated_by = me, updated_at = now() WHERE id = rid;
+  INSERT INTO request_revisions (request_id, waqf_id, kind, target, reason, before, after, impact, actor_user_id)
+  VALUES (rid, r.waqf_id, 'client_completion', field, reason, jsonb_build_object(field, prev), jsonb_build_object(field, val), '{}'::jsonb, me);
+  ev := jsonb_build_object('at', at, 'by', me, 'action', 'changed', 'note', note, 'value', val);
+  INSERT INTO request_field_states (request_id, waqf_id, field_key, status, note, history, updated_at)
+  VALUES (rid, r.waqf_id, field, 'needs_review', note, jsonb_build_array(ev), now())
+  ON CONFLICT (request_id, field_key) DO UPDATE SET status = 'needs_review', note = EXCLUDED.note, updated_at = now(),
+    history = (SELECT coalesce(jsonb_agg(y.e ORDER BY y.n), '[]'::jsonb) FROM (SELECT x.e, x.n FROM jsonb_array_elements(request_field_states.history || EXCLUDED.history) WITH ORDINALITY x(e, n) ORDER BY x.n DESC LIMIT 50) y);
+END $$;
+REVOKE ALL ON FUNCTION app_client_completion(uuid, text, jsonb, text, text, timestamptz) FROM PUBLIC;
+-- is a deed or national number already on record anywhere (no second file for a waqf) — yes or no, never whose
+CREATE OR REPLACE FUNCTION app_waqf_number_taken(deed_norm text, nun text) RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER AS $$
+  SELECT app_current_user() IS NOT NULL AND EXISTS (SELECT 1 FROM waqfs w WHERE (nun IS NOT NULL AND w.national_unified_number = nun)
+    OR (deed_norm IS NOT NULL AND regexp_replace(lower(coalesce(w.deed_no, '')), '[[:space:]/-]', '', 'g') = deed_norm))
+$$;
+REVOKE ALL ON FUNCTION app_waqf_number_taken(text, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION app_waqf_number_taken(text, text) TO waqfak_app;
+GRANT EXECUTE ON FUNCTION app_client_completion(uuid, text, jsonb, text, text, timestamptz) TO waqfak_app;
+REVOKE ALL ON FUNCTION app_can_see_request(uuid), app_audit_mark(), app_waqf_frozen_outputs(uuid, text[]), app_waqf_completeness(uuid[]), app_request_output_states(uuid[]), app_request_client_revisions(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION app_can_see_request(uuid), app_audit_mark(), app_waqf_frozen_outputs(uuid, text[]), app_waqf_completeness(uuid[]), app_request_output_states(uuid[]), app_request_client_revisions(uuid) TO waqfak_app;
 
 -- ═════════════ Phase 10 (owner's order of 2026-11-09), N9-1: no function resolves a name the caller can shadow ═════════════
 -- A function body names tables and functions without a schema; PostgreSQL resolves them by search_path at each call,

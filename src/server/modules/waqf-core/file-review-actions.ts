@@ -2,7 +2,6 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { tasks, waqfs, waqfTimelineEvents } from "@/server/db/schema";
-import { asSystem } from "@/server/db/as-system";
 import { audit } from "@/server/lib/audit";
 import { notify } from "@/server/modules/notify";
 import { taskEvent } from "@/server/modules/operations/exec";
@@ -26,7 +25,7 @@ export async function reviewFileChange(_: ActionState, fd: FormData): Promise<Ac
   const d = r.data;
   if (d.decision === "return" && d.note.length < 10) return { error: "اكتب سبب الإعادة وما يلزم تصحيحه (10 أحرف على الأقل).", fieldErrors: { note: "اكتب ما يلزم تصحيحه." } };
   return userAction(async ({ auth, tx, ip, userAgent }) => {
-    const [t] = await asSystem(tx, () => tx.select().from(tasks).where(and(eq(tasks.id, d.taskId), inArray(tasks.kind, ["file_review", "file_change_request"]))).limit(1));
+    const [t] = await tx.select().from(tasks).where(and(eq(tasks.id, d.taskId), inArray(tasks.kind, ["file_review", "file_change_request"]))).limit(1);
     if (!t || !t.waqfId) throw new UserError("المراجعة غير موجودة.");
     if (!["todo", "in_progress"].includes(t.status)) throw new UserError("رُوجع هذا التعديل مسبقًا.");
     if (t.createdBy === auth.user.id) throw new UserError("لا تراجع تعديلك بنفسك: يراجعه عضو آخر في الفريق.");
@@ -36,12 +35,12 @@ export async function reviewFileChange(_: ActionState, fd: FormData): Promise<Ac
     const result = isRequest
       ? d.decision === "approve" ? "قُبل طلب التعديل، وينفذه فريق «وقفك» في الملف" : "أُعيد طلب التعديل للتصحيح"
       : d.decision === "approve" ? "اعتُمد التعديل" : "يحتاج التعديل تصحيحًا";
-    await asSystem(tx, async () => {
+    await (async () => {
       await tx.update(tasks).set({ status: "done", completedAt: new Date(), completedBy: auth.user.id, updatedBy: auth.user.id, checklist: [{ text: `${result}${d.note ? `: ${d.note}` : ""}`, done: true }] })
         .where(and(eq(tasks.id, t.id), inArray(tasks.status, ["todo", "in_progress"])));
       await taskEvent(tx, t, { action: "complete", from: t.status, to: "done", actorId: auth.user.id, note: `${result}${d.note ? ` — ${d.note}` : ""}` });
       await tx.insert(waqfTimelineEvents).values({ waqfId: w.id, type: "file_review", occurredOn: new Date().toISOString().slice(0, 10), stage: w.stage, createdBy: auth.user.id, title: `${result}: ${t.title.replace(/^(مراجعة تعديل على ملف الوقف|طلب تعديل من الواقف): /, "")}`, details: d.note || null });
-    });
+    })();
     await audit(tx, { actorUserId: auth.user.id, action: isRequest ? (d.decision === "approve" ? "waqf.change_request_accepted" : "waqf.change_request_returned") : d.decision === "approve" ? "waqf.file_review_approved" : "waqf.file_review_returned", entityType: "task", entityId: t.id, waqfId: w.id, ip, userAgent, after: { note: d.note || undefined } });
     if (t.createdBy) await notify(t.createdBy, "waqf.file_review_result", { waqf: w.name, result, note: d.note }, { waqfId: w.id, link: `/app/w/${w.id}`, tx });
     if (isRequest) return { ok: true, message: d.decision === "approve" ? "قُبل الطلب وأُبلغ الواقف. نفّذ التعديل في أقسام الملف؛ يُراجَع تعديلك من عضو آخر." : "أُعيد الطلب للتصحيح وأُبلغ الواقف بالسبب." };

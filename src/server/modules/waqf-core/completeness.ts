@@ -1,7 +1,6 @@
 import "server-only";
 import { sql } from "drizzle-orm";
 import type { Tx } from "@/server/db";
-import { asSystem } from "@/server/db/as-system";
 import { completeness, type CompletenessFacts } from "./file-review-pure";
 
 export type WaqfCompleteness = { complete: boolean; missing: string[] };
@@ -15,15 +14,8 @@ export async function completenessOf(tx: Tx, waqfIds: string[]): Promise<Map<str
   const out = new Map<string, WaqfCompleteness>();
   if (!waqfIds.length) return out;
   const ids = sql.join(waqfIds.map((i) => sql`${i}::uuid`), sql`, `);
-  const rows = await asSystem(tx, () => tx.execute<{ id: string; status: string; archived: boolean; deed: boolean; assets: number; classes: number; trustees: number; board: number }>(sql`
-    select w.id, w.status::text as status, (w.archived_at is not null) as archived,
-      exists (select 1 from documents d where d.waqf_id = w.id and d.doc_type = 'waqf_deed' and d.status = 'active' and d.archived_at is null) as deed,
-      (select count(*)::int from assets a where a.waqf_id = w.id and a.archived_at is null) as assets,
-      (select count(*)::int from beneficiary_classes c where c.waqf_id = w.id) as classes,
-      (select count(*)::int from trustees t where t.waqf_id = w.id and t.status = 'active') as trustees,
-      (select count(*)::int from body_memberships m join bodies b on b.id = m.body_id
-         where b.waqf_id = w.id and b.kind = 'board' and coalesce(m.status, 'active') = 'active' and (m.ends_on is null or m.ends_on >= current_date)) as board
-    from waqfs w where w.id in (${ids})`));
+  // counts only, for the waqfs the caller can see — through a function that checks it (stage 11)
+  const rows = await tx.execute<{ id: string; status: string; archived: boolean; deed: boolean; assets: number; classes: number; trustees: number; board: number }>(sql`select * from app_waqf_completeness(array[${ids}]::uuid[])`);
   for (const r of rows.rows) {
     const f: CompletenessFacts = { status: r.status, archived: r.archived, deedInVault: r.deed, assets: Number(r.assets), classes: Number(r.classes), trustees: Number(r.trustees), boardMembers: Number(r.board) };
     out.set(r.id, completeness(f));

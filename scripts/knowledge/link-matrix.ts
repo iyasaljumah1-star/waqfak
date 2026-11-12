@@ -22,8 +22,8 @@ import { PENDING_RETRIEVAL, REGISTRY } from "../../src/server/references/registr
 const TODAY = "2026-11-06";
 
 async function main() {
-  const url = process.env.KE_TEST_DATABASE_URL ?? "";
-  if (!/ke_test/.test(url)) throw new Error("KE_TEST_DATABASE_URL must name the ke_test database");
+  const url = process.env.KE_TEST_DATABASE_OWNER_URL ?? ""; // stage 11: cases run as the system role (SET LOCAL ROLE waqfak_system on the owner's connection, test cluster only); the fixtures reset to the owner
+  if (!/ke_test/.test(url)) throw new Error("KE_TEST_DATABASE_OWNER_URL must name the ke_test database");
   const pool = new Pool({ connectionString: url });
   const db = drizzle(pool, { schema, casing: "snake_case" });
   const acceptance = JSON.parse(readFileSync(path.join(process.cwd(), "data/knowledge/reports/acceptance.json"), "utf8")) as { rows: { retrievedRef: string | null; pass: boolean; citable: boolean }[] };
@@ -31,6 +31,7 @@ async function main() {
   const rows: Record<string, unknown>[] = [];
   await db.transaction(async (tx) => {
     await tx.execute(sql`select set_config('app.user_id', '', true), set_config('app.global_access', 'on', true)`);
+        await tx.execute(sql`set local role waqfak_system`);
     for (const e of loadCatalog()) {
       const [src] = await tx.select().from(schema.kbSources).where(and(eq(schema.kbSources.refCode, e.refCode), isNull(schema.kbSources.supersededAt))).limit(1);
       const chunks = src ? await tx.select({ text: schema.kbChunks.text, origin: schema.kbChunks.textOrigin }).from(schema.kbChunks).where(eq(schema.kbChunks.sourceId, src.id)) : [];

@@ -10,7 +10,7 @@ import { Pool } from "pg";
 
 vi.mock("server-only", () => ({}));
 
-const APP = process.env.KE_TEST_DATABASE_URL;
+const APP = process.env.KE_TEST_DATABASE_OWNER_URL; // stage 11: cases run as the system role (SET LOCAL ROLE waqfak_system on the owner's connection, test cluster only); the fixtures reset to the owner
 const enabled = !!APP && /ke_test/.test(APP) && !!process.env.KE_TEST_DATABASE_OWNER_URL;
 
 describe.skipIf(!enabled)("adversarial probes of the knowledge engine (dedicated test database)", () => {
@@ -31,6 +31,7 @@ describe.skipIf(!enabled)("adversarial probes of the knowledge engine (dedicated
     try {
       await db.transaction(async (tx) => {
         await tx.execute(sql`select set_config('app.user_id', '', true), set_config('app.global_access', 'on', true)`);
+        await tx.execute(sql`set local role waqfak_system`);
         out = await fn(tx as unknown as import("../src/server/db").Tx);
         throw new Rollback();
       });

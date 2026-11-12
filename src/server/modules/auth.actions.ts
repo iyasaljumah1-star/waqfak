@@ -3,7 +3,7 @@
 import { and, eq, isNull } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { withSystem } from "../db";
+import { withAuth } from "../db";
 import { consents, users } from "../db/schema";
 import { clearFlow, getFlow, setFlow } from "../auth/flow-cookie";
 import { issueOtp, normalizeSaudiMobile, otpErrorText, verifyOtp } from "../auth/otp";
@@ -47,7 +47,7 @@ export async function signupStart(_: ActionState, fd: FormData): Promise<ActionS
     }
     const phone = normalizeSaudiMobile(parsed.data.phone);
     if (!phone) return { fieldErrors: { phone: "أدخل رقم جوال سعودي صحيح يبدأ بـ 05." } };
-    const exists = await withSystem((tx) => tx.select({ id: users.id }).from(users).where(eq(users.phone, phone)).limit(1));
+    const exists = await withAuth((tx) => tx.select({ id: users.id }).from(users).where(eq(users.phone, phone)).limit(1));
     if (exists.length) return { error: "هذا الرقم مسجّل مسبقًا. سجّل الدخول بدلًا من ذلك.", data: { login: true } };
     const { ip } = await requestInfo();
     const otp = await issueOtp(phone, "signup", ip, { fullName: parsed.data.fullName, email: parsed.data.email || null, marketing: fd.get("marketing") === "on" });
@@ -63,7 +63,7 @@ export async function loginStart(_: ActionState, fd: FormData): Promise<ActionSt
     if (!phone) return { fieldErrors: { phone: "أدخل رقم جوال سعودي صحيح يبدأ بـ 05." } };
     const { ip } = await requestInfo();
     await enforceRateLimit(`login:ip:${ip}`, 30, 900);
-    const [u] = await withSystem((tx) => tx.select().from(users).where(eq(users.phone, phone)).limit(1));
+    const [u] = await withAuth((tx) => tx.select().from(users).where(eq(users.phone, phone)).limit(1));
     if (!u || u.status === "deleted") {
       // Neutral response: do not reveal whether the number is registered.
       await setFlow({ challengeId: "00000000-0000-0000-0000-000000000000", target: phone, purpose: "login", next: safeNext(fd.get("next")) });
@@ -84,13 +84,13 @@ export async function loginPassword(_: ActionState, fd: FormData): Promise<Actio
     const { ip, userAgent } = await requestInfo();
     await enforceRateLimit(`pw:ip:${ip}`, 20, 900);
     await enforceRateLimit(`pw:email:${email}`, 8, 900);
-    const [u] = await withSystem((tx) => tx.select().from(users).where(eq(users.email, email)).limit(1));
+    const [u] = await withAuth((tx) => tx.select().from(users).where(eq(users.email, email)).limit(1));
     const generic = { error: "البريد أو كلمة المرور غير صحيحة." };
     if (!u || !u.passwordHash) return generic;
     if (u.lockedUntil && u.lockedUntil > new Date()) return { error: "الحساب مقفل مؤقتًا بعد محاولات متكررة. حاول بعد 30 دقيقة أو استخدم استعادة الحساب." };
     if (!(await verifyPassword(u.passwordHash, password))) {
       const failed = u.failedLoginCount + 1;
-      await withSystem((tx) =>
+      await withAuth((tx) =>
         tx.update(users).set({ failedLoginCount: failed, lockedUntil: failed >= 10 ? new Date(Date.now() + 30 * 60_000) : null }).where(eq(users.id, u.id)),
       );
       return generic;
@@ -119,7 +119,7 @@ export async function verifyCode(_: ActionState, fd: FormData): Promise<ActionSt
 
     if (flow.purpose === "signup") {
       const ctx = res.context ?? {};
-      const user = await withSystem(async (tx) => {
+      const user = await withAuth(async (tx) => {
         const [u] = await tx
           .insert(users)
           .values({ phone: flow.target, fullName: String(ctx.fullName ?? ""), email: (ctx.email as string) || null, phoneVerifiedAt: new Date(), status: "active" })
@@ -137,12 +137,12 @@ export async function verifyCode(_: ActionState, fd: FormData): Promise<ActionSt
       redirect(flow.next ?? "/app?welcome=1");
     }
 
-    const [u] = await withSystem((tx) => tx.select().from(users).where(eq(users.phone, flow.target)).limit(1));
+    const [u] = await withAuth((tx) => tx.select().from(users).where(eq(users.phone, flow.target)).limit(1));
     if (!u) return { error: "تعذر العثور على الحساب." };
 
     if (flow.purpose === "recover") {
       await revokeAllSessions(u.id, "recovery");
-      await withSystem(async (tx) => {
+      await withAuth(async (tx) => {
         await tx.update(users).set({ failedLoginCount: 0, lockedUntil: null }).where(eq(users.id, u.id));
         await audit(tx, { actorUserId: u.id, action: "user.recover", entityType: "user", entityId: u.id, ip, userAgent });
       });
@@ -153,10 +153,10 @@ export async function verifyCode(_: ActionState, fd: FormData): Promise<ActionSt
 
     // login or password step-up
     // A successful OTP to this number proves ownership: re-verifies a phone an admin changed on the account.
-    if (!u.phoneVerifiedAt) await withSystem((tx) => tx.update(users).set({ phoneVerifiedAt: new Date() }).where(eq(users.id, u.id)));
+    if (!u.phoneVerifiedAt) await withAuth((tx) => tx.update(users).set({ phoneVerifiedAt: new Date() }).where(eq(users.id, u.id)));
     await clearFlow();
     await createSession(u.id, { isStaff: u.isStaff, mfaVerified: false, ip, userAgent });
-    await withSystem((tx) => audit(tx, { actorUserId: u.id, action: "user.login", entityType: "user", entityId: u.id, ip, userAgent, after: { method: flow.purpose } }));
+    await withAuth((tx) => audit(tx, { actorUserId: u.id, action: "user.login", entityType: "user", entityId: u.id, ip, userAgent, after: { method: flow.purpose } }));
     await notify(u.id, "security.new_login", { device: userAgent.slice(0, 60), time: new Date().toLocaleString("ar-SA", { timeZone: "Asia/Riyadh" }) });
     if (u.mfaEnabled) redirect(`/login/mfa${flow.next ? `?next=${encodeURIComponent(flow.next)}` : ""}`);
     redirect(flow.next ?? (u.isStaff ? "/admin" : "/app"));
@@ -186,7 +186,7 @@ export async function verifyMfa(_: ActionState, fd: FormData): Promise<ActionSta
     const ok = /^\d{6}$/.test(code) ? await verifyUserTotp(auth.user.id, code) : await useRecoveryCode(auth.user.id, code);
     if (!ok) return { error: "الرمز غير صحيح." };
     await markSessionMfa(auth.session.id);
-    await withSystem((tx) => audit(tx, { actorUserId: auth.user.id, action: "user.mfa_verified", entityType: "user", entityId: auth.user.id, ip, userAgent }));
+    await withAuth((tx) => audit(tx, { actorUserId: auth.user.id, action: "user.mfa_verified", entityType: "user", entityId: auth.user.id, ip, userAgent }));
     redirect(safeNext(fd.get("next")) ?? (auth.isStaff ? "/admin" : "/app"));
   });
 }
@@ -197,7 +197,7 @@ export async function recoverStart(_: ActionState, fd: FormData): Promise<Action
     const phone = normalizeSaudiMobile(String(fd.get("phone") ?? ""));
     if (!phone) return { fieldErrors: { phone: "أدخل رقم جوال سعودي صحيح يبدأ بـ 05." } };
     const { ip } = await requestInfo();
-    const [u] = await withSystem((tx) => tx.select({ id: users.id }).from(users).where(and(eq(users.phone, phone), isNull(users.deletionRequestedAt))).limit(1));
+    const [u] = await withAuth((tx) => tx.select({ id: users.id }).from(users).where(and(eq(users.phone, phone), isNull(users.deletionRequestedAt))).limit(1));
     if (!u) {
       await setFlow({ challengeId: "00000000-0000-0000-0000-000000000000", target: phone, purpose: "recover" });
       redirect("/verify");
@@ -221,7 +221,7 @@ export async function setPassword(_: ActionState, fd: FormData): Promise<ActionS
     if (pw !== confirm) return { fieldErrors: { confirm: "كلمتا المرور غير متطابقتين." } };
     if (!auth.user.email && !z.email().safeParse(email).success) return { fieldErrors: { email: "أدخل بريدًا صحيحًا لاستخدامه في الدخول." } };
     const { ip, userAgent } = await requestInfo();
-    await withSystem(async (tx) => {
+    await withAuth(async (tx) => {
       await tx.update(users).set({ passwordHash: await hashPassword(pw), ...(auth.user.email ? {} : { email }) }).where(eq(users.id, auth.user.id));
       await audit(tx, { actorUserId: auth.user.id, action: "user.password_set", entityType: "user", entityId: auth.user.id, ip, userAgent });
     });
@@ -234,7 +234,7 @@ export async function logout() {
   const auth = await getAuth();
   if (auth) {
     const { ip, userAgent } = await requestInfo();
-    await withSystem((tx) => audit(tx, { actorUserId: auth.user.id, action: "user.logout", entityType: "user", entityId: auth.user.id, ip, userAgent }));
+    await withAuth((tx) => audit(tx, { actorUserId: auth.user.id, action: "user.logout", entityType: "user", entityId: auth.user.id, ip, userAgent }));
   }
   await destroyCurrentSession();
   redirect("/");

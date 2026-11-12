@@ -403,7 +403,7 @@ describe("fiqh analysis — synthetic test texts", () => {
   });
 });
 
-const url = process.env.KE_TEST_DATABASE_URL;
+const url = process.env.KE_TEST_DATABASE_OWNER_URL; // stage 11: cases run as the system role (SET LOCAL ROLE waqfak_system on the owner's connection, test cluster only); the fixtures reset to the owner
 const ownerUrl = process.env.KE_TEST_DATABASE_OWNER_URL;
 const ready = !!url && /_test(\?|$)/.test(url) && !!ownerUrl;
 
@@ -473,7 +473,7 @@ describe.skipIf(!ready)("fiqh research on the test knowledge base, and the revie
       const finalErrors = await finalBasisErrors(tx, sections, "2026-11-07");
       const dbFinal = (await tx.execute<{ n: number }>(sql`select sections_unreviewed_basis(${JSON.stringify(sections)}::jsonb) as n`)).rows[0]!.n;
       // withdrawing the reviewer's permission: the approval no longer counts
-      await tx.execute(sql`delete from user_roles where user_id = ${cases.TEST_REVIEWER}::uuid`);
+      await cases.asOwner(tx, () => tx.execute(sql`delete from user_roles where user_id = ${cases.TEST_REVIEWER}::uuid`)); // stage 11: a fixture
       const withdrawn = await finalBasisErrors(tx, sections, "2026-11-07");
       return { before, dbBefore, refusals, st1: st1.latest?.decision, final1: st1.final, st2: st2.latest?.decision, final2: st2.final, replacement: st2.latest?.replacement, passages: [...passages.entries()], one, after, dbAfter, finalErrors, dbFinal, withdrawn, n: d.sources.length };
     });

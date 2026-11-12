@@ -12,7 +12,7 @@ import { Pool } from "pg";
 
 vi.mock("server-only", () => ({}));
 
-const APP = process.env.KE_TEST_DATABASE_URL;
+const APP = process.env.KE_TEST_DATABASE_OWNER_URL; // stage 11: cases run as the system role (SET LOCAL ROLE waqfak_system on the owner's connection, test cluster only); the fixtures reset to the owner
 const enabled = !!APP && /ke_test/.test(APP) && !!process.env.KE_TEST_DATABASE_OWNER_URL;
 const T = "2026-11-07";
 
@@ -38,6 +38,7 @@ describe.skipIf(!enabled)("relevance regressions (dedicated test database)", () 
     try {
       await db.transaction(async (tx) => {
         await tx.execute(sql`select set_config('app.user_id', '', true), set_config('app.global_access', 'on', true)`);
+        await tx.execute(sql`set local role waqfak_system`);
         if (extra.reviewed) await (await import("./knowledge/cases")).reviewEverything(tx as never);
         out = await K.retrieve(tx as never, { question, service: "*", asOf: T, ...extra });
         throw new Rollback();
@@ -137,6 +138,7 @@ describe.skipIf(!enabled)("relevance regressions (dedicated test database)", () 
       const db = drizzle(app, { schema, casing: "snake_case" });
       await db.transaction(async (tx) => {
         await tx.execute(sql`select set_config('app.user_id', '', true), set_config('app.global_access', 'on', true)`);
+        await tx.execute(sql`set local role waqfak_system`);
         await K.retrieve(tx as never, { question: "ما حكم بيع الوقف إذا تعطلت منافعه؟", service: "*", asOf: T });
         // synthetic facts only (no client, no waqf)
         await research(tx as never, { question: "ما حكم بيع الوقف إذا تعطلت منافعه؟", facts: [{ text: "واقعة اصطناعية: تعطلت منافع عقار اختبار", status: "established" }], asOf: T });

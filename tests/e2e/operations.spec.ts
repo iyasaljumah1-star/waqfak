@@ -25,7 +25,7 @@ function ownerDb() {
 }
 function appDb() {
   const line = readFileSync(".env", "utf8").split("\n").find((l) => l.startsWith("DATABASE_URL="));
-  return new pg.Client({ connectionString: line!.slice("DATABASE_URL=".length).trim() });
+  return new pg.Client({ connectionString: process.env.SYSTEM_DATABASE_URL ?? line!.slice("DATABASE_URL=".length).trim() });
 }
 async function sql<T = Record<string, unknown>>(q: string, params: unknown[] = []): Promise<T[]> {
   const db = ownerDb();

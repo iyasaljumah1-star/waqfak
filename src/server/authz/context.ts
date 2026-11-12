@@ -66,7 +66,8 @@ export const getAuth = cache(async (): Promise<Auth | null> => {
     perms,
     globalAccess,
     isStaff: s.user.isStaff || globalRoles.length > 0,
-    db: { userId: s.user.id, globalAccess, mlro: false, roles: globalRoles },
+    // the database binds the person from their session (stage 11): the keyed hash of this request's cookie
+    db: { userId: s.user.id, globalAccess, mlro: false, roles: globalRoles, sessionHash: s.session.tokenHash },
   };
 });
 

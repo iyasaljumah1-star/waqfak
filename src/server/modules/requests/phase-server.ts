@@ -1,7 +1,6 @@
 import "server-only";
-import { eq } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import type { Tx } from "@/server/db";
-import { asSystem } from "@/server/db/as-system";
 import { outputs } from "@/server/db/schema";
 import type { RequestCtx } from "./access";
 
@@ -10,6 +9,6 @@ import type { RequestCtx } from "./access";
  * the review notes, versions or reviewers. Read after the request access check (rc), as outputs are staff rows.
  */
 export function outputStatesForPhase(tx: Tx, rc: RequestCtx) {
-  return asSystem(tx, () => tx.select({ status: outputs.status, documentId: outputs.documentId }).from(outputs).where(eq(outputs.requestId, rc.req.id)))
-    .then((xs) => xs.map((x) => ({ status: x.status, delivered: !!x.documentId })));
+  return tx.execute<{ status: string; delivered: boolean }>(sql`select status, delivered from app_request_output_states(array[${rc.req.id}::uuid])`)
+    .then((r) => r.rows.map((x) => ({ status: x.status as typeof outputs.$inferSelect.status, delivered: x.delivered })));
 }

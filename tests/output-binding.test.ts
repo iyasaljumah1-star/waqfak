@@ -100,13 +100,14 @@ describe("N9-9 — binding, merge and edits (pure)", () => {
   });
 });
 
-const DEV = process.env.DATABASE_URL;
+const DEV = process.env.DATABASE_OWNER_URL; // stage 11: cases run as the system role (SET LOCAL ROLE waqfak_system on the owner's connection, test cluster only); the fixtures reset to the owner
 describe.skipIf(!DEV || !/waqfak_dev/.test(DEV))("N9-9 — the database guard and a full approval attempt (development database, rolled back)", () => {
   async function inTx<T>(fn: (c: Client) => Promise<T>): Promise<T> {
     const c = new Client({ connectionString: DEV }); await c.connect();
     try {
       await c.query("begin");
       await c.query(`select set_config('app.user_id', '', true), set_config('app.global_access', 'on', true)`);
+    await c.query(`set local role waqfak_system`);
       return await fn(c);
     } finally { await c.query("rollback").catch(() => {}); await c.end(); }
   }
