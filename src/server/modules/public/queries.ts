@@ -1,5 +1,5 @@
 import "server-only";
-import { licenceValid, NAZARA_INTAKE_FLAG, NAZARA_PRACTICE_NOTICE, PRACTICE_GATED_LICENSES } from "@/server/modules/nazara/licence";
+import { licenceValid, NAZARA_APPOINTMENT_NOTICE, NAZARA_INTAKE_FLAG, NAZARA_PRACTICE_NOTICE, PRACTICE_GATED_LICENSES } from "@/server/modules/nazara/licence";
 import { todayISO } from "@/server/engines/dates";
 import { cache } from "react";
 import { and, asc, desc, eq, gte, inArray, lte, ne } from "drizzle-orm";
@@ -46,7 +46,7 @@ function availability(s: typeof services.$inferSelect, licenses: License[], flag
     const lic = licenses.find((l) => l.key === s.requiresLicenseKey);
     if (PRACTICE_GATED_LICENSES.has(s.requiresLicenseKey)) {
       if (flags.get(NAZARA_INTAKE_FLAG) === false) return { available: false, label: "غير متاحة حاليًا", reason: "توقف استقبال طلبات هذه الخدمة مؤقتًا." };
-      return { available: true, label: null, reason: null, notice: licenceValid(lic, todayISO()) ? null : NAZARA_PRACTICE_NOTICE };
+      return { available: true, label: null, reason: null, notice: licenceValid(lic, todayISO()) ? NAZARA_APPOINTMENT_NOTICE : NAZARA_PRACTICE_NOTICE };
     }
     if (!lic?.active)
       return {

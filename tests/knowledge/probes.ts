@@ -89,7 +89,7 @@ const ROUND4: Probe[] = [
       const runId = await NZR(tx);
       const before = (await retrieve(tx, Q163)).citable.length;
       await tx.execute(sql`select pg_sleep(0.01)`);
-      await asUser(tx, TEST_REVIEWER, () => recordComparisonReview(tx, actorOf(TEST_REVIEWER), { runId, decision: "rejected", note: "مجس: رفض لاحق بعد القبول" }));
+      await asUser(tx, TEST_REVIEWER, () => recordComparisonReview(tx, actorOf(TEST_REVIEWER), { runId, unit: "م16", decision: "rejected", note: "مجس: رفض لاحق بعد القبول" }));
       const after = (await retrieve(tx, Q163)).citable.length;
       return { pass: before > 0 && after === 0, output: { before, after } };
     },
@@ -174,7 +174,7 @@ const ROUND4: Probe[] = [
       const v = { ...versionFromSnapshot(loadManifest().find((m) => m.id === "NZR/uqn-p18926")!, "2022-11-18", "مجس"), refId: "PRT", id: "PRT@probe" };
       store.addVersion(v);
       store.addMatchRun({ id: "run1", versionId: v.id, candidateLabel: "مجس", candidateSha256: v.source.sha256, outcome: "identical", perArticle: { م8: "identical" }, ranAt: "2026-01-01T00:00:00Z" } as never);
-      store.addReview({ runId: "run1", decision: "accepted", reviewer: "مجس", at: "2026-01-02T00:00:00Z" } as never);
+      store.addReview({ runId: "run1", unit: "م8", decision: "accepted", reviewer: "مجس", at: "2026-01-02T00:00:00Z" } as never);
       const after = cite(REGISTRY, store, { refId: "PRT", article: 8, paragraph: 1, asOf: "2026-11-06", historical: true });
       const before = cite(REGISTRY, store, { refId: "PRT", article: 8, paragraph: 1, asOf: "2025-01-01", historical: true });
       return { pass: !after.ok && before.ok, output: { afterRepeal: after.ok ? "ok" : after.refusal, beforeRepeal: before.ok ? "ok" : before.refusal } };

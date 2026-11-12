@@ -20,7 +20,7 @@ const sourceSchema = z.object({
   decision: z.enum(["accepted", "rejected"]),
   note: z.string().trim().min(10, "اكتب ما قابلته وبماذا (عشرة أحرف على الأقل).").max(2000),
 });
-const runSchema = z.object({ runId: z.string().uuid(), decision: z.enum(["accepted", "rejected"]), note: z.string().trim().min(10).max(2000) });
+const runSchema = z.object({ runId: z.string().uuid(), unit: z.string().regex(/^م\d{1,4}$/, "حدّد المادة."), decision: z.enum(["accepted", "rejected"]), note: z.string().trim().min(10).max(2000) });
 
 const refused = (e: unknown) => {
   if (e instanceof ReviewRefused) throw new UserError(e.message);
@@ -44,7 +44,7 @@ export async function recordComparisonDecision(_: ActionState, fd: FormData): Pr
   return staffAction("admin.access", async ({ auth, tx, ip, userAgent }) => {
     const sessionToken = (await currentSessionToken()) ?? "";
     await recordComparisonReview(tx, { userId: auth.user.id, sessionToken, ip, userAgent }, p.data).catch(refused);
-    return { ok: true, message: "سُجلت مراجعة المطابقة وقُيدت في سجل التدقيق." };
+    return { ok: true, message: `سُجلت مراجعة المادة ${p.data.unit.slice(1)} وحدها في هذه المطابقة، وقُيدت في سجل التدقيق.` };
   }, "/admin/knowledge");
 }
 

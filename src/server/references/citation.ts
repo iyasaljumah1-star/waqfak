@@ -9,7 +9,7 @@
  */
 import { statusAt, type RegistryEntry } from "./registry";
 import { CITABLE_OUTCOMES, OFFICIAL_HOSTS, type MatchOutcome, type RefStatus } from "./types";
-import type { VersionStore } from "./versions";
+import { unitStanding, type VersionStore } from "./versions";
 
 export type CitationRequest = { refId: string; article: number; paragraph?: number; item?: string; asOf: string; historical?: boolean };
 
@@ -80,13 +80,14 @@ export function cite(registry: RegistryEntry[], store: VersionStore, req: Citati
   const runs = store.matchRuns(version.id);
   if (!runs.length) return refuse("not_compared", version.label);
   const articleKey = `م${req.article}`;
-  // The latest accepted run decides; an unreviewed run never authorises a citation. A run's standing is its LATEST
-  // review: an acceptance later withdrawn by a rejection no longer authorises anything (independent review R3b).
+  // Stage 11, D: the review is of THIS article's unit, never of the run as a whole. The latest run whose unit for the
+  // article stands accepted decides; a unit's standing is its LATEST review (an acceptance later withdrawn by a
+  // rejection authorises nothing: R3b); a review of another article, or of the whole run, authorises nothing here.
   const reviewed = runs
-    .map((r) => ({ r, rev: store.reviews(r.id).sort((a, b) => b.at.localeCompare(a.at))[0] }))
+    .map((r) => ({ r, rev: unitStanding(store.reviews(r.id), articleKey) }))
     .filter((x) => x.rev && x.rev.decision === "accepted")
     .sort((a, b) => b.rev!.at.localeCompare(a.rev!.at));
-  if (!reviewed.length) return refuse("not_reviewed", version.label);
+  if (!reviewed.length) return refuse("not_reviewed", `${version.label} — ${articleKey}`);
   const { r: run, rev } = reviewed[0]!;
   const outcome = run.perArticle[articleKey];
   if (!outcome || !CITABLE_OUTCOMES.has(outcome)) return refuse("article_not_verified", `${articleKey}: ${outcome ?? "غير مقارن"}`);

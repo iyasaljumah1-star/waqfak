@@ -24,6 +24,13 @@ export function licenceValid(l: LicenceRecord | undefined | null, today: string)
 export const NAZARA_PRACTICE_NOTICE =
   "نستقبل طلبات تولي النظارة الآن: ندرس ملف الوقف، ونعدّ طلب التعيين ومرفقاته، ونتابع الإجراء. ولا تبدأ «وقفك» مباشرة النظارة إلا بعد ثبوت تعيينها بقرار من الجهة المختصة واستيفاء المتطلبات النظامية المنطبقة، ومنها أن يكون الناظر الاعتباري مرخصًا من الهيئة (لائحة تنظيم أعمال النظارة م5/2). تقديم الطلب أو توقيع عقد لا يجعل «وقفك» ناظرًا.";
 
+/**
+ * Stage 11 (owner's decision, N01): with the licence in force the requests are still preparatory — the practice starts
+ * only with the appointment. Shown whenever the licence is valid (the notice above is shown otherwise).
+ */
+export const NAZARA_APPOINTMENT_NOTICE =
+  "نستقبل طلبات تولي النظارة الآن: ندرس ملف الوقف، ونعدّ طلب التعيين ومرفقاته، ونتابع الإجراء. ولا تبدأ «وقفك» مباشرة النظارة إلا بعد ثبوت تعيينها بقرار من الجهة المختصة واستيفاء المتطلبات النظامية المنطبقة. تقديم الطلب أو توقيع عقد لا يجعل «وقفك» ناظرًا.";
+
 export type ActivationGate = { allowed: true; practice: boolean } | { allowed: false; reason: string };
 
 /** Whether an accepted engagement may start (become active) on this waqf now. */

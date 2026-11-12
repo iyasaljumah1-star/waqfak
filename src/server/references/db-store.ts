@@ -1,7 +1,7 @@
 import "server-only";
 import { and, desc, eq, isNotNull, lte } from "drizzle-orm";
 import type { Tx } from "../db";
-import { refFetchAttempts, refMatchReviews, refMatchRuns, refSources, refUnits, refVersions } from "../db/schema/references";
+import { refFetchAttempts, refMatchReviews, refMatchRuns, refMatchUnits, refSources, refUnits, refVersions } from "../db/schema/references";
 import type { RegistryEntry } from "./registry";
 import type { FetchAttempt } from "./types";
 import type { MatchReview, MatchRun, RefVersion } from "./versions";
@@ -66,11 +66,24 @@ export async function appendMatchRun(tx: Tx, versionDbId: string, r: MatchRun, d
     .insert(refMatchRuns)
     .values({ versionId: versionDbId, candidateLabel: r.candidateLabel, candidateSha256: r.candidateSha256, outcome: r.outcome, perArticle: r.perArticle, details: details as object, ranAt: new Date(r.ranAt) })
     .returning({ id: refMatchRuns.id });
+  // stage 11, D: one unit per compared article (the database sets each unit's outcome and text fingerprint); an
+  // article with no stored text is not a unit, and so can never be reviewed or cited
+  const keys = Object.keys(r.perArticle).filter((k) => /^م\d+$/.test(k));
+  const stored = new Set((await tx.select({ article: refUnits.article }).from(refUnits).where(eq(refUnits.versionId, versionDbId))).map((u) => `م${u.article}`));
+  const units = keys.filter((k) => stored.has(k));
+  if (units.length) await tx.insert(refMatchUnits).values(units.map((k) => ({ runId: row!.id, unitKey: k, article: Number(k.slice(1)), outcome: "", textSha256: "" })));
   return row!.id;
 }
 
+/** The unit of a run for an article key («م8»), or null. */
+export async function unitOf(tx: Tx, runDbId: string, unitKey: string): Promise<string | null> {
+  const [u] = await tx.select({ id: refMatchUnits.id }).from(refMatchUnits).where(and(eq(refMatchUnits.runId, runDbId), eq(refMatchUnits.unitKey, unitKey))).limit(1);
+  return u?.id ?? null;
+}
+
 export async function appendReview(tx: Tx, runDbId: string, r: Omit<MatchReview, "runId"> & { reviewerUserId: string }): Promise<void> {
-  await tx.insert(refMatchReviews).values({ runId: runDbId, reviewerUserId: r.reviewerUserId, decision: r.decision, note: r.note, reviewedAt: new Date(r.at) });
+  const unitId = r.unit ? await unitOf(tx, runDbId, r.unit) : null;
+  await tx.insert(refMatchReviews).values({ runId: runDbId, unitId, reviewerUserId: r.reviewerUserId, decision: r.decision, note: r.note, reviewedAt: new Date(r.at) });
 }
 
 export async function appendFetchAttempt(tx: Tx, a: FetchAttempt): Promise<void> {

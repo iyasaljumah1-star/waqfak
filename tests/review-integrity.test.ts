@@ -263,6 +263,25 @@ describe.skipIf(!enabled)("review integrity (dedicated test database)", () => {
     expect(out.name).toBe("ACCEPTED");
     expect(out.system).toMatch(/permission denied for table users/);
   }, 90_000);
+  it("stage 11, D: a review is of one unit — accepting article 8 cites article 8 only, never article 16 nor the source", async () => {
+    const { retrieve } = await import("../src/server/knowledge/retrieve");
+    const Q16 = { question: "ما نص المادة 16 الفقرة 3 من لائحة تنظيم أعمال النظارة؟", service: "I01", asOf: "2026-11-01", refCodes: ["NAZARA-REG"], needBinding: true };
+    const Q8 = { question: "ما نص المادة 8 الفقرة 1 من لائحة تنظيم أعمال النظارة؟", service: "I01", asOf: "2026-11-01", refCodes: ["NAZARA-REG"], needBinding: true };
+    const out = await rolledBack(async (tx) => {
+      // the run compares articles 8 and 16; only article 8's unit is reviewed and accepted
+      const runId = await C.acceptRegistry(tx, "NZR", "NZR/uqn-p18926", [8, 16], "2022-02-04", C.TEST_REVIEWER, [8]);
+      const units = (await tx.execute(sql`select count(*)::int as n from ref_match_units where run_id = ${runId}::uuid`)).rows[0] as { n: number };
+      expect(units.n).toBe(2);
+      const c8 = (await retrieve(tx, { ...Q8, refCodes: [...Q8.refCodes] })).citable.filter((h) => h.hit.articleNo === 8).length;
+      const c16 = (await retrieve(tx, { ...Q16, refCodes: [...Q16.refCodes] })).citable.filter((h) => h.hit.articleNo === 16).length;
+      const db = (await tx.execute(sql`select registry_unit_reviewed('NZR', 8) as a8, registry_unit_reviewed('NZR', 16) as a16, registry_unit_reviewed('NZR', null) as anull`)).rows[0];
+      return { c8, c16, db };
+    });
+    expect(out.c8).toBeGreaterThan(0);
+    expect(out.c16).toBe(0);
+    expect(out.db).toEqual({ a8: true, a16: false, anull: false });
+  }, 90_000);
+
   it("R8-10: a registry rejection counts only when sealed — an unsealed row naming a current legal holder withdraws nothing; a genuine one does", async () => {
     const { retrieve } = await import("../src/server/knowledge/retrieve");
     const Q = { question: "ما نص المادة 16 الفقرة 3 من لائحة تنظيم أعمال النظارة؟", service: "I01", asOf: "2026-11-01", refCodes: ["NAZARA-REG"], needBinding: true } as const;
@@ -270,13 +289,16 @@ describe.skipIf(!enabled)("review integrity (dedicated test database)", () => {
       const runId = await C.acceptRegistry(tx, "NZR", "NZR/uqn-p18926", [8, 16], "2022-02-04"); // R holds «legal»
       const before = (await retrieve(tx, { ...Q, refCodes: [...Q.refCodes] })).citable.length;
       // an impersonation: a row naming R, inserted directly — no seal, no audit entry
-      const forged = await attempt(tx, () => tx.execute(sql`insert into ref_match_reviews (run_id, reviewer_user_id, decision, note) values (${runId}::uuid, ${R}::uuid, 'rejected', 'اختبار: رفض منتحل')`));
+      // stage 11, D: a review that names no unit (the whole run) is refused by the database
+      const forgedRun = await attempt(tx, () => tx.execute(sql`insert into ref_match_reviews (run_id, reviewer_user_id, decision, note) values (${runId}::uuid, ${R}::uuid, 'rejected', 'اختبار: رفض منتحل')`));
+      const forged = await attempt(tx, () => tx.execute(sql`insert into ref_match_reviews (run_id, unit_id, reviewer_user_id, decision, note) select ${runId}::uuid, u.id, ${R}::uuid, 'rejected', 'اختبار: رفض منتحل' from ref_match_units u where u.run_id = ${runId}::uuid and u.unit_key = 'م16'`));
       const afterForged = (await retrieve(tx, { ...Q, refCodes: [...Q.refCodes] })).citable.length;
-      await C.asUser(tx, R, () => RV.recordComparisonReview(tx, C.actorOf(R), { runId, decision: "rejected", note: "اختبار: رفض حقيقي من حساب اختبار" }));
+      await C.asUser(tx, R, () => RV.recordComparisonReview(tx, C.actorOf(R), { runId, unit: "م16", decision: "rejected", note: "اختبار: رفض حقيقي من حساب اختبار" }));
       const afterGenuine = (await retrieve(tx, { ...Q, refCodes: [...Q.refCodes] })).citable.length;
-      return { before, forged, afterForged, afterGenuine };
+      return { before, forgedRun, forged, afterForged, afterGenuine };
     });
     expect(out.before).toBeGreaterThan(0);
+    expect(out.forgedRun).toMatch(/a review is of one unit/);
     expect(out.forged).toBe("ACCEPTED"); // the table takes it (system context); the server does not count it
     expect(out.afterForged).toBe(out.before);
     expect(out.afterGenuine).toBe(0);

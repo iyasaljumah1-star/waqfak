@@ -208,6 +208,11 @@ export type FiqhDossier = {
   comparison: Comparison | null;
   weighing: Weighing | null;
   regulatory: RegulatoryTrack | null;
+  /**
+   * Stage 11 (conservative abstention, conservative.ts): the facts established and not, what the ruling depends on, the
+   * texts relied upon with their author and school, and the result's standing. Absent on dossiers made before it.
+   */
+  frame?: import("./conservative").FactsFrame;
   /** Fixed: what the dossier is and is not (§3.8). */
   standing: string;
   limits: string[];

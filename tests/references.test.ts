@@ -280,8 +280,16 @@ describe("5. no reliance on what could not be verified", () => {
   });
 
   it("refuses an article whose comparison was not identical or editorial, even after review", () => {
-    store.addReview({ runId: "run-1", reviewer: "reviewer-1", at: "2026-11-06T01:00:00Z", decision: "accepted", note: "test" });
+    store.addReview({ runId: "run-1", unit: "م1", reviewer: "reviewer-1", at: "2026-11-06T01:00:00Z", decision: "accepted", note: "test" });
     expect(cite(REGISTRY, store, { refId: "NZR", article: 1, asOf: "2026-11-06" })).toMatchObject({ ok: false, refusal: "article_not_verified" });
+  });
+
+  it("stage 11, D: a review is of one unit — accepting article 1, or the whole run, does not make article 8 citable", () => {
+    // article 1's unit was accepted above; article 8 (compared identical) has no review of its own
+    expect(cite(REGISTRY, store, { refId: "NZR", article: 8, paragraph: 1, asOf: "2026-11-06" })).toMatchObject({ ok: false, refusal: "not_reviewed" });
+    store.addReview({ runId: "run-1", reviewer: "reviewer-1", at: "2026-11-06T01:30:00Z", decision: "accepted", note: "a whole-run review (before stage 11)" });
+    expect(cite(REGISTRY, store, { refId: "NZR", article: 8, paragraph: 1, asOf: "2026-11-06" })).toMatchObject({ ok: false, refusal: "not_reviewed" });
+    expect(() => store.addReview({ runId: "run-1", unit: "م99", reviewer: "reviewer-1", at: "2026-11-06T01:40:00Z", decision: "accepted", note: "x" })).toThrow(/did not compare/);
   });
 
   it("refuses a repealed text as in force, and a text from a non-official host", () => {
@@ -357,7 +365,7 @@ describe("8. every unit traces back to its source", () => {
     const entry = loadManifest().find((m) => m.id === "NZR/uqn-p18926")!;
     const nzr = store.addVersion(versionFromSnapshot(entry, "2022-02-04", "أم القرى 1443/7/3هـ"));
     store.addMatchRun({ id: "run-ok", versionId: nzr.id, candidateLabel: "synthetic", candidateSha256: "y", outcome: "identical", perArticle: { م8: "identical" }, ranAt: "2026-11-06T00:00:00Z" });
-    store.addReview({ runId: "run-ok", reviewer: "reviewer-1", at: "2026-11-06T02:00:00Z", decision: "accepted", note: "synthetic" });
+    store.addReview({ runId: "run-ok", unit: "م8", reviewer: "reviewer-1", at: "2026-11-06T02:00:00Z", decision: "accepted", note: "synthetic" });
     const r = cite(REGISTRY, store, { refId: "NZR", article: 8, paragraph: 1, asOf: "2026-11-06" });
     expect(r.ok).toBe(true);
     if (!r.ok) return;

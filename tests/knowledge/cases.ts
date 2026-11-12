@@ -120,7 +120,7 @@ export async function checkDeferred(tx: Tx) {
 }
 
 /** Records, inside the caller's (rolled-back) transaction, an accepted comparison of an official snapshot. */
-export async function acceptRegistry(tx: Tx, registryId: string, snapshotId: string, articles: number[], effectiveFrom: string, reviewer = TEST_REVIEWER) {
+export async function acceptRegistry(tx: Tx, registryId: string, snapshotId: string, articles: number[], effectiveFrom: string, reviewer = TEST_REVIEWER, reviewOnly: number[] = articles) {
   await testReviewer(tx, reviewer);
   const entry = getEntry(registryId)!;
   const snap = loadManifest().find((m) => m.id === snapshotId)!;
@@ -129,7 +129,8 @@ export async function acceptRegistry(tx: Tx, registryId: string, snapshotId: str
   const vId = await appendVersion(tx, srcId, v);
   const perArticle = Object.fromEntries(articles.map((a) => [`م${a}`, "identical"])) as Record<string, "identical">;
   const runId = await appendMatchRun(tx, vId, { id: "x", versionId: vId, candidateLabel: "اختبار قبول", candidateSha256: v.source.sha256, outcome: "identical", perArticle, ranAt: `${TODAY}T08:00:00Z` }, { synthetic: true });
-  await asUser(tx, reviewer, () => recordComparisonReview(tx, actorOf(reviewer), { runId, decision: "accepted", note: "مراجعة من حساب اختبار لاختبار الآلية" }));
+  // stage 11, D: each article is reviewed on its own (a review is of one unit, never of the run)
+  for (const a of reviewOnly) await asUser(tx, reviewer, () => recordComparisonReview(tx, actorOf(reviewer), { runId, unit: `م${a}`, decision: "accepted", note: "مراجعة من حساب اختبار لاختبار الآلية" }));
   return runId;
 }
 

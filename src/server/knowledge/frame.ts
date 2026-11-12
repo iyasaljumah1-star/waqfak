@@ -18,36 +18,21 @@
  */
 import { normForSearch } from "@/server/engine/knowledge/pure";
 import { tokenize } from "@/server/modules/ai/text";
+import { allPlaces, readPlaces, type Place } from "./gazetteer";
 
 /** Beyond this many content words a question is a request's text (retrieve.ts LONG_QUESTION). */
 const LONG = 25;
 const digits = (s: string) => s.replace(/[٠-٩]/g, (d) => String("٠١٢٣٤٥٦٧٨٩".indexOf(d)));
 
 export type AnswerType = "ruling" | "obligation" | "permission" | "period" | "penalty" | "quantity" | "rate" | "date" | "reward" | "open";
-export type Place = { key: string; ar: string[]; en: string[]; domestic: boolean };
+export type { Place } from "./gazetteer";
 
-/** How many of the entries below (in order) are the Kingdom's own regions and seats; the rest are other countries. */
-const DOMESTIC = 21;
-/** The Kingdom (named in many ways), its regions and seats, and countries a question may name instead. */
-const GAZETTEER: Place[] = [
-  { key: "KSA", ar: ["المملكه", "السعوديه", "المملكه العربيه السعوديه"], en: ["saudi", "kingdom", "ksa"], domestic: true },
-  ...([
-    ["الرياض", "riyadh"], ["مكه|مكه المكرمه", "makkah|mecca"], ["المدينه المنوره", "madinah|medina"], ["القصيم", "qassim"], ["بريده", "buraydah"], ["الشرقيه|المنطقه الشرقيه", "eastern province"],
-    ["الدمام", "dammam"], ["عسير", "asir"], ["ابها", "abha"], ["تبوك", "tabuk"], ["حائل|حايل", "hail|ha'il"], ["الحدود الشماليه", "northern borders"], ["عرعر", "arar"],
-    ["جازان|جيزان", "jazan|jizan"], ["نجران", "najran"], ["الباحه", "baha|al-baha"], ["الجوف", "jouf|al-jouf"], ["سكاكا", "sakaka"], ["جده", "jeddah"], ["الطائف|الطايف", "taif"],
-    ["الاحساء", "ahsa|al-ahsa"], ["الكويت", "kuwait"], ["الامارات", "emirates|uae"], ["قطر", "qatar"], ["البحرين", "bahrain"], ["عمان|سلطنه عمان", "oman"], ["اليمن", "yemen"],
-    ["العراق", "iraq"], ["الاردن", "jordan"], ["مصر", "egypt"], ["سوريا", "syria"], ["لبنان", "lebanon"], ["المغرب", "morocco"], ["الجزائر", "algeria"], ["تونس", "tunisia"],
-    ["ليبيا", "libya"], ["السودان", "sudan"], ["تركيا", "turkey|türkiye"], ["ايران", "iran"], ["باكستان", "pakistan"], ["ماليزيا", "malaysia"], ["اندونيسيا", "indonesia"],
-    ["بريطانيا|المملكه المتحده", "britain|united kingdom|uk"], ["امريكا|الولايات المتحده", "united states|usa|america"],
-  ] as const).map(([ar, en], i) => ({ key: ar.split("|")[0]!, ar: ar.split("|"), en: en.split("|"), domestic: i < DOMESTIC })),
-];
-/** A name as a whole word, with the clitics Arabic attaches (و، ف، ب، ل، ال، في …). */
-const arWord = (n: string) => new RegExp(`(?:^|[^ء-ي])(?:[وفبل]?(?:ال)?)${n.replace(/^ال/, "")}(?![ء-ي])`);
-const enWord = (n: string) => new RegExp(`\\b${n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i");
-
+/**
+ * The places a text names (stage 11: against the gazetteer, data/knowledge/gazetteer — the Kingdom's regions and
+ * governorates and the ISO countries — never a closed list here). A name the gazetteer cannot resolve is not a place.
+ */
 export function placesIn(text: string): Place[] {
-  const t = normForSearch(text);
-  return GAZETTEER.filter((p) => p.ar.some((n) => arWord(normForSearch(n)).test(t)) || p.en.some((n) => enWord(n).test(text)));
+  return readPlaces(text).places;
 }
 
 export type Frame = {
@@ -60,6 +45,12 @@ export type Frame = {
   years: string[];
   relativeDate: string | null;
   identifiers: { kind: string; number: string }[];
+  /**
+   * Stage 11: what the question names that cannot be resolved with certainty — a place the gazetteer does not hold, a
+   * name shared by two places, a common word in a place's position, a date relative to «now». The question is not
+   * answered until it is said (retrieve() abstains); never guessed.
+   */
+  unresolved: string[];
   why: string[];
 };
 
@@ -82,6 +73,16 @@ export function frameOf(question: string): Frame {
   else if (/(?:^|\s)(?:هل\s+)?(?:يجب|يلزم|تجب|تلزم|يتعين)(?=\s)/.test(q)) answer = "obligation";
   else if (/حكم/.test(q)) answer = "ruling";
   else if (/يجوز|تجوز|يصح|تصح|يحق|يحل/.test(q)) answer = "permission";
+  // stage 11: an English question («how many», «what rate», «when») asks the same kinds of answer
+  if (answer === "open") {
+    if (/\b(?:penalt(?:y|ies)|fines?)\b/i.test(raw)) answer = "penalty";
+    else if (/\b(?:rate|percentage|share of)\b/i.test(raw)) answer = "rate";
+    else if (/\b(?:how many|how much|number of|total)\b/i.test(raw)) answer = "quantity";
+    else if (/\bwhen\b|\bdate of\b/i.test(raw)) answer = "date";
+    else if (/\b(?:is it (?:permissible|allowed|lawful)|may (?:a|the)|can (?:a|the))\b/i.test(raw)) answer = "permission";
+    else if (/\b(?:must|obliged|required to|obligation)\b/i.test(raw)) answer = "obligation";
+    else if (/\bruling\b/i.test(raw)) answer = "ruling";
+  }
   if (answer !== "open") why.push(`نوع الجواب المطلوب: ${ANSWER_AR[answer]}`);
   // the focus of a measure: what is counted or measured
   const m = q.match(MEASURE);
@@ -108,21 +109,32 @@ export function frameOf(question: string): Frame {
   // all its regions (N10-7). Another country stays a qualifier: its law is not the Kingdom's. A factual question
   // (a number, a rate, a date, a period, a penalty) keeps every place: Riyadh's population is not the Kingdom's
   const normative = answer === "ruling" || answer === "obligation" || answer === "permission" || answer === "reward";
-  const named = placesIn(raw);
+  const reading = readPlaces(raw);
+  const named = reading.places;
+  const unresolved = [...reading.unresolved];
   const places = normative ? named.filter((p) => !p.domestic) : named;
   if (normative && places.length < named.length) why.push(`مكان في المملكة في سؤال حكم: سياق لا قيد (${named.filter((p) => p.domestic).map((p) => p.ar[0]).join("، ")})`);
   if (places.length) why.push(`المكان: ${places.map((p) => p.ar[0]).join("، ")}`);
   const years = [...new Set(raw.match(/(?<!\d)(1[34]\d\d|20\d\d|19\d\d)(?!\d)/g) ?? [])];
-  if (years.length) why.push(`السنوات: ${years.join("، ")}`);
-  const rel = q.match(/(?:العام|السنه|الربع|الشهر|الاسبوع)\s+(?:الماضي|السابق|المنصرم|الماضيه|السابقه|الحالي|الحاليه|الجاري|الجاريه|القادم|المقبل|القادمه|المقبله)|(?:هذا|هذه)\s+(?:العام|السنه|الربع|الشهر)|(?:العام|السنه)\s+(?:هذا|هذه)|قبل\s+(?:\S+\s+)?(?:سنه|سنوات|سنتين|اعوام|عام|اشهر|شهر)|(?:الان|حاليا|اليوم)(?![ء-ي])/);
-  if (rel) why.push(`تاريخ نسبي «${rel[0]}»`);
+  if (years.length) why.push(`السنوات: ${years.map((y) => `${y}${isHijri(y) ? "هـ" : "م"}`).join("، ")}`);
+  const relEn = raw.match(/\b(?:last|this|next|previous|current|past)\s+(?:year|month|quarter|week)\b|\b\d+\s+(?:years?|months?)\s+ago\b|\b(?:now|today|currently|nowadays)\b/i);
+  const rel = relEn ?? q.match(/(?:العام|السنه|الربع|الشهر|الاسبوع)\s+(?:الماضي|السابق|المنصرم|الماضيه|السابقه|الحالي|الحاليه|الجاري|الجاريه|القادم|المقبل|القادمه|المقبله)|(?:هذا|هذه)\s+(?:العام|السنه|الربع|الشهر)|(?:العام|السنه)\s+(?:هذا|هذه)|قبل\s+(?:\S+\s+)?(?:سنه|سنوات|سنتين|اعوام|عام|اشهر|شهر)|(?:الان|حاليا|اليوم)(?![ء-ي])/);
+  if (rel) {
+    why.push(`تاريخ نسبي «${rel[0]}»`);
+    // a date relative to «now» in a question about a number or a date cannot be matched without guessing the year
+    if (answer === "quantity" || answer === "rate" || answer === "date" || answer === "period") unresolved.push(`التاريخ النسبي «${rel[0]}»: تُذكر السنة`);
+  }
   const identifiers: Frame["identifiers"] = [];
   for (const x of raw.matchAll(/\b(FAS|IFRS|IAS|IPSAS|GS|SS|ISA)\s*[-–]?\s*(\d{1,3})\b/gi)) identifiers.push({ kind: x[1]!.toUpperCase(), number: x[2]! });
   for (const x of q.matchAll(/(?:المعيار|معيار)\s+(?:رقم\s+)?\(?(\d{1,3})\)?/g)) identifiers.push({ kind: "المعيار", number: x[1]! });
+  // legal instruments by number: a royal decree («م/43»), a resolution or a circular («قرار رقم 123»)
+  for (const x of raw.matchAll(/(?:^|[\s(])م\s*\/\s*(\d{1,4})(?!\d)/g)) identifiers.push({ kind: "مرسوم ملكي", number: `م/${x[1]}` });
+  for (const x of q.matchAll(/(?:قرار|تعميم)(?:\s+(?:مجلس الوزراء|الهيئه|الوزير|المجلس))?\s+رقم\s+\(?(\d{1,6})\)?/g)) identifiers.push({ kind: "قرار", number: x[1]! });
   if (identifiers.length) why.push(`المعرّف: ${identifiers.map((i) => `${i.kind} ${i.number}`).join("، ")}`);
+  if (unresolved.length) why.push(`غير محدد: ${unresolved.join("؛ ")}`);
   // a long request text (a client's matter) names places and times as its context, not as what it asks about
-  if (tokenize(raw).length > LONG) return { answer, focus: [], senses, places: [], contextPlaces: [], years, relativeDate: null, identifiers, why: [...why, "نص طويل: الأماكن والأزمنة فيه سياق لا قيود"] };
-  return { answer, focus, senses, places, contextPlaces: named.filter((p) => !places.includes(p)), years, relativeDate: rel?.[0] ?? null, identifiers, why };
+  if (tokenize(raw).length > LONG) return { answer, focus: [], senses, places: [], contextPlaces: [], years, relativeDate: null, identifiers, unresolved: [], why: [...why, "نص طويل: الأماكن والأزمنة فيه سياق لا قيود"] };
+  return { answer, focus, senses, places, contextPlaces: named.filter((p) => !places.includes(p)), years, relativeDate: rel?.[0] ?? null, identifiers, unresolved, why };
 }
 
 export const ANSWER_AR: Record<AnswerType, string> = {
@@ -159,7 +171,10 @@ export function judge(f: Frame, text: string, opts: { scope?: string; hasWord?: 
   const why: string[] = [];
   // dates
   if (f.relativeDate) lacking.push(`التاريخ النسبي «${f.relativeDate}» (لا يُطابق بنص دون تحديد السنة)`);
-  const have = f.years.filter((y) => raw.includes(y));
+  // a year in the other calendar counts — flagged: a Hijri year spans two Gregorian years (stage 11)
+  const yearIn = (y: string) => new RegExp(`(?<!\\d)${y}(?!\\d)`).test(raw);
+  const have = f.years.filter((y) => yearIn(y) || equivalentYears(y).some(yearIn));
+  for (const y of have) if (!yearIn(y)) partial.push(`السنة ${y} مذكورة بالتقويم الآخر (${equivalentYears(y).filter(yearIn).join("، ")}): مطابقة تقريبية`);
   if (f.years.length && !have.length) lacking.push(f.years.length === 1 ? `السنة ${f.years[0]}` : `السنوات ${f.years.join("، ")}`);
   else if (have.length && have.length < f.years.length) partial.push(`لا يذكر ${f.years.filter((y) => !have.includes(y)).join("، ")} (يجيب عن جزء من المقارنة)`);
   // places (the Kingdom is the default scope of the corpus: named or not, a passage about it answers for it)
@@ -167,6 +182,12 @@ export function judge(f: Frame, text: string, opts: { scope?: string; hasWord?: 
   for (const p of f.places) if (p.key !== "KSA" && !pp.some((x) => x.key === p.key)) lacking.push(`المكان «${p.ar[0]}»`);
   // identifiers
   for (const id of f.identifiers) {
+    if (id.kind === "مرسوم ملكي" || id.kind === "قرار") {
+      const n = id.number.replace(/^م\//, "");
+      const re = id.kind === "مرسوم ملكي" ? new RegExp(`م\\s*\\/\\s*${n}(?!\\d)`) : new RegExp(`رقم\\s*\\(?${n}\\)?(?!\\d)`);
+      if (!re.test(raw) && !re.test(t)) lacking.push(`${id.kind} ${id.number}`);
+      continue;
+    }
     const re = id.kind === "المعيار" ? new RegExp(`(?:المعيار|معيار|FAS|IFRS|IAS)\\s*(?:رقم\\s*)?\\(?${id.number}\\)?(?!\\d)`, "i") : new RegExp(`${id.kind}\\s*[-–]?\\s*${id.number}(?!\\d)`, "i");
     if (!re.test(raw) && !re.test(t)) lacking.push(`${id.kind} ${id.number}`);
   }
@@ -206,7 +227,7 @@ export function withoutContextPlaces(question: string, f: Frame): string {
   const words = question.split(/\s+/).filter(Boolean);
   // every name of the gazetteer, longest first: a longer name wins where two overlap («المملكة المتحدة» is not «المملكة»)
   const context = new Set(f.contextPlaces.map((p) => p.key));
-  const names = GAZETTEER.flatMap((p) => [...p.ar.map((n) => normForSearch(n).split(/\s+/)), ...p.en.map((n) => n.toLowerCase().split(/\s+/))].map((n) => ({ n, ctx: context.has(p.key) })))
+  const names = allPlaces().flatMap((p) => [...p.ar.map((n) => normForSearch(n).split(/\s+/)), ...p.en.map((n) => n.toLowerCase().split(/\s+/))].map((n) => ({ n, ctx: context.has(p.key) })))
     .sort((a, b) => b.n.length - a.n.length);
   const drop = new Set<number>();
   for (let i = 0; i < words.length; i++) {
@@ -236,4 +257,20 @@ export function withoutContextPlaces(question: string, f: Frame): string {
     i += len - 1;
   }
   return words.filter((_, i) => !drop.has(i)).join(" ").replace(/\s+([؟?!.])/g, "$1");
+}
+
+/** Hijri years 1300–1499 (a four-digit year below 1500); the rest Gregorian. */
+export const isHijri = (y: string) => Number(y) >= 1300 && Number(y) < 1500;
+/** The years of the other calendar a year overlaps (a Hijri year spans parts of two Gregorian years, and back). */
+export function equivalentYears(y: string): string[] {
+  const n = Number(y);
+  if (isHijri(y)) {
+    const g = Math.floor((n - 1) * 0.970229 + 622.54);
+    return [String(g), String(g + 1)];
+  }
+  if (n >= 1882 && n < 2077) {
+    const h = Math.floor((n - 622.54) / 0.970229) + 1;
+    return [h - 1, h, h + 1].filter((x) => equivalentYears(String(x)).includes(y)).map(String);
+  }
+  return [];
 }

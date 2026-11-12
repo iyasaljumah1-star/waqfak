@@ -292,7 +292,9 @@ export type Sufficiency = { sufficient: true } | { sufficient: false; reason: st
  * Hanbali one when it asks for the school's position. A question naming an article that does not exist is never
  * answered from other articles.
  */
-export function sufficiency(decided: { hit: Hit; decision: Decision }[], need: { binding: boolean; school?: boolean; missingArticle?: string | null }): Sufficiency {
+export function sufficiency(decided: { hit: Hit; decision: Decision }[], need: { binding: boolean; school?: boolean; missingArticle?: string | null; unresolved?: string[] }): Sufficiency {
+  // stage 11: what the question names and cannot be resolved with certainty (a place, an identifier, a date) — no answer
+  if (need.unresolved?.length) return { sufficient: false, reason: `لا يُجاب عن السؤال قبل تحديد: ${need.unresolved.join("؛ ")}` };
   if (need.missingArticle) return { sufficient: false, reason: `المراجع غير كافية: ${need.missingArticle} غير موجودة في النص المحفوظ.` };
   const ok = decided.filter((d) => d.decision.citable);
   if (!ok.length) {
@@ -309,7 +311,8 @@ export function sufficiency(decided: { hit: Hit; decision: Decision }[], need: {
  * states what the rules require. A school question with no classical book is still drafted — every use flagged «لا يُنسب
  * منه قول إلى المذهب» (owner's order 2026-11-07, §4.6).
  */
-export function draftSufficiency(decided: { hit: Hit; draft: DraftUse }[], need: { binding: boolean; missingArticle?: string | null }): Sufficiency {
+export function draftSufficiency(decided: { hit: Hit; draft: DraftUse }[], need: { binding: boolean; missingArticle?: string | null; unresolved?: string[] }): Sufficiency {
+  if (need.unresolved?.length) return { sufficient: false, reason: `لا يُجاب عن السؤال قبل تحديد: ${need.unresolved.join("؛ ")}` };
   if (need.missingArticle) return { sufficient: false, reason: `المراجع غير كافية: ${need.missingArticle} غير موجودة في النص المحفوظ.` };
   const usable = decided.filter((d) => d.draft.usable);
   // a passage that answers only part of the question, or only gives context, is shown with its flag but does not by

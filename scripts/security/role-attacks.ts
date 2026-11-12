@@ -33,7 +33,8 @@ const U = {
   victim: "00000000-0000-4000-8000-0000000e0a05", // a person with contact data, member of WAQF_B
   mlro: "00000000-0000-4000-8000-0000000e0a06", // holds mlro, second factor
 };
-const W = { a: "00000000-0000-4000-8000-0000000e0b01", b: "00000000-0000-4000-8000-0000000e0b02", empty: "00000000-0000-4000-8000-0000000e0b03" };
+const W = { a: "00000000-0000-4000-8000-0000000e0b01", b: "00000000-0000-4000-8000-0000000e0b02", empty: "00000000-0000-4000-8000-0000000e0b03", reg: "00000000-0000-4000-8000-0000000e0b04", draft: "00000000-0000-4000-8000-0000000e0b05" };
+const INV = { client: "00000000-0000-4000-8000-0000000e0d01", other: "00000000-0000-4000-8000-0000000e0d02" };
 const REP = { issued: "00000000-0000-4000-8000-0000000e0c01", draft: "00000000-0000-4000-8000-0000000e0c02" };
 const TOK = Object.fromEntries(Object.keys(U).map((k) => [k, `stage11-attack-${k}-${randomBytes(8).toString("hex")}`])) as Record<keyof typeof U, string>;
 
@@ -61,6 +62,14 @@ async function fixtures(db: string) {
     await c.query(`insert into consents (user_id, kind, version, granted) values ($1, 'privacy', 'v1', true)`, [U.victim]);
     await c.query(`insert into data_subject_requests (user_id, kind, details) values ($1, 'access', 'اختبار')`, [U.victim]);
     await c.query(`insert into notification_preferences (user_id, type, in_app, email, sms) values ($1, 'invitation', true, false, false) on conflict do nothing`, [U.victim]);
+    // the client's own waqfs: one registered, one still being established (for N8, P10)
+    for (const [w, st] of [[W.reg, "registered"], [W.draft, "idea"]]) {
+      await c.query(`insert into waqfs (id, internal_number, name, created_by, status) values ($1, $2, 'وقف اختبار', $3, $4) on conflict (id) do nothing`, [w, `T-${w.slice(-4)}`, U.client, st]);
+      await c.query(`insert into waqf_memberships (waqf_id, user_id, role_key, status) values ($1, $2, 'founder', 'active') on conflict do nothing`, [w, U.client]);
+    }
+    // an invoice of the client's and one of another person's (for T6, P9)
+    for (const [id, u] of [[INV.client, U.client], [INV.other, U.other]])
+      await c.query(`insert into invoices (id, number, user_id, billed_to_name, subtotal, vat, total, status, issued_on, lines) values ($1, $2, $3, 'اختبار', 100, 15, 115, 'issued', current_date, '[]'::jsonb) on conflict (id) do nothing`, [id, `T-INV-${id.slice(-4)}`, u]);
     // an issued report and a draft awaiting approval (for C3, P8)
     for (const [id, st] of [[REP.issued, "final"], [REP.draft, "draft"]])
       await c.query(`insert into reports (id, number, waqf_id, kind, title, status, verification_code, snapshot) values ($1, $2, $3, 'nazara_periodic', 'تقرير اختبار', $4, $5, '{"v":1}') on conflict (id) do nothing`, [id, `T-REP-${id.slice(-4)}`, W.a, st, `vc${id.slice(-8)}`]);
@@ -132,10 +141,12 @@ const ATTACKS: Attack[] = [
   { id: "N6", finding: "N10-11", what: "bound as a client: make oneself nazir of another person's waqf", run: async (x) => { await bind(x, "client"); return ((await x.q(`insert into waqf_memberships (waqf_id, user_id, role_key, status) values ($1, $2, 'nazir', 'active')`, [W.b, U.client])).rowCount ?? 0) > 0; } },
   { id: "N7", finding: "N10-11", what: "bound as a beneficiary of a waqf: appoint someone its nazir", run: async (x) => { await bind(x, "victim"); return ((await x.q(`insert into waqf_memberships (waqf_id, user_id, role_key, status) values ($1, $2, 'nazir', 'active')`, [W.b, U.client])).rowCount ?? 0) > 0; } },
   // ── the tables without row-level security ──
+  { id: "N8", finding: "N10-11", what: "bound as the founder of a REGISTERED waqf: make oneself its nazir (outside the establishment wizard)", run: async (x) => { await bind(x, "client"); return ((await x.q(`insert into waqf_memberships (waqf_id, user_id, role_key, status) values ($1, $2, 'nazir', 'active')`, [W.reg, U.client])).rowCount ?? 0) > 0; } },
   { id: "T1", finding: "no-RLS", what: "bound as a client: read other people's consents, payments, privacy requests, preferences", run: async (x) => { await bind(x, "client"); return n(await x.q(`select (select count(*) from consents where user_id <> $1) + (select count(*) from payments where user_id <> $1) + (select count(*) from data_subject_requests where user_id <> $1) + (select count(*) from notification_preferences where user_id <> $1)`, [U.client])) > 0; } },
   { id: "T2", finding: "no-RLS", what: "bound as a client: change a service, a setting or a feature flag", run: async (x) => { await bind(x, "client"); const a = (await x.q(`update services set name_ar = name_ar where true`)).rowCount ?? 0; const b = (await x.q(`update settings set value = value where true`)).rowCount ?? 0; const c = (await x.q(`update feature_flags set enabled = enabled where true`)).rowCount ?? 0; return a + b + c > 0; } },
   { id: "T3", finding: "no-RLS", what: "bound as a client: read the outbox (other people's SMS and e-mails) or the rate limits", run: async (x) => { await bind(x, "client"); return n(await x.q(`select (select count(*) from outbox_messages) + (select count(*) from rate_limits)`)) > 0; } },
   { id: "T4", finding: "no-RLS", what: "bound as a client: read KYC records, persons, organizations, devices", run: async (x) => { await bind(x, "client"); return n(await x.q(`select (select count(*) from kyc_records) + (select count(*) from persons) + (select count(*) from organizations) + (select count(*) from devices)`)) >= 0; } },
+  { id: "T6", finding: "no-RLS", what: "bound as a client: record a «paid» payment on one's own invoice, or any payment on another person's", run: async (x) => { await bind(x, "client"); let n = 0; for (const [inv, st] of [[INV.client, "paid"], [INV.other, "initiated"]]) { await x.q("savepoint p"); try { n += (await x.q(`insert into payments (invoice_id, user_id, provider, amount, status) values ($1, $2, 'mock', 115, $3)`, [inv, U.client, st])).rowCount ?? 0; await x.q("release savepoint p"); } catch { await x.q("rollback to savepoint p"); } } return n > 0; } },
   // ── stage 11, C: what the engine wrote, the reference data, issued reports ──
   { id: "C1", finding: "N10-16", what: "bound administrator: record a text as the engine's (the gate's registry of engine texts)", run: async (x) => { await bind(x, "admin"); return ((await x.q(`insert into engine_blocks (binding, text_sha256, run_id, writer) values (md5(random()::text), md5(random()::text), gen_random_uuid(), 'model')`)).rowCount ?? 0) > 0; } },
   { id: "C2", finding: "ref-data", what: "bound administrator (global access): retire every knowledge source (the engine then cites nothing)", run: async (x) => { await bind(x, "admin"); const a = (await x.q(`update kb_sources set superseded_at = now() where superseded_at is null`)).rowCount ?? 0; return a > 0; } },
@@ -146,6 +157,8 @@ const ATTACKS: Attack[] = [
 
 /** Must work on the new layer: the legitimate paths still open. */
 const CONTROLS: Attack[] = [
+  { id: "P10", finding: "—", what: "the founder of a waqf being established names themselves its nazir (the establishment wizard)", run: async (x) => { await bind(x, "client"); return ((await x.q(`insert into waqf_memberships (waqf_id, user_id, role_key, status) values ($1, $2, 'nazir', 'active')`, [W.draft, U.client])).rowCount ?? 0) > 0; } },
+  { id: "P9", finding: "—", what: "a bound client starts the checkout of their own invoice (an «initiated» payment) and sets its provider reference", run: async (x) => { await bind(x, "client"); const id = (await x.q(`insert into payments (invoice_id, user_id, provider, amount, status) values ($1, $2, 'mock', 115, 'initiated') returning id`, [INV.client, U.client])).rows[0]!.id; return ((await x.q(`update payments set provider_ref = 'ref-1' where id = $1`, [id])).rowCount ?? 0) > 0; } },
   { id: "P8", finding: "—", what: "a bound administrator approves a draft report in their own name (draft → approved, once)", run: async (x) => { await bind(x, "admin"); return ((await x.q(`update reports set status = 'approved', approved_by = $1, approved_at = now() where id = $2 and status = 'draft'`, [U.admin, REP.draft])).rowCount ?? 0) > 0; } },
   { id: "P1", finding: "—", what: "bound administrator with the second factor grants a role through admin_grant_role", run: async (x) => { await bind(x, "admin"); return (await x.q(`select admin_grant_role($1, 'employee') as ok`, [U.client])).rows[0]?.ok === true; } },
   { id: "P2", finding: "—", what: "bound client reads their own waqf and changes their own name", run: async (x) => { await bind(x, "client"); const r = n(await x.q(`select count(*) from waqfs where id = $1`, [W.a])); const u = (await x.q(`update users set full_name = 'اسم جديد' where id = $1`, [U.client])).rowCount; return r === 1 && u === 1; } },

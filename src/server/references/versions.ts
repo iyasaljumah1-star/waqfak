@@ -38,7 +38,16 @@ export type MatchRun = {
   ranAt: string;
 };
 
-export type MatchReview = { runId: string; reviewer: string; at: string; decision: "accepted" | "rejected"; note: string };
+/**
+ * A review of ONE unit of a comparison (stage 11, D): `unit` is the article key («م8»). A review without a unit (a
+ * whole run, as recorded before this stage) is kept for the record and authorises no citation.
+ */
+export type MatchReview = { runId: string; unit?: string; reviewer: string; at: string; decision: "accepted" | "rejected"; note: string };
+
+/** The standing of one unit of a run: its latest review (none: unreviewed). */
+export function unitStanding(reviews: MatchReview[], unit: string): MatchReview | undefined {
+  return reviews.filter((r) => r.unit === unit).sort((a, b) => b.at.localeCompare(a.at))[0];
+}
 
 export const sha256 = (s: string) => createHash("sha256").update(s, "utf8").digest("hex");
 
@@ -92,7 +101,9 @@ export class InMemoryVersionStore implements VersionStore {
   }
 
   addReview(r: MatchReview): void {
-    if (!this.runs.some((x) => x.id === r.runId)) throw new Error(`unknown run ${r.runId}`);
+    const run = this.runs.find((x) => x.id === r.runId);
+    if (!run) throw new Error(`unknown run ${r.runId}`);
+    if (r.unit !== undefined && !(r.unit in run.perArticle)) throw new Error(`run ${r.runId} did not compare ${r.unit}`);
     this.revs.push(Object.freeze({ ...r }));
   }
 

@@ -5,9 +5,10 @@ import { kbChunks, kbSources } from "@/server/db/schema";
 import { Bm25Index, type CorpusDoc } from "@/server/modules/ai/bm25";
 import { tokenize } from "@/server/modules/ai/text";
 import { arabicDescriptor } from "./descriptors";
-import { frameOf, withoutContextPlaces, judge, type Frame } from "./frame";
+import { frameOf, judge, withoutContextPlaces, type Frame } from "./frame";
 import { articleNumber, normForSearch } from "@/server/engine/knowledge/pure";
 import { cite } from "@/server/references/citation";
+import { unitStanding } from "@/server/references/versions";
 import { OFFICIAL_HOSTS, CITABLE_OUTCOMES } from "@/server/references/types";
 import { REGISTRY, getEntry, statusAt } from "@/server/references/registry";
 import { decide, draftSufficiency, draftUse, passageStatus, SCHOOL_QUESTION, sufficiency, DEFAULT_REVIEW_ROLE, MIN_COVERAGE, type Decision, type DraftUse, type Hit, type RefKind, type ReviewRole, type SourceReview, type Sufficiency } from "./policy";
@@ -104,6 +105,9 @@ export function namedArticle(question: string): { article: number; paragraph: nu
     const numberAfter = !m[2] && /^[\s:ـ]*\d/.test(q.slice((m.index ?? 0) + m[0].length));
     if (!unitLike && !numberAfter) return { article: Number(m[1]), paragraph: m[2] ? Number(m[2]) : null };
   }
+  // stage 11: «Article 8», «Art. 8(2)» in an English question
+  const en = q.match(/\bart(?:icle|\.)?\s*(\d{1,3})(?!\d)(?:\s*\(\s*(\d{1,2})\s*\)|[^\d]{0,14}paragraph\s*(\d{1,2})(?!\d))?/i);
+  if (en) return { article: Number(en[1]), paragraph: en[2] ? Number(en[2]) : en[3] ? Number(en[3]) : null };
   const a = q.match(/المادة\s*\(?\s*(\d{1,3})(?!\d)\s*\)?(?:[^\d]{0,12}الفقرة\s*\(?\s*(\d{1,2})(?!\d))?/);
   if (a) return { article: Number(a[1]), paragraph: a[2] ? Number(a[2]) : null };
   const w = q.match(/المادة\s+((?:ال[ء-ي]+)(?:\s+و?ال[ء-ي]+){0,3}(?:\s+بعد\s+ال[ء-ي]+)?)/);
@@ -356,8 +360,13 @@ export async function retrieve(tx: Tx, q0: RetrieveQuery): Promise<RetrieveResul
   // context gives it — «قيد» of registration («قيد الوقف لدى الهيئة») is matched as «تسجيل», a «قيد» of restriction is
   // not (N9-10)
   const frame = frameOf(q0.question);
-  const q1 = frame.contextPlaces.length ? { ...q0, question: withoutContextPlaces(q0.question, frame) } : q0;
-  const q = frame.senses.qayd === "registration" ? { ...q1, question: q1.question.replace(/(^|\s)(و?ال)?قيد(?=\s|$)/g, "$1$2تسجيل") } : q1;
+  // stage 11: the question keeps its places whole — none is stripped (a place of the Kingdom in a normative question
+  // is judged as context in frame.ts, never removed from what is searched); what cannot be resolved stops the answer
+  const q = frame.senses.qayd === "registration" ? { ...q0, question: q0.question.replace(/(^|\s)(و?ال)?قيد(?=\s|$)/g, "$1$2تسجيل") } : q0;
+  // the words searched and scored by: the question without the places it names only as context (a city of the Kingdom
+  // in a normative question, frame.ts) — they stay in the question, in the frame and in what the user is shown; every
+  // other reading (the article, the school, the negation, the judgement) uses the question whole
+  const words = frame.contextPlaces.length ? withoutContextPlaces(q.question, frame) : q.question;
   const limit = q.limit ?? 6;
   const keep = (r: Row) => (!q.refCodes?.length || q.refCodes.includes(r.refCode)) && (!q.kinds?.length || q.kinds.includes(r.refKind)) && (q.historical || !r.superseded);
   const picked: { row: Row; score: number; coverage: number }[] = [];
@@ -367,7 +376,7 @@ export async function retrieve(tx: Tx, q0: RetrieveQuery): Promise<RetrieveResul
   // a question naming an article (and paragraph) is answered from that unit only
   let namedUnits: Set<string> | null = null;
   if (named) {
-    const hinted = new Set(c.index.search(q.question, { limit: 30 }).map((h) => c.rows.get(h.doc.id)?.refCode).filter(Boolean));
+    const hinted = new Set(c.index.search(words, { limit: 30 }).map((h) => c.rows.get(h.doc.id)?.refCode).filter(Boolean));
     const scope = [...c.rows.values()].filter((r) => keep(r) && (q.refCodes?.length || hinted.has(r.refCode)) && r.articleNo !== null);
     const found = scope.filter((r) => r.articleNo === named.article && (named.paragraph === null || r.paragraphNo === named.paragraph));
     for (const r of found) {
@@ -380,18 +389,18 @@ export async function retrieve(tx: Tx, q0: RetrieveQuery): Promise<RetrieveResul
     if (!found.length) missingArticle = `المادة ${named.article}${named.paragraph !== null ? ` الفقرة ${named.paragraph}` : ""}`;
   }
   // reranking by the question's word pairs: BM25 scores words one by one
-  const qn = normForSearch(q.question).split(/\s+/).filter((w) => w.length > 1);
+  const qn = normForSearch(words).split(/\s+/).filter((w) => w.length > 1);
   const pairs = qn.slice(1).map((w, i) => `${qn[i]} ${w}`);
   // candidates from the question's own words, then from its synonym-expanded form (a correct passage in other words)
-  const exp = expandQuery(q.question, c.df);
-  const own = c.index.search(q.question, { limit: 120 });
+  const exp = expandQuery(words, c.df);
+  const own = c.index.search(words, { limit: 120 });
   const first = new Set(own.slice(0, limit * 6).map((h) => h.doc.id));
   const ownScore = new Map(own.map((h) => [h.doc.id, h.score]));
   // a candidate found through the synonyms keeps its own-words score when it has one (no boost from the expansion)
   const more = exp ? c.index.search(exp, { limit: 60 }).filter((h) => !first.has(h.doc.id)).map((h) => ({ ...h, score: ownScore.get(h.doc.id) ?? h.score * 0.5 })) : [];
   // a candidate that only the synonyms brought must hold the question's rarest word (in its matching form): the
   // expansion widens the words, never the matter (S3: «أجرة العامل في عقد المقاولات» is not «الجعالة … عوض»)
-  const qWords = [...new Set(tokenize(q.question).filter((w) => !FRAME_WORDS.has(w)))];
+  const qWords = [...new Set(tokenize(words).filter((w) => !FRAME_WORDS.has(w)))];
   const rarest = qWords.length ? canon(qWords.reduce((a, b) => ((c.df.get(a) ?? 0) <= (c.df.get(b) ?? 0) ? a : b)), c.df) : null;
   const viaSynonyms = new Set(more.map((h) => h.doc.id));
   for (const h of [...own.slice(0, limit * 6), ...more.slice(0, limit * 2), ...own.slice(limit * 6)]) {
@@ -399,7 +408,7 @@ export async function retrieve(tx: Tx, q0: RetrieveQuery): Promise<RetrieveResul
     if (!r || seen.has(r.chunkId) || !keep(r)) continue;
     if (viaSynonyms.has(r.chunkId) && !first.has(r.chunkId) && rarest && !r.seq.some((t) => canon(t, c.df) === rarest)) continue;
     const bonus = pairs.filter((x) => r.norm.includes(x)).length;
-    picked.push({ row: r, score: h.score * (1 + 0.35 * bonus), coverage: coverageOf(q.question, r, c.df, c.rows.size) });
+    picked.push({ row: r, score: h.score * (1 + 0.35 * bonus), coverage: coverageOf(words, r, c.df, c.rows.size) });
     seen.add(r.chunkId);
     if (picked.length >= limit * 8) break;
   }
@@ -417,12 +426,12 @@ export async function retrieve(tx: Tx, q0: RetrieveQuery): Promise<RetrieveResul
     void _n; void _t; void _s; void _tt; void _so; void _ia;
     const hit: Hit = { ...base, coverage, score, provenance: "passage" };
     // matched through the specialist's Arabic descriptor of a foreign-language passage (7L): said so with its use
-    if (descriptor && coverageOf(q.question, { tokens: new Set(tokenize(row.text)), seq: tokenize(row.text), titleTokens: row.titleTokens }, c.df, c.rows.size) < MIN_COVERAGE) {
+    if (descriptor && coverageOf(words, { tokens: new Set(tokenize(row.text)), seq: tokenize(row.text), titleTokens: row.titleTokens }, c.df, c.rows.size) < MIN_COVERAGE) {
       hit.matchedVia = "descriptor";
       // a descriptor is a short paraphrase of one question: all the question's matter words but one must be in it
-      const words = [...new Set(tokenize(q.question).filter((w) => !FRAME_WORDS.has(w) && !row.titleTokens.has(w)).map((w) => canon(w, c.df)))];
+      const qw = [...new Set(tokenize(words).filter((w) => !FRAME_WORDS.has(w) && !row.titleTokens.has(w)).map((w) => canon(w, c.df)))];
       const have = new Set(tokenize(descriptor).map((w) => canon(w, c.df)));
-      if (words.filter((w) => have.has(w)).length < words.length - 1) hit.coverage = Math.min(hit.coverage, MIN_COVERAGE - 0.01);
+      if (qw.filter((w) => have.has(w)).length < qw.length - 1) hit.coverage = Math.min(hit.coverage, MIN_COVERAGE - 0.01);
     }
     if (validity) Object.assign(hit, validity.get(row.chunkId));
     let registry = null;
@@ -448,7 +457,7 @@ export async function retrieve(tx: Tx, q0: RetrieveQuery): Promise<RetrieveResul
         hit.version = d.versionLabel;
         // relevance measured on the text that is passed on, not on the knowledge base's copy (review R6)
         const toks = tokenize(hit.text);
-        if (!namedUnits?.has(row.chunkId)) hit.coverage = coverageOf(q.question, { tokens: new Set(toks), seq: toks, titleTokens: row.titleTokens }, c.df, c.rows.size);
+        if (!namedUnits?.has(row.chunkId)) hit.coverage = coverageOf(words, { tokens: new Set(toks), seq: toks, titleTokens: row.titleTokens }, c.df, c.rows.size);
         hit.validFrom = d.effectiveFrom;
         hit.validTo = endOf(d.effectiveFrom);
         hit.provenance = provenance;
@@ -500,11 +509,14 @@ export async function retrieve(tx: Tx, q0: RetrieveQuery): Promise<RetrieveResul
   const rank = (r: Retrieved) => ({ null: 0, not_applicable: 3, not_relevant: 2 } as Record<string, number>)[String(refusalOf(r.decision))] ?? (r.draft.usable ? 1 : 1.5);
   const ordered = [...results].sort((a, b) => rank(a) - rank(b) || b.hit.score - a.hit.score).slice(0, limit);
   const basis = namedUnits ? ordered.filter((r) => namedUnits!.has(r.hit.chunkId)) : ordered;
-  const citable = missingArticle ? [] : basis.filter((r) => r.decision.citable);
-  const usable = missingArticle ? [] : basis.filter((r) => r.draft.usable);
+  // stage 11: a place, a name or a date the question gives and that cannot be resolved — nothing is answered from it
+  const unresolved = frame.unresolved;
+  const stop = !!missingArticle || unresolved.length > 0;
+  const citable = stop ? [] : basis.filter((r) => r.decision.citable);
+  const usable = stop ? [] : basis.filter((r) => r.draft.usable);
   return {
-    results: ordered, citable, sufficiency: sufficiency(basis, { binding: !!q.needBinding, school: needSchool, missingArticle }),
-    usable, draftSufficiency: draftSufficiency(basis, { binding: !!q.needBinding, missingArticle }),
+    results: ordered, citable, sufficiency: sufficiency(basis, { binding: !!q.needBinding, school: needSchool, missingArticle, unresolved }),
+    usable, draftSufficiency: draftSufficiency(basis, { binding: !!q.needBinding, missingArticle, unresolved }),
   };
 }
 
@@ -539,8 +551,9 @@ export async function readyRefCodes(tx: Tx, refCodes: string[], asOf: string): P
         /* not official */
       }
       if (!(OFFICIAL_HOSTS as readonly string[]).includes(host)) continue;
-      const latest = (id: string) => store.reviews(id).sort((a, b) => b.at.localeCompare(a.at))[0];
-      const ok = store.matchRuns(v.id).some((r) => latest(r.id)?.decision === "accepted" && Object.values(r.perArticle).some((o) => CITABLE_OUTCOMES.has(o)));
+      // stage 11, D: «ready» in part only — some article whose own unit stands accepted and compared citable; that
+      // readies no other article (each passage is checked again at citation and at the final gate)
+      const ok = store.matchRuns(v.id).some((r) => Object.entries(r.perArticle).some(([k, o]) => CITABLE_OUTCOMES.has(o) && unitStanding(store.reviews(r.id), k)?.decision === "accepted"));
       if (ok) ready.add(s.refCode);
       continue;
     }

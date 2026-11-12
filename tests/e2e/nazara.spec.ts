@@ -82,7 +82,12 @@ test.describe.serial("corporate nazara", () => {
     test.skip(info.project.name === "mobile", "shared state; desktop only");
     await page.goto("/services/N01");
     await expect(page.getByRole("heading", { level: 1 })).toHaveText("تولي النظارة (ناظر اعتباري)");
-    await expect(page.getByText(/بعد اعتماد ترخيص الهيئة العامة للأوقاف للناظر الاعتباري/).first()).toBeVisible();
+    // stage 11 (N01): the copy of this check predates the current notice (it failed at the stage-11 base too). The
+    // service takes requests now; the notice tells the preparatory work from the practice, which starts only with the
+    // appointment and the statutory requirements — including the GAA licence for a corporate nazir (م5/2)
+    await expect(page.getByText(/نستقبل طلبات تولي النظارة الآن/).first()).toBeVisible();
+    await expect(page.getByText(/لا تبدأ «وقفك» مباشرة النظارة إلا بعد ثبوت تعيينها بقرار من الجهة المختصة/).first()).toBeVisible();
+    await expect(page.getByText(/أن يكون الناظر الاعتباري مرخصًا من الهيئة/).first()).toBeVisible(); // the licence is not active in the test data
     await expect(page.getByRole("link", { name: "اطلب الخدمة" })).toBeVisible();
   });
 

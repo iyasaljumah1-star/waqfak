@@ -7,9 +7,10 @@ import { sha256 } from "@/server/lib/crypto";
 import { DRAFT_FLAG_AR, type RefKind } from "../policy";
 import { retrieve, type Retrieved } from "../retrieve";
 import { analyzeIssue, compare, extractStatements, LIMITS, regulatoryTrack, weigh } from "./analyze";
+import { conservative } from "./conservative";
 import { DOSSIER_STANDING, STAGES, type Fact, type FiqhDossier, type SourceRef, type Stage } from "./types";
 
-export const FIQH_ENGINE_VERSION = "fiqh-research/2";
+export const FIQH_ENGINE_VERSION = "fiqh-research/3";
 
 /** Kinds searched for a fiqh matter (§3.2): the school's books, contemporary books, and official guidance by its nature. */
 const FIQH_KINDS: RefKind[] = ["classical_fiqh", "contemporary_book", "official_guide", "statute", "regulation", "official_instruction"];
@@ -51,12 +52,19 @@ export async function research(tx: Tx, x: ResearchInput): Promise<FiqhDossier> {
     };
   });
   const atLeast = (s: Stage) => STAGES.indexOf(stage) >= STAGES.indexOf(s);
-  const statements = atLeast("extraction") ? used.flatMap((u, i) => extractStatements(sources[i]!, u.hit.text, { question: x.question, facts: x.facts, idPrefix: `ق${i + 1}` })) : [];
-  const comparison = atLeast("comparison") ? compare(statements, issue) : null;
-  const weighing = atLeast("preliminary") && comparison ? weigh(statements, issue, comparison) : null;
+  const read = atLeast("extraction") ? used.flatMap((u, i) => extractStatements(sources[i]!, u.hit.text, { question: x.question, facts: x.facts, idPrefix: `ق${i + 1}` })) : [];
+  // stage 11: the conservative abstention over the lexical reading (conservative.ts) — what it cannot read with
+  // certainty is not relied upon, and a fact the ruling turns on that is not plainly stated stops the recommendation
+  const cons = atLeast("extraction") ? conservative(issue, read) : null;
+  const statements = cons?.statements ?? read;
+  const comparison = atLeast("comparison") ? (cons?.comparison ?? compare(statements, issue)) : null;
+  const weighing = atLeast("preliminary") && comparison ? (cons?.weighing ?? weigh(statements, issue, comparison)) : null;
   // the regulatory track beside the fiqh result (§4): never weighed with it, never dropped
   const regulatory = atLeast("comparison") ? regulatoryTrack(statements, weighing, sources) : null;
-  return { kind: "fiqh_dossier", engineVersion: FIQH_ENGINE_VERSION, stage, asOf: x.asOf, service, issue, sources, statements, comparison, weighing, regulatory, standing: DOSSIER_STANDING, limits: LIMITS };
+  return {
+    kind: "fiqh_dossier", engineVersion: FIQH_ENGINE_VERSION, stage, asOf: x.asOf, service, issue, sources, statements, comparison, weighing, regulatory,
+    ...(cons && atLeast("preliminary") ? { frame: cons.frame } : {}), standing: DOSSIER_STANDING, limits: [...LIMITS, ...(cons ? [cons.frame.note] : [])],
+  };
 }
 
 export const dossierSha256 = (d: FiqhDossier) => sha256(JSON.stringify(canonical(d)));

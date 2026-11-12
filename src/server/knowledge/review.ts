@@ -2,7 +2,7 @@ import "server-only";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { Tx } from "@/server/db";
 import { fiqhDossiers, fiqhReviews, kbChunks, kbSourceReviews, kbSources } from "@/server/db/schema";
-import { refMatchReviews, refMatchRuns, refSources, refVersions } from "@/server/db/schema/references";
+import { refMatchReviews, refMatchRuns, refMatchUnits, refSources, refVersions } from "@/server/db/schema/references";
 import { audit, canonical } from "@/server/lib/audit";
 import { rowHash } from "@/server/modules/admin/audit/chain";
 import { lookupHash, sessionHash, sha256 } from "@/server/lib/crypto";
@@ -98,19 +98,23 @@ export async function recordSourceReview(tx: Tx, actor: ReviewActor, x: SourceRe
   return { id: row.id, role };
 }
 
-/** Records the review of a registry comparison (accepting or rejecting the match of a stored official text). */
-export async function recordComparisonReview(tx: Tx, actor: ReviewActor, x: { runId: string; decision: "accepted" | "rejected"; note: string }) {
+/**
+ * Records the review of ONE unit of a registry comparison (stage 11, D): the match of one article of a stored
+ * official text. Accepting article 8 accepts nothing else in the run, and never the source as a whole.
+ */
+export async function recordComparisonReview(tx: Tx, actor: ReviewActor, x: { runId: string; unit: string; decision: "accepted" | "rejected"; note: string }) {
   if (!(await mayReview(tx, actor.userId, "legal"))) throw new ReviewRefused("لا تحمل صلاحية «المراجعة النظامية».");
   if (x.note.trim().length < 10) throw new ReviewRefused("اكتب ملاحظة المراجعة (عشرة أحرف على الأقل).");
-  const [run] = await tx.select({ r: refMatchRuns, v: refVersions, code: refSources.code }).from(refMatchRuns)
+  const [run] = await tx.select({ r: refMatchRuns, v: refVersions, code: refSources.code, u: refMatchUnits }).from(refMatchRuns)
     .innerJoin(refVersions, eq(refVersions.id, refMatchRuns.versionId)).innerJoin(refSources, eq(refSources.id, refVersions.sourceId))
+    .innerJoin(refMatchUnits, and(eq(refMatchUnits.runId, refMatchRuns.id), eq(refMatchUnits.unitKey, x.unit)))
     .where(eq(refMatchRuns.id, x.runId)).limit(1);
-  if (!run) throw new ReviewRefused("المقارنة غير موجودة.");
-  const [row] = await withSessionToken(tx, actor.sessionToken, () => tx.insert(refMatchReviews).values({ runId: x.runId, reviewerUserId: actor.userId, decision: x.decision, note: x.note.trim(), reviewedAt: sql`clock_timestamp()` }).returning({ id: refMatchReviews.id, sessionId: refMatchReviews.sessionId }));
-  const seal = reviewSeal({ kind: "ref_match_review", id: row.id, reviewer: actor.userId, decision: x.decision, target: x.runId, role: "legal", textSha256: run.v.sha256, sessionId: row.sessionId });
+  if (!run) throw new ReviewRefused("المادة غير موجودة في هذه المقارنة.");
+  const [row] = await withSessionToken(tx, actor.sessionToken, () => tx.insert(refMatchReviews).values({ runId: x.runId, unitId: run.u.id, reviewerUserId: actor.userId, decision: x.decision, note: x.note.trim(), reviewedAt: sql`clock_timestamp()` }).returning({ id: refMatchReviews.id, sessionId: refMatchReviews.sessionId }));
+  const seal = reviewSeal({ kind: "ref_match_review", id: row.id, reviewer: actor.userId, decision: x.decision, target: run.u.id, role: "legal", textSha256: run.u.textSha256, sessionId: row.sessionId });
   await audit(tx, {
     actorUserId: actor.userId, action: "knowledge.review.recorded", entityType: "ref_match_review", entityId: row.id, ip: actor.ip, userAgent: actor.userAgent,
-    after: { refId: run.code, versionId: run.v.id, versionLabel: run.v.label, versionSha256: run.v.sha256, runId: x.runId, decision: x.decision, note: x.note.trim(), textSha256: run.v.sha256, seal },
+    after: { refId: run.code, versionId: run.v.id, versionLabel: run.v.label, versionSha256: run.v.sha256, runId: x.runId, unitId: run.u.id, unit: x.unit, outcome: run.u.outcome, decision: x.decision, note: x.note.trim(), textSha256: run.u.textSha256, seal },
   });
   return { id: row.id };
 }
@@ -222,16 +226,29 @@ export async function reviewQueue(tx: Tx, opts: { refCodes?: string[]; passages?
   return out;
 }
 
-export type ComparisonItem = { runId: string; refId: string; versionLabel: string; outcome: string; ranAt: string; reviews: { decision: string; at: string }[] };
+export type ComparisonItem = {
+  runId: string; refId: string; versionLabel: string; outcome: string; ranAt: string;
+  /** Stage 11, D: each compared article, reviewed on its own. */
+  units: { unit: string; outcome: string; reviews: { decision: string; at: string }[] }[];
+  /** Reviews of the whole run recorded before stage 11: kept for the record, authorise nothing. */
+  legacyReviews: number;
+};
 
-/** Comparisons of stored official texts and what reviews they have (accepted only counts with authority and audit). */
+/** Comparisons of stored official texts, unit by unit, and what reviews each unit has (accepted only counts with authority and audit). */
 export async function comparisonQueue(tx: Tx): Promise<ComparisonItem[]> {
   const runs = await tx.select({ r: refMatchRuns, label: refVersions.label, code: refSources.code }).from(refMatchRuns)
     .innerJoin(refVersions, eq(refVersions.id, refMatchRuns.versionId)).innerJoin(refSources, eq(refSources.id, refVersions.sourceId));
-  const reviews = runs.length ? await tx.select().from(refMatchReviews).where(inArray(refMatchReviews.runId, runs.map((x) => x.r.id))) : [];
+  const ids = runs.map((x) => x.r.id);
+  const [units, reviews] = ids.length
+    ? await Promise.all([tx.select().from(refMatchUnits).where(inArray(refMatchUnits.runId, ids)), tx.select().from(refMatchReviews).where(inArray(refMatchReviews.runId, ids))])
+    : [[], []];
   return runs.map((x) => ({
     runId: x.r.id, refId: x.code, versionLabel: x.label, outcome: x.r.outcome, ranAt: x.r.ranAt.toISOString(),
-    reviews: reviews.filter((v) => v.runId === x.r.id).map((v) => ({ decision: v.decision, at: v.reviewedAt.toISOString() })),
+    units: units.filter((u) => u.runId === x.r.id).sort((a, b) => a.article - b.article).map((u) => ({
+      unit: u.unitKey, outcome: u.outcome,
+      reviews: reviews.filter((v) => v.unitId === u.id).map((v) => ({ decision: v.decision, at: v.reviewedAt.toISOString() })),
+    })),
+    legacyReviews: reviews.filter((v) => v.runId === x.r.id && !v.unitId).length,
   }));
 }
 

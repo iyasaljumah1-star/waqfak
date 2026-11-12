@@ -74,10 +74,30 @@ export const refMatchRuns = pgTable("ref_match_runs", {
   ranAt: timestamp({ withTimezone: true }).notNull(),
 });
 
-/** A person's review of a comparison run. Only an accepted review lets an article be cited. */
+/**
+ * The units of a comparison (stage 11, batch D): one per article the run compared, with the run's outcome for it and
+ * the sha256 of that article's stored text (computed by the database from ref_units at insert). A review is of ONE
+ * unit: accepting article 8 of a run accepts nothing else in it, and never the source as a whole. Append-only.
+ */
+export const refMatchUnits = pgTable("ref_match_units", {
+  id: id(),
+  runId: uuid().notNull().references(() => refMatchRuns.id),
+  /** «م8» — the key of the run's per-article outcome. */
+  unitKey: text().notNull(),
+  article: integer().notNull(),
+  outcome: text().notNull(),
+  textSha256: text().notNull(),
+  createdAt: createdAt(),
+}, (t) => [uniqueIndex("ref_match_units_uq").on(t.runId, t.unitKey)]);
+
+/**
+ * A person's review of one unit of a comparison run (stage 11: unit_id required for every new review). Only an accepted
+ * review of the unit lets that article be cited. Earlier reviews of a whole run (unit_id null) authorise nothing.
+ */
 export const refMatchReviews = pgTable("ref_match_reviews", {
   id: id(),
   runId: uuid().notNull().references(() => refMatchRuns.id),
+  unitId: uuid().references(() => refMatchUnits.id),
   reviewerUserId: uuid().notNull(),
   decision: text().notNull(), // accepted | rejected
   note: text().notNull(),

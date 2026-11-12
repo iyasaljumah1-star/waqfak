@@ -1,0 +1,5293 @@
+{
+ "version": "sa-admin/1",
+ "builtAt": "2026-11-12",
+ "sources": [
+  {
+   "part": "regions",
+   "standing": "verified",
+   "source": "نظام المناطق (أمر ملكي رقم أ/92 في 27/8/1412هـ) وقائمة إمارات المناطق الـ13 ومقارها (وزارة الداخلية؛ المركز الوطني للوثائق والمحفوظات)"
+  },
+  {
+   "part": "governorates",
+   "standing": "compiled, not verified entry by entry",
+   "source": "قوائم محافظات الإمارات المنشورة؛ تلزم مطابقتها بالقائمة الرسمية لوزارة الداخلية قبل الإنتاج"
+  },
+  {
+   "part": "countries",
+   "standing": "verified",
+   "source": "ISO 3166-1 alpha-2، بالأسماء العربية والإنجليزية من Unicode CLDR"
+  }
+ ],
+ "counts": {
+  "countries": 254,
+  "regions": 13,
+  "governorates": 149
+ },
+ "entries": [
+  {
+   "key": "AD",
+   "level": "country",
+   "ar": [
+    "أندورا"
+   ],
+   "en": [
+    "Andorra"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "AE",
+   "level": "country",
+   "ar": [
+    "الإمارات العربية المتحدة",
+    "الإمارات"
+   ],
+   "en": [
+    "United Arab Emirates",
+    "UAE",
+    "Emirates"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "AF",
+   "level": "country",
+   "ar": [
+    "أفغانستان"
+   ],
+   "en": [
+    "Afghanistan"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "AG",
+   "level": "country",
+   "ar": [
+    "أنتيغوا وبربودا"
+   ],
+   "en": [
+    "Antigua & Barbuda"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "AI",
+   "level": "country",
+   "ar": [
+    "أنغويلا"
+   ],
+   "en": [
+    "Anguilla"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "AL",
+   "level": "country",
+   "ar": [
+    "ألبانيا"
+   ],
+   "en": [
+    "Albania"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "AM",
+   "level": "country",
+   "ar": [
+    "أرمينيا"
+   ],
+   "en": [
+    "Armenia"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "AO",
+   "level": "country",
+   "ar": [
+    "أنغولا"
+   ],
+   "en": [
+    "Angola"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "AQ",
+   "level": "country",
+   "ar": [
+    "أنتاركتيكا"
+   ],
+   "en": [
+    "Antarctica"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "AR",
+   "level": "country",
+   "ar": [
+    "الأرجنتين"
+   ],
+   "en": [
+    "Argentina"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "AS",
+   "level": "country",
+   "ar": [
+    "ساموا الأمريكية"
+   ],
+   "en": [
+    "American Samoa"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "AT",
+   "level": "country",
+   "ar": [
+    "النمسا"
+   ],
+   "en": [
+    "Austria"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "AU",
+   "level": "country",
+   "ar": [
+    "أستراليا"
+   ],
+   "en": [
+    "Australia"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "AW",
+   "level": "country",
+   "ar": [
+    "أروبا"
+   ],
+   "en": [
+    "Aruba"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "AX",
+   "level": "country",
+   "ar": [
+    "جزر آلاند"
+   ],
+   "en": [
+    "Åland Islands"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "AZ",
+   "level": "country",
+   "ar": [
+    "أذربيجان"
+   ],
+   "en": [
+    "Azerbaijan"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "BA",
+   "level": "country",
+   "ar": [
+    "البوسنة والهرسك"
+   ],
+   "en": [
+    "Bosnia & Herzegovina"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "BB",
+   "level": "country",
+   "ar": [
+    "بربادوس"
+   ],
+   "en": [
+    "Barbados"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "BD",
+   "level": "country",
+   "ar": [
+    "بنغلاديش"
+   ],
+   "en": [
+    "Bangladesh"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "BE",
+   "level": "country",
+   "ar": [
+    "بلجيكا"
+   ],
+   "en": [
+    "Belgium"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "BF",
+   "level": "country",
+   "ar": [
+    "بوركينا فاسو"
+   ],
+   "en": [
+    "Burkina Faso"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "BG",
+   "level": "country",
+   "ar": [
+    "بلغاريا"
+   ],
+   "en": [
+    "Bulgaria"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "BH",
+   "level": "country",
+   "ar": [
+    "البحرين"
+   ],
+   "en": [
+    "Bahrain"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "BI",
+   "level": "country",
+   "ar": [
+    "بوروندي"
+   ],
+   "en": [
+    "Burundi"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "BJ",
+   "level": "country",
+   "ar": [
+    "بنين"
+   ],
+   "en": [
+    "Benin"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "BL",
+   "level": "country",
+   "ar": [
+    "سان بارتليمي"
+   ],
+   "en": [
+    "St. Barthélemy"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "BM",
+   "level": "country",
+   "ar": [
+    "برمودا"
+   ],
+   "en": [
+    "Bermuda"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "BN",
+   "level": "country",
+   "ar": [
+    "بروناي"
+   ],
+   "en": [
+    "Brunei"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "BO",
+   "level": "country",
+   "ar": [
+    "بوليفيا"
+   ],
+   "en": [
+    "Bolivia"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "BQ",
+   "level": "country",
+   "ar": [
+    "هولندا الكاريبية"
+   ],
+   "en": [
+    "Caribbean Netherlands"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "BR",
+   "level": "country",
+   "ar": [
+    "البرازيل"
+   ],
+   "en": [
+    "Brazil"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "BS",
+   "level": "country",
+   "ar": [
+    "جزر البهاما"
+   ],
+   "en": [
+    "Bahamas"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "BT",
+   "level": "country",
+   "ar": [
+    "بوتان"
+   ],
+   "en": [
+    "Bhutan"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "BV",
+   "level": "country",
+   "ar": [
+    "جزيرة بوفيه"
+   ],
+   "en": [
+    "Bouvet Island"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "BW",
+   "level": "country",
+   "ar": [
+    "بوتسوانا"
+   ],
+   "en": [
+    "Botswana"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "BY",
+   "level": "country",
+   "ar": [
+    "بيلاروس"
+   ],
+   "en": [
+    "Belarus"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "BZ",
+   "level": "country",
+   "ar": [
+    "بليز"
+   ],
+   "en": [
+    "Belize"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "CA",
+   "level": "country",
+   "ar": [
+    "كندا"
+   ],
+   "en": [
+    "Canada"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "CC",
+   "level": "country",
+   "ar": [
+    "جزر كوكوس (كيلينغ)"
+   ],
+   "en": [
+    "Cocos (Keeling) Islands"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "CD",
+   "level": "country",
+   "ar": [
+    "الكونغو - كينشاسا"
+   ],
+   "en": [
+    "Congo - Kinshasa"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "CF",
+   "level": "country",
+   "ar": [
+    "جمهورية أفريقيا الوسطى"
+   ],
+   "en": [
+    "Central African Republic"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "CG",
+   "level": "country",
+   "ar": [
+    "الكونغو - برازافيل"
+   ],
+   "en": [
+    "Congo - Brazzaville"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "CH",
+   "level": "country",
+   "ar": [
+    "سويسرا"
+   ],
+   "en": [
+    "Switzerland"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "CI",
+   "level": "country",
+   "ar": [
+    "ساحل العاج"
+   ],
+   "en": [
+    "Côte d’Ivoire"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "CK",
+   "level": "country",
+   "ar": [
+    "جزر كوك"
+   ],
+   "en": [
+    "Cook Islands"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "CL",
+   "level": "country",
+   "ar": [
+    "تشيلي"
+   ],
+   "en": [
+    "Chile"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "CM",
+   "level": "country",
+   "ar": [
+    "الكاميرون"
+   ],
+   "en": [
+    "Cameroon"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "CN",
+   "level": "country",
+   "ar": [
+    "الصين"
+   ],
+   "en": [
+    "China"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "CO",
+   "level": "country",
+   "ar": [
+    "كولومبيا"
+   ],
+   "en": [
+    "Colombia"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "CR",
+   "level": "country",
+   "ar": [
+    "كوستاريكا"
+   ],
+   "en": [
+    "Costa Rica"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "CU",
+   "level": "country",
+   "ar": [
+    "كوبا"
+   ],
+   "en": [
+    "Cuba"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "CV",
+   "level": "country",
+   "ar": [
+    "الرأس الأخضر"
+   ],
+   "en": [
+    "Cape Verde"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "CW",
+   "level": "country",
+   "ar": [
+    "كوراساو"
+   ],
+   "en": [
+    "Curaçao"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "CX",
+   "level": "country",
+   "ar": [
+    "جزيرة كريسماس"
+   ],
+   "en": [
+    "Christmas Island"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "CY",
+   "level": "country",
+   "ar": [
+    "قبرص"
+   ],
+   "en": [
+    "Cyprus"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "CZ",
+   "level": "country",
+   "ar": [
+    "التشيك"
+   ],
+   "en": [
+    "Czechia"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "DE",
+   "level": "country",
+   "ar": [
+    "ألمانيا"
+   ],
+   "en": [
+    "Germany"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "DJ",
+   "level": "country",
+   "ar": [
+    "جيبوتي"
+   ],
+   "en": [
+    "Djibouti"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "DK",
+   "level": "country",
+   "ar": [
+    "الدانمرك"
+   ],
+   "en": [
+    "Denmark"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "DM",
+   "level": "country",
+   "ar": [
+    "دومينيكا"
+   ],
+   "en": [
+    "Dominica"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "DO",
+   "level": "country",
+   "ar": [
+    "جمهورية الدومينيكان"
+   ],
+   "en": [
+    "Dominican Republic"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "DY",
+   "level": "country",
+   "ar": [
+    "بنين"
+   ],
+   "en": [
+    "Benin"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "DZ",
+   "level": "country",
+   "ar": [
+    "الجزائر"
+   ],
+   "en": [
+    "Algeria"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "EC",
+   "level": "country",
+   "ar": [
+    "الإكوادور"
+   ],
+   "en": [
+    "Ecuador"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "EE",
+   "level": "country",
+   "ar": [
+    "إستونيا"
+   ],
+   "en": [
+    "Estonia"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "EG",
+   "level": "country",
+   "ar": [
+    "مصر"
+   ],
+   "en": [
+    "Egypt"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "EH",
+   "level": "country",
+   "ar": [
+    "الصحراء الغربية"
+   ],
+   "en": [
+    "Western Sahara"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "ER",
+   "level": "country",
+   "ar": [
+    "إريتريا"
+   ],
+   "en": [
+    "Eritrea"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "ES",
+   "level": "country",
+   "ar": [
+    "إسبانيا"
+   ],
+   "en": [
+    "Spain"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "ET",
+   "level": "country",
+   "ar": [
+    "إثيوبيا"
+   ],
+   "en": [
+    "Ethiopia"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "FI",
+   "level": "country",
+   "ar": [
+    "فنلندا"
+   ],
+   "en": [
+    "Finland"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "FJ",
+   "level": "country",
+   "ar": [
+    "فيجي"
+   ],
+   "en": [
+    "Fiji"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "FK",
+   "level": "country",
+   "ar": [
+    "جزر فوكلاند"
+   ],
+   "en": [
+    "Falkland Islands"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "FM",
+   "level": "country",
+   "ar": [
+    "ميكرونيزيا"
+   ],
+   "en": [
+    "Micronesia"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "FO",
+   "level": "country",
+   "ar": [
+    "جزر فارو"
+   ],
+   "en": [
+    "Faroe Islands"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "FR",
+   "level": "country",
+   "ar": [
+    "فرنسا"
+   ],
+   "en": [
+    "France"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "GA",
+   "level": "country",
+   "ar": [
+    "الغابون"
+   ],
+   "en": [
+    "Gabon"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "GB",
+   "level": "country",
+   "ar": [
+    "المملكة المتحدة",
+    "بريطانيا"
+   ],
+   "en": [
+    "United Kingdom",
+    "UK",
+    "Britain"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "GD",
+   "level": "country",
+   "ar": [
+    "غرينادا"
+   ],
+   "en": [
+    "Grenada"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "GE",
+   "level": "country",
+   "ar": [
+    "جورجيا"
+   ],
+   "en": [
+    "Georgia"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "GF",
+   "level": "country",
+   "ar": [
+    "غويانا الفرنسية"
+   ],
+   "en": [
+    "French Guiana"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "GG",
+   "level": "country",
+   "ar": [
+    "غيرنزي"
+   ],
+   "en": [
+    "Guernsey"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "GH",
+   "level": "country",
+   "ar": [
+    "غانا"
+   ],
+   "en": [
+    "Ghana"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "GI",
+   "level": "country",
+   "ar": [
+    "جبل طارق"
+   ],
+   "en": [
+    "Gibraltar"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "GL",
+   "level": "country",
+   "ar": [
+    "غرينلاند"
+   ],
+   "en": [
+    "Greenland"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "GM",
+   "level": "country",
+   "ar": [
+    "غامبيا"
+   ],
+   "en": [
+    "Gambia"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "GN",
+   "level": "country",
+   "ar": [
+    "غينيا"
+   ],
+   "en": [
+    "Guinea"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "GP",
+   "level": "country",
+   "ar": [
+    "غوادلوب"
+   ],
+   "en": [
+    "Guadeloupe"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "GQ",
+   "level": "country",
+   "ar": [
+    "غينيا الاستوائية"
+   ],
+   "en": [
+    "Equatorial Guinea"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "GR",
+   "level": "country",
+   "ar": [
+    "اليونان"
+   ],
+   "en": [
+    "Greece"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "GS",
+   "level": "country",
+   "ar": [
+    "جورجيا الجنوبية وجزر ساندويتش الجنوبية"
+   ],
+   "en": [
+    "South Georgia & South Sandwich Islands"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "GT",
+   "level": "country",
+   "ar": [
+    "غواتيمالا"
+   ],
+   "en": [
+    "Guatemala"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "GU",
+   "level": "country",
+   "ar": [
+    "غوام"
+   ],
+   "en": [
+    "Guam"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "GW",
+   "level": "country",
+   "ar": [
+    "غينيا بيساو"
+   ],
+   "en": [
+    "Guinea-Bissau"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "GY",
+   "level": "country",
+   "ar": [
+    "غيانا"
+   ],
+   "en": [
+    "Guyana"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "HK",
+   "level": "country",
+   "ar": [
+    "هونغ كونغ الصينية (منطقة إدارية خاصة)"
+   ],
+   "en": [
+    "Hong Kong SAR China"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "HM",
+   "level": "country",
+   "ar": [
+    "جزيرة هيرد وجزر ماكدونالد"
+   ],
+   "en": [
+    "Heard & McDonald Islands"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "HN",
+   "level": "country",
+   "ar": [
+    "هندوراس"
+   ],
+   "en": [
+    "Honduras"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "HR",
+   "level": "country",
+   "ar": [
+    "كرواتيا"
+   ],
+   "en": [
+    "Croatia"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "HT",
+   "level": "country",
+   "ar": [
+    "هايتي"
+   ],
+   "en": [
+    "Haiti"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "HU",
+   "level": "country",
+   "ar": [
+    "هنغاريا"
+   ],
+   "en": [
+    "Hungary"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "HV",
+   "level": "country",
+   "ar": [
+    "بوركينا فاسو"
+   ],
+   "en": [
+    "Burkina Faso"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "ID",
+   "level": "country",
+   "ar": [
+    "إندونيسيا"
+   ],
+   "en": [
+    "Indonesia"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "IE",
+   "level": "country",
+   "ar": [
+    "أيرلندا"
+   ],
+   "en": [
+    "Ireland"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "IL",
+   "level": "country",
+   "ar": [
+    "إسرائيل"
+   ],
+   "en": [
+    "Israel"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "IM",
+   "level": "country",
+   "ar": [
+    "جزيرة مان"
+   ],
+   "en": [
+    "Isle of Man"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "IN",
+   "level": "country",
+   "ar": [
+    "الهند"
+   ],
+   "en": [
+    "India"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "IO",
+   "level": "country",
+   "ar": [
+    "الإقليم البريطاني في المحيط الهندي"
+   ],
+   "en": [
+    "British Indian Ocean Territory"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "IQ",
+   "level": "country",
+   "ar": [
+    "العراق"
+   ],
+   "en": [
+    "Iraq"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "IR",
+   "level": "country",
+   "ar": [
+    "إيران"
+   ],
+   "en": [
+    "Iran"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "IS",
+   "level": "country",
+   "ar": [
+    "آيسلندا"
+   ],
+   "en": [
+    "Iceland"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "IT",
+   "level": "country",
+   "ar": [
+    "إيطاليا"
+   ],
+   "en": [
+    "Italy"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "JE",
+   "level": "country",
+   "ar": [
+    "جيرسي"
+   ],
+   "en": [
+    "Jersey"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "JM",
+   "level": "country",
+   "ar": [
+    "جامايكا"
+   ],
+   "en": [
+    "Jamaica"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "JO",
+   "level": "country",
+   "ar": [
+    "الأردن"
+   ],
+   "en": [
+    "Jordan"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "JP",
+   "level": "country",
+   "ar": [
+    "اليابان"
+   ],
+   "en": [
+    "Japan"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "KE",
+   "level": "country",
+   "ar": [
+    "كينيا"
+   ],
+   "en": [
+    "Kenya"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "KG",
+   "level": "country",
+   "ar": [
+    "قيرغيزستان"
+   ],
+   "en": [
+    "Kyrgyzstan"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "KH",
+   "level": "country",
+   "ar": [
+    "كمبوديا"
+   ],
+   "en": [
+    "Cambodia"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "KI",
+   "level": "country",
+   "ar": [
+    "كيريباتي"
+   ],
+   "en": [
+    "Kiribati"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "KM",
+   "level": "country",
+   "ar": [
+    "جزر القمر"
+   ],
+   "en": [
+    "Comoros"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "KN",
+   "level": "country",
+   "ar": [
+    "سانت كيتس ونيفيس"
+   ],
+   "en": [
+    "St. Kitts & Nevis"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "KP",
+   "level": "country",
+   "ar": [
+    "كوريا الشمالية"
+   ],
+   "en": [
+    "North Korea"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "KR",
+   "level": "country",
+   "ar": [
+    "كوريا الجنوبية"
+   ],
+   "en": [
+    "South Korea"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "KW",
+   "level": "country",
+   "ar": [
+    "الكويت"
+   ],
+   "en": [
+    "Kuwait"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "KY",
+   "level": "country",
+   "ar": [
+    "جزر كايمان"
+   ],
+   "en": [
+    "Cayman Islands"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "KZ",
+   "level": "country",
+   "ar": [
+    "كازاخستان"
+   ],
+   "en": [
+    "Kazakhstan"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "LA",
+   "level": "country",
+   "ar": [
+    "لاوس"
+   ],
+   "en": [
+    "Laos"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "LB",
+   "level": "country",
+   "ar": [
+    "لبنان"
+   ],
+   "en": [
+    "Lebanon"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "LC",
+   "level": "country",
+   "ar": [
+    "سانت لوسيا"
+   ],
+   "en": [
+    "St. Lucia"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "LI",
+   "level": "country",
+   "ar": [
+    "ليختنشتاين"
+   ],
+   "en": [
+    "Liechtenstein"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "LK",
+   "level": "country",
+   "ar": [
+    "سريلانكا"
+   ],
+   "en": [
+    "Sri Lanka"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "LR",
+   "level": "country",
+   "ar": [
+    "ليبيريا"
+   ],
+   "en": [
+    "Liberia"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "LS",
+   "level": "country",
+   "ar": [
+    "ليسوتو"
+   ],
+   "en": [
+    "Lesotho"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "LT",
+   "level": "country",
+   "ar": [
+    "ليتوانيا"
+   ],
+   "en": [
+    "Lithuania"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "LU",
+   "level": "country",
+   "ar": [
+    "لوكسمبورغ"
+   ],
+   "en": [
+    "Luxembourg"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "LV",
+   "level": "country",
+   "ar": [
+    "لاتفيا"
+   ],
+   "en": [
+    "Latvia"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "LY",
+   "level": "country",
+   "ar": [
+    "ليبيا"
+   ],
+   "en": [
+    "Libya"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "MA",
+   "level": "country",
+   "ar": [
+    "المغرب"
+   ],
+   "en": [
+    "Morocco"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "MC",
+   "level": "country",
+   "ar": [
+    "موناكو"
+   ],
+   "en": [
+    "Monaco"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "MD",
+   "level": "country",
+   "ar": [
+    "مولدوفا"
+   ],
+   "en": [
+    "Moldova"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "ME",
+   "level": "country",
+   "ar": [
+    "الجبل الأسود"
+   ],
+   "en": [
+    "Montenegro"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "MF",
+   "level": "country",
+   "ar": [
+    "سان مارتن"
+   ],
+   "en": [
+    "St. Martin"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "MG",
+   "level": "country",
+   "ar": [
+    "مدغشقر"
+   ],
+   "en": [
+    "Madagascar"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "MH",
+   "level": "country",
+   "ar": [
+    "جزر مارشال"
+   ],
+   "en": [
+    "Marshall Islands"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "MK",
+   "level": "country",
+   "ar": [
+    "مقدونيا الشمالية"
+   ],
+   "en": [
+    "North Macedonia"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "ambiguous": "word",
+   "key": "ML",
+   "level": "country",
+   "ar": [
+    "مالي"
+   ],
+   "en": [
+    "Mali"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "MM",
+   "level": "country",
+   "ar": [
+    "ميانمار (بورما)"
+   ],
+   "en": [
+    "Myanmar (Burma)"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "MN",
+   "level": "country",
+   "ar": [
+    "منغوليا"
+   ],
+   "en": [
+    "Mongolia"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "MO",
+   "level": "country",
+   "ar": [
+    "منطقة ماكاو الإدارية الخاصة"
+   ],
+   "en": [
+    "Macao SAR China"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "MP",
+   "level": "country",
+   "ar": [
+    "جزر ماريانا الشمالية"
+   ],
+   "en": [
+    "Northern Mariana Islands"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "MQ",
+   "level": "country",
+   "ar": [
+    "جزر المارتينيك"
+   ],
+   "en": [
+    "Martinique"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "MR",
+   "level": "country",
+   "ar": [
+    "موريتانيا"
+   ],
+   "en": [
+    "Mauritania"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "MS",
+   "level": "country",
+   "ar": [
+    "مونتسرات"
+   ],
+   "en": [
+    "Montserrat"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "MT",
+   "level": "country",
+   "ar": [
+    "مالطا"
+   ],
+   "en": [
+    "Malta"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "MU",
+   "level": "country",
+   "ar": [
+    "موريشيوس"
+   ],
+   "en": [
+    "Mauritius"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "MV",
+   "level": "country",
+   "ar": [
+    "جزر المالديف"
+   ],
+   "en": [
+    "Maldives"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "MW",
+   "level": "country",
+   "ar": [
+    "ملاوي"
+   ],
+   "en": [
+    "Malawi"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "MX",
+   "level": "country",
+   "ar": [
+    "المكسيك"
+   ],
+   "en": [
+    "Mexico"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "MY",
+   "level": "country",
+   "ar": [
+    "ماليزيا"
+   ],
+   "en": [
+    "Malaysia"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "MZ",
+   "level": "country",
+   "ar": [
+    "موزمبيق"
+   ],
+   "en": [
+    "Mozambique"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "NA",
+   "level": "country",
+   "ar": [
+    "ناميبيا"
+   ],
+   "en": [
+    "Namibia"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "NC",
+   "level": "country",
+   "ar": [
+    "كاليدونيا الجديدة"
+   ],
+   "en": [
+    "New Caledonia"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "NE",
+   "level": "country",
+   "ar": [
+    "النيجر"
+   ],
+   "en": [
+    "Niger"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "NF",
+   "level": "country",
+   "ar": [
+    "جزيرة نورفولك"
+   ],
+   "en": [
+    "Norfolk Island"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "NG",
+   "level": "country",
+   "ar": [
+    "نيجيريا"
+   ],
+   "en": [
+    "Nigeria"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "NH",
+   "level": "country",
+   "ar": [
+    "فانواتو"
+   ],
+   "en": [
+    "Vanuatu"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "NI",
+   "level": "country",
+   "ar": [
+    "نيكاراغوا"
+   ],
+   "en": [
+    "Nicaragua"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "NL",
+   "level": "country",
+   "ar": [
+    "هولندا"
+   ],
+   "en": [
+    "Netherlands"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "NO",
+   "level": "country",
+   "ar": [
+    "النرويج"
+   ],
+   "en": [
+    "Norway"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "NP",
+   "level": "country",
+   "ar": [
+    "نيبال"
+   ],
+   "en": [
+    "Nepal"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "NR",
+   "level": "country",
+   "ar": [
+    "ناورو"
+   ],
+   "en": [
+    "Nauru"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "NU",
+   "level": "country",
+   "ar": [
+    "نيوي"
+   ],
+   "en": [
+    "Niue"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "NZ",
+   "level": "country",
+   "ar": [
+    "نيوزيلندا"
+   ],
+   "en": [
+    "New Zealand"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "OM",
+   "level": "country",
+   "ar": [
+    "عُمان",
+    "سلطنة عمان",
+    "عمان"
+   ],
+   "en": [
+    "Oman"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "PA",
+   "level": "country",
+   "ar": [
+    "بنما"
+   ],
+   "en": [
+    "Panama"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "PE",
+   "level": "country",
+   "ar": [
+    "بيرو"
+   ],
+   "en": [
+    "Peru"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "PF",
+   "level": "country",
+   "ar": [
+    "بولينيزيا الفرنسية"
+   ],
+   "en": [
+    "French Polynesia"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "PG",
+   "level": "country",
+   "ar": [
+    "بابوا غينيا الجديدة"
+   ],
+   "en": [
+    "Papua New Guinea"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "PH",
+   "level": "country",
+   "ar": [
+    "الفلبين"
+   ],
+   "en": [
+    "Philippines"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "PK",
+   "level": "country",
+   "ar": [
+    "باكستان"
+   ],
+   "en": [
+    "Pakistan"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "PL",
+   "level": "country",
+   "ar": [
+    "بولندا"
+   ],
+   "en": [
+    "Poland"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "PM",
+   "level": "country",
+   "ar": [
+    "سان بيير ومكويلون"
+   ],
+   "en": [
+    "St. Pierre & Miquelon"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "PN",
+   "level": "country",
+   "ar": [
+    "جزر بيتكيرن"
+   ],
+   "en": [
+    "Pitcairn Islands"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "PR",
+   "level": "country",
+   "ar": [
+    "بورتوريكو"
+   ],
+   "en": [
+    "Puerto Rico"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "PS",
+   "level": "country",
+   "ar": [
+    "الأراضي الفلسطينية",
+    "فلسطين"
+   ],
+   "en": [
+    "Palestinian Territories"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "PT",
+   "level": "country",
+   "ar": [
+    "البرتغال"
+   ],
+   "en": [
+    "Portugal"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "PW",
+   "level": "country",
+   "ar": [
+    "بالاو"
+   ],
+   "en": [
+    "Palau"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "PY",
+   "level": "country",
+   "ar": [
+    "باراغواي"
+   ],
+   "en": [
+    "Paraguay"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "QA",
+   "level": "country",
+   "ar": [
+    "قطر"
+   ],
+   "en": [
+    "Qatar"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "RE",
+   "level": "country",
+   "ar": [
+    "روينيون"
+   ],
+   "en": [
+    "Réunion"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "RH",
+   "level": "country",
+   "ar": [
+    "زيمبابوي"
+   ],
+   "en": [
+    "Zimbabwe"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "RO",
+   "level": "country",
+   "ar": [
+    "رومانيا"
+   ],
+   "en": [
+    "Romania"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "RS",
+   "level": "country",
+   "ar": [
+    "صربيا"
+   ],
+   "en": [
+    "Serbia"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "RU",
+   "level": "country",
+   "ar": [
+    "روسيا"
+   ],
+   "en": [
+    "Russia"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "RW",
+   "level": "country",
+   "ar": [
+    "رواندا"
+   ],
+   "en": [
+    "Rwanda"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "SA",
+   "level": "country",
+   "ar": [
+    "المملكة العربية السعودية",
+    "السعودية",
+    "المملكة"
+   ],
+   "en": [
+    "Saudi Arabia",
+    "Saudi",
+    "KSA",
+    "Kingdom"
+   ],
+   "domestic": true,
+   "verified": true
+  },
+  {
+   "key": "SB",
+   "level": "country",
+   "ar": [
+    "جزر سليمان"
+   ],
+   "en": [
+    "Solomon Islands"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "SC",
+   "level": "country",
+   "ar": [
+    "سيشل"
+   ],
+   "en": [
+    "Seychelles"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "SD",
+   "level": "country",
+   "ar": [
+    "السودان"
+   ],
+   "en": [
+    "Sudan"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "SE",
+   "level": "country",
+   "ar": [
+    "السويد"
+   ],
+   "en": [
+    "Sweden"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "SG",
+   "level": "country",
+   "ar": [
+    "سنغافورة"
+   ],
+   "en": [
+    "Singapore"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "SH",
+   "level": "country",
+   "ar": [
+    "سانت هيلينا"
+   ],
+   "en": [
+    "St. Helena"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "SI",
+   "level": "country",
+   "ar": [
+    "سلوفينيا"
+   ],
+   "en": [
+    "Slovenia"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "SJ",
+   "level": "country",
+   "ar": [
+    "سفالبارد وجان ماين"
+   ],
+   "en": [
+    "Svalbard & Jan Mayen"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "SK",
+   "level": "country",
+   "ar": [
+    "سلوفاكيا"
+   ],
+   "en": [
+    "Slovakia"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "SL",
+   "level": "country",
+   "ar": [
+    "سيراليون"
+   ],
+   "en": [
+    "Sierra Leone"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "SM",
+   "level": "country",
+   "ar": [
+    "سان مارينو"
+   ],
+   "en": [
+    "San Marino"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "SN",
+   "level": "country",
+   "ar": [
+    "السنغال"
+   ],
+   "en": [
+    "Senegal"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "SO",
+   "level": "country",
+   "ar": [
+    "الصومال"
+   ],
+   "en": [
+    "Somalia"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "SR",
+   "level": "country",
+   "ar": [
+    "سورينام"
+   ],
+   "en": [
+    "Suriname"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "SS",
+   "level": "country",
+   "ar": [
+    "جنوب السودان"
+   ],
+   "en": [
+    "South Sudan"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "ST",
+   "level": "country",
+   "ar": [
+    "ساو تومي وبرينسيبي"
+   ],
+   "en": [
+    "São Tomé & Príncipe"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "SV",
+   "level": "country",
+   "ar": [
+    "السلفادور"
+   ],
+   "en": [
+    "El Salvador"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "SX",
+   "level": "country",
+   "ar": [
+    "سانت مارتن"
+   ],
+   "en": [
+    "Sint Maarten"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "SY",
+   "level": "country",
+   "ar": [
+    "سوريا",
+    "سورية"
+   ],
+   "en": [
+    "Syria"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "SZ",
+   "level": "country",
+   "ar": [
+    "إسواتيني"
+   ],
+   "en": [
+    "Eswatini"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "TC",
+   "level": "country",
+   "ar": [
+    "جزر توركس وكايكوس"
+   ],
+   "en": [
+    "Turks & Caicos Islands"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "TD",
+   "level": "country",
+   "ar": [
+    "تشاد"
+   ],
+   "en": [
+    "Chad"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "TF",
+   "level": "country",
+   "ar": [
+    "الأقاليم الجنوبية الفرنسية"
+   ],
+   "en": [
+    "French Southern Territories"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "TG",
+   "level": "country",
+   "ar": [
+    "توغو"
+   ],
+   "en": [
+    "Togo"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "TH",
+   "level": "country",
+   "ar": [
+    "تايلاند"
+   ],
+   "en": [
+    "Thailand"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "TJ",
+   "level": "country",
+   "ar": [
+    "طاجيكستان"
+   ],
+   "en": [
+    "Tajikistan"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "TK",
+   "level": "country",
+   "ar": [
+    "توكيلاو"
+   ],
+   "en": [
+    "Tokelau"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "TL",
+   "level": "country",
+   "ar": [
+    "تيمور - ليشتي"
+   ],
+   "en": [
+    "Timor-Leste"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "TM",
+   "level": "country",
+   "ar": [
+    "تركمانستان"
+   ],
+   "en": [
+    "Turkmenistan"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "TN",
+   "level": "country",
+   "ar": [
+    "تونس"
+   ],
+   "en": [
+    "Tunisia"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "TO",
+   "level": "country",
+   "ar": [
+    "تونغا"
+   ],
+   "en": [
+    "Tonga"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "TR",
+   "level": "country",
+   "ar": [
+    "تركيا"
+   ],
+   "en": [
+    "Türkiye",
+    "Turkey"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "TT",
+   "level": "country",
+   "ar": [
+    "ترينيداد وتوباغو"
+   ],
+   "en": [
+    "Trinidad & Tobago"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "TV",
+   "level": "country",
+   "ar": [
+    "توفالو"
+   ],
+   "en": [
+    "Tuvalu"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "TW",
+   "level": "country",
+   "ar": [
+    "تايوان"
+   ],
+   "en": [
+    "Taiwan"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "TZ",
+   "level": "country",
+   "ar": [
+    "تنزانيا"
+   ],
+   "en": [
+    "Tanzania"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "UA",
+   "level": "country",
+   "ar": [
+    "أوكرانيا"
+   ],
+   "en": [
+    "Ukraine"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "UG",
+   "level": "country",
+   "ar": [
+    "أوغندا"
+   ],
+   "en": [
+    "Uganda"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "UM",
+   "level": "country",
+   "ar": [
+    "جزر الولايات المتحدة النائية"
+   ],
+   "en": [
+    "U.S. Outlying Islands"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "US",
+   "level": "country",
+   "ar": [
+    "الولايات المتحدة",
+    "أمريكا"
+   ],
+   "en": [
+    "United States",
+    "USA",
+    "America"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "UY",
+   "level": "country",
+   "ar": [
+    "أورغواي"
+   ],
+   "en": [
+    "Uruguay"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "UZ",
+   "level": "country",
+   "ar": [
+    "أوزبكستان"
+   ],
+   "en": [
+    "Uzbekistan"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "VA",
+   "level": "country",
+   "ar": [
+    "الفاتيكان"
+   ],
+   "en": [
+    "Vatican City"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "VC",
+   "level": "country",
+   "ar": [
+    "سانت فنسنت وجزر غرينادين"
+   ],
+   "en": [
+    "St. Vincent & Grenadines"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "VD",
+   "level": "country",
+   "ar": [
+    "فيتنام"
+   ],
+   "en": [
+    "Vietnam"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "VE",
+   "level": "country",
+   "ar": [
+    "فنزويلا"
+   ],
+   "en": [
+    "Venezuela"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "VG",
+   "level": "country",
+   "ar": [
+    "جزر فيرجن البريطانية"
+   ],
+   "en": [
+    "British Virgin Islands"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "VI",
+   "level": "country",
+   "ar": [
+    "جزر فيرجن الأمريكية"
+   ],
+   "en": [
+    "U.S. Virgin Islands"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "VN",
+   "level": "country",
+   "ar": [
+    "فيتنام"
+   ],
+   "en": [
+    "Vietnam"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "VU",
+   "level": "country",
+   "ar": [
+    "فانواتو"
+   ],
+   "en": [
+    "Vanuatu"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "WF",
+   "level": "country",
+   "ar": [
+    "جزر والس وفوتونا"
+   ],
+   "en": [
+    "Wallis & Futuna"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "WS",
+   "level": "country",
+   "ar": [
+    "ساموا"
+   ],
+   "en": [
+    "Samoa"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "YE",
+   "level": "country",
+   "ar": [
+    "اليمن"
+   ],
+   "en": [
+    "Yemen"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "YT",
+   "level": "country",
+   "ar": [
+    "مايوت"
+   ],
+   "en": [
+    "Mayotte"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "ZA",
+   "level": "country",
+   "ar": [
+    "جنوب أفريقيا"
+   ],
+   "en": [
+    "South Africa"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "ZM",
+   "level": "country",
+   "ar": [
+    "زامبيا"
+   ],
+   "en": [
+    "Zambia"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "ZW",
+   "level": "country",
+   "ar": [
+    "زيمبابوي"
+   ],
+   "en": [
+    "Zimbabwe"
+   ],
+   "domestic": false,
+   "verified": true
+  },
+  {
+   "key": "R:الرياض",
+   "level": "region",
+   "ar": [
+    "الرياض",
+    "منطقة الرياض"
+   ],
+   "en": [
+    "Riyadh Region"
+   ],
+   "domestic": true,
+   "parent": "SA",
+   "verified": true
+  },
+  {
+   "key": "R:مكة المكرمة",
+   "level": "region",
+   "ar": [
+    "مكة المكرمة",
+    "منطقة مكة المكرمة"
+   ],
+   "en": [
+    "Makkah Region",
+    "Mecca Region"
+   ],
+   "domestic": true,
+   "parent": "SA",
+   "verified": true
+  },
+  {
+   "key": "R:المدينة المنورة",
+   "level": "region",
+   "ar": [
+    "المدينة المنورة",
+    "منطقة المدينة المنورة"
+   ],
+   "en": [
+    "Madinah Region",
+    "Medina Region"
+   ],
+   "domestic": true,
+   "parent": "SA",
+   "verified": true
+  },
+  {
+   "key": "R:القصيم",
+   "level": "region",
+   "ar": [
+    "القصيم",
+    "منطقة القصيم"
+   ],
+   "en": [
+    "Qassim",
+    "Al-Qassim"
+   ],
+   "domestic": true,
+   "parent": "SA",
+   "verified": true
+  },
+  {
+   "key": "R:الشرقية",
+   "level": "region",
+   "ar": [
+    "الشرقية",
+    "المنطقة الشرقية"
+   ],
+   "en": [
+    "Eastern Province",
+    "Eastern Region"
+   ],
+   "domestic": true,
+   "parent": "SA",
+   "ambiguous": "word",
+   "verified": true
+  },
+  {
+   "key": "R:عسير",
+   "level": "region",
+   "ar": [
+    "عسير",
+    "منطقة عسير"
+   ],
+   "en": [
+    "Asir",
+    "Aseer"
+   ],
+   "domestic": true,
+   "parent": "SA",
+   "verified": true
+  },
+  {
+   "key": "R:تبوك",
+   "level": "region",
+   "ar": [
+    "تبوك",
+    "منطقة تبوك"
+   ],
+   "en": [
+    "Tabuk Region"
+   ],
+   "domestic": true,
+   "parent": "SA",
+   "verified": true
+  },
+  {
+   "key": "R:حائل",
+   "level": "region",
+   "ar": [
+    "حائل",
+    "منطقة حائل"
+   ],
+   "en": [
+    "Hail Region",
+    "Ha'il Region"
+   ],
+   "domestic": true,
+   "parent": "SA",
+   "ambiguous": "name",
+   "verified": true
+  },
+  {
+   "key": "R:الحدود الشمالية",
+   "level": "region",
+   "ar": [
+    "الحدود الشمالية",
+    "منطقة الحدود الشمالية"
+   ],
+   "en": [
+    "Northern Borders"
+   ],
+   "domestic": true,
+   "parent": "SA",
+   "verified": true
+  },
+  {
+   "key": "R:جازان",
+   "level": "region",
+   "ar": [
+    "جازان",
+    "منطقة جازان",
+    "جيزان"
+   ],
+   "en": [
+    "Jazan Region",
+    "Jizan Region"
+   ],
+   "domestic": true,
+   "parent": "SA",
+   "verified": true
+  },
+  {
+   "key": "R:نجران",
+   "level": "region",
+   "ar": [
+    "نجران",
+    "منطقة نجران"
+   ],
+   "en": [
+    "Najran Region"
+   ],
+   "domestic": true,
+   "parent": "SA",
+   "verified": true
+  },
+  {
+   "key": "R:الباحة",
+   "level": "region",
+   "ar": [
+    "الباحة",
+    "منطقة الباحة"
+   ],
+   "en": [
+    "Al-Baha Region",
+    "Baha Region"
+   ],
+   "domestic": true,
+   "parent": "SA",
+   "verified": true
+  },
+  {
+   "key": "R:الجوف",
+   "level": "region",
+   "ar": [
+    "الجوف",
+    "منطقة الجوف"
+   ],
+   "en": [
+    "Al-Jouf",
+    "Jouf"
+   ],
+   "domestic": true,
+   "parent": "SA",
+   "verified": true
+  },
+  {
+   "key": "G:الرياض",
+   "level": "governorate",
+   "ar": [
+    "الرياض"
+   ],
+   "en": [
+    "Riyadh"
+   ],
+   "domestic": true,
+   "parent": "R:الرياض",
+   "verified": false
+  },
+  {
+   "key": "G:الدرعية",
+   "level": "governorate",
+   "ar": [
+    "الدرعية"
+   ],
+   "en": [
+    "Diriyah"
+   ],
+   "domestic": true,
+   "parent": "R:الرياض",
+   "verified": false
+  },
+  {
+   "key": "G:الخرج",
+   "level": "governorate",
+   "ar": [
+    "الخرج"
+   ],
+   "en": [
+    "Al-Kharj"
+   ],
+   "domestic": true,
+   "parent": "R:الرياض",
+   "ambiguous": "name",
+   "verified": false
+  },
+  {
+   "key": "G:الدوادمي",
+   "level": "governorate",
+   "ar": [
+    "الدوادمي"
+   ],
+   "en": [
+    "Dawadmi"
+   ],
+   "domestic": true,
+   "parent": "R:الرياض",
+   "verified": false
+  },
+  {
+   "key": "G:المجمعة",
+   "level": "governorate",
+   "ar": [
+    "المجمعة"
+   ],
+   "en": [
+    "Majmaah"
+   ],
+   "domestic": true,
+   "parent": "R:الرياض",
+   "ambiguous": "word",
+   "verified": false
+  },
+  {
+   "key": "G:القويعية",
+   "level": "governorate",
+   "ar": [
+    "القويعية"
+   ],
+   "en": [
+    "Quwayiyah"
+   ],
+   "domestic": true,
+   "parent": "R:الرياض",
+   "verified": false
+  },
+  {
+   "key": "G:الأفلاج",
+   "level": "governorate",
+   "ar": [
+    "الأفلاج"
+   ],
+   "en": [
+    "Aflaj"
+   ],
+   "domestic": true,
+   "parent": "R:الرياض",
+   "verified": false
+  },
+  {
+   "key": "G:وادي الدواسر",
+   "level": "governorate",
+   "ar": [
+    "وادي الدواسر"
+   ],
+   "en": [
+    "Wadi ad-Dawasir"
+   ],
+   "domestic": true,
+   "parent": "R:الرياض",
+   "verified": false
+  },
+  {
+   "key": "G:الزلفي",
+   "level": "governorate",
+   "ar": [
+    "الزلفي"
+   ],
+   "en": [
+    "Zulfi"
+   ],
+   "domestic": true,
+   "parent": "R:الرياض",
+   "verified": false
+  },
+  {
+   "key": "G:شقراء",
+   "level": "governorate",
+   "ar": [
+    "شقراء"
+   ],
+   "en": [
+    "Shaqra"
+   ],
+   "domestic": true,
+   "parent": "R:الرياض",
+   "ambiguous": "name",
+   "verified": false
+  },
+  {
+   "key": "G:حوطة بني تميم",
+   "level": "governorate",
+   "ar": [
+    "حوطة بني تميم"
+   ],
+   "en": [
+    "Hotat Bani Tamim"
+   ],
+   "domestic": true,
+   "parent": "R:الرياض",
+   "verified": false
+  },
+  {
+   "key": "G:عفيف",
+   "level": "governorate",
+   "ar": [
+    "عفيف"
+   ],
+   "en": [
+    "Afif"
+   ],
+   "domestic": true,
+   "parent": "R:الرياض",
+   "ambiguous": "name",
+   "verified": false
+  },
+  {
+   "key": "G:الغاط",
+   "level": "governorate",
+   "ar": [
+    "الغاط"
+   ],
+   "en": [
+    "Al-Ghat"
+   ],
+   "domestic": true,
+   "parent": "R:الرياض",
+   "ambiguous": "name",
+   "verified": false
+  },
+  {
+   "key": "G:السليل",
+   "level": "governorate",
+   "ar": [
+    "السليل"
+   ],
+   "en": [
+    "As-Sulayyil"
+   ],
+   "domestic": true,
+   "parent": "R:الرياض",
+   "ambiguous": "name",
+   "verified": false
+  },
+  {
+   "key": "G:ضرما",
+   "level": "governorate",
+   "ar": [
+    "ضرما"
+   ],
+   "en": [
+    "Dhurma"
+   ],
+   "domestic": true,
+   "parent": "R:الرياض",
+   "verified": false
+  },
+  {
+   "key": "G:المزاحمية",
+   "level": "governorate",
+   "ar": [
+    "المزاحمية"
+   ],
+   "en": [
+    "Muzahmiyah"
+   ],
+   "domestic": true,
+   "parent": "R:الرياض",
+   "verified": false
+  },
+  {
+   "key": "G:رماح",
+   "level": "governorate",
+   "ar": [
+    "رماح"
+   ],
+   "en": [
+    "Rumah"
+   ],
+   "domestic": true,
+   "parent": "R:الرياض",
+   "ambiguous": "word",
+   "verified": false
+  },
+  {
+   "key": "G:ثادق",
+   "level": "governorate",
+   "ar": [
+    "ثادق"
+   ],
+   "en": [
+    "Thadiq"
+   ],
+   "domestic": true,
+   "parent": "R:الرياض",
+   "verified": false
+  },
+  {
+   "key": "G:حريملاء",
+   "level": "governorate",
+   "ar": [
+    "حريملاء"
+   ],
+   "en": [
+    "Huraymila"
+   ],
+   "domestic": true,
+   "parent": "R:الرياض",
+   "verified": false
+  },
+  {
+   "key": "G:الحريق",
+   "level": "governorate",
+   "ar": [
+    "الحريق"
+   ],
+   "en": [
+    "Al-Hariq"
+   ],
+   "domestic": true,
+   "parent": "R:الرياض",
+   "ambiguous": "word",
+   "verified": false
+  },
+  {
+   "key": "G:مرات",
+   "level": "governorate",
+   "ar": [
+    "مرات"
+   ],
+   "en": [
+    "Marat"
+   ],
+   "domestic": true,
+   "parent": "R:الرياض",
+   "ambiguous": "word",
+   "verified": false
+  },
+  {
+   "key": "G:الدلم",
+   "level": "governorate",
+   "ar": [
+    "الدلم"
+   ],
+   "en": [
+    "Ad-Dilam"
+   ],
+   "domestic": true,
+   "parent": "R:الرياض",
+   "ambiguous": "name",
+   "verified": false
+  },
+  {
+   "key": "G:مكة المكرمة",
+   "level": "governorate",
+   "ar": [
+    "مكة المكرمة"
+   ],
+   "en": [
+    "Makkah"
+   ],
+   "domestic": true,
+   "parent": "R:مكة المكرمة",
+   "verified": false
+  },
+  {
+   "key": "G:جدة",
+   "level": "governorate",
+   "ar": [
+    "جدة"
+   ],
+   "en": [
+    "Jeddah"
+   ],
+   "domestic": true,
+   "parent": "R:مكة المكرمة",
+   "ambiguous": "name",
+   "verified": false
+  },
+  {
+   "key": "G:الطائف",
+   "level": "governorate",
+   "ar": [
+    "الطائف"
+   ],
+   "en": [
+    "Taif"
+   ],
+   "domestic": true,
+   "parent": "R:مكة المكرمة",
+   "verified": false
+  },
+  {
+   "key": "G:القنفذة",
+   "level": "governorate",
+   "ar": [
+    "القنفذة"
+   ],
+   "en": [
+    "Al-Qunfudhah"
+   ],
+   "domestic": true,
+   "parent": "R:مكة المكرمة",
+   "verified": false
+  },
+  {
+   "key": "G:الليث",
+   "level": "governorate",
+   "ar": [
+    "الليث"
+   ],
+   "en": [
+    "Al-Lith"
+   ],
+   "domestic": true,
+   "parent": "R:مكة المكرمة",
+   "ambiguous": "name",
+   "verified": false
+  },
+  {
+   "key": "G:رابغ",
+   "level": "governorate",
+   "ar": [
+    "رابغ"
+   ],
+   "en": [
+    "Rabigh"
+   ],
+   "domestic": true,
+   "parent": "R:مكة المكرمة",
+   "verified": false
+  },
+  {
+   "key": "G:خليص",
+   "level": "governorate",
+   "ar": [
+    "خليص"
+   ],
+   "en": [
+    "Khulais"
+   ],
+   "domestic": true,
+   "parent": "R:مكة المكرمة",
+   "ambiguous": "name",
+   "verified": false
+  },
+  {
+   "key": "G:الخرمة",
+   "level": "governorate",
+   "ar": [
+    "الخرمة"
+   ],
+   "en": [
+    "Al-Khurmah"
+   ],
+   "domestic": true,
+   "parent": "R:مكة المكرمة",
+   "verified": false
+  },
+  {
+   "key": "G:رنية",
+   "level": "governorate",
+   "ar": [
+    "رنية"
+   ],
+   "en": [
+    "Ranyah"
+   ],
+   "domestic": true,
+   "parent": "R:مكة المكرمة",
+   "ambiguous": "name",
+   "verified": false
+  },
+  {
+   "key": "G:تربة",
+   "level": "governorate",
+   "ar": [
+    "تربة"
+   ],
+   "en": [
+    "Turabah"
+   ],
+   "domestic": true,
+   "parent": "R:مكة المكرمة",
+   "ambiguous": "word",
+   "verified": false
+  },
+  {
+   "key": "G:الجموم",
+   "level": "governorate",
+   "ar": [
+    "الجموم"
+   ],
+   "en": [
+    "Al-Jumum"
+   ],
+   "domestic": true,
+   "parent": "R:مكة المكرمة",
+   "verified": false
+  },
+  {
+   "key": "G:الكامل",
+   "level": "governorate",
+   "ar": [
+    "الكامل"
+   ],
+   "en": [
+    "Al-Kamil"
+   ],
+   "domestic": true,
+   "parent": "R:مكة المكرمة",
+   "ambiguous": "word",
+   "verified": false
+  },
+  {
+   "key": "G:المويه",
+   "level": "governorate",
+   "ar": [
+    "المويه"
+   ],
+   "en": [
+    "Al-Muwayh"
+   ],
+   "domestic": true,
+   "parent": "R:مكة المكرمة",
+   "verified": false
+  },
+  {
+   "key": "G:ميسان",
+   "level": "governorate",
+   "ar": [
+    "ميسان"
+   ],
+   "en": [
+    "Maysan"
+   ],
+   "domestic": true,
+   "parent": "R:مكة المكرمة",
+   "ambiguous": "name",
+   "verified": false
+  },
+  {
+   "key": "G:أضم",
+   "level": "governorate",
+   "ar": [
+    "أضم"
+   ],
+   "en": [
+    "Adham"
+   ],
+   "domestic": true,
+   "parent": "R:مكة المكرمة",
+   "ambiguous": "name",
+   "verified": false
+  },
+  {
+   "key": "G:العرضيات",
+   "level": "governorate",
+   "ar": [
+    "العرضيات"
+   ],
+   "en": [
+    "Al-Ardiyat"
+   ],
+   "domestic": true,
+   "parent": "R:مكة المكرمة",
+   "verified": false
+  },
+  {
+   "key": "G:بحرة",
+   "level": "governorate",
+   "ar": [
+    "بحرة"
+   ],
+   "en": [
+    "Bahra"
+   ],
+   "domestic": true,
+   "parent": "R:مكة المكرمة",
+   "ambiguous": "name",
+   "verified": false
+  },
+  {
+   "key": "G:المدينة المنورة",
+   "level": "governorate",
+   "ar": [
+    "المدينة المنورة"
+   ],
+   "en": [
+    "Madinah"
+   ],
+   "domestic": true,
+   "parent": "R:المدينة المنورة",
+   "verified": false
+  },
+  {
+   "key": "G:ينبع",
+   "level": "governorate",
+   "ar": [
+    "ينبع"
+   ],
+   "en": [
+    "Yanbu"
+   ],
+   "domestic": true,
+   "parent": "R:المدينة المنورة",
+   "verified": false
+  },
+  {
+   "key": "G:العلا",
+   "level": "governorate",
+   "ar": [
+    "العلا"
+   ],
+   "en": [
+    "AlUla"
+   ],
+   "domestic": true,
+   "parent": "R:المدينة المنورة",
+   "ambiguous": "name",
+   "verified": false
+  },
+  {
+   "key": "G:المهد",
+   "level": "governorate",
+   "ar": [
+    "المهد"
+   ],
+   "en": [
+    "Mahd adh-Dhahab"
+   ],
+   "domestic": true,
+   "parent": "R:المدينة المنورة",
+   "ambiguous": "word",
+   "verified": false
+  },
+  {
+   "key": "G:بدر",
+   "level": "governorate",
+   "ar": [
+    "بدر"
+   ],
+   "en": [
+    "Badr"
+   ],
+   "domestic": true,
+   "parent": "R:المدينة المنورة",
+   "ambiguous": "name",
+   "verified": false
+  },
+  {
+   "key": "G:خيبر",
+   "level": "governorate",
+   "ar": [
+    "خيبر"
+   ],
+   "en": [
+    "Khaybar"
+   ],
+   "domestic": true,
+   "parent": "R:المدينة المنورة",
+   "verified": false
+  },
+  {
+   "key": "G:الحناكية",
+   "level": "governorate",
+   "ar": [
+    "الحناكية"
+   ],
+   "en": [
+    "Al-Hinakiyah"
+   ],
+   "domestic": true,
+   "parent": "R:المدينة المنورة",
+   "verified": false
+  },
+  {
+   "key": "G:العيص",
+   "level": "governorate",
+   "ar": [
+    "العيص"
+   ],
+   "en": [
+    "Al-Ais"
+   ],
+   "domestic": true,
+   "parent": "R:المدينة المنورة",
+   "ambiguous": "name",
+   "verified": false
+  },
+  {
+   "key": "G:وادي الفرع",
+   "level": "governorate",
+   "ar": [
+    "وادي الفرع"
+   ],
+   "en": [
+    "Wadi al-Fara"
+   ],
+   "domestic": true,
+   "parent": "R:المدينة المنورة",
+   "verified": false
+  },
+  {
+   "key": "G:بريدة",
+   "level": "governorate",
+   "ar": [
+    "بريدة"
+   ],
+   "en": [
+    "Buraydah"
+   ],
+   "domestic": true,
+   "parent": "R:القصيم",
+   "verified": false
+  },
+  {
+   "key": "G:عنيزة",
+   "level": "governorate",
+   "ar": [
+    "عنيزة"
+   ],
+   "en": [
+    "Unayzah"
+   ],
+   "domestic": true,
+   "parent": "R:القصيم",
+   "verified": false
+  },
+  {
+   "key": "G:الرس",
+   "level": "governorate",
+   "ar": [
+    "الرس"
+   ],
+   "en": [
+    "Ar-Rass"
+   ],
+   "domestic": true,
+   "parent": "R:القصيم",
+   "ambiguous": "name",
+   "verified": false
+  },
+  {
+   "key": "G:المذنب",
+   "level": "governorate",
+   "ar": [
+    "المذنب"
+   ],
+   "en": [
+    "Al-Midhnab"
+   ],
+   "domestic": true,
+   "parent": "R:القصيم",
+   "verified": false
+  },
+  {
+   "key": "G:البكيرية",
+   "level": "governorate",
+   "ar": [
+    "البكيرية"
+   ],
+   "en": [
+    "Al-Bukayriyah"
+   ],
+   "domestic": true,
+   "parent": "R:القصيم",
+   "verified": false
+  },
+  {
+   "key": "G:البدائع",
+   "level": "governorate",
+   "ar": [
+    "البدائع"
+   ],
+   "en": [
+    "Al-Badai"
+   ],
+   "domestic": true,
+   "parent": "R:القصيم",
+   "ambiguous": "word",
+   "verified": false
+  },
+  {
+   "key": "G:الأسياح",
+   "level": "governorate",
+   "ar": [
+    "الأسياح"
+   ],
+   "en": [
+    "Al-Asyah"
+   ],
+   "domestic": true,
+   "parent": "R:القصيم",
+   "verified": false
+  },
+  {
+   "key": "G:النبهانية",
+   "level": "governorate",
+   "ar": [
+    "النبهانية"
+   ],
+   "en": [
+    "An-Nabhaniyah"
+   ],
+   "domestic": true,
+   "parent": "R:القصيم",
+   "verified": false
+  },
+  {
+   "key": "G:الشماسية",
+   "level": "governorate",
+   "ar": [
+    "الشماسية"
+   ],
+   "en": [
+    "Ash-Shimasiyah"
+   ],
+   "domestic": true,
+   "parent": "R:القصيم",
+   "verified": false
+  },
+  {
+   "key": "G:عيون الجواء",
+   "level": "governorate",
+   "ar": [
+    "عيون الجواء"
+   ],
+   "en": [
+    "Uyun al-Jiwa"
+   ],
+   "domestic": true,
+   "parent": "R:القصيم",
+   "verified": false
+  },
+  {
+   "key": "G:رياض الخبراء",
+   "level": "governorate",
+   "ar": [
+    "رياض الخبراء"
+   ],
+   "en": [
+    "Riyadh al-Khabra"
+   ],
+   "domestic": true,
+   "parent": "R:القصيم",
+   "verified": false
+  },
+  {
+   "key": "G:عقلة الصقور",
+   "level": "governorate",
+   "ar": [
+    "عقلة الصقور"
+   ],
+   "en": [
+    "Uqlat as-Suqur"
+   ],
+   "domestic": true,
+   "parent": "R:القصيم",
+   "verified": false
+  },
+  {
+   "key": "G:ضرية",
+   "level": "governorate",
+   "ar": [
+    "ضرية"
+   ],
+   "en": [
+    "Dariyah"
+   ],
+   "domestic": true,
+   "parent": "R:القصيم",
+   "verified": false
+  },
+  {
+   "key": "G:الدمام",
+   "level": "governorate",
+   "ar": [
+    "الدمام"
+   ],
+   "en": [
+    "Dammam"
+   ],
+   "domestic": true,
+   "parent": "R:الشرقية",
+   "verified": false
+  },
+  {
+   "key": "G:الأحساء",
+   "level": "governorate",
+   "ar": [
+    "الأحساء"
+   ],
+   "en": [
+    "Al-Ahsa"
+   ],
+   "domestic": true,
+   "parent": "R:الشرقية",
+   "verified": false
+  },
+  {
+   "key": "G:حفر الباطن",
+   "level": "governorate",
+   "ar": [
+    "حفر الباطن"
+   ],
+   "en": [
+    "Hafr al-Batin"
+   ],
+   "domestic": true,
+   "parent": "R:الشرقية",
+   "verified": false
+  },
+  {
+   "key": "G:الجبيل",
+   "level": "governorate",
+   "ar": [
+    "الجبيل"
+   ],
+   "en": [
+    "Jubail"
+   ],
+   "domestic": true,
+   "parent": "R:الشرقية",
+   "verified": false
+  },
+  {
+   "key": "G:القطيف",
+   "level": "governorate",
+   "ar": [
+    "القطيف"
+   ],
+   "en": [
+    "Qatif"
+   ],
+   "domestic": true,
+   "parent": "R:الشرقية",
+   "verified": false
+  },
+  {
+   "key": "G:الخبر",
+   "level": "governorate",
+   "ar": [
+    "الخبر"
+   ],
+   "en": [
+    "Khobar"
+   ],
+   "domestic": true,
+   "parent": "R:الشرقية",
+   "ambiguous": "word",
+   "verified": false
+  },
+  {
+   "key": "G:الخفجي",
+   "level": "governorate",
+   "ar": [
+    "الخفجي"
+   ],
+   "en": [
+    "Khafji"
+   ],
+   "domestic": true,
+   "parent": "R:الشرقية",
+   "verified": false
+  },
+  {
+   "key": "G:رأس تنورة",
+   "level": "governorate",
+   "ar": [
+    "رأس تنورة"
+   ],
+   "en": [
+    "Ras Tanura"
+   ],
+   "domestic": true,
+   "parent": "R:الشرقية",
+   "verified": false
+  },
+  {
+   "key": "G:بقيق",
+   "level": "governorate",
+   "ar": [
+    "بقيق"
+   ],
+   "en": [
+    "Abqaiq"
+   ],
+   "domestic": true,
+   "parent": "R:الشرقية",
+   "verified": false
+  },
+  {
+   "key": "G:النعيرية",
+   "level": "governorate",
+   "ar": [
+    "النعيرية"
+   ],
+   "en": [
+    "Nairyah"
+   ],
+   "domestic": true,
+   "parent": "R:الشرقية",
+   "verified": false
+  },
+  {
+   "key": "G:قرية العليا",
+   "level": "governorate",
+   "ar": [
+    "قرية العليا"
+   ],
+   "en": [
+    "Qaryat al-Ulya"
+   ],
+   "domestic": true,
+   "parent": "R:الشرقية",
+   "verified": false
+  },
+  {
+   "key": "G:العديد",
+   "level": "governorate",
+   "ar": [
+    "العديد"
+   ],
+   "en": [
+    "Al-Udayd"
+   ],
+   "domestic": true,
+   "parent": "R:الشرقية",
+   "ambiguous": "word",
+   "verified": false
+  },
+  {
+   "key": "G:أبها",
+   "level": "governorate",
+   "ar": [
+    "أبها"
+   ],
+   "en": [
+    "Abha"
+   ],
+   "domestic": true,
+   "parent": "R:عسير",
+   "verified": false
+  },
+  {
+   "key": "G:خميس مشيط",
+   "level": "governorate",
+   "ar": [
+    "خميس مشيط"
+   ],
+   "en": [
+    "Khamis Mushait"
+   ],
+   "domestic": true,
+   "parent": "R:عسير",
+   "verified": false
+  },
+  {
+   "key": "G:بيشة",
+   "level": "governorate",
+   "ar": [
+    "بيشة"
+   ],
+   "en": [
+    "Bisha"
+   ],
+   "domestic": true,
+   "parent": "R:عسير",
+   "verified": false
+  },
+  {
+   "key": "G:النماص",
+   "level": "governorate",
+   "ar": [
+    "النماص"
+   ],
+   "en": [
+    "An-Namas"
+   ],
+   "domestic": true,
+   "parent": "R:عسير",
+   "verified": false
+  },
+  {
+   "key": "G:محايل عسير",
+   "level": "governorate",
+   "ar": [
+    "محايل عسير"
+   ],
+   "en": [
+    "Muhayil"
+   ],
+   "domestic": true,
+   "parent": "R:عسير",
+   "verified": false
+  },
+  {
+   "key": "G:ظهران الجنوب",
+   "level": "governorate",
+   "ar": [
+    "ظهران الجنوب"
+   ],
+   "en": [
+    "Dhahran al-Janub"
+   ],
+   "domestic": true,
+   "parent": "R:عسير",
+   "verified": false
+  },
+  {
+   "key": "G:تثليث",
+   "level": "governorate",
+   "ar": [
+    "تثليث"
+   ],
+   "en": [
+    "Tathlith"
+   ],
+   "domestic": true,
+   "parent": "R:عسير",
+   "verified": false
+  },
+  {
+   "key": "G:سراة عبيدة",
+   "level": "governorate",
+   "ar": [
+    "سراة عبيدة"
+   ],
+   "en": [
+    "Sarat Abidah"
+   ],
+   "domestic": true,
+   "parent": "R:عسير",
+   "verified": false
+  },
+  {
+   "key": "G:رجال ألمع",
+   "level": "governorate",
+   "ar": [
+    "رجال ألمع"
+   ],
+   "en": [
+    "Rijal Alma"
+   ],
+   "domestic": true,
+   "parent": "R:عسير",
+   "verified": false
+  },
+  {
+   "key": "G:بلقرن",
+   "level": "governorate",
+   "ar": [
+    "بلقرن"
+   ],
+   "en": [
+    "Balqarn"
+   ],
+   "domestic": true,
+   "parent": "R:عسير",
+   "verified": false
+  },
+  {
+   "key": "G:أحد رفيدة",
+   "level": "governorate",
+   "ar": [
+    "أحد رفيدة"
+   ],
+   "en": [
+    "Ahad Rafidah"
+   ],
+   "domestic": true,
+   "parent": "R:عسير",
+   "verified": false
+  },
+  {
+   "key": "G:المجاردة",
+   "level": "governorate",
+   "ar": [
+    "المجاردة"
+   ],
+   "en": [
+    "Al-Majardah"
+   ],
+   "domestic": true,
+   "parent": "R:عسير",
+   "verified": false
+  },
+  {
+   "key": "G:البرك",
+   "level": "governorate",
+   "ar": [
+    "البرك"
+   ],
+   "en": [
+    "Al-Birk"
+   ],
+   "domestic": true,
+   "parent": "R:عسير",
+   "ambiguous": "word",
+   "verified": false
+  },
+  {
+   "key": "G:بارق",
+   "level": "governorate",
+   "ar": [
+    "بارق"
+   ],
+   "en": [
+    "Bariq"
+   ],
+   "domestic": true,
+   "parent": "R:عسير",
+   "ambiguous": "name",
+   "verified": false
+  },
+  {
+   "key": "G:تنومة",
+   "level": "governorate",
+   "ar": [
+    "تنومة"
+   ],
+   "en": [
+    "Tanomah"
+   ],
+   "domestic": true,
+   "parent": "R:عسير",
+   "verified": false
+  },
+  {
+   "key": "G:طريب",
+   "level": "governorate",
+   "ar": [
+    "طريب"
+   ],
+   "en": [
+    "Tarib"
+   ],
+   "domestic": true,
+   "parent": "R:عسير",
+   "verified": false
+  },
+  {
+   "key": "G:الحرجة",
+   "level": "governorate",
+   "ar": [
+    "الحرجة"
+   ],
+   "en": [
+    "Al-Harajah"
+   ],
+   "domestic": true,
+   "parent": "R:عسير",
+   "verified": false
+  },
+  {
+   "key": "G:تبوك",
+   "level": "governorate",
+   "ar": [
+    "تبوك"
+   ],
+   "en": [
+    "Tabuk"
+   ],
+   "domestic": true,
+   "parent": "R:تبوك",
+   "verified": false
+  },
+  {
+   "key": "G:الوجه",
+   "level": "governorate",
+   "ar": [
+    "الوجه"
+   ],
+   "en": [
+    "Al-Wajh"
+   ],
+   "domestic": true,
+   "parent": "R:تبوك",
+   "ambiguous": "word",
+   "verified": false
+  },
+  {
+   "key": "G:ضباء",
+   "level": "governorate",
+   "ar": [
+    "ضباء"
+   ],
+   "en": [
+    "Duba"
+   ],
+   "domestic": true,
+   "parent": "R:تبوك",
+   "verified": false
+  },
+  {
+   "key": "G:تيماء",
+   "level": "governorate",
+   "ar": [
+    "تيماء"
+   ],
+   "en": [
+    "Tayma"
+   ],
+   "domestic": true,
+   "parent": "R:تبوك",
+   "verified": false
+  },
+  {
+   "key": "G:أملج",
+   "level": "governorate",
+   "ar": [
+    "أملج"
+   ],
+   "en": [
+    "Umluj"
+   ],
+   "domestic": true,
+   "parent": "R:تبوك",
+   "verified": false
+  },
+  {
+   "key": "G:حقل",
+   "level": "governorate",
+   "ar": [
+    "حقل"
+   ],
+   "en": [
+    "Haql"
+   ],
+   "domestic": true,
+   "parent": "R:تبوك",
+   "ambiguous": "word",
+   "verified": false
+  },
+  {
+   "key": "G:البدع",
+   "level": "governorate",
+   "ar": [
+    "البدع"
+   ],
+   "en": [
+    "Al-Bad"
+   ],
+   "domestic": true,
+   "parent": "R:تبوك",
+   "ambiguous": "word",
+   "verified": false
+  },
+  {
+   "key": "G:حائل",
+   "level": "governorate",
+   "ar": [
+    "حائل"
+   ],
+   "en": [
+    "Hail"
+   ],
+   "domestic": true,
+   "parent": "R:حائل",
+   "ambiguous": "name",
+   "verified": false
+  },
+  {
+   "key": "G:بقعاء",
+   "level": "governorate",
+   "ar": [
+    "بقعاء"
+   ],
+   "en": [
+    "Baqaa"
+   ],
+   "domestic": true,
+   "parent": "R:حائل",
+   "verified": false
+  },
+  {
+   "key": "G:الغزالة",
+   "level": "governorate",
+   "ar": [
+    "الغزالة"
+   ],
+   "en": [
+    "Al-Ghazalah"
+   ],
+   "domestic": true,
+   "parent": "R:حائل",
+   "ambiguous": "word",
+   "verified": false
+  },
+  {
+   "key": "G:الشنان",
+   "level": "governorate",
+   "ar": [
+    "الشنان"
+   ],
+   "en": [
+    "Ash-Shinan"
+   ],
+   "domestic": true,
+   "parent": "R:حائل",
+   "verified": false
+  },
+  {
+   "key": "G:الحائط",
+   "level": "governorate",
+   "ar": [
+    "الحائط"
+   ],
+   "en": [
+    "Al-Hait"
+   ],
+   "domestic": true,
+   "parent": "R:حائل",
+   "ambiguous": "word",
+   "verified": false
+  },
+  {
+   "key": "G:السليمي",
+   "level": "governorate",
+   "ar": [
+    "السليمي"
+   ],
+   "en": [
+    "As-Sulaymi"
+   ],
+   "domestic": true,
+   "parent": "R:حائل",
+   "verified": false
+  },
+  {
+   "key": "G:الشملي",
+   "level": "governorate",
+   "ar": [
+    "الشملي"
+   ],
+   "en": [
+    "Ash-Shamli"
+   ],
+   "domestic": true,
+   "parent": "R:حائل",
+   "verified": false
+  },
+  {
+   "key": "G:موقق",
+   "level": "governorate",
+   "ar": [
+    "موقق"
+   ],
+   "en": [
+    "Mawqaq"
+   ],
+   "domestic": true,
+   "parent": "R:حائل",
+   "verified": false
+  },
+  {
+   "key": "G:سميراء",
+   "level": "governorate",
+   "ar": [
+    "سميراء"
+   ],
+   "en": [
+    "Samira"
+   ],
+   "domestic": true,
+   "parent": "R:حائل",
+   "verified": false
+  },
+  {
+   "key": "G:عرعر",
+   "level": "governorate",
+   "ar": [
+    "عرعر"
+   ],
+   "en": [
+    "Arar"
+   ],
+   "domestic": true,
+   "parent": "R:الحدود الشمالية",
+   "verified": false
+  },
+  {
+   "key": "G:رفحاء",
+   "level": "governorate",
+   "ar": [
+    "رفحاء"
+   ],
+   "en": [
+    "Rafha"
+   ],
+   "domestic": true,
+   "parent": "R:الحدود الشمالية",
+   "verified": false
+  },
+  {
+   "key": "G:طريف",
+   "level": "governorate",
+   "ar": [
+    "طريف"
+   ],
+   "en": [
+    "Turaif"
+   ],
+   "domestic": true,
+   "parent": "R:الحدود الشمالية",
+   "ambiguous": "name",
+   "verified": false
+  },
+  {
+   "key": "G:العويقيلة",
+   "level": "governorate",
+   "ar": [
+    "العويقيلة"
+   ],
+   "en": [
+    "Al-Uwayqilah"
+   ],
+   "domestic": true,
+   "parent": "R:الحدود الشمالية",
+   "verified": false
+  },
+  {
+   "key": "G:جازان",
+   "level": "governorate",
+   "ar": [
+    "جازان"
+   ],
+   "en": [
+    "Jazan"
+   ],
+   "domestic": true,
+   "parent": "R:جازان",
+   "verified": false
+  },
+  {
+   "key": "G:صبيا",
+   "level": "governorate",
+   "ar": [
+    "صبيا"
+   ],
+   "en": [
+    "Sabya"
+   ],
+   "domestic": true,
+   "parent": "R:جازان",
+   "verified": false
+  },
+  {
+   "key": "G:أبو عريش",
+   "level": "governorate",
+   "ar": [
+    "أبو عريش"
+   ],
+   "en": [
+    "Abu Arish"
+   ],
+   "domestic": true,
+   "parent": "R:جازان",
+   "verified": false
+  },
+  {
+   "key": "G:صامطة",
+   "level": "governorate",
+   "ar": [
+    "صامطة"
+   ],
+   "en": [
+    "Samtah"
+   ],
+   "domestic": true,
+   "parent": "R:جازان",
+   "verified": false
+  },
+  {
+   "key": "G:بيش",
+   "level": "governorate",
+   "ar": [
+    "بيش"
+   ],
+   "en": [
+    "Baish"
+   ],
+   "domestic": true,
+   "parent": "R:جازان",
+   "verified": false
+  },
+  {
+   "key": "G:الدرب",
+   "level": "governorate",
+   "ar": [
+    "الدرب"
+   ],
+   "en": [
+    "Ad-Darb"
+   ],
+   "domestic": true,
+   "parent": "R:جازان",
+   "ambiguous": "word",
+   "verified": false
+  },
+  {
+   "key": "G:الحرث",
+   "level": "governorate",
+   "ar": [
+    "الحرث"
+   ],
+   "en": [
+    "Al-Harth"
+   ],
+   "domestic": true,
+   "parent": "R:جازان",
+   "ambiguous": "word",
+   "verified": false
+  },
+  {
+   "key": "G:ضمد",
+   "level": "governorate",
+   "ar": [
+    "ضمد"
+   ],
+   "en": [
+    "Damad"
+   ],
+   "domestic": true,
+   "parent": "R:جازان",
+   "ambiguous": "name",
+   "verified": false
+  },
+  {
+   "key": "G:الريث",
+   "level": "governorate",
+   "ar": [
+    "الريث"
+   ],
+   "en": [
+    "Ar-Rayth"
+   ],
+   "domestic": true,
+   "parent": "R:جازان",
+   "ambiguous": "word",
+   "verified": false
+  },
+  {
+   "key": "G:العارضة",
+   "level": "governorate",
+   "ar": [
+    "العارضة"
+   ],
+   "en": [
+    "Al-Aridah"
+   ],
+   "domestic": true,
+   "parent": "R:جازان",
+   "ambiguous": "word",
+   "verified": false
+  },
+  {
+   "key": "G:العيدابي",
+   "level": "governorate",
+   "ar": [
+    "العيدابي"
+   ],
+   "en": [
+    "Al-Aidabi"
+   ],
+   "domestic": true,
+   "parent": "R:جازان",
+   "verified": false
+  },
+  {
+   "key": "G:فرسان",
+   "level": "governorate",
+   "ar": [
+    "فرسان"
+   ],
+   "en": [
+    "Farasan"
+   ],
+   "domestic": true,
+   "parent": "R:جازان",
+   "verified": false
+  },
+  {
+   "key": "G:الدائر",
+   "level": "governorate",
+   "ar": [
+    "الدائر"
+   ],
+   "en": [
+    "Ad-Dayer"
+   ],
+   "domestic": true,
+   "parent": "R:جازان",
+   "ambiguous": "word",
+   "verified": false
+  },
+  {
+   "key": "G:أحد المسارحة",
+   "level": "governorate",
+   "ar": [
+    "أحد المسارحة"
+   ],
+   "en": [
+    "Ahad al-Masarihah"
+   ],
+   "domestic": true,
+   "parent": "R:جازان",
+   "verified": false
+  },
+  {
+   "key": "G:الطوال",
+   "level": "governorate",
+   "ar": [
+    "الطوال"
+   ],
+   "en": [
+    "At-Tuwal"
+   ],
+   "domestic": true,
+   "parent": "R:جازان",
+   "ambiguous": "word",
+   "verified": false
+  },
+  {
+   "key": "G:فيفا",
+   "level": "governorate",
+   "ar": [
+    "فيفا"
+   ],
+   "en": [
+    "Fayfa"
+   ],
+   "domestic": true,
+   "parent": "R:جازان",
+   "verified": false
+  },
+  {
+   "key": "G:هروب",
+   "level": "governorate",
+   "ar": [
+    "هروب"
+   ],
+   "en": [
+    "Harub"
+   ],
+   "domestic": true,
+   "parent": "R:جازان",
+   "ambiguous": "word",
+   "verified": false
+  },
+  {
+   "key": "G:نجران",
+   "level": "governorate",
+   "ar": [
+    "نجران"
+   ],
+   "en": [
+    "Najran"
+   ],
+   "domestic": true,
+   "parent": "R:نجران",
+   "verified": false
+  },
+  {
+   "key": "G:شرورة",
+   "level": "governorate",
+   "ar": [
+    "شرورة"
+   ],
+   "en": [
+    "Sharurah"
+   ],
+   "domestic": true,
+   "parent": "R:نجران",
+   "verified": false
+  },
+  {
+   "key": "G:حبونا",
+   "level": "governorate",
+   "ar": [
+    "حبونا"
+   ],
+   "en": [
+    "Hubuna"
+   ],
+   "domestic": true,
+   "parent": "R:نجران",
+   "verified": false
+  },
+  {
+   "key": "G:بدر الجنوب",
+   "level": "governorate",
+   "ar": [
+    "بدر الجنوب"
+   ],
+   "en": [
+    "Badr al-Janub"
+   ],
+   "domestic": true,
+   "parent": "R:نجران",
+   "verified": false
+  },
+  {
+   "key": "G:يدمة",
+   "level": "governorate",
+   "ar": [
+    "يدمة"
+   ],
+   "en": [
+    "Yadamah"
+   ],
+   "domestic": true,
+   "parent": "R:نجران",
+   "verified": false
+  },
+  {
+   "key": "G:ثار",
+   "level": "governorate",
+   "ar": [
+    "ثار"
+   ],
+   "en": [
+    "Thar"
+   ],
+   "domestic": true,
+   "parent": "R:نجران",
+   "ambiguous": "word",
+   "verified": false
+  },
+  {
+   "key": "G:خباش",
+   "level": "governorate",
+   "ar": [
+    "خباش"
+   ],
+   "en": [
+    "Khubash"
+   ],
+   "domestic": true,
+   "parent": "R:نجران",
+   "verified": false
+  },
+  {
+   "key": "G:الخرخير",
+   "level": "governorate",
+   "ar": [
+    "الخرخير"
+   ],
+   "en": [
+    "Al-Kharkhir"
+   ],
+   "domestic": true,
+   "parent": "R:نجران",
+   "verified": false
+  },
+  {
+   "key": "G:الباحة",
+   "level": "governorate",
+   "ar": [
+    "الباحة"
+   ],
+   "en": [
+    "Al-Baha"
+   ],
+   "domestic": true,
+   "parent": "R:الباحة",
+   "verified": false
+  },
+  {
+   "key": "G:بلجرشي",
+   "level": "governorate",
+   "ar": [
+    "بلجرشي"
+   ],
+   "en": [
+    "Baljurashi"
+   ],
+   "domestic": true,
+   "parent": "R:الباحة",
+   "verified": false
+  },
+  {
+   "key": "G:المندق",
+   "level": "governorate",
+   "ar": [
+    "المندق"
+   ],
+   "en": [
+    "Al-Mandaq"
+   ],
+   "domestic": true,
+   "parent": "R:الباحة",
+   "verified": false
+  },
+  {
+   "key": "G:المخواة",
+   "level": "governorate",
+   "ar": [
+    "المخواة"
+   ],
+   "en": [
+    "Al-Makhwah"
+   ],
+   "domestic": true,
+   "parent": "R:الباحة",
+   "verified": false
+  },
+  {
+   "key": "G:قلوة",
+   "level": "governorate",
+   "ar": [
+    "قلوة"
+   ],
+   "en": [
+    "Qilwah"
+   ],
+   "domestic": true,
+   "parent": "R:الباحة",
+   "ambiguous": "name",
+   "verified": false
+  },
+  {
+   "key": "G:العقيق",
+   "level": "governorate",
+   "ar": [
+    "العقيق"
+   ],
+   "en": [
+    "Al-Aqiq"
+   ],
+   "domestic": true,
+   "parent": "R:الباحة",
+   "ambiguous": "word",
+   "verified": false
+  },
+  {
+   "key": "G:القرى",
+   "level": "governorate",
+   "ar": [
+    "القرى"
+   ],
+   "en": [
+    "Al-Qura"
+   ],
+   "domestic": true,
+   "parent": "R:الباحة",
+   "ambiguous": "word",
+   "verified": false
+  },
+  {
+   "key": "G:غامد الزناد",
+   "level": "governorate",
+   "ar": [
+    "غامد الزناد"
+   ],
+   "en": [
+    "Ghamid az-Zinad"
+   ],
+   "domestic": true,
+   "parent": "R:الباحة",
+   "verified": false
+  },
+  {
+   "key": "G:الحجرة",
+   "level": "governorate",
+   "ar": [
+    "الحجرة"
+   ],
+   "en": [
+    "Al-Hajrah"
+   ],
+   "domestic": true,
+   "parent": "R:الباحة",
+   "ambiguous": "word",
+   "verified": false
+  },
+  {
+   "key": "G:بني حسن",
+   "level": "governorate",
+   "ar": [
+    "بني حسن"
+   ],
+   "en": [
+    "Bani Hasan"
+   ],
+   "domestic": true,
+   "parent": "R:الباحة",
+   "verified": false
+  },
+  {
+   "key": "G:سكاكا",
+   "level": "governorate",
+   "ar": [
+    "سكاكا"
+   ],
+   "en": [
+    "Sakaka"
+   ],
+   "domestic": true,
+   "parent": "R:الجوف",
+   "verified": false
+  },
+  {
+   "key": "G:القريات",
+   "level": "governorate",
+   "ar": [
+    "القريات"
+   ],
+   "en": [
+    "Al-Qurayyat"
+   ],
+   "domestic": true,
+   "parent": "R:الجوف",
+   "verified": false
+  },
+  {
+   "key": "G:دومة الجندل",
+   "level": "governorate",
+   "ar": [
+    "دومة الجندل"
+   ],
+   "en": [
+    "Dumat al-Jandal"
+   ],
+   "domestic": true,
+   "parent": "R:الجوف",
+   "verified": false
+  },
+  {
+   "key": "G:طبرجل",
+   "level": "governorate",
+   "ar": [
+    "طبرجل"
+   ],
+   "en": [
+    "Tabarjal"
+   ],
+   "domestic": true,
+   "parent": "R:الجوف",
+   "verified": false
+  },
+  {
+   "key": "JO-AMM",
+   "level": "city",
+   "ar": [
+    "عمان",
+    "عمّان",
+    "عمان الأردنية",
+    "عمّان الأردنية",
+    "العاصمة الأردنية"
+   ],
+   "en": [
+    "Amman"
+   ],
+   "domestic": false,
+   "parent": "JO",
+   "verified": true
+  }
+ ]
+}

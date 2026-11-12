@@ -815,11 +815,7 @@ BEGIN
   )
   SELECT count(*) INTO n FROM refs x JOIN kb_chunks c ON c.id = x.chunk_id JOIN kb_sources s ON s.id = c.source_id
   WHERE NOT (
-    CASE WHEN s.registry_id IS NOT NULL THEN EXISTS (
-      SELECT 1 FROM ref_sources rs JOIN ref_versions rv ON rv.source_id = rs.id JOIN ref_match_runs mr ON mr.version_id = rv.id
-      JOIN ref_match_reviews mv ON mv.run_id = mr.id JOIN held h ON h.user_id = mv.reviewer_user_id AND h.role = 'legal'
-      WHERE rs.code = s.registry_id AND mv.decision = 'accepted' AND mv.session_id IS NOT NULL
-        AND NOT EXISTS (SELECT 1 FROM ref_match_reviews later WHERE later.run_id = mr.id AND later.reviewed_at > mv.reviewed_at))
+    CASE WHEN s.registry_id IS NOT NULL THEN registry_unit_reviewed(s.registry_id, c.article_no) -- stage 11 D: this article's unit
     ELSE EXISTS (
       SELECT 1 FROM kb_source_reviews k JOIN held h ON h.user_id = k.reviewer_user_id AND h.role = k.reviewer_role
       WHERE k.chunk_id = c.id AND k.decision = 'accepted' AND k.session_id IS NOT NULL
@@ -991,11 +987,7 @@ BEGIN
   SELECT count(*) INTO n FROM refs x
   LEFT JOIN kb_chunks c ON x.cid ~* '^[0-9a-f-]{36}$' AND c.id = x.cid::uuid LEFT JOIN kb_sources s ON s.id = c.source_id
   WHERE c.id IS NULL OR NOT (
-    CASE WHEN s.registry_id IS NOT NULL THEN EXISTS (
-      SELECT 1 FROM ref_sources rs JOIN ref_versions rv ON rv.source_id = rs.id JOIN ref_match_runs mr ON mr.version_id = rv.id
-      JOIN ref_match_reviews mv ON mv.run_id = mr.id JOIN held h ON h.user_id = mv.reviewer_user_id AND h.role = 'legal'
-      WHERE rs.code = s.registry_id AND mv.decision = 'accepted' AND mv.session_id IS NOT NULL
-        AND NOT EXISTS (SELECT 1 FROM ref_match_reviews later WHERE later.run_id = mr.id AND later.reviewed_at > mv.reviewed_at))
+    CASE WHEN s.registry_id IS NOT NULL THEN registry_unit_reviewed(s.registry_id, c.article_no) -- stage 11 D: this article's unit
     ELSE EXISTS (
       SELECT 1 FROM kb_source_reviews k JOIN held h ON h.user_id = k.reviewer_user_id AND h.role = k.reviewer_role
       WHERE k.chunk_id = c.id AND k.decision = 'accepted' AND k.session_id IS NOT NULL AND k.reviewer_role = kb_source_role(s)
@@ -1069,11 +1061,7 @@ BEGIN
   SELECT count(*) INTO n FROM refs x
   LEFT JOIN kb_chunks c ON c.id = try_uuid(x.cid) LEFT JOIN kb_sources s ON s.id = c.source_id
   WHERE c.id IS NULL OR (s.registry_id IS NULL AND s.superseded_at IS NOT NULL) OR NOT (
-    CASE WHEN s.registry_id IS NOT NULL THEN EXISTS (
-      SELECT 1 FROM ref_sources rs JOIN ref_versions rv ON rv.source_id = rs.id JOIN ref_match_runs mr ON mr.version_id = rv.id
-      JOIN ref_match_reviews mv ON mv.run_id = mr.id JOIN held h ON h.user_id = mv.reviewer_user_id AND h.role = 'legal'
-      WHERE rs.code = s.registry_id AND mv.decision = 'accepted' AND mv.session_id IS NOT NULL
-        AND NOT EXISTS (SELECT 1 FROM ref_match_reviews later WHERE later.run_id = mr.id AND later.reviewed_at > mv.reviewed_at))
+    CASE WHEN s.registry_id IS NOT NULL THEN registry_unit_reviewed(s.registry_id, c.article_no) -- stage 11 D: this article's unit
     ELSE EXISTS (
       SELECT 1 FROM kb_source_reviews k JOIN held h ON h.user_id = k.reviewer_user_id AND h.role = k.reviewer_role
       WHERE k.chunk_id = c.id AND k.decision = 'accepted' AND k.session_id IS NOT NULL AND k.reviewer_role = kb_source_role(s)
@@ -1731,11 +1719,22 @@ CREATE OR REPLACE FUNCTION app_can_manage_members(w uuid) RETURNS boolean LANGUA
 $$;
 REVOKE ALL ON FUNCTION app_can_manage_members(uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION app_can_manage_members(uuid) TO waqfak_app;
+CREATE OR REPLACE FUNCTION app_founder_drafting(w uuid) RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+  SELECT app_current_user() IS NOT NULL
+     AND EXISTS (SELECT 1 FROM waqfs x WHERE x.id = w AND x.created_by = app_current_user() AND x.status IN ('idea', 'draft'))
+     AND EXISTS (SELECT 1 FROM waqf_memberships f WHERE f.waqf_id = w AND f.user_id = app_current_user() AND f.role_key = 'founder' AND f.status = 'active')
+$$;
+REVOKE ALL ON FUNCTION app_founder_drafting(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION app_founder_drafting(uuid) TO waqfak_app;
 DROP POLICY IF EXISTS wm_manage ON waqf_memberships;
 CREATE POLICY wm_manage ON waqf_memberships AS RESTRICTIVE FOR INSERT TO waqfak_app
   WITH CHECK (app_can_manage_members(waqf_id) OR (
     NOT app_waqf_has_members(waqf_id) AND user_id = app_current_user()
     AND EXISTS (SELECT 1 FROM waqfs w WHERE w.id = waqf_id AND w.created_by = app_current_user() AND w.created_at = now()))
+    -- the founder of a waqf still being established (their own draft, «idea»/«draft») who names themselves its nazir
+    -- in the establishment wizard (the deed draft says so): only on a waqf they created and are the founder of — never
+    -- another person's waqf, nor one without members (found by the desktop e2e, establish wizard)
+    OR (user_id = app_current_user() AND role_key = 'nazir' AND app_founder_drafting(waqf_id))
     -- an invitation accepted by its invitee (the invitation, not the invitee, names the role)
     OR EXISTS (SELECT 1 FROM invitations i WHERE i.waqf_id = waqf_memberships.waqf_id AND i.accepted_by = app_current_user()
                  AND waqf_memberships.user_id = app_current_user() AND i.role_key = waqf_memberships.role_key AND i.revoked_at IS NULL));
@@ -1746,7 +1745,9 @@ DO $$ DECLARE t record; BEGIN
       ('consents', 'user_id = app_current_user()', 'user_id = app_current_user()'),
       ('notification_preferences', 'user_id = app_current_user()', 'user_id = app_current_user()'),
       ('data_subject_requests', 'user_id = app_current_user()', 'user_id = app_current_user()'),
-      ('payments', 'user_id = app_current_user()', 'false'),
+      -- a client starts the checkout of their own invoice (an «initiated» payment, its provider reference set after):
+      -- never a «paid» row, never another person's invoice (found by the desktop e2e, billing checkout)
+      ('payments', 'user_id = app_current_user()', 'user_id = app_current_user() AND status = ''initiated'' AND EXISTS (SELECT 1 FROM invoices i WHERE i.id = payments.invoice_id AND i.user_id = app_current_user())'),
       ('contract_signatures', 'user_id = app_current_user() OR EXISTS (SELECT 1 FROM contracts k WHERE k.id = contract_signatures.contract_id)', 'user_id = app_current_user()'),
       ('facts', 'EXISTS (SELECT 1 FROM assessments a WHERE a.id = facts.assessment_id)', 'EXISTS (SELECT 1 FROM assessments a WHERE a.id = facts.assessment_id)')
     ) AS x(tbl, own_read, own_write) LOOP
@@ -1847,6 +1848,84 @@ BEGIN
 END $$;
 DROP TRIGGER IF EXISTS report_issue_guard ON reports;
 CREATE TRIGGER report_issue_guard BEFORE UPDATE ON reports FOR EACH ROW EXECUTE FUNCTION report_issue_guard();
+
+-- ═════════════ Stage 11, D: a comparison is reviewed unit by unit (ref_match_units) ═════════════
+-- The text of one article of a stored version, as its units (paragraphs, items) are stored: what a unit's review attests.
+CREATE OR REPLACE FUNCTION ref_article_sha(ver uuid, art integer) RETURNS text LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+  SELECT CASE WHEN count(*) = 0 THEN NULL ELSE encode(sha256(convert_to(string_agg(u.locator || E'\u0001' || u.text, E'\u0002' ORDER BY u.locator COLLATE "C"), 'UTF8')), 'hex') END
+  FROM ref_units u WHERE u.version_id = ver AND u.article = art
+$$;
+REVOKE ALL ON FUNCTION ref_article_sha(uuid, integer) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION ref_article_sha(uuid, integer) TO waqfak_app;
+
+-- A unit is what its run compared: its key is «م<article>», its outcome the run's for that key, its fingerprint the
+-- article's stored text — all set or checked by the database, never taken from the writer.
+CREATE OR REPLACE FUNCTION ref_match_unit_fill() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+DECLARE r record;
+BEGIN
+  SELECT mr.version_id, mr.per_article INTO r FROM ref_match_runs mr WHERE mr.id = NEW.run_id;
+  IF NOT FOUND THEN RAISE EXCEPTION 'ref_match_units: no such run' USING ERRCODE = 'foreign_key_violation'; END IF;
+  IF NEW.unit_key !~ '^م[0-9]+$' THEN RAISE EXCEPTION 'ref_match_units: a unit is an article («م<n>»)' USING ERRCODE = 'check_violation'; END IF;
+  NEW.article := substr(NEW.unit_key, 2)::int;
+  NEW.outcome := r.per_article->>NEW.unit_key;
+  IF NEW.outcome IS NULL THEN RAISE EXCEPTION 'ref_match_units: the run did not compare %', NEW.unit_key USING ERRCODE = 'check_violation'; END IF;
+  NEW.text_sha256 := ref_article_sha(r.version_id, NEW.article);
+  IF NEW.text_sha256 IS NULL THEN RAISE EXCEPTION 'ref_match_units: the version stores no text for %', NEW.unit_key USING ERRCODE = 'check_violation'; END IF;
+  NEW.created_at := clock_timestamp();
+  RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS ref_match_unit_fill ON ref_match_units;
+CREATE TRIGGER ref_match_unit_fill BEFORE INSERT ON ref_match_units FOR EACH ROW EXECUTE FUNCTION ref_match_unit_fill();
+DROP TRIGGER IF EXISTS ref_append_only ON ref_match_units;
+CREATE TRIGGER ref_append_only BEFORE UPDATE OR DELETE ON ref_match_units FOR EACH ROW EXECUTE FUNCTION ref_append_only();
+DROP TRIGGER IF EXISTS ref_no_truncate ON ref_match_units;
+CREATE TRIGGER ref_no_truncate BEFORE TRUNCATE ON ref_match_units FOR EACH STATEMENT EXECUTE FUNCTION ref_append_only();
+ALTER TABLE ref_match_units ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS ref_system_only ON ref_match_units;
+CREATE POLICY ref_system_only ON ref_match_units FOR ALL TO waqfak_app USING (app_has_global_access() OR app_is_system() OR app_is_staff()) WITH CHECK (app_is_system());
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON ref_match_units FROM waqfak_app;
+GRANT SELECT, INSERT ON ref_match_units TO waqfak_system;
+
+-- Every run's compared articles become its units (runs stored before this stage included). A run-level review made
+-- before it names no unit and authorises nothing: each article is reviewed again, on its own.
+INSERT INTO ref_match_units (run_id, unit_key, article, outcome, text_sha256)
+SELECT mr.id, k.key, 0, '', '' FROM ref_match_runs mr CROSS JOIN LATERAL jsonb_each_text(mr.per_article) k
+WHERE k.key ~ '^م[0-9]+$' AND ref_article_sha(mr.version_id, substr(k.key, 2)::int) IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM ref_match_units u WHERE u.run_id = mr.id AND u.unit_key = k.key);
+
+-- A review (from the application or the system) names the unit it reviews, and that unit is of the run it names.
+-- (not a definer: current_user must be the writer's role, not the function owner's)
+CREATE OR REPLACE FUNCTION ref_review_unit() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
+BEGIN
+  IF current_user NOT IN ('waqfak_app', 'waqfak_system') THEN RETURN NEW; END IF;
+  IF NEW.unit_id IS NULL THEN
+    RAISE EXCEPTION 'ref_match_reviews: a review is of one unit (an article) of the comparison, never of the whole source' USING ERRCODE = 'check_violation';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM ref_match_units u WHERE u.id = NEW.unit_id AND u.run_id = NEW.run_id) THEN
+    RAISE EXCEPTION 'ref_match_reviews: the unit is not of this comparison' USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS ref_review_unit ON ref_match_reviews;
+CREATE TRIGGER ref_review_unit BEFORE INSERT ON ref_match_reviews FOR EACH ROW EXECUTE FUNCTION ref_review_unit();
+
+-- The final gate: a passage of a registry instrument is citable only when ITS article was compared as identical or
+-- editorially identical, and that unit's latest review is an acceptance by an active holder of the legal field, in
+-- their session, of the article text stored now. Nothing else in the run, and nothing in another run, counts.
+CREATE OR REPLACE FUNCTION registry_unit_reviewed(code text, art integer) RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+  SELECT art IS NOT NULL AND EXISTS (
+    SELECT 1 FROM ref_sources rs JOIN ref_versions rv ON rv.source_id = rs.id JOIN ref_match_runs mr ON mr.version_id = rv.id
+    JOIN ref_match_units mu ON mu.run_id = mr.id AND mu.article = art
+    JOIN ref_match_reviews mv ON mv.unit_id = mu.id AND mv.run_id = mr.id
+    JOIN users u ON u.id = mv.reviewer_user_id AND u.status = 'active' AND (u.locked_until IS NULL OR u.locked_until < now())
+    WHERE rs.code = code AND mu.outcome IN ('identical', 'editorial_only') AND mv.decision = 'accepted' AND mv.session_id IS NOT NULL
+      AND mu.text_sha256 = ref_article_sha(rv.id, art)
+      AND EXISTS (SELECT 1 FROM user_roles ur JOIN role_permissions rp ON rp.role_id = ur.role_id JOIN permissions p ON p.id = rp.permission_id
+                  WHERE ur.user_id = u.id AND p.key = 'knowledge.review.legal')
+      AND NOT EXISTS (SELECT 1 FROM ref_match_reviews later WHERE later.unit_id = mu.id AND later.reviewed_at > mv.reviewed_at))
+$$;
+REVOKE ALL ON FUNCTION registry_unit_reviewed(text, integer) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION registry_unit_reviewed(text, integer) TO waqfak_app;
 
 -- ═════════════ Phase 10 (owner's order of 2026-11-09), N9-1: no function resolves a name the caller can shadow ═════════════
 -- A function body names tables and functions without a schema; PostgreSQL resolves them by search_path at each call,

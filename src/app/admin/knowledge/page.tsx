@@ -72,13 +72,26 @@ export default async function KnowledgeReviewAdmin({ searchParams }: { searchPar
               <li key={r.runId} className="px-4 py-3 md:px-5">
                 <div className="flex flex-wrap items-baseline gap-x-3">
                   <span dir="ltr">{r.refId}</span><span>{r.versionLabel}</span><Badge tone="info">{r.outcome}</Badge>
-                  <span className="text-[13px] text-muted">{r.reviews.length ? r.reviews.map((v) => `${v.decision} ${v.at.slice(0, 10)}`).join("، ") : "بلا مراجعة"}</span>
+                  {r.legacyReviews ? <span className="text-[13px] text-muted">{`${r.legacyReviews} مراجعة سابقة للمقارنة كلها لا تُعتمد: تُراجع كل مادة وحدها`}</span> : null}
                 </div>
-                <EditorForm action={recordComparisonDecision} submitLabel="سجّل" idPrefix={`run-${r.runId}`} confirmText="تُسجل المراجعة باسمك ولا تُعدل بعد ذلك. متابعة؟">
-                  <input type="hidden" name="runId" value={r.runId} />
-                  <EField label="القرار" name="decision" required><Select name="decision" options={DECISIONS} /></EField>
-                  <EField label="الملاحظة" name="note" required><Textarea name="note" /></EField>
-                </EditorForm>
+                {r.units.length ? (
+                  <ul className="mt-2 space-y-3">
+                    {r.units.map((u) => (
+                      <li key={u.unit} className="rounded border border-line px-3 py-2">
+                        <div className="flex flex-wrap items-baseline gap-x-3">
+                          <span>{`المادة ${u.unit.slice(1)}`}</span><Badge tone="info">{u.outcome}</Badge>
+                          <span className="text-[13px] text-muted">{u.reviews.length ? u.reviews.map((v) => `${v.decision} ${v.at.slice(0, 10)}`).join("، ") : "بلا مراجعة"}</span>
+                        </div>
+                        <EditorForm action={recordComparisonDecision} submitLabel="سجّل مراجعة المادة" idPrefix={`run-${r.runId}-${u.unit}`} confirmText="تُسجل مراجعة هذه المادة وحدها باسمك ولا تُعدل بعد ذلك. متابعة؟">
+                          <input type="hidden" name="runId" value={r.runId} />
+                          <input type="hidden" name="unit" value={u.unit} />
+                          <EField label="القرار" name="decision" required><Select name="decision" options={DECISIONS} /></EField>
+                          <EField label="الملاحظة: ما قابلته في نص هذه المادة" name="note" required><Textarea name="note" /></EField>
+                        </EditorForm>
+                      </li>
+                    ))}
+                  </ul>
+                ) : <p className="mt-1 text-[13px] text-muted">لا مواد مخزنة النص في هذه المقارنة: لا يُستشهد بشيء منها.</p>}
               </li>
             ))}
           </ul>

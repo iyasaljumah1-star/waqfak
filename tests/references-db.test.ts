@@ -89,7 +89,14 @@ describe.skipIf(!enabled)("reference registry (dedicated test database)", () => 
       expect((await store.versionAt(tx, "SYN-TEST", "2026-01-01"))!.id).toBe(b);
 
       const run = await store.appendMatchRun(tx, vid, { id: "r", versionId: vid, candidateLabel: "c", candidateSha256: "s", outcome: "extraction_defective", perArticle: { م1: "extraction_defective" }, ranAt: "2026-11-06T00:00:00Z" }, { note: "test" });
-      await store.appendReview(tx, run, { reviewer: "x", reviewerUserId: "00000000-0000-4000-8000-000000000001", at: "2026-11-06T00:00:00Z", decision: "rejected", note: "test" });
+      // stage 11, D: the run's compared article became a unit (outcome and text fingerprint set by the database) …
+      const matchUnits = await tx.execute(sql`select unit_key, article, outcome, length(text_sha256) as l from ref_match_units where run_id = ${run}::uuid`);
+      expect(matchUnits.rows).toEqual([{ unit_key: "م1", article: 1, outcome: "extraction_defective", l: 64 }]);
+      // … a review is of that unit; one of the whole run is refused
+      await store.appendReview(tx, run, { unit: "م1", reviewer: "x", reviewerUserId: "00000000-0000-4000-8000-000000000001", at: "2026-11-06T00:00:00Z", decision: "rejected", note: "test" });
+      await tx.execute(sql`savepoint whole`);
+      await expect(store.appendReview(tx, run, { reviewer: "x", reviewerUserId: "00000000-0000-4000-8000-000000000001", at: "2026-11-06T00:00:00Z", decision: "rejected", note: "test" })).rejects.toThrow();
+      await tx.execute(sql`rollback to savepoint whole`);
       await store.appendFetchAttempt(tx, { refId: "GAA-LAW", url: "https://laws.boe.gov.sa/x", at: "2026-11-06T00:00:00Z", ok: false, via: "relay_scrape", failure: { kind: "access_blocked", detail: "test" } });
     });
   });

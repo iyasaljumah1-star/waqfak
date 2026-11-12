@@ -86,6 +86,36 @@ export default async function FiqhDossierPage({ params }: { params: Promise<{ id
         {latest && (latest.decision === "approved" || latest.decision === "modified") ? <Badge tone="ok">{STAGE_AR.final}</Badge> : <Badge tone="warn">توصية بحثية غير معتمدة</Badge>}
       </Panel>
 
+      {d.frame ? (
+        <Panel title={`النتيجة: ${d.frame.statusAr}`}>
+          <Element kind="engine">
+            <p className="text-[14px] text-muted">{d.frame.note}</p>
+            <h3 className="mt-3 font-medium">ما ثبت من الوقائع</h3>
+            {d.frame.established.length ? <ul className="list-disc ps-5">{d.frame.established.map((f) => <li key={f.text}>«{f.text}» — {f.where}</li>)}</ul> : <p>لم تثبت واقعة بنص صريح.</p>}
+            <h3 className="mt-3 font-medium">ما لم يثبت أو لم يرد</h3>
+            {d.frame.notEstablished.length ? <ul className="list-disc ps-5">{d.frame.notEstablished.map((g) => <li key={g.text}>«{g.text}» — {g.why}</li>)}</ul> : <p>لا شيء.</p>}
+            <h3 className="mt-3 font-medium">الوقائع التي يتوقف عليها الحكم في النصوص</h3>
+            {d.frame.dependsOn.length ? (
+              <ul className="list-disc ps-5">
+                {d.frame.dependsOn.map((x, i) => <li key={`${x.statementId}-${i}`}>{x.statementId}: «{x.condition}» ({x.kind === "exception" ? "استثناء" : "شرط"}) — {x.status === "met" ? `متحقق بالواقعة «${x.byFact}»` : x.status === "unmet" ? `غير متحقق بالواقعة «${x.byFact}»` : "غير معلوم"}</li>)}
+              </ul>
+            ) : <p>لم يُقرأ في النصوص شرط أو استثناء.</p>}
+            <h3 className="mt-3 font-medium">النصوص المستند إليها ونسبتها</h3>
+            <ul className="list-disc ps-5">
+              {d.frame.basis.map((b) => (
+                <li key={b.statementId}>
+                  {b.statementId} — {b.nature}{b.attributedTo ? ` — القائل: ${b.attributedTo}` : ""} — {b.book}{b.author ? ` (${b.author})` : ""}، {b.locator} — {b.schoolAr}
+                  {b.reliedUpon ? " — المعتمد في المذهب بنص الكتاب" : ""}{b.reviewed ? "" : " — النص غير مراجع"}
+                  <blockquote className="my-1 border-s-2 border-line ps-3 text-[14px]">{b.quote}</blockquote>
+                  {b.note ? <p className="text-[13px] text-warn">{b.note}</p> : null}
+                </li>
+              ))}
+            </ul>
+            {d.frame.changes.length ? <p className="mt-2 text-[13px] text-muted">ما غيّرته المعالجة التحفظية في القراءة اللفظية: {d.frame.changes.join("؛ ")}</p> : null}
+          </Element>
+        </Panel>
+      ) : null}
+
       <Panel title="المسألة ووقائعها">
         <Element kind="engine">
           <p className="font-medium">{d.issue.question}</p>
