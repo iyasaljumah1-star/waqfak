@@ -34,6 +34,7 @@ const U = {
   mlro: "00000000-0000-4000-8000-0000000e0a06", // holds mlro, second factor
 };
 const W = { a: "00000000-0000-4000-8000-0000000e0b01", b: "00000000-0000-4000-8000-0000000e0b02", empty: "00000000-0000-4000-8000-0000000e0b03" };
+const REP = { issued: "00000000-0000-4000-8000-0000000e0c01", draft: "00000000-0000-4000-8000-0000000e0c02" };
 const TOK = Object.fromEntries(Object.keys(U).map((k) => [k, `stage11-attack-${k}-${randomBytes(8).toString("hex")}`])) as Record<keyof typeof U, string>;
 
 async function fixtures(db: string) {
@@ -60,6 +61,9 @@ async function fixtures(db: string) {
     await c.query(`insert into consents (user_id, kind, version, granted) values ($1, 'privacy', 'v1', true)`, [U.victim]);
     await c.query(`insert into data_subject_requests (user_id, kind, details) values ($1, 'access', 'اختبار')`, [U.victim]);
     await c.query(`insert into notification_preferences (user_id, type, in_app, email, sms) values ($1, 'invitation', true, false, false) on conflict do nothing`, [U.victim]);
+    // an issued report and a draft awaiting approval (for C3, P8)
+    for (const [id, st] of [[REP.issued, "final"], [REP.draft, "draft"]])
+      await c.query(`insert into reports (id, number, waqf_id, kind, title, status, verification_code, snapshot) values ($1, $2, $3, 'nazara_periodic', 'تقرير اختبار', $4, $5, '{"v":1}') on conflict (id) do nothing`, [id, `T-REP-${id.slice(-4)}`, W.a, st, `vc${id.slice(-8)}`]);
     await c.query("commit");
   } finally {
     await c.end();
@@ -79,7 +83,8 @@ async function bind(x: Ctx, k: keyof typeof U): Promise<string | null> {
     return (r.rows[0]?.u as string) ?? null;
   } catch {
     await x.q("rollback to savepoint b");
-    await x.q(`select set_config('app.user_id', $1, true), set_config('app.global_access', 'off', true)`, [U[k]]);
+    // as the base application set them: global access for a holder of a global role (the administrators), not otherwise
+    await x.q(`select set_config('app.user_id', $1, true), set_config('app.global_access', $2, true)`, [U[k], k === "admin" || k === "adminNoMfa" ? "on" : "off"]);
     return U[k];
   }
 }
@@ -131,11 +136,17 @@ const ATTACKS: Attack[] = [
   { id: "T2", finding: "no-RLS", what: "bound as a client: change a service, a setting or a feature flag", run: async (x) => { await bind(x, "client"); const a = (await x.q(`update services set name_ar = name_ar where true`)).rowCount ?? 0; const b = (await x.q(`update settings set value = value where true`)).rowCount ?? 0; const c = (await x.q(`update feature_flags set enabled = enabled where true`)).rowCount ?? 0; return a + b + c > 0; } },
   { id: "T3", finding: "no-RLS", what: "bound as a client: read the outbox (other people's SMS and e-mails) or the rate limits", run: async (x) => { await bind(x, "client"); return n(await x.q(`select (select count(*) from outbox_messages) + (select count(*) from rate_limits)`)) > 0; } },
   { id: "T4", finding: "no-RLS", what: "bound as a client: read KYC records, persons, organizations, devices", run: async (x) => { await bind(x, "client"); return n(await x.q(`select (select count(*) from kyc_records) + (select count(*) from persons) + (select count(*) from organizations) + (select count(*) from devices)`)) >= 0; } },
+  // ── stage 11, C: what the engine wrote, the reference data, issued reports ──
+  { id: "C1", finding: "N10-16", what: "bound administrator: record a text as the engine's (the gate's registry of engine texts)", run: async (x) => { await bind(x, "admin"); return ((await x.q(`insert into engine_blocks (binding, text_sha256, run_id, writer) values (md5(random()::text), md5(random()::text), gen_random_uuid(), 'model')`)).rowCount ?? 0) > 0; } },
+  { id: "C2", finding: "ref-data", what: "bound administrator (global access): retire every knowledge source (the engine then cites nothing)", run: async (x) => { await bind(x, "admin"); const a = (await x.q(`update kb_sources set superseded_at = now() where superseded_at is null`)).rowCount ?? 0; return a > 0; } },
+  { id: "C3", finding: "reports", what: "bound administrator: rewrite an issued report's title and snapshot (its link and code stay)", run: async (x) => { await bind(x, "admin"); return ((await x.q(`update reports set title = 'عنوان مزور', snapshot = '{"v":2}' where id = $1`, [REP.issued])).rowCount ?? 0) > 0; } },
+  { id: "C4", finding: "reports", what: "bound administrator: withdraw an approval (approved → draft) on an approved report", run: async (x) => { await bind(x, "admin"); await x.q(`update reports set status = 'approved', approved_by = $1, approved_at = now() where id = $2`, [U.admin, REP.draft]); return ((await x.q(`update reports set status = 'draft', approved_by = null, approved_at = null where id = $1`, [REP.draft])).rowCount ?? 0) > 0; } },
   { id: "T5", finding: "no-RLS", what: "bound as a client: plant a contact message or a notification template", run: async (x) => { await bind(x, "client"); await x.q(`update notification_templates set title_ar = title_ar where true`).then((r) => { if ((r.rowCount ?? 0) === 0) throw new Error("no rows"); }); return true; } },
 ];
 
 /** Must work on the new layer: the legitimate paths still open. */
 const CONTROLS: Attack[] = [
+  { id: "P8", finding: "—", what: "a bound administrator approves a draft report in their own name (draft → approved, once)", run: async (x) => { await bind(x, "admin"); return ((await x.q(`update reports set status = 'approved', approved_by = $1, approved_at = now() where id = $2 and status = 'draft'`, [U.admin, REP.draft])).rowCount ?? 0) > 0; } },
   { id: "P1", finding: "—", what: "bound administrator with the second factor grants a role through admin_grant_role", run: async (x) => { await bind(x, "admin"); return (await x.q(`select admin_grant_role($1, 'employee') as ok`, [U.client])).rows[0]?.ok === true; } },
   { id: "P2", finding: "—", what: "bound client reads their own waqf and changes their own name", run: async (x) => { await bind(x, "client"); const r = n(await x.q(`select count(*) from waqfs where id = $1`, [W.a])); const u = (await x.q(`update users set full_name = 'اسم جديد' where id = $1`, [U.client])).rowCount; return r === 1 && u === 1; } },
   { id: "P3", finding: "—", what: "bound client ends their own session", run: async (x) => { await bind(x, "client"); return ((await x.q(`update sessions set revoked_at = now(), revoke_reason = 'logout' where user_id = $1`, [U.client])).rowCount ?? 0) > 0; } },

@@ -18,7 +18,8 @@ import { draftInputs } from "@/server/modules/outputs/live";
 import { addVersion, ensureOutput, versionOf } from "@/server/modules/outputs/server";
 import { syncConflicts, transitionGate } from "@/server/modules/outputs/quality";
 import { mergeRegenerated } from "@/server/modules/outputs/pure";
-import { specialistBinding } from "@/server/modules/outputs/binding";
+import { citedNumbers, specialistBinding } from "@/server/modules/outputs/binding";
+import { registerEngineBlock } from "@/server/modules/outputs/engine-blocks";
 import { readVersionPlain } from "@/server/modules/documents/core";
 import { extractText } from "@/server/modules/ai/extract";
 import { engineAuth } from "../actor";
@@ -250,6 +251,7 @@ export async function processRequest(job: ClaimedJob): Promise<RunOutcome> {
               if (!t.missing.length) {
                 b.text = t.text; b.by = "engine"; b.runId = run.id; b.writer = "template"; b.refs = []; b.basis = [];
                 b.binding = specialistBinding(b);
+                await registerEngineBlock(tx, b, o.id);
                 sectionLog.push({ section: sec.title, by: "template" });
               }
               else problems.push(`${sec.title}: قالب القاعدة يحتاج ${t.missing.join("، ")}`);
@@ -289,7 +291,7 @@ export async function processRequest(job: ClaimedJob): Promise<RunOutcome> {
             const chk = checkSection({ text: result.text, citations: result.citations, sources, sourceArticles: new Map(hits.map((h, i) => [i + 1, h.articleNo])), requireCitation: !!w.requireCitation });
             warnings.push(...chk.warnings.map((x) => `${sec.title}: ${x}`));
             if (!chk.ok) { problems.push(...chk.problems.map((x) => `${sec.title}: ${x}`)); sectionLog.push({ section: sec.title, by: provider.id, rejected: chk.problems }); continue; }
-            const cited = new Set([...result.citations, ...[...result.text.matchAll(/\[(\d{1,3})\]/g)].map((m) => Number(m[1]))]);
+            const cited = new Set([...result.citations, ...citedNumbers(result.text)]);
             b.text = result.text;
             b.by = "engine";
             b.runId = run.id;
@@ -308,6 +310,7 @@ export async function processRequest(job: ClaimedJob): Promise<RunOutcome> {
             // text, run, references, basis and dossier bound together (N9-9): the final gate recomputes it
             b.writer = "model";
             b.binding = specialistBinding(b);
+            await registerEngineBlock(tx, b, o.id);
             sectionLog.push({ section: sec.title, by: provider.id, model: provider.model, cited: b.refs.map((r) => `${r.refCode} ${r.locator}`), rationale: result.rationale });
           }
         }

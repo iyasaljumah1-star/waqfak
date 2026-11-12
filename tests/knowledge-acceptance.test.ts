@@ -123,11 +123,11 @@ describe.skipIf(!enabled)("unified knowledge engine (dedicated test database)", 
   it("what the engine cites is never edited in place, even in the system context", async () => {
     const msg = (e: unknown) => String((e as Error & { cause?: Error })?.cause?.message ?? e);
     const a = await rolledBack(async (tx) => { await tx.execute(sql`update kb_chunks set text = 'نص معدل' where true`); }).catch((e) => e);
-    expect(msg(a)).toMatch(/append-only/);
+    expect(msg(a)).toMatch(/append-only|permission denied for table kb_chunks/);
     const b = await rolledBack(async (tx) => { await tx.execute(sql`update kb_sources set services = '{Z99}' where ref_code = 'INVEST-RULES'`); }).catch((e) => e);
     expect(msg(b)).toMatch(/only superseded_at may change/);
     const c = await rolledBack(async (tx) => { await tx.execute(sql`delete from kb_sources where ref_code = 'Q100'`); }).catch((e) => e);
-    expect(msg(c)).toMatch(/delete refused/);
+    expect(msg(c)).toMatch(/delete refused|permission denied for table kb_sources/);
   });
 
   it("a review is accepted only from a user holding the field's permission, in their own session, with its audit entry (N3/B5/P6c)", async () => {
@@ -300,6 +300,7 @@ describe.skipIf(!enabled)("unified knowledge engine (dedicated test database)", 
       const [r] = (await tx.execute(sql`select count(*)::int as n from kb_chunks where text = 'عبث'`)).rows as { n: number }[];
       if (r!.n > 0) throw new Error("user session altered the knowledge base");
       throw new Rollback();
-    })).rejects.toThrow(Rollback);
+      // stage 11: refused outright (no UPDATE on kb_chunks for any writer) or changing nothing — never altered
+    }).catch((e: Error & { cause?: Error }) => { if (e instanceof Rollback || /permission denied for table kb_chunks/.test(String(e.cause?.message ?? e.message))) throw new Rollback(); throw e; })).rejects.toThrow(Rollback);
   });
 });

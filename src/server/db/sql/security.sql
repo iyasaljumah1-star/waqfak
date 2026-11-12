@@ -1136,21 +1136,39 @@ CREATE TRIGGER review_db_time BEFORE INSERT ON fiqh_reviews FOR EACH ROW EXECUTE
 -- chunks sorted (byte order) and deduplicated, the dossier — joined by newlines; its sha256 must equal the block's
 -- «binding». A model's text must also cite something, have a basis, cite only from its basis, and every [n] in the text
 -- must be a cited reference. Counted per faulty block; output_unreviewed_basis() adds it to the approval guard.
+-- Stage 11 (N10-15, N10-16): a citation «[٣]» or «[۳]» is the citation «[3]»; an engine block's run id is never empty;
+-- an engine block's binding must be in the engine's own registry (engine_blocks, written by the engine's system
+-- connection only) with the same run and text; and a block not labelled as the engine's whose text is an engine text
+-- (relabelled «template» or «person», or re-spaced) is refused — the gate does not take the label's word for it.
+CREATE OR REPLACE FUNCTION block_text_sha(t text) RETURNS text LANGUAGE sql IMMUTABLE SET search_path = pg_catalog, public, pg_temp AS $$
+  SELECT encode(sha256(convert_to(regexp_replace(coalesce(t, ''), E'[\\t\\n\\u000b\\f\\r \\u00a0\\u1680\\u2000-\\u200d\\u2028\\u2029\\u202f\\u205f\\u2060\\u3000\\ufeff]+', '', 'g'), 'UTF8')), 'hex')
+$$;
+CREATE OR REPLACE FUNCTION ascii_digits(t text) RETURNS text LANGUAGE sql IMMUTABLE SET search_path = pg_catalog, public, pg_temp AS $$
+  SELECT translate(t, '٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹', '01234567890123456789')
+$$;
 CREATE OR REPLACE FUNCTION specialist_block_errors(secs jsonb) RETURNS integer LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
-DECLARE b jsonb; n integer := 0; refs text; basis text; want text; bad boolean;
+DECLARE b jsonb; n integer := 0; refs text; basis text; want text; bad boolean; tsha text;
 BEGIN
   IF secs IS NULL THEN RETURN 0; END IF;
   FOR b IN SELECT x FROM jsonb_path_query(secs, '$[*] ? (!(exists(@.removed)) || @.removed != true).blocks[*] ? (@.type == "specialist")') x LOOP
-    -- a text that cites [n] carries the references it cites, whoever wrote it
-    IF EXISTS (SELECT 1 FROM regexp_matches(coalesce(b->>'text', ''), '\[(\d+)\]', 'g') m
-               WHERE NOT EXISTS (SELECT 1 FROM jsonb_array_elements(coalesce(b->'refs', '[]'::jsonb)) r WHERE (r->>'n') = m[1])) THEN
+    -- a text that cites [n] (in any digits) carries the references it cites, whoever wrote it
+    IF EXISTS (SELECT 1 FROM regexp_matches(coalesce(b->>'text', ''), '\[([0-9٠-٩۰-۹]{1,3})\]', 'g') m
+               WHERE NOT EXISTS (SELECT 1 FROM jsonb_array_elements(coalesce(b->'refs', '[]'::jsonb)) r WHERE (r->>'n') = ascii_digits(m[1])::int::text)) THEN
       n := n + 1; CONTINUE;
     END IF;
-    CONTINUE WHEN coalesce(b->>'by', '') <> 'engine' OR btrim(coalesce(b->>'text', '')) = '';
+    CONTINUE WHEN btrim(coalesce(b->>'text', '')) = '';
+    tsha := block_text_sha(b->>'text');
+    IF coalesce(b->>'by', '') <> 'engine' THEN
+      -- an engine text under another label (N10-16)
+      IF EXISTS (SELECT 1 FROM engine_blocks e WHERE e.text_sha256 = tsha) THEN n := n + 1; END IF;
+      CONTINUE;
+    END IF;
     SELECT coalesce(string_agg((r->>'n') || ':' || (r->>'chunkId'), ',' ORDER BY (r->>'n')::int), '') INTO refs FROM jsonb_array_elements(coalesce(b->'refs', '[]'::jsonb)) r;
     SELECT coalesce(string_agg(c, ',' ORDER BY c COLLATE "C"), '') INTO basis FROM (SELECT DISTINCT r->>'chunkId' AS c FROM jsonb_array_elements(coalesce(b->'basis', '[]'::jsonb)) r) x;
     want := encode(sha256(convert_to(concat_ws(E'\n', b->>'text', coalesce(b->>'runId', ''), coalesce(b->>'writer', ''), refs, basis, coalesce(b->>'dossierId', '')), 'UTF8')), 'hex');
-    bad := b->>'runId' IS NULL OR coalesce(b->>'writer', '') NOT IN ('model', 'template') OR b->>'binding' IS DISTINCT FROM want;
+    bad := btrim(coalesce(b->>'runId', '')) = '' OR coalesce(b->>'writer', '') NOT IN ('model', 'template') OR b->>'binding' IS DISTINCT FROM want
+        -- … and the engine wrote it: its binding is in the registry, from the same run, with the same text and writer
+        OR NOT EXISTS (SELECT 1 FROM engine_blocks e WHERE e.binding = want AND e.run_id::text = b->>'runId' AND e.text_sha256 = tsha AND e.writer = b->>'writer');
     IF NOT bad AND b->>'writer' = 'model' THEN
       bad := jsonb_array_length(coalesce(b->'refs', '[]'::jsonb)) = 0 OR jsonb_array_length(coalesce(b->'basis', '[]'::jsonb)) = 0
           OR EXISTS (SELECT 1 FROM jsonb_array_elements(b->'refs') r WHERE NOT EXISTS (SELECT 1 FROM jsonb_array_elements(b->'basis') x WHERE x->>'chunkId' = r->>'chunkId'));
@@ -1781,6 +1799,50 @@ DO $$ DECLARE t text; BEGIN
   END LOOP;
 END $$;
 -- sequences: the numbering every writer advances (no person's data); left without RLS, documented in TABLES.md
+
+-- ═════════════ Stage 11, C: what the engine wrote, the reference data, issued reports ═════════════
+-- The registry of engine texts (N10-16): written by the engine's system connection only, read by the gate (a definer).
+-- The application role holds nothing on it; the system may add and read, never change or remove.
+REVOKE ALL ON engine_blocks FROM waqfak_app;
+GRANT SELECT, INSERT ON engine_blocks TO waqfak_system;
+ALTER TABLE engine_blocks ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS eb_system ON engine_blocks;
+CREATE POLICY eb_system ON engine_blocks FOR ALL TO waqfak_system USING (app_is_system()) WITH CHECK (app_is_system());
+
+-- The reference data (texts, units, versions, comparisons, retrieval attempts) is loaded by the system (ingestion
+-- scripts, the engine) and never written from a user session, whatever role the user holds: the application role
+-- keeps reading it (policies above) and recording reviews of it (kb_source_reviews, ref_match_reviews, fiqh_reviews,
+-- ref_version_confirmations), not the texts themselves.
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON kb_sources, kb_chunks, ref_sources, ref_versions, ref_units, ref_match_runs, ref_fetch_attempts FROM waqfak_app;
+GRANT SELECT, INSERT ON kb_sources, kb_chunks, ref_sources, ref_versions, ref_units, ref_match_runs, ref_fetch_attempts TO waqfak_system;
+-- only a source's registry entry is re-recorded (ref_sources upsert) and a knowledge source superseded (kb_sources,
+-- superseded_at alone: kb_source_guard); the texts, units, versions and comparisons are never updated
+GRANT UPDATE ON kb_sources, ref_sources TO waqfak_system;
+REVOKE UPDATE, DELETE, TRUNCATE ON kb_chunks, ref_versions, ref_units, ref_match_runs, ref_fetch_attempts FROM waqfak_system;
+
+-- An issued report is what it was issued as: its kind, title, waqf, snapshot, assessment, document and issue never
+-- change; a draft is approved once (draft → approved, by the bound user), and an approval is not withdrawn. A changed
+-- report is a new report, with its own number and verification code.
+CREATE OR REPLACE FUNCTION report_issue_guard() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
+BEGIN
+  IF current_user NOT IN ('waqfak_app', 'waqfak_system') THEN RETURN NEW; END IF;
+  IF NEW.kind IS DISTINCT FROM OLD.kind OR NEW.title IS DISTINCT FROM OLD.title OR NEW.waqf_id IS DISTINCT FROM OLD.waqf_id
+     OR NEW.snapshot IS DISTINCT FROM OLD.snapshot OR NEW.assessment_id IS DISTINCT FROM OLD.assessment_id
+     OR NEW.document_id IS DISTINCT FROM OLD.document_id OR NEW.generated_by IS DISTINCT FROM OLD.generated_by
+     OR NEW.generated_at IS DISTINCT FROM OLD.generated_at THEN
+    RAISE EXCEPTION 'reports: an issued report does not change (issue a new one)' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  IF NEW.status IS DISTINCT FROM OLD.status OR NEW.approved_by IS DISTINCT FROM OLD.approved_by OR NEW.approved_at IS DISTINCT FROM OLD.approved_at THEN
+    IF NOT (OLD.status = 'draft' AND NEW.status = 'approved' AND OLD.approved_by IS NULL AND OLD.approved_at IS NULL
+            AND NEW.approved_at IS NOT NULL AND NEW.approved_by IS NOT NULL
+            AND (app_is_system() OR NEW.approved_by = app_current_user())) THEN
+      RAISE EXCEPTION 'reports: a draft is approved once, by the approver in person; an approval is not withdrawn' USING ERRCODE = 'insufficient_privilege';
+    END IF;
+  END IF;
+  RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS report_issue_guard ON reports;
+CREATE TRIGGER report_issue_guard BEFORE UPDATE ON reports FOR EACH ROW EXECUTE FUNCTION report_issue_guard();
 
 -- ═════════════ Phase 10 (owner's order of 2026-11-09), N9-1: no function resolves a name the caller can shadow ═════════════
 -- A function body names tables and functions without a schema; PostgreSQL resolves them by search_path at each call,

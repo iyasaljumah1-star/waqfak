@@ -64,6 +64,21 @@ export const processingRuns = pgTable("processing_runs", {
   finishedAt: timestamp({ withTimezone: true }),
 }, (t) => [index("pr_request_idx").on(t.requestId, t.startedAt)]);
 
+/**
+ * The registry of texts the engine wrote (stage 11, N10-16): one row per specialist block, written by the engine's
+ * system connection in the run that wrote it — append-only, never written by the application. The final gate
+ * (security.sql specialist_block_errors) requires an engine block's binding to be here with its run and text, and
+ * refuses a block whose text is an engine text under another label (relabelled «template» or «person»).
+ */
+export const engineBlocks = pgTable("engine_blocks", {
+  binding: text().primaryKey(),
+  textSha256: text().notNull(),
+  runId: uuid().notNull(),
+  writer: text().notNull(), // model | template
+  outputId: uuid(),
+  createdAt: createdAt(),
+}, (t) => [index("eb_text_idx").on(t.textSha256), check("eb_writer_ck", sql`${t.writer} in ('model', 'template')`)]);
+
 /** The steps of a run, in order, each with a short auditable rationale (never the model's internal reasoning). */
 export const processingSteps = pgTable("processing_steps", {
   id: id(),

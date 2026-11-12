@@ -57,12 +57,12 @@ export const bindInvitation = (r: { id: string; waqfId: string; phone: string; r
 /**
  * A document share is bound to the CONTENT it was issued for (N9-2), not only to the document's id: the document's waqf
  * (whose key decrypts it) and confidentiality, and the current version as it was — its id, number, storage key, IV,
- * tag and content hash. A version swapped or moved underneath, a new version, another waqf, a confidentiality changed:
+ * tag, content hash, MIME type and file name (stage 11, N10-14). A version swapped or moved underneath, a new version, another waqf, a confidentiality changed:
  * the link no longer opens (it is reissued for the new content).
  */
 export type ShareContent = {
   doc: { id: string; waqfId: string | null; confidentiality: string; currentVersion: number | null };
-  version: { id: string; documentId: string; version: number; storageKey: string; sha256: string; iv: string | null; authTag: string | null } | null;
+  version: { id: string; documentId: string; version: number; storageKey: string; sha256: string; iv: string | null; authTag: string | null; mimeType: string; originalName: string } | null;
 };
 export const bindDocumentShare = (r: { id: string; documentId: string; waqfId: string | null; createdBy: string; expiresAt: Date; maxUses: number }, c: ShareContent) =>
   ({
@@ -71,6 +71,8 @@ export const bindDocumentShare = (r: { id: string; documentId: string; waqfId: s
       docId: c.doc.id, docWaqf: c.doc.waqfId, confidentiality: c.doc.confidentiality, currentVersion: c.doc.currentVersion,
       versionId: c.version?.id ?? null, versionDoc: c.version?.documentId ?? null, versionNo: c.version?.version ?? null,
       storageKey: c.version?.storageKey ?? null, sha256: c.version?.sha256 ?? null, iv: c.version?.iv ?? null, authTag: c.version?.authTag ?? null,
+      // the type it is served as and the name it is saved under (N10-14): a file relabelled as HTML or renamed opens nothing
+      mimeType: c.version?.mimeType ?? null, originalName: c.version?.originalName ?? null,
     },
   });
 /** A report share is bound to the report and to the assessment and result it shows (N9-2: «reports.assessment_id»). */

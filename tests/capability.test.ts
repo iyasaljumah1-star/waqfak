@@ -22,7 +22,7 @@ const D = (s: string) => new Date(s);
 const U = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const content = (o: Partial<ShareContent["doc"]> = {}, v: Partial<NonNullable<ShareContent["version"]>> = {}): ShareContent => ({
   doc: { id: U(2), waqfId: U(3), confidentiality: "internal", currentVersion: 1, ...o },
-  version: { id: U(9), documentId: U(2), version: 1, storageKey: "k/1", sha256: "a".repeat(64), iv: "iv", authTag: "tag", ...v },
+  version: { id: U(9), documentId: U(2), version: 1, storageKey: "k/1", sha256: "a".repeat(64), iv: "iv", authTag: "tag", mimeType: "application/pdf", originalName: "deed.pdf", ...v },
 });
 
 describe("capability tokens — pure", () => {
@@ -42,7 +42,9 @@ describe("capability tokens — pure", () => {
     for (const changed of [{ documentId: U(5) }, { waqfId: null }, { expiresAt: D("2027-01-01T00:00:00Z") }, { maxUses: 50 }, { createdBy: U(6) }])
       expect(verifyCapability("document_share", token, b, bindDocumentShare({ ...row, ...changed }, content())), JSON.stringify(changed)).toBe(false);
     for (const [d, v] of [[{ waqfId: U(7) }, {}], [{ confidentiality: "secret" }, {}], [{ currentVersion: 2 }, {}], [{}, { id: U(8) }], [{}, { storageKey: "k/other" }],
-      [{}, { sha256: "b".repeat(64) }], [{}, { iv: "iv2" }], [{}, { authTag: "tag2" }], [{}, { documentId: U(10) }]] as const)
+      [{}, { sha256: "b".repeat(64) }], [{}, { iv: "iv2" }], [{}, { authTag: "tag2" }], [{}, { documentId: U(10) }],
+      // stage 11, N10-14: the type it is served as and the name it is saved under
+      [{}, { mimeType: "text/html" }], [{}, { originalName: "deed.html" }]] as const)
       expect(verifyCapability("document_share", token, b, bindDocumentShare(row, content(d, v))), JSON.stringify([d, v])).toBe(false);
     expect(verifyCapability("document_share", token, b, bindDocumentShare(row, { ...content(), version: null }))).toBe(false);
     expect(verifyCapability("document_share", randomToken(24), b, bindDocumentShare(row, content()))).toBe(false);
@@ -151,6 +153,9 @@ describe.skipIf(!devDb)("capability tokens — use paths on the development data
         `update documents set current_version = ${a.d.currentVersion} where id = '${a.d.id}'; update document_versions set document_id = '${b.d.id}', version = ${b.v.version} where id = '${b.v.id}'`],
       ["K4 waqf of the document changed", `update documents set waqf_id = ${b.d.waqfId && b.d.waqfId !== a.d.waqfId ? `'${b.d.waqfId}'` : `gen_random_uuid()`} where id = '${a.d.id}'`, `update documents set waqf_id = ${a.d.waqfId ? `'${a.d.waqfId}'` : "null"} where id = '${a.d.id}'`],
       ["K5 confidentiality changed", `update documents set confidentiality = 'confidential' where id = '${a.d.id}'`, `update documents set confidentiality = '${a.d.confidentiality}' where id = '${a.d.id}'`],
+      // stage 11, N10-14: the file served as another type (HTML in the browser) or under another name
+      ["K6 MIME type of the version changed", `update document_versions set mime_type = 'text/html' where id = '${a.v.id}'`, `update document_versions set mime_type = '${a.v.mimeType}' where id = '${a.v.id}'`],
+      ["K7 file name of the version changed", `update document_versions set original_name = 'x.html' where id = '${a.v.id}'`, `update document_versions set original_name = '${a.v.originalName.replace(/'/g, "''")}' where id = '${a.v.id}'`],
     ];
     for (const [label, change, undo] of cases) {
       owner(change);
@@ -241,7 +246,12 @@ describe.skipIf(!devDb)("capability tokens — use paths on the development data
     const row = { id: crypto.randomUUID(), reportId: rep, waqfId: null, createdBy: f.user, expiresAt: new Date(Date.now() + 86_400_000) };
     const binding = await withSystem(async (tx) => capabilityBinding("report_share", token, bindReportShare(row, await reportContent(tx, rep))));
     expect(await withSystem(async (tx) => verifyCapability("report_share", token, binding, bindReportShare(row, await reportContent(tx, rep))))).toBe(true);
-    await withSystem((tx) => tx.update(schema.reports).set({ assessmentId: U(92) }).where(eq(schema.reports.id, rep)));
+    // stage 11: an issued report does not change from the application or the system connection …
+    const refused = await withSystem((tx) => tx.update(schema.reports).set({ assessmentId: U(92) }).where(eq(schema.reports.id, rep))).then(() => "", (e: { message?: string; cause?: { message?: string } }) => `${e.message} ${e.cause?.message ?? ""}`);
+    expect(refused).toMatch(/issued report does not change/);
+    // … and changed underneath by the database owner, the link opens nothing either
+    const { execFileSync } = await import("node:child_process");
+    execFileSync("sudo", ["-n", "-u", "postgres", "psql", "-v", "ON_ERROR_STOP=1", "-q", "-d", "waqfak_dev", "-c", `update reports set assessment_id = '${U(92)}' where id = '${rep}'`]);
     expect(await withSystem(async (tx) => verifyCapability("report_share", token, binding, bindReportShare(row, await reportContent(tx, rep))))).toBe(false);
   });
 

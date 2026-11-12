@@ -112,12 +112,19 @@ describe.skipIf(!DEV || !/waqfak_dev/.test(DEV))("N9-9 — the database guard an
     } finally { await c.query("rollback").catch(() => {}); await c.end(); }
   }
   const errs = (c: Client, secs: OutputSection[]) => c.query(`select specialist_block_errors($1::jsonb) as n`, [JSON.stringify(secs)]).then((r) => r.rows[0].n as number);
+  // stage 11 (N10-16): the gate also requires the engine's own record of the block, as the run writes it (registerEngineBlock)
+  const RUN = "55555555-5555-4555-8555-555555555555";
+  const register = (c: Client, b: SpecialistBlock) =>
+    c.query(`insert into engine_blocks (binding, text_sha256, run_id, writer) values ($1, block_text_sha($2), $3, $4)`, [b.binding, b.text, b.runId, b.writer]);
 
   it("the database recomputes the same binding as the server (Arabic text, several references, basis order)", async () => {
     const n = await inTx(async (c) => {
-      const b = engine({ basis: [bas(C3), bas(C1), bas(C2), bas(C1)] });
+      const b = engine({ basis: [bas(C3), bas(C1), bas(C2), bas(C1)], runId: RUN });
       const db = await c.query(`select encode(sha256(convert_to($1, 'UTF8')), 'hex') as h`, [bindingInput(b)]);
       expect(db.rows[0].h).toBe(b.binding);
+      // not written by the engine (no record of it): refused, then accepted once the engine's record is there
+      expect(await errs(c, [sec(b)])).toBe(1);
+      await register(c, b);
       return errs(c, [sec(b)]);
     });
     expect(n).toBe(0);
@@ -144,6 +151,7 @@ describe.skipIf(!DEV || !/waqfak_dev/.test(DEV))("N9-9 — the database guard an
 
   it("a full approval: refused for an engine text that lost its references; allowed for a consistent template text", async () => {
     const run = (b: SpecialistBlock) => inTx(async (c) => {
+      if (b.binding && b.runId === RUN) await register(c, b);
       const req = (await c.query(`select id from service_requests order by created_at limit 1`)).rows[0]?.id;
       if (!req) return "no request in the development database";
       const o = (await c.query(`insert into outputs (number, request_id, output_key, title, specialty, review_policy, status) values ('TEST-N99-' || substr(md5(random()::text), 1, 6), $1, 'test:n9-9', 'مخرج اختبار', 'legal', 'none', 'draft') returning id`, [req])).rows[0].id;
@@ -153,9 +161,9 @@ describe.skipIf(!DEV || !/waqfak_dev/.test(DEV))("N9-9 — the database guard an
         return "approved";
       } catch (e) { return `refused: ${(e as Error).message}`; }
     });
-    const lost = await run({ ...engine(), refs: [], basis: [] });
+    const lost = await run({ ...engine({ runId: RUN }), refs: [], basis: [] });
     expect(lost).toMatch(/refused: output_guard/);
-    const template = engine({ writer: "template", refs: [], basis: [], text: "نص من القالب.", dossierId: undefined });
+    const template = engine({ writer: "template", refs: [], basis: [], text: "نص من القالب.", dossierId: undefined, runId: RUN });
     const ok = await run(template);
     expect(ok).toBe("approved");
   });
