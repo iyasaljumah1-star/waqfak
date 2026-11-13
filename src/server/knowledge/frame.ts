@@ -18,7 +18,7 @@
  */
 import { normForSearch } from "@/server/engine/knowledge/pure";
 import { tokenize } from "@/server/modules/ai/text";
-import { allPlaces, readPlaces, type Place } from "./gazetteer";
+import { allPlaces, NOT_A_NAME, readPlaces, type Place } from "./gazetteer";
 
 /** Beyond this many content words a question is a request's text (retrieve.ts LONG_QUESTION). */
 const LONG = 25;
@@ -51,8 +51,25 @@ export type Frame = {
    * answered until it is said (retrieve() abstains); never guessed.
    */
   unresolved: string[];
+  /**
+   * Stage 11.1 (E18): in a question about a number, a rate, a date, a period or a penalty, the word after «في» that is
+   * neither a place the gazetteer holds nor a time: a place outside the gazetteer («في فاس») or a field («في التعليم»).
+   * Either way it limits the answer: a passage must name it (judge), and if the corpus never names it the question is
+   * not answered (retrieve: no figure of the Kingdom for an unknown place).
+   */
+  qualifiers: string[];
+  /** Stage 11.1 (FR11-14): a month named in the question (Hijri or Gregorian): a whole-year figure does not answer it. */
+  months: string[];
   why: string[];
 };
+
+/** Month names, Hijri and Gregorian (the full calendars, bare spelling: normForSearch). */
+const MONTHS_AR = ["محرم", "صفر", "ربيع الاول", "ربيع الاخر", "ربيع الثاني", "جمادي الاولي", "جمادي الاخره", "جمادي الاخر", "جمادي الثانيه", "رجب", "شعبان", "رمضان", "شوال", "ذو القعده", "ذي القعده", "ذو الحجه", "ذي الحجه",
+  "يناير", "فبراير", "مارس", "ابريل", "مايو", "يونيو", "يوليو", "اغسطس", "سبتمبر", "اكتوبر", "نوفمبر", "ديسمبر",
+  "كانون الثاني", "شباط", "اذار", "نيسان", "ايار", "حزيران", "تموز", "اب", "ايلول", "تشرين الاول", "تشرين الثاني", "كانون الاول"];
+const MONTHS_EN = /\b(January|February|March|April|May(?=\s+\d{4})|June|July|August|September|October|November|December|Muharram|Safar|Rabi[\s'-]?(?:al|ul)[\s-]?(?:Awwal|Thani|Akhir)|Jumada[\s-]?(?:al|ul)[\s-]?(?:Ula|Akhirah|Thani)|Rajab|Sha'?ban|Ramadan|Shawwal|Dhu[\s'-]?al[\s-]?(?:Qi'?dah|Hijjah))\b/gi;
+/** Words after «في» that are times, the Kingdom itself or grammar — never a qualifier (bare spelling). */
+const NOT_QUALIFIER = /^(?:عام|العام|اعوام|سنه|السنه|سنوات|السنوات|شهر|الشهر|اشهر|الربع|ربع|الفتره|فتره|المده|مده|عهد|تاريخ|التاريخ|الوقت|وقت|نهايه|بدايه|منتصف|اول|اخر|المملكه|مملكه|السعوديه|البلاد|بلادنا|الداخل|الخارج|العالم|المجموع|الاجمالي|المتوسط|المعدل|المائه|المئه|الالف|ذلك|هذا|هذه|تلك|كل|جميع|مجموع|اي|الحاليه|الحالي|الماضي|الماضيه|القادم|المقبل)$/;
 
 const MEASURE = /(?:^|\s)(?:كم\s+)?(?:عدد|نسبه|معدل|اجمالي|حجم|قيمه|متوسط|وسيط|الوسيط|مقدار|مجموع)(?:\s+(?:ال)?(?:العمري|الاجمالي|الكلي))?\s+((?:[ء-ي]+\s+){0,1}[ء-ي]+)/;
 
@@ -113,12 +130,15 @@ export function frameOf(question: string): Frame {
   const named = reading.places;
   const unresolved = [...reading.unresolved];
   const factual = (a: AnswerType) => a === "quantity" || a === "rate" || a === "date" || a === "period" || a === "penalty";
-  const places = normative ? named.filter((p) => !p.domestic) : named;
-  if (normative && places.length < named.length) why.push(`مكان في المملكة في سؤال حكم: سياق لا قيد (${named.filter((p) => p.domestic).map((p) => p.ar[0]).join("، ")})`);
+  // stage 11.1: a long text (a client's matter, beyond LONG content words) that does not ask for a figure is read as
+  // a normative one for the Kingdom's places: they are where the matter arises; a figure asked for keeps them all
+  const long = tokenize(raw).length > LONG;
+  const places = normative || (long && !factual(answer)) ? named.filter((p) => !p.domestic) : named;
+  if (places.length < named.length) why.push(`مكان في المملكة في سؤال حكم: سياق لا قيد (${named.filter((p) => p.domestic).map((p) => p.ar[0]).join("، ")})`);
   if (places.length) why.push(`المكان: ${places.map((p) => p.ar[0]).join("، ")}`);
   // a four-digit number followed by a currency or a unit, or after «مبلغ», is an amount, not a year (FR11-14)
   const years = [...new Set([...raw.matchAll(/(?<![\d,.])(1[34]\d\d|20\d\d|19\d\d)(?![\d,.])(?!\s*(?:ريال|ر\.?\s*س|﷼|SAR|riyals?|دولار|USD|\$|%|٪|متر|م2|م²|كم|كيلو|سهم|وحده|وحدة|نسمه|نسمة|شخص|مستفيد))/gi)]
-    .filter((m) => !/(?:مبلغ|بمبلغ|قيمته|قدره|amount of)\s*$/i.test(raw.slice(0, m.index))).map((m) => m[1]!))];
+    .filter((m) => !/(?:مبلغ|بمبلغ|قيمته|قدره|amount of|رقم|ذي الرقم|بالرقم|No\.?|number)\s*\(?\s*$/i.test(raw.slice(0, m.index))).map((m) => m[1]!))];
   if (years.length) why.push(`السنوات: ${years.map((y) => `${y}${isHijri(y) ? "هـ" : "م"}`).join("، ")}`);
   const relEn = raw.match(/\b(?:last|this|next|previous|current|past|latest|most recent)\s+(?:year|month|quarter|week|census|survey|report)\b|\b(?:\d+|two|three|four|five|ten|a few|several)\s+(?:years?|months?)\s+ago\b|\b(?:now|today|currently|nowadays|recently|lately)\b/i);
   // FR11-13: «العام الفائت»، «منذ عامين»، «آخر إحصاء»، «مؤخرًا»
@@ -140,10 +160,36 @@ export function frameOf(question: string): Frame {
   for (const x of q.matchAll(/(?:قرار|تعميم)(?:\s+(?:مجلس الوزراء|الهيئه|الوزير|المجلس|وزاري|الوزاري|معالي الوزير))?\s+(?:رقم|ذي الرقم)\s+\(?(\d{1,6})\)?/g)) identifiers.push({ kind: "قرار", number: x[1]! });
   for (const x of raw.matchAll(/\b(?:cabinet|council of ministers|ministerial)\s+(?:resolution|decision)\s+(?:no\.?|number)\s*\(?(\d{1,6})\)?/gi)) identifiers.push({ kind: "قرار", number: x[1]! });
   if (identifiers.length) why.push(`المعرّف: ${identifiers.map((i) => `${i.kind} ${i.number}`).join("، ")}`);
+  // stage 11.1: a month named (Hijri or Gregorian), «في رجب 1446», «March 2024»
+  const months = [...new Set([...MONTHS_AR.filter((m) => new RegExp(`(?:^|\\s)(?:[وفب]?(?:شهر\\s+)?)${m}(?=\\s|$|[؟?.,،])`).test(q) && (m !== "صفر" || /(?:شهر|في)\s+صفر|صفر\s+(?:1[34]\d\d|عام|سنه)/.test(q)) && (m !== "اب" || /(?:شهر|في)\s+اب(?:\s|$)/.test(q))),
+    ...[...raw.matchAll(MONTHS_EN)].map((x) => x[1]!.toLowerCase())])];
+  if (months.length) why.push(`الشهر: ${months.join("، ")}`);
+  // stage 11.1 (E18): the word after «في» in a factual question that is neither a held place nor a time
+  const qualifiers: string[] = [];
+  if (factual(answer)) {
+    const placeWords = new Set(named.flatMap((p) => [...p.ar, ...p.en].flatMap((a) => normForSearch(a).split(/\s+/))));
+    // in a long text, the clause that asks (from «كم»، «ما نسبة»… to the next stop): the rest is the matter's context
+    const ask = long ? q.search(/(?:^|\s)(?:كم|ما\s+(?:نسبه|معدل|عدد|اجمالي|مقدار|حجم|قيمه)|متي|نسبه|معدل)(?=\s)/) : 0;
+    const scope = long && ask >= 0 ? q.slice(ask).split(/[،,.؛;؟?]/)[0]! : q;
+    for (const x of scope.matchAll(/(?:^|\s)في\s+([ء-ي]{3,})(\s+من(?:\s|$))?/g)) {
+      const w0 = x[1]!;
+      // a place word («في محافظة X»: the gazetteer reads the name), a partitive («في العديد من»، «في كثير من»)
+      if (x[2] || /^(?:ال)?(?:مدينه|محافظه|منطقه|مناطق|محافظات|مدن|اماره|بلده|قريه|قري|دوله|دول|عاصمه|مركز|مراكز|حي|احياء)$/.test(w0)) continue;
+      if (NOT_QUALIFIER.test(w0) || NOT_A_NAME.test(w0) || placeWords.has(w0) || placeWords.has(w0.replace(/^ال/, "")) || MONTHS_AR.some((m) => m.split(" ")[0] === w0)) continue;
+      const w = tokenize(w0)[0];
+      if (!w || focus.includes(w)) continue;
+      // a word the gazetteer reads as a common word in a place's position is said already (soft, above)
+      if (reading.soft.some((u) => u.includes(`«${w0}`))) continue;
+      qualifiers.push(w0);
+      unresolved.push(`«${w0}» بعد «في» ليس في المعجم الجغرافي المعتمد: إن كان مكانًا فهو غير موجود في المعجم، وإن كان قيدًا آخر فيُطابق في النص`);
+    }
+  }
   if (unresolved.length) why.push(`غير محدد: ${unresolved.join("؛ ")}`);
-  // a long request text (a client's matter) names places and times as its context, not as what it asks about
-  if (tokenize(raw).length > LONG) return { answer, focus: [], senses, places: [], contextPlaces: [], years, relativeDate: null, identifiers, unresolved: [], why: [...why, "نص طويل: الأماكن والأزمنة فيه سياق لا قيود"] };
-  return { answer, focus, senses, places, contextPlaces: named.filter((p) => !places.includes(p)), years, relativeDate: rel?.[0] ?? null, identifiers, unresolved, why };
+  // a long request text (a client's matter) names places and times as its context: stage 11.1 — they still limit
+  // the answer (a figure for a place or a year is not answered by another's); only the places of the Kingdom in a
+  // normative question are context, as in any question
+  if (long) why.push(factual(answer) ? "نص طويل يسأل عن رقم أو تاريخ: تبقى أماكنه وأزمنته قيودًا" : "نص طويل: أماكن المملكة فيه سياق، وتبقى الأماكن الأخرى والأزمنة قيودًا");
+  return { answer, focus, senses, places, contextPlaces: named.filter((p) => !places.includes(p)), years, relativeDate: rel?.[0] ?? null, identifiers, unresolved, qualifiers, months, why };
 }
 
 export const ANSWER_AR: Record<AnswerType, string> = {
@@ -186,6 +232,11 @@ export function judge(f: Frame, text: string, opts: { scope?: string; hasWord?: 
   for (const y of have) if (!yearIn(y)) partial.push(`السنة ${y} مذكورة بالتقويم الآخر (${equivalentYears(y).filter(yearIn).join("، ")}): مطابقة تقريبية`);
   if (f.years.length && !have.length) lacking.push(f.years.length === 1 ? `السنة ${f.years[0]}` : `السنوات ${f.years.join("، ")}`);
   else if (have.length && have.length < f.years.length) partial.push(`لا يذكر ${f.years.filter((y) => !have.includes(y)).join("، ")} (يجيب عن جزء من المقارنة)`);
+  // stage 11.1: a month asked about — a passage that does not name it gives the year, not the month
+  for (const m of f.months) if (!new RegExp(m.replace(/\s+/g, "\\s+"), "i").test(t) && !new RegExp(m, "i").test(raw)) lacking.push(`الشهر «${m}» (رقم السنة كلها لا يجيب عن شهر)`);
+  // stage 11.1 (E18): the question's «في X» (a place outside the gazetteer, or a field) must be named by the passage
+  { const tk = new Set(tokenize(raw));
+    for (const w0 of f.qualifiers) { const w = tokenize(w0)[0] ?? w0; if (!(opts.hasWord?.(w) ?? false) && !tk.has(w) && !t.includes(w0) && !t.includes(w0.replace(/^ال/, ""))) lacking.push(`القيد «${w0}»`); } }
   // places (the Kingdom is the default scope of the corpus: named or not, a passage about it answers for it)
   const pp = placesIn(raw);
   for (const p of f.places) if (p.key !== "KSA" && !pp.some((x) => x.key === p.key)) lacking.push(`المكان «${p.ar[0]}»`);

@@ -129,7 +129,17 @@ const out = {
   builtAt: new Date().toISOString().slice(0, 10),
   sources: [
     { part: "regions", standing: "verified", source: "نظام المناطق (أمر ملكي رقم أ/92 في 27/8/1412هـ) وقائمة إمارات المناطق الـ13 ومقارها (وزارة الداخلية؛ المركز الوطني للوثائق والمحفوظات)" },
-    { part: "governorates", standing: "compiled, not verified entry by entry", source: "قوائم محافظات الإمارات المنشورة؛ تلزم مطابقتها بالقائمة الرسمية لوزارة الداخلية قبل الإنتاج" },
+    { part: "governorates", standing: "compiled, not verified entry by entry", source: "قوائم محافظات الإمارات المنشورة؛ تلزم مطابقتها بالقائمة الرسمية لوزارة الداخلية قبل الإنتاج",
+      // stage 11.1: the official lists could not be reached from the test environment on 2026-11-14 (the census portal
+      // of the General Authority for Statistics, portal.saudicensus.sa: not on the environment's allowlist, and no DNS
+      // answer through the scraping service). A count-only cross-check against a secondary source was made; it does NOT
+      // make the names official
+      crossCheck: {
+        at: "2026-11-14", kind: "counts per region only (secondary source)",
+        source: "الموسوعة السعودية (سعوديبيديا)، «قائمة إمارات المناطق السعودية»، 06/02/2023، ومصدرها المركز الوطني للوثائق والمحفوظات وهيئة المساحة الجيولوجية — عدد المحافظات لكل منطقة دون أسمائها",
+        result: "10 مناطق من 13 تزيد عندنا بواحد، لأن مقر الإمارة محسوب محافظةً عندنا. الرياض متساوية (22 و22)، فينقص عندنا واحد إن صح احتساب المقر. عسير (17 و15) ونجران (8 و6) تزيدان باثنين. لم تُجرَ المطابقة بالأسماء مع القائمة الرسمية",
+        unreachable: ["portal.saudicensus.sa (الهيئة العامة للإحصاء، تعداد 2022)", "قائمة وزارة الداخلية"],
+      } },
     { part: "countries", standing: "verified", source: "ISO 3166-1 alpha-2، بالأسماء العربية والإنجليزية من Unicode CLDR" },
     { part: "cities abroad", standing: "compiled, not official", source: "عواصم ومدن كبرى خارج المملكة، جُمعت لتقييد السؤال بها بدل تجاهلها؛ مدينة غير مدرجة لا تُعرف" },
   ],

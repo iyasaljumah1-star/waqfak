@@ -514,7 +514,10 @@ export async function retrieve(tx: Tx, q0: RetrieveQuery): Promise<RetrieveResul
   const ordered = [...results].sort((a, b) => rank(a) - rank(b) || b.hit.score - a.hit.score).slice(0, limit);
   const basis = namedUnits ? ordered.filter((r) => namedUnits!.has(r.hit.chunkId)) : ordered;
   // stage 11: a place, a name or a date the question gives and that cannot be resolved — nothing is answered from it
-  const unresolved = frame.unresolved;
+  // stage 11.1 (E18): a «في X» the gazetteer does not hold is a field when the corpus names it (each passage must then
+  // name it: judge); a word the corpus never names is a place outside the gazetteer, or nothing the corpus can answer
+  // for — no figure of the Kingdom is given for it
+  const unresolved = frame.unresolved.filter((u) => !frame.qualifiers.some((w) => u.startsWith(`«${w}»`) && tokenize(w).some((t) => c.df.has(canon(t, c.df)))));
   const stop = !!missingArticle || unresolved.length > 0;
   const citable = stop ? [] : basis.filter((r) => r.decision.citable);
   const usable = stop ? [] : basis.filter((r) => r.draft.usable);

@@ -90,7 +90,23 @@ export const RETRIEVAL_SET: SetCase[] = [
   { id: "E15", lang: "ar", q: "كم عدد الأوقاف في حي الملز؟", unresolved: /غير موجود في المعجم/ },
   { id: "E16", lang: "ar", q: "كم عدد الأوقاف في طرابلس؟", unresolved: /يحتمل أكثر من مكان/ },
   { id: "E17", lang: "ar", q: "كم عدد الأوقاف في مدينة فاس؟", unresolved: /غير موجود في المعجم/ },
-  { id: "E18", lang: "ar", q: "كم عدد الأوقاف في فاس؟", unresolved: /غير موجود/, limitation: "مدينة خارج المعجم بلا كلمة مكان قبلها (فاس، تطوان…) لا تُكتشف بالعربية: يُجاب بأرقام المملكة" },
+  // E18 (closed in stage 11.1): the word after «في» in a factual question that is neither a held place nor a time is a
+  // qualifier — unresolved unless the corpus names it (retrieve), and each passage must name it (judge)
+  { id: "E18", lang: "ar", q: "كم عدد الأوقاف في فاس؟", unresolved: /غير موجود/, passage: { text: "بلغ عدد الأوقاف في المملكة 1200 وقف", lacking: /القيد «فاس»/ } },
+  // ── stage 11.1: new cases for every failure (unlisted Arab cities, long questions, Hijri months, amounts) ──
+  { id: "S1", lang: "ar", q: "كم عدد الأوقاف في تطوان؟", unresolved: /«تطوان» بعد «في»/ },
+  { id: "S2", lang: "ar", q: "ما نسبة الأوقاف في الزرقاء؟", unresolved: /«الزرقاء» بعد «في»/ },
+  { id: "S3", lang: "ar", q: "كم عدد الأوقاف في التعليم؟", passage: { text: "بلغ عدد الأوقاف على التعليم 300 وقف", lacking: null } },
+  { id: "S4", lang: "ar", q: "كم عدد الأوقاف في التعليم؟", passage: { text: "بلغ عدد الأوقاف في المملكة 1200 وقف", lacking: /القيد «التعليم»/ } },
+  { id: "S5", lang: "ar", q: "ما حكم الوقف في فاس؟", unresolved: false },
+  { id: "S6", lang: "ar", q: "لدي سؤال عن إحصاءات الأوقاف المسجلة لدى الجهات المختصة، وقد اطلعت على عدة تقارير منشورة ولم أجد ما يكفي، وأريد معرفة كم عدد الأوقاف المسجلة في محافظة الخرج خلال عام 2023 تحديدًا مع بيان مصدر الرقم وتاريخ نشره إن أمكن ذلك من فضلكم؟", places: ["الخرج"], years: ["2023"], passage: { text: "بلغ عدد الأوقاف في المملكة 1200 عام 2023", lacking: /المكان «الخرج»/ } },
+  { id: "S7", lang: "ar", q: "أنا ناظر على وقف قديم وأحتاج إلى معرفة بعض الأمور الإحصائية قبل إعداد تقريري السنوي للجهة المشرفة، ومن ذلك كم عدد الأوقاف التي سُجلت في العام الماضي في المملكة كلها، مع الشكر الجزيل لكم على حسن التعاون والاهتمام؟", unresolved: /التاريخ النسبي/ },
+  { id: "S8", lang: "ar", q: "كم عدد الأوقاف المسجلة في رجب 1446؟", years: ["1446"], passage: { text: "سُجل من الأوقاف 300 في عام 1446", lacking: /الشهر «رجب»/ } },
+  { id: "S9", lang: "ar", q: "كم عدد الأوقاف المسجلة في شهر رمضان 1445؟", years: ["1445"], passage: { text: "سُجل في شهر رمضان 1445 من الأوقاف 40 وقفًا", lacking: null } },
+  { id: "S10", lang: "en", q: "How many endowments were registered in March 2024?", years: ["2024"], passage: { text: "In 2024 the Kingdom registered 300 endowments", lacking: /الشهر «march»/ } },
+  { id: "S11", lang: "ar", q: "كم رسوم تسجيل الوقف ذي الرقم 1440؟", years: [] },
+  { id: "S12", lang: "ar", q: "كم عدد الأوقاف إذا كان المبلغ 1445 ريالًا؟", years: [] },
+  { id: "S13", lang: "en", q: "May a nazir sell the waqf in 2024?", years: ["2024"] },
   { id: "E11", lang: "en", q: "What is the penalty for not registering a waqf?", passage: { text: "The regulation requires registration", lacking: /العقوبة/ } },
 ];
 
