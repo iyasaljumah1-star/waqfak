@@ -8,7 +8,7 @@ const QS = "ما حكم بيع الوقف إذا تعطلت منافعه؟";
 const lost = [F("تعطلت منافع العقار كليًا"), F("لا شرط للواقف في البيع")];
 const present = [F("منافع العقار قائمة"), F("لا شرط للواقف في البيع")];
 const JUDGE = "ولا يجوز بيعه إلا بإذن الحاكم على الصحيح من المذهب. وعنه يجوز بيعه.";
-const EXC = "ولا يجوz".length && "ولا يجوز بيعه إلا أن تتعطل منافعه.";
+const EXC = "ولا يجوز بيعه إلا أن تتعطل منافعه.";
 function run(id: string, texts: (string | [string, string])[], facts: Fact[], expect: string, q = QS) {
   const issue = analyzeIssue(q, facts);
   const all = texts.flatMap((t, i) => { const [k, x] = typeof t === "string" ? ["classical_fiqh", t] : t; return extractStatements(src(k, `S${i + 1}`), x, { question: q, facts, idPrefix: `ق${i + 1}` }); });
