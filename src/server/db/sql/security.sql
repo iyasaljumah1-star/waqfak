@@ -2497,6 +2497,216 @@ REVOKE ALL ON FUNCTION app_next_number(text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION app_next_number(text) TO waqfak_app;
 REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON sequences FROM waqfak_app;
 
+-- ── Stage 11.1, after the independent AI security review of fcf5f00 (R111-S-1 … R111-S-17) ──
+-- R111-S-1/S-4: a power of attorney is recorded by the system (its acceptance) or by staff who manage the waqf's members;
+-- once recorded, its parties, number, verification and start never change; its term and scope only narrow; it moves only
+-- to «revoked» or «expired», never back to «active»; it is never deleted from a session. A manager of the waqf's members,
+-- or the agent themselves, revokes it.
+DROP POLICY IF EXISTS dl_consent ON delegations;
+CREATE POLICY dl_consent ON delegations AS RESTRICTIVE FOR INSERT TO waqfak_app
+  WITH CHECK (app_is_system() OR (app_is_staff() AND app_can_manage_members(waqf_id)));
+DROP POLICY IF EXISTS dl_change ON delegations;
+CREATE POLICY dl_change ON delegations AS RESTRICTIVE FOR UPDATE TO waqfak_app
+  USING (app_is_system() OR app_can_manage_members(waqf_id) OR agent_user_id = app_current_user())
+  WITH CHECK (app_is_system() OR app_can_manage_members(waqf_id) OR agent_user_id = app_current_user());
+DROP POLICY IF EXISTS dl_delete ON delegations;
+CREATE POLICY dl_delete ON delegations AS RESTRICTIVE FOR DELETE TO waqfak_app USING (app_is_system());
+CREATE OR REPLACE FUNCTION dl_fixed() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
+BEGIN
+  IF current_user NOT IN ('waqfak_app', 'waqfak_system') THEN RETURN NEW; END IF;
+  IF app_is_system() THEN RETURN NEW; END IF;
+  IF (to_jsonb(NEW) - ARRAY['status', 'valid_to', 'scope', 'includes_donations', 'includes_asset_disposal', 'updated_by', 'updated_at'])
+     IS DISTINCT FROM (to_jsonb(OLD) - ARRAY['status', 'valid_to', 'scope', 'includes_donations', 'includes_asset_disposal', 'updated_by', 'updated_at']) THEN
+    RAISE EXCEPTION 'delegations: the parties, number, verification and start of a power of attorney do not change' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  IF NEW.status IS DISTINCT FROM OLD.status AND NEW.status NOT IN ('revoked', 'expired') THEN
+    RAISE EXCEPTION 'delegations: a power of attorney is only revoked or expires; it is never reactivated from a session' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  IF NEW.valid_to > OLD.valid_to OR NOT (NEW.scope <@ OLD.scope)
+     OR (NEW.includes_donations AND NOT OLD.includes_donations) OR (NEW.includes_asset_disposal AND NOT OLD.includes_asset_disposal) THEN
+    RAISE EXCEPTION 'delegations: a power of attorney''s term and scope only narrow' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS dl_fixed ON delegations;
+CREATE TRIGGER dl_fixed BEFORE UPDATE ON delegations FOR EACH ROW EXECUTE FUNCTION dl_fixed();
+
+-- R111-S-5: a membership that ended is revived only by the system or staff, or for a person who is a member of the waqf
+-- at that moment (the role switch of waqf-core changeMemberRole reopens the same person's earlier record); anyone else
+-- is invited again (S11-2)
+CREATE OR REPLACE FUNCTION wm_revive_guard() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
+BEGIN
+  IF current_user NOT IN ('waqfak_app', 'waqfak_system') THEN RETURN NEW; END IF;
+  IF app_is_system() OR app_is_staff() THEN RETURN NEW; END IF;
+  IF (OLD.status <> 'active' OR (OLD.ends_at IS NOT NULL AND OLD.ends_at <= now())) AND NEW.status = 'active' AND (NEW.ends_at IS NULL OR NEW.ends_at > now())
+     AND NOT app_member_active_elsewhere(OLD.waqf_id, OLD.user_id, OLD.id) THEN
+    RAISE EXCEPTION 'waqf_memberships: an ended membership is not revived — the person is invited again and accepts' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  RETURN NEW;
+END $$;
+CREATE OR REPLACE FUNCTION app_member_active_elsewhere(w uuid, u uuid, except_id uuid) RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+  SELECT EXISTS (SELECT 1 FROM waqf_memberships m WHERE m.waqf_id = w AND m.user_id = u AND m.id <> except_id AND m.status = 'active' AND (m.ends_at IS NULL OR m.ends_at > now()))
+$$;
+REVOKE ALL ON FUNCTION app_member_active_elsewhere(uuid, uuid, uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION app_member_active_elsewhere(uuid, uuid, uuid) TO waqfak_app;
+DROP TRIGGER IF EXISTS wm_revive_guard ON waqf_memberships;
+CREATE TRIGGER wm_revive_guard BEFORE UPDATE ON waqf_memberships FOR EACH ROW EXECUTE FUNCTION wm_revive_guard();
+
+-- R111-S-7/S-11: an invitation (its phone) is read and changed by who manages the waqf's members, its inviter and the
+-- system; a decline is the invitee's, recorded on the system path only
+DROP POLICY IF EXISTS inv_read ON invitations;
+CREATE POLICY inv_read ON invitations AS RESTRICTIVE FOR SELECT TO waqfak_app
+  USING (app_is_system() OR app_can_manage_members(waqf_id) OR invited_by = app_current_user());
+DROP POLICY IF EXISTS inv_change ON invitations;
+CREATE POLICY inv_change ON invitations AS RESTRICTIVE FOR UPDATE TO waqfak_app
+  USING (app_is_system() OR app_can_manage_members(waqf_id) OR invited_by = app_current_user())
+  WITH CHECK (app_is_system() OR app_can_manage_members(waqf_id) OR invited_by = app_current_user());
+DROP POLICY IF EXISTS inv_delete ON invitations;
+CREATE POLICY inv_delete ON invitations AS RESTRICTIVE FOR DELETE TO waqfak_app USING (app_is_system());
+CREATE OR REPLACE FUNCTION inv_decline_guard() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
+BEGIN
+  IF current_user NOT IN ('waqfak_app', 'waqfak_system') OR app_is_system() THEN RETURN NEW; END IF;
+  IF (NEW.scope -> 'declinedBy') IS DISTINCT FROM (OLD.scope -> 'declinedBy') OR (NEW.scope -> 'declinedAt') IS DISTINCT FROM (OLD.scope -> 'declinedAt') THEN
+    RAISE EXCEPTION 'invitations: a decline is recorded by the invitee, through the invitation''s link' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS inv_decline_guard ON invitations;
+CREATE TRIGGER inv_decline_guard BEFORE UPDATE ON invitations FOR EACH ROW EXECUTE FUNCTION inv_decline_guard();
+-- R111-S-17: accepted from the invitee's VERIFIED account
+CREATE OR REPLACE FUNCTION app_invitee_matches(u uuid, ph text) RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+  SELECT EXISTS (SELECT 1 FROM users x WHERE x.id = u AND x.phone = ph AND x.status = 'active' AND x.phone_verified_at IS NOT NULL)
+$$;
+
+-- R111-S-8/S-10: a stored version is never deleted from a session (the vault keeps every version; retention is the
+-- system's); a new version is always bound to its row (v2) — a v1 row is only an old one awaiting re-encryption
+DROP POLICY IF EXISTS dv_delete ON document_versions;
+CREATE POLICY dv_delete ON document_versions AS RESTRICTIVE FOR DELETE TO waqfak_app USING (app_is_system());
+CREATE OR REPLACE FUNCTION dv_insert_v2() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
+BEGIN
+  IF current_user IN ('waqfak_app', 'waqfak_system') AND NEW.encrypted AND NEW.enc_scheme IS DISTINCT FROM 'v2' THEN
+    RAISE EXCEPTION 'document_versions: a new encrypted version is bound to its row (v2)' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS dv_insert_v2 ON document_versions;
+CREATE TRIGGER dv_insert_v2 BEFORE INSERT ON document_versions FOR EACH ROW EXECUTE FUNCTION dv_insert_v2();
+
+-- R111-S-12: an item is answered by a party to its request (the requester, or a member holding requests.create), with a
+-- document of that request
+CREATE OR REPLACE FUNCTION app_request_party(rid uuid) RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+  SELECT EXISTS (SELECT 1 FROM service_requests r WHERE r.id = rid AND (r.requester_user_id = app_current_user() OR (r.waqf_id IS NOT NULL AND app_member_holds(r.waqf_id, 'requests.create'))))
+$$;
+CREATE OR REPLACE FUNCTION app_document_of_request(d uuid, rid uuid) RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+  SELECT EXISTS (SELECT 1 FROM documents x WHERE x.id = d AND x.request_id = rid)
+$$;
+REVOKE ALL ON FUNCTION app_request_party(uuid), app_document_of_request(uuid, uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION app_request_party(uuid), app_document_of_request(uuid, uuid) TO waqfak_app;
+CREATE OR REPLACE FUNCTION request_items_client_guard() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
+BEGIN
+  IF current_user NOT IN ('waqfak_app', 'waqfak_system') THEN RETURN coalesce(NEW, OLD); END IF;
+  IF app_is_system() OR app_is_staff() THEN RETURN coalesce(NEW, OLD); END IF;
+  IF TG_OP <> 'UPDATE' THEN
+    RAISE EXCEPTION 'request_items: raised and removed by the team' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  IF OLD.visibility <> 'client' OR OLD.status NOT IN ('open', 'correction_requested') OR NEW.status <> 'answered' OR NEW.answered_by IS DISTINCT FROM app_current_user()
+     OR NOT app_request_party(OLD.request_id)
+     OR (NEW.response_document_id IS NOT NULL AND NOT app_document_of_request(NEW.response_document_id, OLD.request_id))
+     OR (to_jsonb(NEW) - ARRAY['status', 'response_text', 'response_document_id', 'answered_by', 'answered_at', 'updated_by', 'updated_at'])
+        IS DISTINCT FROM (to_jsonb(OLD) - ARRAY['status', 'response_text', 'response_document_id', 'answered_by', 'answered_at', 'updated_by', 'updated_at']) THEN
+    RAISE EXCEPTION 'request_items: a party answers an open item, as themselves, with a document of the request, and changes nothing else' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  NEW.answered_at := now();
+  NEW.updated_at := now();
+  RETURN NEW;
+END $$;
+
+-- R111-S-13: numbers are taken by a bound session or the system; the tax and credit numbering (INV, PRF, CRN) only by
+-- staff or the system (a receipt, RCT, follows a client's own checkout)
+CREATE OR REPLACE FUNCTION app_next_number(prefix text) RETURNS bigint LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+DECLARE v bigint;
+BEGIN
+  IF prefix IS NULL OR prefix !~ '^[A-Z][A-Z0-9-]{1,15}$' THEN RAISE EXCEPTION 'app_next_number: bad prefix'; END IF;
+  IF NOT app_is_system() AND app_current_user() IS NULL THEN RAISE EXCEPTION 'app_next_number: a bound session or the system' USING ERRCODE = 'insufficient_privilege'; END IF;
+  IF prefix IN ('INV', 'PRF', 'CRN') AND NOT (app_is_system() OR app_is_staff()) THEN
+    RAISE EXCEPTION 'app_next_number: invoice and credit numbers are taken by the finance team' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  INSERT INTO sequences (key, value) VALUES (prefix, 1) ON CONFLICT (key) DO UPDATE SET value = sequences.value + 1 RETURNING value INTO v;
+  RETURN v;
+END $$;
+
+-- R111-S-2/S-6/S-15: app_notify refuses an unbound caller outright (three-valued logic: «IF NOT NULL» did not return);
+-- a link is a plain path inside the platform (no control character, no second slash or backslash after the first);
+-- a staff recipient is reached from a waqf the sender may access (or none); the security notices are the system's
+CREATE OR REPLACE FUNCTION app_notify(target uuid, tkey text, vars jsonb, w uuid, link text)
+RETURNS TABLE (title text, channels jsonb, locked boolean) LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+DECLARE me uuid := app_current_user(); t notification_templates; k text; ti text; bo text; ok boolean;
+BEGIN
+  IF NOT app_is_system() AND me IS NULL THEN RETURN; END IF;
+  SELECT * INTO t FROM notification_templates WHERE key = tkey;
+  IF t.key IS NULL THEN RETURN; END IF;
+  IF link IS NOT NULL AND link !~ '^/(?![/\\])[A-Za-z0-9._~!$&''()*+,;=:@%/?#\[\]-]*$' THEN
+    RAISE EXCEPTION 'app_notify: a link inside the platform only' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  IF NOT app_is_system() AND tkey ~ '^(security|breakglass|admin)\.' AND target IS DISTINCT FROM me THEN RETURN; END IF;
+  ok := coalesce(app_is_system() OR target = me OR (
+          app_is_staff()
+          OR (EXISTS (SELECT 1 FROM users u WHERE u.id = target AND u.is_staff AND u.status = 'active') AND (w IS NULL OR app_can_access_waqf(w)))
+          OR (w IS NOT NULL AND app_can_access_waqf(w) AND (
+                EXISTS (SELECT 1 FROM waqf_memberships m WHERE m.waqf_id = w AND m.user_id = target AND m.status = 'active')
+                OR EXISTS (SELECT 1 FROM service_requests sr WHERE sr.waqf_id = w AND sr.requester_user_id = target)))), false);
+  IF ok IS NOT TRUE THEN RETURN; END IF;
+  ti := t.title_ar; bo := coalesce(t.body_ar, '');
+  FOR k IN SELECT DISTINCT m[1] FROM regexp_matches(ti || ' ' || bo, '\{(\w+)\}', 'g') AS m LOOP
+    ti := replace(ti, '{' || k || '}', left(translate(coalesce(vars ->> k, ''), '{}', '()'), 300));
+    bo := replace(bo, '{' || k || '}', left(translate(coalesce(vars ->> k, ''), '{}', '()'), 300));
+  END LOOP;
+  INSERT INTO notifications (user_id, waqf_id, type, severity, title_ar, body_ar, link) VALUES (target, w, t.key, t.severity, ti, bo, link);
+  RETURN QUERY SELECT ti, t.channels, t.locked;
+END $$;
+
+-- R111-S-3/S-16: another person's account row is never changed from a session — administrators act through the
+-- admin_* functions (hierarchy and second factor, S11-10); the sign-in path has its own login
+CREATE OR REPLACE FUNCTION users_other_guard() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
+BEGIN
+  IF current_user NOT IN ('waqfak_app', 'waqfak_system') OR app_is_system() THEN RETURN NEW; END IF;
+  IF app_current_user() IS DISTINCT FROM OLD.id THEN
+    RAISE EXCEPTION 'users: another person''s account is changed only through the administrators'' functions' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS users_other_guard ON users;
+CREATE TRIGGER users_other_guard BEFORE UPDATE ON users FOR EACH ROW EXECUTE FUNCTION users_other_guard();
+
+-- R111-S-9: the account directory of a client: themselves, the team (whose names appear on their requests), and the
+-- people of the waqfs they may access (members, agents, requesters); staff and the system read all
+CREATE OR REPLACE FUNCTION app_user_related(u uuid) RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+  SELECT EXISTS (SELECT 1 FROM waqf_memberships m WHERE m.user_id = u AND app_can_access_waqf(m.waqf_id))
+      OR EXISTS (SELECT 1 FROM delegations d WHERE (d.agent_user_id = u OR d.principal_user_id = u) AND app_can_access_waqf(d.waqf_id))
+      OR EXISTS (SELECT 1 FROM service_requests r WHERE r.requester_user_id = u AND r.waqf_id IS NOT NULL AND app_can_access_waqf(r.waqf_id))
+$$;
+REVOKE ALL ON FUNCTION app_user_related(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION app_user_related(uuid) TO waqfak_app;
+DROP POLICY IF EXISTS users_bound ON users;
+CREATE POLICY users_bound ON users FOR SELECT TO waqfak_app USING (
+  app_is_system() OR id = app_current_user() OR app_is_staff()
+  OR (app_current_user() IS NOT NULL AND (is_staff OR app_user_related(id))));
+
+-- R111-S-14: the functions re-created in this stage carry their grants again, and no definer function of the schema is
+-- left executable by PUBLIC (the migration stops if one is)
+REVOKE ALL ON FUNCTION admin_set_standing(uuid, text, boolean, boolean) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION admin_set_standing(uuid, text, boolean, boolean) TO waqfak_app;
+REVOKE ALL ON FUNCTION app_notify(uuid, text, jsonb, uuid, text), app_next_number(text), app_invitee_matches(uuid, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION app_notify(uuid, text, jsonb, uuid, text), app_next_number(text), app_invitee_matches(uuid, text) TO waqfak_app;
+DO $$
+DECLARE bad text;
+BEGIN
+  SELECT string_agg(p.oid::regprocedure::text, ', ') INTO bad FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public' AND p.prosecdef AND p.prorettype <> 'trigger'::regtype AND has_function_privilege('public', p.oid, 'EXECUTE');
+  -- (trigger functions are not callable as functions: a trigger runs them)
+  IF bad IS NOT NULL THEN RAISE EXCEPTION 'security definer functions executable by PUBLIC: %', bad; END IF;
+END $$;
+
 -- ═════════════ Phase 10 (owner's order of 2026-11-09), N9-1: no function resolves a name the caller can shadow ═════════════
 -- A function body names tables and functions without a schema; PostgreSQL resolves them by search_path at each call,
 -- and pg_temp — the caller's own temporary schema — is searched FIRST unless it is named. A definer function with

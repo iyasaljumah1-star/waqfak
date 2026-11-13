@@ -69,7 +69,7 @@ const MONTHS_AR = ["محرم", "صفر", "ربيع الاول", "ربيع الا
   "كانون الثاني", "شباط", "اذار", "نيسان", "ايار", "حزيران", "تموز", "اب", "ايلول", "تشرين الاول", "تشرين الثاني", "كانون الاول"];
 const MONTHS_EN = /\b(January|February|March|April|May(?=\s+\d{4})|June|July|August|September|October|November|December|Muharram|Safar|Rabi[\s'-]?(?:al|ul)[\s-]?(?:Awwal|Thani|Akhir)|Jumada[\s-]?(?:al|ul)[\s-]?(?:Ula|Akhirah|Thani)|Rajab|Sha'?ban|Ramadan|Shawwal|Dhu[\s'-]?al[\s-]?(?:Qi'?dah|Hijjah))\b/gi;
 /** Words after «في» that are times, the Kingdom itself or grammar — never a qualifier (bare spelling). */
-const NOT_QUALIFIER = /^(?:عام|العام|اعوام|سنه|السنه|سنوات|السنوات|شهر|الشهر|اشهر|الربع|ربع|الفتره|فتره|المده|مده|عهد|تاريخ|التاريخ|الوقت|وقت|نهايه|بدايه|منتصف|اول|اخر|المملكه|مملكه|السعوديه|البلاد|بلادنا|الداخل|الخارج|العالم|المجموع|الاجمالي|المتوسط|المعدل|المائه|المئه|الالف|ذلك|هذا|هذه|تلك|كل|جميع|مجموع|اي|الحاليه|الحالي|الماضي|الماضيه|القادم|المقبل)$/;
+const NOT_QUALIFIER = /^(?:تعداد|التعداد|احصاء|الاحصاء|مسح|المسح|تقرير|التقرير|نشره|النشره|ميزانيه|الميزانيه|صفوف|اوساط|عموم|غضون|ظل|ضوء|اطار|مجال|نطاق|شان|حال|حاله|مجمل|سياق|اثناء|خلال|مقابل|اطار|حدود|ضمن|وسط|جانب|مواجهه|اعقاب|عقب|ختام|مطلع|صدد|سبيل|عهده|ذمه|شكل|صوره|هيئه|حكم|معرض|موضوع|مساله|قضيه|اطار|عام|العام|اعوام|سنه|السنه|سنوات|السنوات|شهر|الشهر|اشهر|الربع|ربع|الفتره|فتره|المده|مده|عهد|تاريخ|التاريخ|الوقت|وقت|نهايه|بدايه|منتصف|اول|اخر|المملكه|مملكه|السعوديه|البلاد|بلادنا|الداخل|الخارج|العالم|المجموع|الاجمالي|المتوسط|المعدل|المائه|المئه|الالف|ذلك|هذا|هذه|تلك|كل|جميع|مجموع|اي|الحاليه|الحالي|الماضي|الماضيه|القادم|المقبل)$/;
 
 const MEASURE = /(?:^|\s)(?:كم\s+)?(?:عدد|نسبه|معدل|اجمالي|حجم|قيمه|متوسط|وسيط|الوسيط|مقدار|مجموع)(?:\s+(?:ال)?(?:العمري|الاجمالي|الكلي))?\s+((?:[ء-ي]+\s+){0,1}[ء-ي]+)/;
 
@@ -135,17 +135,30 @@ export function frameOf(question: string): Frame {
   const long = tokenize(raw).length > LONG;
   const places = normative || (long && !factual(answer)) ? named.filter((p) => !p.domestic) : named;
   if (places.length < named.length) why.push(`مكان في المملكة في سؤال حكم: سياق لا قيد (${named.filter((p) => p.domestic).map((p) => p.ar[0]).join("، ")})`);
-  if (places.length) why.push(`المكان: ${places.map((p) => p.ar[0]).join("، ")}`);
+  if (places.length) why.push(`المكان: ${places.map((p) => `${p.ar[0]}${p.level === "governorate" ? " (محافظة: من قائمة مجمعة غير مطابقة رسميًا)" : ""}`).join("، ")}`);
   // a four-digit number followed by a currency or a unit, or after «مبلغ», is an amount, not a year (FR11-14)
-  const years = [...new Set([...raw.matchAll(/(?<![\d,.])(1[34]\d\d|20\d\d|19\d\d)(?![\d,.])(?!\s*(?:ريال|ر\.?\s*س|﷼|SAR|riyals?|دولار|USD|\$|%|٪|متر|م2|م²|كم|كيلو|سهم|وحده|وحدة|نسمه|نسمة|شخص|مستفيد))/gi)]
-    .filter((m) => !/(?:مبلغ|بمبلغ|قيمته|قدره|amount of|رقم|ذي الرقم|بالرقم|No\.?|number)\s*\(?\s*$/i.test(raw.slice(0, m.index))).map((m) => m[1]!))];
+  // after the independent review (R111-R-5): a four-digit number is a year where the text marks it as one — a year word
+  // or a dated document before it («عام»، «تعداد»، «in»…), a calendar mark after it («هـ»، «م»), or the end of a clause —
+  // and never before «/» (a deed number) or a counted noun («2000 وقف»)
+  const YEAR_BEFORE = /(?:عام|العام|لعام|بعام|سنه|سنة|السنه|السنة|لسنه|لسنة|في|خلال|منذ|حتي|حتى|الى|إلى|الي|مقارنه|مقارنة|بين|و|تعداد|احصاء|إحصاء|مسح|ميزانيه|ميزانية|تقرير|نشره|نشرة|موسم|in|of|year|since|until|by|from|to|and|between|census|survey|FY)\s*$/i;
+  const years = [...new Set([...raw.matchAll(/(?<![\d,.\/])(1[34]\d\d|20\d\d|19\d\d)(?![\d,.\/])/gi)]
+    .filter((m) => {
+      const before = raw.slice(0, m.index), after = raw.slice((m.index ?? 0) + m[0].length);
+      if (/(?:مبلغ|بمبلغ|قيمته|قدره|بسعر|سعر|amount of|رقم|ذي الرقم|بالرقم|No\.?|number)\s*\(?\s*$/i.test(before)) return false;
+      return YEAR_BEFORE.test(before) || /^\s*(?:هـ|ه(?![ء-ي])|م(?![ء-ي])|AH\b|AD\b|CE\b)/.test(after) || /^\s*(?:[؟?.,،؛;)]|$)/.test(after);
+    }).map((m) => m[1]!))];
   if (years.length) why.push(`السنوات: ${years.map((y) => `${y}${isHijri(y) ? "هـ" : "م"}`).join("، ")}`);
-  const relEn = raw.match(/\b(?:last|this|next|previous|current|past|latest|most recent)\s+(?:year|month|quarter|week|census|survey|report)\b|\b(?:\d+|two|three|four|five|ten|a few|several)\s+(?:years?|months?)\s+ago\b|\b(?:now|today|currently|nowadays|recently|lately)\b/i);
+  // a long text: its dates relative to «now» are read in the clause that asks, not in the matter's context (R111-R-6)
+  const askAt = long ? q.search(/(?:^|\s)(?:كم|ما\s+(?:نسبه|معدل|عدد|اجمالي|مقدار|حجم|قيمه|هو|هي)|متي|نسبه|معدل)(?=\s)/) : 0;
+  const qr = long ? (askAt >= 0 ? q.slice(askAt).split(/[.؛;؟?]/)[0]! : q.split(/[.؛;؟?]/).filter((x) => x.trim()).pop() ?? q) : q;
+  const relEn = raw.match(/\b(?:last|this|next|previous|current|past|latest|most recent)\s+(?:fiscal\s+)?(?:year|month|quarter|week|census|survey|report)\b|\bin recent years\b|\b(?:\d+|two|three|four|five|ten|a few|several)\s+(?:years?|months?)\s+ago\b|\b(?:now|today|currently|nowadays|recently|lately)\b/i);
   // FR11-13: «العام الفائت»، «منذ عامين»، «آخر إحصاء»، «مؤخرًا»
-  const relAr2 = q.match(/(?:العام|السنه|الشهر|الربع)\s+(?:الفائت|الفايت|المنقضي|المنصرم)|منذ\s+(?:\S+\s+)?(?:عام|عامين|اعوام|سنه|سنتين|سنوات|شهر|شهرين|اشهر)|(?:اخر|احدث)\s+(?:احصاء|احصاءيه|تعداد|تقرير|نشره|مسح)|(?:^|\s)(?:مؤخرا|موخرا|حديثا|حاليا)(?=\s|$)/);
-  const rel = relEn ?? relAr2 ?? q.match(/(?:العام|السنه|الربع|الشهر|الاسبوع)\s+(?:الماضي|السابق|المنصرم|الماضيه|السابقه|الحالي|الحاليه|الجاري|الجاريه|القادم|المقبل|القادمه|المقبله)|(?:هذا|هذه)\s+(?:العام|السنه|الربع|الشهر)|(?:العام|السنه)\s+(?:هذا|هذه)|قبل\s+(?:\S+\s+)?(?:سنه|سنوات|سنتين|اعوام|عام|اشهر|شهر)|(?:الان|حاليا|اليوم)(?![ء-ي])/);
+  const relAr2 = qr.match(/(?:العام|السنه|الشهر|الربع)\s+(?:الفائت|الفايت|المنقضي|المنصرم)|منذ\s+(?:\S+\s+)?(?:عام|عامين|اعوام|سنه|سنتين|سنوات|شهر|شهرين|اشهر)|(?:^|\s)(?:اخر|احدث)\s+[ء-ي]{2,}|حتي\s+(?:تاريخه|الان|اليوم)|(?:^|\s)(?:مؤخرا|موخرا|حديثا|حاليا)(?=\s|$)/);
+  const rel = relEn ?? relAr2 ?? qr.match(/(?:العام|السنه|الربع|الشهر|الاسبوع)\s+(?:الماضي|السابق|المنصرم|الماضيه|السابقه|الحالي|الحاليه|الجاري|الجاريه|القادم|المقبل|القادمه|المقبله)|(?:هذا|هذه)\s+(?:العام|السنه|الربع|الشهر)|(?:العام|السنه)\s+(?:هذا|هذه)|قبل\s+(?:\S+\s+)?(?:سنه|سنوات|سنتين|اعوام|عام|اشهر|شهر)|(?:الان|حاليا|اليوم)(?![ء-ي])/);
   // a common word in a place's position: said only where the place would limit the answer (a factual question)
   if (factual(answer)) unresolved.push(...reading.soft);
+  // a Hijri year in two digits («عام 46هـ»): which century is not said (R111-R-4)
+  if (factual(answer) && /(?<![\d/])\d{2}\s*هـ/.test(raw)) unresolved.push("سنة هجرية بخانتين: تُذكر السنة كاملة");
   if (rel) {
     why.push(`تاريخ نسبي «${rel[0]}»`);
     // a date relative to «now» in a question about a number or a date cannot be matched without guessing the year
@@ -161,8 +174,13 @@ export function frameOf(question: string): Frame {
   for (const x of raw.matchAll(/\b(?:cabinet|council of ministers|ministerial)\s+(?:resolution|decision)\s+(?:no\.?|number)\s*\(?(\d{1,6})\)?/gi)) identifiers.push({ kind: "قرار", number: x[1]! });
   if (identifiers.length) why.push(`المعرّف: ${identifiers.map((i) => `${i.kind} ${i.number}`).join("، ")}`);
   // stage 11.1: a month named (Hijri or Gregorian), «في رجب 1446», «March 2024»
-  const months = [...new Set([...MONTHS_AR.filter((m) => new RegExp(`(?:^|\\s)(?:[وفب]?(?:شهر\\s+)?)${m}(?=\\s|$|[؟?.,،])`).test(q) && (m !== "صفر" || /(?:شهر|في)\s+صفر|صفر\s+(?:1[34]\d\d|عام|سنه)/.test(q)) && (m !== "اب" || /(?:شهر|في)\s+اب(?:\s|$)/.test(q))),
-    ...[...raw.matchAll(MONTHS_EN)].map((x) => x[1]!.toLowerCase())])];
+  // after the independent review (R111-R-1): only where a figure or a date is asked, and only a month that is dated —
+  // a year beside it or «شهر» before it — so that «محرم» (forbidden), «رجب» (a name), «مارس» (practised) are words
+  const ORD = ["الاول", "الثاني", "الثالث", "الرابع", "الخامس", "السادس", "السابع", "الثامن", "التاسع", "العاشر", "الحادي عشر", "الثاني عشر"];
+  const months = !factual(answer) ? [] : [...new Set([
+    ...MONTHS_AR.filter((m) => new RegExp(`(?:^|\\s)(?:شهر\\s+${m}(?=\\s|$|[؟?.,،])|[وفب]?${m}\\s+(?:من\\s+|عام\\s+|سنه\\s+|لعام\\s+)?(?:1[34]\\d\\d|20\\d\\d|19\\d\\d))`).test(q)),
+    ...ORD.filter((o) => new RegExp(`(?:^|\\s)الشهر\\s+${o}(?=\\s|$|[؟?.,،])`).test(q)).map((o) => `الشهر ${o}`),
+    ...[...raw.matchAll(MONTHS_EN)].filter((x) => /^\s*,?\s*(?:of\s+)?\d{4}/.test(raw.slice((x.index ?? 0) + x[0].length))).map((x) => x[1]!.toLowerCase())])];
   if (months.length) why.push(`الشهر: ${months.join("، ")}`);
   // stage 11.1 (E18): the word after «في» in a factual question that is neither a held place nor a time
   const qualifiers: string[] = [];
@@ -170,9 +188,14 @@ export function frameOf(question: string): Frame {
     const placeWords = new Set(named.flatMap((p) => [...p.ar, ...p.en].flatMap((a) => normForSearch(a).split(/\s+/))));
     // in a long text, the clause that asks (from «كم»، «ما نسبة»… to the next stop): the rest is the matter's context
     const ask = long ? q.search(/(?:^|\s)(?:كم|ما\s+(?:نسبه|معدل|عدد|اجمالي|مقدار|حجم|قيمه)|متي|نسبه|معدل)(?=\s)/) : 0;
-    const scope = long && ask >= 0 ? q.slice(ask).split(/[،,.؛;؟?]/)[0]! : q;
-    for (const x of scope.matchAll(/(?:^|\s)في\s+([ء-ي]{3,})(\s+من(?:\s|$))?/g)) {
+    const scope = long ? (ask >= 0 ? q.slice(ask).split(/[.؛;؟?]/)[0]! : q.split(/[.؛;؟?]/).filter((x) => x.trim()).pop() ?? q) : q;
+    // the place slot: after «في», «داخل», «سكان/أهالي» (and «لدى/بين سكان»), or a «بـ» joined to a name without the
+    // article («بتطوان»); R111-R-3
+    const slots = [...scope.matchAll(/(?:^|\s)(?:في|داخل|سكان|اهالي)\s+([ء-ي]{3,})(\s+من(?:\s|$))?/g),
+      ...[...scope.matchAll(/(?:^|\s)ب(?!ال)([ء-ي]{4,})(?=\s|$|[؟?.,،])/g)].map((m) => Object.assign([m[0], m[1], undefined], { index: m.index }) as unknown as RegExpMatchArray)];
+    for (const x of slots) {
       const w0 = x[1]!;
+      if (NOT_QUALIFIER.test(w0.replace(/(?:ها|هم|هما|هن|ه)$/, ""))) continue;
       // a place word («في محافظة X»: the gazetteer reads the name), a partitive («في العديد من»، «في كثير من»)
       if (x[2] || /^(?:ال)?(?:مدينه|محافظه|منطقه|مناطق|محافظات|مدن|اماره|بلده|قريه|قري|دوله|دول|عاصمه|مركز|مراكز|حي|احياء)$/.test(w0)) continue;
       if (NOT_QUALIFIER.test(w0) || NOT_A_NAME.test(w0) || placeWords.has(w0) || placeWords.has(w0.replace(/^ال/, "")) || MONTHS_AR.some((m) => m.split(" ")[0] === w0)) continue;
@@ -181,7 +204,7 @@ export function frameOf(question: string): Frame {
       // a word the gazetteer reads as a common word in a place's position is said already (soft, above)
       if (reading.soft.some((u) => u.includes(`«${w0}`))) continue;
       qualifiers.push(w0);
-      unresolved.push(`«${w0}» بعد «في» ليس في المعجم الجغرافي المعتمد: إن كان مكانًا فهو غير موجود في المعجم، وإن كان قيدًا آخر فيُطابق في النص`);
+      unresolved.push(`«${w0}» بعد «في» ليس في المعجم الجغرافي للمنصة (المناطق موثقة، والمحافظات مجمعة غير مطابقة رسميًا): إن كان مكانًا فهو غير موجود في المعجم، وإن كان قيدًا آخر فيُطابق في النص`);
     }
   }
   if (unresolved.length) why.push(`غير محدد: ${unresolved.join("؛ ")}`);
@@ -225,7 +248,7 @@ export function judge(f: Frame, text: string, opts: { scope?: string; hasWord?: 
   const partial: string[] = [];
   const why: string[] = [];
   // dates
-  if (f.relativeDate) lacking.push(`التاريخ النسبي «${f.relativeDate}» (لا يُطابق بنص دون تحديد السنة)`);
+  if (f.relativeDate && (f.answer === "quantity" || f.answer === "rate" || f.answer === "date" || f.answer === "period")) lacking.push(`التاريخ النسبي «${f.relativeDate}» (لا يُطابق بنص دون تحديد السنة)`);
   // a year in the other calendar counts — flagged: a Hijri year spans two Gregorian years (stage 11)
   const yearIn = (y: string) => new RegExp(`(?<!\\d)${y}(?!\\d)`).test(raw);
   const have = f.years.filter((y) => yearIn(y) || equivalentYears(y).some(yearIn));

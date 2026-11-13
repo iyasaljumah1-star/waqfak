@@ -110,7 +110,7 @@ export function readPlaces(text: string): PlaceReading {
     if (!at.length) {
       // a place word followed by a name the gazetteer does not hold: unresolved, never guessed
       if (cued && !NOT_A_NAME.test(toks[i]!) && /^[ء-ي]/.test(toks[i]!) && toks[i]!.replace(/^ال/, "").length >= 3)
-        unresolved.push(`المكان «${toks[i - 1]} ${toks[i]}» غير موجود في المعجم الجغرافي المعتمد`);
+        unresolved.push(`المكان «${toks[i - 1]} ${toks[i]}» غير موجود في المعجم الجغرافي للمنصة (المناطق موثقة، والمحافظات مجمعة غير مطابقة رسميًا)`);
       continue;
     }
     const len = at[0]!.words.length;
@@ -135,11 +135,11 @@ export function readPlaces(text: string): PlaceReading {
   // an English place-like name after «in» that the gazetteer does not hold («in Springfield», «in Dubai» before it was
   // listed): said for a factual question only (frame.ts), never guessed (FR11-12)
   const MONTHS = /^(?:January|February|March|April|May|June|July|August|September|October|November|December|Islamic|Saudi|Arabic|English|Hanbali|Shariah|Sharia|The|A|An)$/;
-  for (const m of text.matchAll(/\bin\s+(?:the\s+)?([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)/g)) {
+  for (const m of text.matchAll(/\b(?:in|of|at)\s+(?:the\s+)?([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)/g)) {
     const name = m[1]!;
     if (MONTHS.test(name.split(/\s+/)[0]!)) continue;
     if (found.some((p) => p.en.some((e) => e.toLowerCase() === name.toLowerCase() || name.toLowerCase().startsWith(e.toLowerCase())))) continue;
-    soft.push(`المكان «${name}» غير موجود في المعجم الجغرافي المعتمد`);
+    soft.push(`المكان «${name}» غير موجود في المعجم الجغرافي للمنصة (المناطق موثقة، والمحافظات مجمعة غير مطابقة رسميًا)`);
   }
   // a homograph named elsewhere in full resolves it («سلطنة عمان … عمان»): drop the unresolved note for it
   const resolved = unresolved.filter((u) => !(u.includes("يحتمل") && found.some((p) => u.includes(`(${p.ar[0]}`) || u.includes(`، ${p.ar[0]}`))));
