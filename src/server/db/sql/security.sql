@@ -2054,8 +2054,7 @@ BEGIN
     ('extracted_fields',    'EXISTS (SELECT 1 FROM documents d WHERE d.id = extracted_fields.document_id)'),
     ('reports',             'generated_by = app_current_user() OR EXISTS (SELECT 1 FROM assessments a WHERE a.id = reports.assessment_id) OR EXISTS (SELECT 1 FROM documents d WHERE d.id = reports.document_id)'),
     ('report_shares',       'EXISTS (SELECT 1 FROM reports r WHERE r.id = report_shares.report_id)'),
-    ('task_comments',       'EXISTS (SELECT 1 FROM tasks t WHERE t.id = task_comments.task_id)'),
-    ('audit_logs',          'actor_user_id = app_current_user()')
+    ('task_comments',       'EXISTS (SELECT 1 FROM tasks t WHERE t.id = task_comments.task_id)')
   ) AS x(tbl, own) LOOP
     EXECUTE format('DROP POLICY IF EXISTS nullwaqf_owner ON %I', p.tbl);
     EXECUTE format(
@@ -2063,6 +2062,12 @@ BEGIN
       p.tbl, p.own, p.own);
   END LOOP;
 END $$;
+-- audit entries without a waqf (sign-ins, an anonymous visitor's assessment) are READ only by their actor, the system
+-- and global-access staff; they are still WRITTEN by whoever acts, an anonymous visitor included (the chain triggers
+-- decide the rest) — found by the e2e: a FOR ALL check refused the anonymous visitor's own entry
+DROP POLICY IF EXISTS nullwaqf_owner ON audit_logs;
+CREATE POLICY nullwaqf_owner ON audit_logs AS RESTRICTIVE FOR SELECT TO waqfak_app
+  USING (waqf_id IS NOT NULL OR app_is_system() OR app_has_global_access() OR actor_user_id = app_current_user());
 -- document versions are written by their uploader with the document (the vault), never re-pointed: the storage, the
 -- key material and the fingerprint of a stored version do not change (S11-5)
 CREATE OR REPLACE FUNCTION dv_fixed() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$

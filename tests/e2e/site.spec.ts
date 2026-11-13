@@ -72,7 +72,9 @@ test("services: filter, open a service, CTA goes to request form", async ({ page
 
   // Corporate nazara: requests are received now; starting the nazara waits for the GAA licence (notice shown)
   await page.goto("/services/N01");
-  await expect(page.getByText(/بعد اعتماد ترخيص الهيئة العامة للأوقاف للناظر الاعتباري/).first()).toBeVisible();
+  // stage 11 (N01): the copy of this check predates the current notice (it failed at the stage-11 base too)
+  await expect(page.getByText(/لا تبدأ «وقفك» مباشرة النظارة إلا بعد ثبوت تعيينها بقرار من الجهة المختصة/).first()).toBeVisible();
+  await expect(page.getByText(/أن يكون الناظر الاعتباري مرخصًا من الهيئة/).first()).toBeVisible();
   await expect(page.getByRole("link", { name: "اطلب الخدمة" })).toHaveAttribute("href", "/app/requests/new?service=N01");
 });
 
