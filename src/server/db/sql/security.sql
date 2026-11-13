@@ -2073,6 +2073,17 @@ CREATE POLICY nullwaqf_owner ON audit_logs AS RESTRICTIVE FOR SELECT TO waqfak_a
 CREATE OR REPLACE FUNCTION dv_fixed() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
 BEGIN
   IF current_user NOT IN ('waqfak_app', 'waqfak_system') THEN RETURN NEW; END IF;
+  -- stage 11.1 (S11-5): the one change a stored version may undergo — its re-encryption from v1 (no associated data) to
+  -- v2 (bound to the row) by the system's migration (scripts/security/reencrypt-v2.ts): a new blob, iv and tag, the
+  -- same content (hash), row and document; never back, never by a person
+  IF app_is_system() AND OLD.enc_scheme = 'v1' AND NEW.enc_scheme = 'v2'
+     AND NEW.document_id = OLD.document_id AND NEW.version = OLD.version AND NEW.sha256 = OLD.sha256
+     AND NEW.waqf_id IS NOT DISTINCT FROM OLD.waqf_id AND NEW.encrypted THEN
+    RETURN NEW;
+  END IF;
+  IF NEW.enc_scheme IS DISTINCT FROM OLD.enc_scheme THEN
+    RAISE EXCEPTION 'document_versions: the encryption scheme moves only from v1 to v2, by the system' USING ERRCODE = 'insufficient_privilege';
+  END IF;
   IF NEW.document_id IS DISTINCT FROM OLD.document_id OR NEW.version IS DISTINCT FROM OLD.version OR NEW.storage_key IS DISTINCT FROM OLD.storage_key
      OR NEW.iv IS DISTINCT FROM OLD.iv OR NEW.auth_tag IS DISTINCT FROM OLD.auth_tag OR NEW.sha256 IS DISTINCT FROM OLD.sha256
      OR NEW.encrypted IS DISTINCT FROM OLD.encrypted OR NEW.waqf_id IS DISTINCT FROM OLD.waqf_id THEN

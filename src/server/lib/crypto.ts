@@ -69,17 +69,28 @@ export function unwrapDataKey(wrapped: string): Buffer {
   return Buffer.from(decryptString(wrapped), "base64");
 }
 
-export function encryptBuffer(data: Buffer, key: Buffer): { ct: Buffer; iv: string; tag: string } {
+/** AES-256-GCM over a buffer; `aad` (stage 11.1, S11-5) binds the ciphertext to its context — it must be given again to decrypt. */
+export function encryptBuffer(data: Buffer, key: Buffer, aad?: string): { ct: Buffer; iv: string; tag: string } {
   const iv = randomBytes(12);
   const cipher = createCipheriv("aes-256-gcm", key, iv);
+  if (aad !== undefined) cipher.setAAD(Buffer.from(aad, "utf8"));
   const ct = Buffer.concat([cipher.update(data), cipher.final()]);
   return { ct, iv: iv.toString("base64url"), tag: cipher.getAuthTag().toString("base64url") };
 }
 
-export function decryptBuffer(ct: Buffer, key: Buffer, iv: string, tag: string): Buffer {
+export function decryptBuffer(ct: Buffer, key: Buffer, iv: string, tag: string, aad?: string): Buffer {
   const decipher = createDecipheriv("aes-256-gcm", key, Buffer.from(iv, "base64url"));
+  if (aad !== undefined) decipher.setAAD(Buffer.from(aad, "utf8"));
   decipher.setAuthTag(Buffer.from(tag, "base64url"));
   return Buffer.concat([decipher.update(ct), decipher.final()]);
+}
+
+/**
+ * The associated data of a stored document version (stage 11.1, S11-5): the row it belongs to. Every field is fixed for
+ * the row's life (security.sql dv_fixed), so a blob decrypts only under the row it was written for.
+ */
+export function versionAad(v: { id: string; documentId: string; version: number; waqfId: string | null; storageKey: string; sha256: string }): string {
+  return ["waqfak/doc/v2", v.id, v.documentId, String(v.version), v.waqfId ?? "-", v.storageKey, v.sha256].join("|");
 }
 
 export const masterDataKey = () => masterKey;

@@ -46,6 +46,12 @@ export const documentVersions = pgTable("document_versions", {
   encrypted: boolean().default(true).notNull(),
   iv: text(),
   authTag: text(),
+  /**
+   * Stage 11.1 (S11-5): «v2» — AES-256-GCM with associated data binding the ciphertext to this row (its id, document,
+   * version, waqf, storage key and content hash): a blob moved under another row does not decrypt. «v1»: legacy, no
+   * associated data — re-encrypted by scripts/security/reencrypt-v2.ts (old blobs kept until verified).
+   */
+  encScheme: text().default("v1").notNull(),
   scanStatus: scanStatus().default("pending").notNull(),
   scanDetail: text(),
   uploadedBy: uuid().notNull(),

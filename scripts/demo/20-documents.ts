@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 /**
  * Demo documents (fictional, marked "(تجريبي)"): a few encrypted files per demo waqf covering
  * approval states, confidentiality levels and expiry badges (expired, 25 and 50 days ahead).
@@ -7,7 +8,7 @@
 import { and, eq, inArray } from "drizzle-orm";
 import type { Tx } from "../../src/server/db";
 import * as s from "../../src/server/db/schema";
-import { encryptBuffer, newDataKey, sha256, unwrapDataKey } from "../../src/server/lib/crypto";
+import { encryptBuffer, newDataKey, sha256, unwrapDataKey, versionAad } from "../../src/server/lib/crypto";
 import { getStorage, newStorageKey } from "../../src/server/adapters/storage";
 import type { DemoCtx } from "../seed-demo";
 
@@ -98,9 +99,7 @@ export default async function demoDocuments(tx: Tx, ctx: DemoCtx) {
     const key = await keyFor(tx, p.waqfId);
     for (const d of todo) {
       const data = demoPdf(d.caption);
-      const enc = encryptBuffer(data, key);
       const storageKey = newStorageKey({ waqfId: p.waqfId, userId: p.owner });
-      await storage.put(storageKey, enc.ct);
       const [doc] = await tx
         .insert(s.documents)
         .values({
@@ -110,9 +109,14 @@ export default async function demoDocuments(tx: Tx, ctx: DemoCtx) {
           createdBy: p.owner, updatedBy: p.owner,
         })
         .returning({ id: s.documents.id });
+      // stage 11.1 (S11-5): encrypted bound to its row, like any upload
+      const verId = randomUUID();
+      const hash = sha256(data);
+      const enc = encryptBuffer(data, key, versionAad({ id: verId, documentId: doc.id, version: 1, waqfId: p.waqfId, storageKey, sha256: hash }));
+      await storage.put(storageKey, enc.ct);
       await tx.insert(s.documentVersions).values({
-        documentId: doc.id, waqfId: p.waqfId, version: 1, storageKey, sha256: sha256(data), sizeBytes: data.length, mimeType: "application/pdf",
-        originalName: d.file, encrypted: true, iv: enc.iv, authTag: enc.tag, scanStatus: "clean", scanDetail: "builtin: clean", uploadedBy: p.owner,
+        id: verId, documentId: doc.id, waqfId: p.waqfId, version: 1, storageKey, sha256: hash, sizeBytes: data.length, mimeType: "application/pdf",
+        originalName: d.file, encrypted: true, iv: enc.iv, authTag: enc.tag, encScheme: "v2", scanStatus: "clean", scanDetail: "builtin: clean", uploadedBy: p.owner,
       });
       await tx.insert(s.documentAccessLog).values({ documentId: doc.id, waqfId: p.waqfId, userId: p.owner, action: "upload" });
     }

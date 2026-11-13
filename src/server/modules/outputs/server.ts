@@ -1,10 +1,11 @@
 import "server-only";
+import { randomUUID } from "node:crypto";
 import { and, asc, desc, eq, inArray, isNotNull } from "drizzle-orm";
 import type { Tx } from "@/server/db";
 import { deliverables, documents, documentVersions, outputs, outputVersions, taskEvents, tasks, users, waqfs } from "@/server/db/schema";
 import type { OutputGap, OutputSection, OutputSource } from "@/server/db/schema/operations";
 import { getStorage, newStorageKey } from "@/server/adapters/storage";
-import { encryptBuffer, sha256 } from "@/server/lib/crypto";
+import { encryptBuffer, sha256, versionAad } from "@/server/lib/crypto";
 import { audit, nextNumber } from "@/server/lib/audit";
 import { dataKeyFor, logAccess } from "@/server/modules/documents/core";
 import { pdfShell, renderPdf } from "@/server/modules/pdf/render";
@@ -116,16 +117,19 @@ export async function previewDocHtml(tx: Tx, rc: RequestCtx, def: OutputDef, sec
 /** Stores a generated PDF in the documents vault (encrypted like any upload; generated, so no malware scan applies). */
 export async function storeGeneratedPdf(tx: Tx, p: { waqfId: string | null; requestId: string; title: string; data: Buffer; ownerUserId: string; fileName: string }) {
   const key = await dataKeyFor(tx, p.waqfId);
-  const enc = encryptBuffer(p.data, key);
   const storageKey = newStorageKey({ waqfId: p.waqfId, userId: p.ownerUserId });
-  await getStorage().put(storageKey, enc.ct);
   const [doc] = await tx.insert(documents).values({
     waqfId: p.waqfId, ownerUserId: p.ownerUserId, requestId: p.requestId, docType: "deliverable", title: p.title, confidentiality: "internal", status: "active",
     approvalStatus: "approved", currentVersion: 1, createdBy: p.ownerUserId, updatedBy: p.ownerUserId,
   }).returning({ id: documents.id });
+  // the row's id and fields are the associated data of its ciphertext (stage 11.1, S11-5)
+  const verId = randomUUID();
+  const hash = sha256(p.data);
+  const enc = encryptBuffer(p.data, key, versionAad({ id: verId, documentId: doc.id, version: 1, waqfId: p.waqfId, storageKey, sha256: hash }));
+  await getStorage().put(storageKey, enc.ct);
   const [ver] = await tx.insert(documentVersions).values({
-    documentId: doc.id, waqfId: p.waqfId, version: 1, storageKey, sha256: sha256(p.data), sizeBytes: p.data.length, mimeType: "application/pdf", originalName: p.fileName,
-    encrypted: true, iv: enc.iv, authTag: enc.tag, scanStatus: "clean", scanDetail: "generated: platform output", uploadedBy: p.ownerUserId, changeNote: "نسخة معتمدة مولّدة من المنصة",
+    id: verId, documentId: doc.id, waqfId: p.waqfId, version: 1, storageKey, sha256: hash, sizeBytes: p.data.length, mimeType: "application/pdf", originalName: p.fileName,
+    encrypted: true, iv: enc.iv, authTag: enc.tag, encScheme: "v2", scanStatus: "clean", scanDetail: "generated: platform output", uploadedBy: p.ownerUserId, changeNote: "نسخة معتمدة مولّدة من المنصة",
   }).returning({ id: documentVersions.id });
   await logAccess(tx, { documentId: doc.id, versionId: ver.id, waqfId: p.waqfId, userId: p.ownerUserId, action: "upload" });
   return doc.id;

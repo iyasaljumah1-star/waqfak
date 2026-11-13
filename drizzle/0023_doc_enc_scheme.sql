@@ -1,0 +1,1 @@
+ALTER TABLE "document_versions" ADD COLUMN "enc_scheme" text DEFAULT 'v1' NOT NULL;

@@ -5,7 +5,7 @@ import {
   auditLogs, documentAccessLog, documentLinks, documents, documentVersions, permissions, rolePermissions, roles, waqfKeys, waqfMemberships,
 } from "../../db/schema";
 import { ROLES } from "../../authz/catalog";
-import { decryptBuffer, masterDataKey, newDataKey, sha256, unwrapDataKey } from "../../lib/crypto";
+import { decryptBuffer, masterDataKey, newDataKey, sha256, unwrapDataKey, versionAad } from "../../lib/crypto";
 import { audit } from "../../lib/audit";
 import { getStorage } from "../../adapters/storage";
 import { notify } from "../notify";
@@ -84,7 +84,8 @@ export async function readVersionPlain(tx: Tx, doc: Pick<DocRow, "waqfId">, v: V
   const blob = await getStorage().get(v.storageKey);
   if (!v.encrypted) return blob;
   const key = await dataKeyFor(tx, doc.waqfId);
-  const plain = decryptBuffer(blob, key, v.iv!, v.authTag!);
+  // v2: bound to this row — a blob written for another row (another id, document, version, waqf or key) does not open
+  const plain = decryptBuffer(blob, key, v.iv!, v.authTag!, v.encScheme === "v2" ? versionAad(v) : undefined);
   if (sha256(plain) !== v.sha256) throw new Error(`integrity check failed for version ${v.id}`);
   return plain;
 }

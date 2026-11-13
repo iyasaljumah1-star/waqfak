@@ -1,4 +1,5 @@
 import "server-only";
+import { randomUUID } from "node:crypto";
 import { eq, max } from "drizzle-orm";
 import type { Tx } from "../../db";
 import { documents, documentVersions, serviceRequests } from "../../db/schema";
@@ -6,7 +7,7 @@ import type { Auth, WaqfAccess } from "../../authz/context";
 
 // authz/context pulls in next/navigation; load it lazily so this module stays importable from jobs/scripts.
 const loadWaqfAccess: typeof import("../../authz/context").loadWaqfAccess = async (...a) => (await import("../../authz/context")).loadWaqfAccess(...a);
-import { encryptBuffer, sha256 } from "../../lib/crypto";
+import { encryptBuffer, sha256, versionAad } from "../../lib/crypto";
 import { audit } from "../../lib/audit";
 import { getStorage, newStorageKey } from "../../adapters/storage";
 import { scanFile, type FileKind } from "../../adapters/scan";
@@ -116,12 +117,9 @@ export async function ingestUpload(tx: Tx, auth: Auth, meta: { ip: string; userA
     if (!canSeeDocumentSync(access, existing)) throw new HttpError(403, "ليست لديك صلاحية على هذه الوثيقة.");
   }
 
-  // Encrypt & store
+  // Encrypt & store — the row first (its id, document, version, key and hash are the associated data: S11-5)
   const key = await dataKeyFor(tx, waqfId);
-  const enc = encryptBuffer(input.data, key);
   const storageKey = newStorageKey({ waqfId, userId: auth.user.id });
-  await getStorage().put(storageKey, enc.ct);
-  onBlob(storageKey);
 
   let doc: DocRow;
   if (existing) doc = existing;
@@ -140,11 +138,16 @@ export async function ingestUpload(tx: Tx, auth: Auth, meta: { ip: string; userA
   }
   const [{ n }] = await tx.select({ n: max(documentVersions.version) }).from(documentVersions).where(eq(documentVersions.documentId, doc.id));
   const version = (n ?? 0) + 1;
+  const verId = randomUUID();
+  const hash = sha256(input.data);
+  const enc = encryptBuffer(input.data, key, versionAad({ id: verId, documentId: doc.id, version, waqfId, storageKey, sha256: hash }));
+  await getStorage().put(storageKey, enc.ct);
+  onBlob(storageKey);
   const [ver] = await tx
     .insert(documentVersions)
     .values({
-      documentId: doc.id, waqfId, version, storageKey, sha256: sha256(input.data), sizeBytes: input.data.length, mimeType: input.mime,
-      originalName: input.originalName.slice(0, 200), encrypted: true, iv: enc.iv, authTag: enc.tag, scanStatus: "pending",
+      id: verId, documentId: doc.id, waqfId, version, storageKey, sha256: hash, sizeBytes: input.data.length, mimeType: input.mime,
+      originalName: input.originalName.slice(0, 200), encrypted: true, iv: enc.iv, authTag: enc.tag, encScheme: "v2", scanStatus: "pending",
       uploadedBy: auth.user.id, changeNote: input.changeNote || null,
     })
     .returning();
