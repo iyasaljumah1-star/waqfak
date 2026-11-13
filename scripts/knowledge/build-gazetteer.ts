@@ -78,7 +78,24 @@ const COUNTRY_EN_ALIASES: Record<string, string[]> = { US: ["USA", "America", "U
 /** Countries whose Arabic name is also a common word («مالي»: financial). */
 const COUNTRY_AMBIGUOUS: Record<string, "word" | "name"> = { ML: "word", BJ: "word", MA: "name", QA: "name", TD: "name" };
 /** Places abroad whose names are homographs of another entry (after normalisation: «عُمان» = «عمّان»). */
-const HOMOGRAPHS: Entry[] = [{ key: "JO-AMM", level: "city", ar: ["عمان", "عمّان", "عمان الأردنية", "عمّان الأردنية", "العاصمة الأردنية"], en: ["Amman"], domestic: false, parent: "JO", verified: true }];
+const HOMOGRAPHS: Entry[] = [
+  { key: "JO-AMM", level: "city", ar: ["عمان", "عمّان", "عمان الأردنية", "عمّان الأردنية", "العاصمة الأردنية"], en: ["Amman"], domestic: false, parent: "JO", verified: true },
+  { key: "LY-TIP", level: "city", ar: ["طرابلس", "طرابلس الغرب", "طرابلس الليبية"], en: ["Tripoli"], domestic: false, parent: "LY", verified: true },
+  { key: "LB-TRI", level: "city", ar: ["طرابلس", "طرابلس الشام", "طرابلس اللبنانية"], en: ["Tripoli Lebanon"], domestic: false, parent: "LB", verified: true },
+];
+/**
+ * Cities abroad a question may name (stage 11, after the independent review FR11-12): a COMPILED list of capitals and
+ * large cities, not an official source — so that «في دبي» limits the answer to Dubai (and is then not answered from the
+ * Kingdom's figures) instead of being ignored. A city abroad not listed here is still not recognised (documented).
+ */
+const CITIES_ABROAD: [string, string, string][] = [
+  ["AE", "دبي", "Dubai"], ["AE", "أبوظبي", "Abu Dhabi"], ["AE", "الشارقة", "Sharjah"], ["QA", "الدوحة", "Doha"], ["BH", "المنامة", "Manama"], ["OM", "مسقط", "Muscat"],
+  ["EG", "القاهرة", "Cairo"], ["EG", "الإسكندرية", "Alexandria"], ["LB", "بيروت", "Beirut"], ["SY", "دمشق", "Damascus"], ["SY", "حلب", "Aleppo"], ["IQ", "بغداد", "Baghdad"],
+  ["YE", "صنعاء", "Sanaa"], ["YE", "عدن", "Aden"], ["SD", "الخرطوم", "Khartoum"], ["MA", "الرباط", "Rabat"], ["MA", "الدار البيضاء", "Casablanca"], ["PS", "القدس", "Jerusalem"],
+  ["TR", "إسطنبول", "Istanbul"], ["TR", "أنقرة", "Ankara"], ["IR", "طهران", "Tehran"], ["PK", "كراتشي", "Karachi"], ["PK", "إسلام آباد", "Islamabad"], ["PK", "لاهور", "Lahore"],
+  ["MY", "كوالالمبور", "Kuala Lumpur"], ["ID", "جاكرتا", "Jakarta"], ["GB", "لندن", "London"], ["FR", "باريس", "Paris"], ["US", "نيويورك", "New York"], ["US", "واشنطن", "Washington"],
+  ["DE", "برلين", "Berlin"], ["IN", "نيودلهي", "New Delhi"], ["IN", "مومباي", "Mumbai"], ["CN", "بكين", "Beijing"], ["JP", "طوكيو", "Tokyo"], ["SG", "سنغافورة", "Singapore"],
+];
 
 // codes the runtime names that are not current ISO 3166-1 alpha-2 (groupings, reserved, deprecated)
 const NOT_ISO = new Set(["EU", "EZ", "UN", "QO", "XA", "XB", "ZZ", "AC", "CP", "DG", "EA", "IC", "TA", "CQ", "AN", "BU", "CS", "DD", "FX", "SU", "TP", "UK", "XK", "YD", "YU", "ZR"]);
@@ -105,6 +122,7 @@ const entries: Entry[] = [
   ...REGIONS.map(([key, alt, en]) => ({ key: `R:${key}`, level: "region" as const, ar: [key, ...alt], en, domestic: true, parent: "SA", ...(AMBIGUOUS[key] ? { ambiguous: AMBIGUOUS[key] } : {}), verified: true })),
   ...Object.entries(GOVERNORATES).flatMap(([region, govs]) => govs.map(([ar, en]) => ({ key: `G:${ar}`, level: "governorate" as const, ar: [ar], en: [en], domestic: true, parent: `R:${region}`, ...(AMBIGUOUS[ar] ? { ambiguous: AMBIGUOUS[ar] } : {}), verified: false }))),
   ...HOMOGRAPHS,
+  ...CITIES_ABROAD.map(([cc, ar, en]) => ({ key: `C:${en}`, level: "city" as const, ar: [ar], en: [en], domestic: false, parent: cc, verified: false })),
 ];
 const out = {
   version: "sa-admin/1",
@@ -113,6 +131,7 @@ const out = {
     { part: "regions", standing: "verified", source: "نظام المناطق (أمر ملكي رقم أ/92 في 27/8/1412هـ) وقائمة إمارات المناطق الـ13 ومقارها (وزارة الداخلية؛ المركز الوطني للوثائق والمحفوظات)" },
     { part: "governorates", standing: "compiled, not verified entry by entry", source: "قوائم محافظات الإمارات المنشورة؛ تلزم مطابقتها بالقائمة الرسمية لوزارة الداخلية قبل الإنتاج" },
     { part: "countries", standing: "verified", source: "ISO 3166-1 alpha-2، بالأسماء العربية والإنجليزية من Unicode CLDR" },
+    { part: "cities abroad", standing: "compiled, not official", source: "عواصم ومدن كبرى خارج المملكة، جُمعت لتقييد السؤال بها بدل تجاهلها؛ مدينة غير مدرجة لا تُعرف" },
   ],
   counts: { countries: entries.filter((e) => e.level === "country").length, regions: REGIONS.length, governorates: Object.values(GOVERNORATES).flat().length },
   entries,

@@ -84,7 +84,13 @@ export const RETRIEVAL_SET: SetCase[] = [
   { id: "E7", lang: "en", q: "How many endowments were registered last year?", unresolved: /التاريخ النسبي/ },
   { id: "E8", lang: "en", q: "Endowments in the Eastern Province", places: ["الشرقية"] },
   { id: "E9", lang: "en", q: "How many people live in Hail?", places: ["حائل"] },
-  { id: "E10", lang: "en", q: "How many endowments are in Springfield city?", unresolved: /غير موجود/, limitation: "اسم مكان إنجليزي غير معروف لا يُكتشف (لا علامة مكان إنجليزية تُقرأ): لا يمتنع النظام عنه" },
+  { id: "E10", lang: "en", q: "How many endowments are in Springfield city?", unresolved: /غير موجود/ },
+  { id: "E13", lang: "ar", q: "كم عدد الأوقاف في دبي؟", places: ["C:Dubai"] },
+  { id: "E14", lang: "en", q: "How many waqfs exist in Istanbul?", places: ["C:Istanbul"] },
+  { id: "E15", lang: "ar", q: "كم عدد الأوقاف في حي الملز؟", unresolved: /غير موجود في المعجم/ },
+  { id: "E16", lang: "ar", q: "كم عدد الأوقاف في طرابلس؟", unresolved: /يحتمل أكثر من مكان/ },
+  { id: "E17", lang: "ar", q: "كم عدد الأوقاف في مدينة فاس؟", unresolved: /غير موجود في المعجم/ },
+  { id: "E18", lang: "ar", q: "كم عدد الأوقاف في فاس؟", unresolved: /غير موجود/, limitation: "مدينة خارج المعجم بلا كلمة مكان قبلها (فاس، تطوان…) لا تُكتشف بالعربية: يُجاب بأرقام المملكة" },
   { id: "E11", lang: "en", q: "What is the penalty for not registering a waqf?", passage: { text: "The regulation requires registration", lacking: /العقوبة/ } },
 ];
 

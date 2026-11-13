@@ -39,7 +39,7 @@ const ENTRIES: Place[] = (() => {
 })();
 
 /** Words that set what follows as a place (normalised). */
-const PLACE_WORD = /^(?:[وفب]?(?:ال)?(?:مدينه|محافظه|منطقه|امارة|اماره|بلده|قريه|دوله|عاصمه|مركز)|بمدينه|بمحافظه|بمنطقه)$/;
+const PLACE_WORD = /^(?:[وفب]?(?:ال)?(?:مدينه|محافظه|منطقه|امارة|اماره|بلده|قريه|دوله|عاصمه|مركز|حي|احياء)|بمدينه|بمحافظه|بمنطقه|بحي)$/;
 /** After a place word, words that are not names («المحافظة على»، «منطقة سكنية»). */
 const NOT_A_NAME = /^(?:علي|عليه|عليها|عليهم|بها|فيها|منها|لها|سكنيه|تجاريه|صناعيه|زراعيه|اداريه|خاصه|عامه|معينه|واحده|اخري|اخر|الوقف|وقف|الاوقاف|اوقاف|كبيره|صغيره|نائيه|بعيده|قريبه|الكبري|الصغري|حدوديه|ساحليه|جبليه|ريفيه|الحضريه|حضريه|ما|هذه|هذا|تلك|ذات|كل|اي|التي|الذي|في|من|الي|عن|مع|و|او)$/;
 
@@ -109,7 +109,7 @@ export function readPlaces(text: string): PlaceReading {
       .sort((a, b) => b.words.length - a.words.length);
     if (!at.length) {
       // a place word followed by a name the gazetteer does not hold: unresolved, never guessed
-      if (cued && !NOT_A_NAME.test(toks[i]!) && /^[ء-ي]/.test(toks[i]!) && toks[i]!.replace(/^[وفبل]?(?:ال)?/, "").length >= 3)
+      if (cued && !NOT_A_NAME.test(toks[i]!) && /^[ء-ي]/.test(toks[i]!) && toks[i]!.replace(/^ال/, "").length >= 3)
         unresolved.push(`المكان «${toks[i - 1]} ${toks[i]}» غير موجود في المعجم الجغرافي المعتمد`);
       continue;
     }
@@ -131,6 +131,15 @@ export function readPlaces(text: string): PlaceReading {
       continue;
     }
     if (!found.some((p) => p.key === keys[0])) found.push(usable[0]!.place);
+  }
+  // an English place-like name after «in» that the gazetteer does not hold («in Springfield», «in Dubai» before it was
+  // listed): said for a factual question only (frame.ts), never guessed (FR11-12)
+  const MONTHS = /^(?:January|February|March|April|May|June|July|August|September|October|November|December|Islamic|Saudi|Arabic|English|Hanbali|Shariah|Sharia|The|A|An)$/;
+  for (const m of text.matchAll(/\bin\s+(?:the\s+)?([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)/g)) {
+    const name = m[1]!;
+    if (MONTHS.test(name.split(/\s+/)[0]!)) continue;
+    if (found.some((p) => p.en.some((e) => e.toLowerCase() === name.toLowerCase() || name.toLowerCase().startsWith(e.toLowerCase())))) continue;
+    soft.push(`المكان «${name}» غير موجود في المعجم الجغرافي المعتمد`);
   }
   // a homograph named elsewhere in full resolves it («سلطنة عمان … عمان»): drop the unresolved note for it
   const resolved = unresolved.filter((u) => !(u.includes("يحتمل") && found.some((p) => u.includes(`(${p.ar[0]}`) || u.includes(`، ${p.ar[0]}`))));

@@ -16,6 +16,11 @@
    "part": "countries",
    "standing": "verified",
    "source": "ISO 3166-1 alpha-2، بالأسماء العربية والإنجليزية من Unicode CLDR"
+  },
+  {
+   "part": "cities abroad",
+   "standing": "compiled, not official",
+   "source": "عواصم ومدن كبرى خارج المملكة، جُمعت لتقييد السؤال بها بدل تجاهلها؛ مدينة غير مدرجة لا تُعرف"
   }
  ],
  "counts": {
@@ -5297,6 +5302,504 @@
    "domestic": false,
    "parent": "JO",
    "verified": true
+  },
+  {
+   "key": "LY-TIP",
+   "level": "city",
+   "ar": [
+    "طرابلس",
+    "طرابلس الغرب",
+    "طرابلس الليبية"
+   ],
+   "en": [
+    "Tripoli"
+   ],
+   "domestic": false,
+   "parent": "LY",
+   "verified": true
+  },
+  {
+   "key": "LB-TRI",
+   "level": "city",
+   "ar": [
+    "طرابلس",
+    "طرابلس الشام",
+    "طرابلس اللبنانية"
+   ],
+   "en": [
+    "Tripoli Lebanon"
+   ],
+   "domestic": false,
+   "parent": "LB",
+   "verified": true
+  },
+  {
+   "key": "C:Dubai",
+   "level": "city",
+   "ar": [
+    "دبي"
+   ],
+   "en": [
+    "Dubai"
+   ],
+   "domestic": false,
+   "parent": "AE",
+   "verified": false
+  },
+  {
+   "key": "C:Abu Dhabi",
+   "level": "city",
+   "ar": [
+    "أبوظبي"
+   ],
+   "en": [
+    "Abu Dhabi"
+   ],
+   "domestic": false,
+   "parent": "AE",
+   "verified": false
+  },
+  {
+   "key": "C:Sharjah",
+   "level": "city",
+   "ar": [
+    "الشارقة"
+   ],
+   "en": [
+    "Sharjah"
+   ],
+   "domestic": false,
+   "parent": "AE",
+   "verified": false
+  },
+  {
+   "key": "C:Doha",
+   "level": "city",
+   "ar": [
+    "الدوحة"
+   ],
+   "en": [
+    "Doha"
+   ],
+   "domestic": false,
+   "parent": "QA",
+   "verified": false
+  },
+  {
+   "key": "C:Manama",
+   "level": "city",
+   "ar": [
+    "المنامة"
+   ],
+   "en": [
+    "Manama"
+   ],
+   "domestic": false,
+   "parent": "BH",
+   "verified": false
+  },
+  {
+   "key": "C:Muscat",
+   "level": "city",
+   "ar": [
+    "مسقط"
+   ],
+   "en": [
+    "Muscat"
+   ],
+   "domestic": false,
+   "parent": "OM",
+   "verified": false
+  },
+  {
+   "key": "C:Cairo",
+   "level": "city",
+   "ar": [
+    "القاهرة"
+   ],
+   "en": [
+    "Cairo"
+   ],
+   "domestic": false,
+   "parent": "EG",
+   "verified": false
+  },
+  {
+   "key": "C:Alexandria",
+   "level": "city",
+   "ar": [
+    "الإسكندرية"
+   ],
+   "en": [
+    "Alexandria"
+   ],
+   "domestic": false,
+   "parent": "EG",
+   "verified": false
+  },
+  {
+   "key": "C:Beirut",
+   "level": "city",
+   "ar": [
+    "بيروت"
+   ],
+   "en": [
+    "Beirut"
+   ],
+   "domestic": false,
+   "parent": "LB",
+   "verified": false
+  },
+  {
+   "key": "C:Damascus",
+   "level": "city",
+   "ar": [
+    "دمشق"
+   ],
+   "en": [
+    "Damascus"
+   ],
+   "domestic": false,
+   "parent": "SY",
+   "verified": false
+  },
+  {
+   "key": "C:Aleppo",
+   "level": "city",
+   "ar": [
+    "حلب"
+   ],
+   "en": [
+    "Aleppo"
+   ],
+   "domestic": false,
+   "parent": "SY",
+   "verified": false
+  },
+  {
+   "key": "C:Baghdad",
+   "level": "city",
+   "ar": [
+    "بغداد"
+   ],
+   "en": [
+    "Baghdad"
+   ],
+   "domestic": false,
+   "parent": "IQ",
+   "verified": false
+  },
+  {
+   "key": "C:Sanaa",
+   "level": "city",
+   "ar": [
+    "صنعاء"
+   ],
+   "en": [
+    "Sanaa"
+   ],
+   "domestic": false,
+   "parent": "YE",
+   "verified": false
+  },
+  {
+   "key": "C:Aden",
+   "level": "city",
+   "ar": [
+    "عدن"
+   ],
+   "en": [
+    "Aden"
+   ],
+   "domestic": false,
+   "parent": "YE",
+   "verified": false
+  },
+  {
+   "key": "C:Khartoum",
+   "level": "city",
+   "ar": [
+    "الخرطوم"
+   ],
+   "en": [
+    "Khartoum"
+   ],
+   "domestic": false,
+   "parent": "SD",
+   "verified": false
+  },
+  {
+   "key": "C:Rabat",
+   "level": "city",
+   "ar": [
+    "الرباط"
+   ],
+   "en": [
+    "Rabat"
+   ],
+   "domestic": false,
+   "parent": "MA",
+   "verified": false
+  },
+  {
+   "key": "C:Casablanca",
+   "level": "city",
+   "ar": [
+    "الدار البيضاء"
+   ],
+   "en": [
+    "Casablanca"
+   ],
+   "domestic": false,
+   "parent": "MA",
+   "verified": false
+  },
+  {
+   "key": "C:Jerusalem",
+   "level": "city",
+   "ar": [
+    "القدس"
+   ],
+   "en": [
+    "Jerusalem"
+   ],
+   "domestic": false,
+   "parent": "PS",
+   "verified": false
+  },
+  {
+   "key": "C:Istanbul",
+   "level": "city",
+   "ar": [
+    "إسطنبول"
+   ],
+   "en": [
+    "Istanbul"
+   ],
+   "domestic": false,
+   "parent": "TR",
+   "verified": false
+  },
+  {
+   "key": "C:Ankara",
+   "level": "city",
+   "ar": [
+    "أنقرة"
+   ],
+   "en": [
+    "Ankara"
+   ],
+   "domestic": false,
+   "parent": "TR",
+   "verified": false
+  },
+  {
+   "key": "C:Tehran",
+   "level": "city",
+   "ar": [
+    "طهران"
+   ],
+   "en": [
+    "Tehran"
+   ],
+   "domestic": false,
+   "parent": "IR",
+   "verified": false
+  },
+  {
+   "key": "C:Karachi",
+   "level": "city",
+   "ar": [
+    "كراتشي"
+   ],
+   "en": [
+    "Karachi"
+   ],
+   "domestic": false,
+   "parent": "PK",
+   "verified": false
+  },
+  {
+   "key": "C:Islamabad",
+   "level": "city",
+   "ar": [
+    "إسلام آباد"
+   ],
+   "en": [
+    "Islamabad"
+   ],
+   "domestic": false,
+   "parent": "PK",
+   "verified": false
+  },
+  {
+   "key": "C:Lahore",
+   "level": "city",
+   "ar": [
+    "لاهور"
+   ],
+   "en": [
+    "Lahore"
+   ],
+   "domestic": false,
+   "parent": "PK",
+   "verified": false
+  },
+  {
+   "key": "C:Kuala Lumpur",
+   "level": "city",
+   "ar": [
+    "كوالالمبور"
+   ],
+   "en": [
+    "Kuala Lumpur"
+   ],
+   "domestic": false,
+   "parent": "MY",
+   "verified": false
+  },
+  {
+   "key": "C:Jakarta",
+   "level": "city",
+   "ar": [
+    "جاكرتا"
+   ],
+   "en": [
+    "Jakarta"
+   ],
+   "domestic": false,
+   "parent": "ID",
+   "verified": false
+  },
+  {
+   "key": "C:London",
+   "level": "city",
+   "ar": [
+    "لندن"
+   ],
+   "en": [
+    "London"
+   ],
+   "domestic": false,
+   "parent": "GB",
+   "verified": false
+  },
+  {
+   "key": "C:Paris",
+   "level": "city",
+   "ar": [
+    "باريس"
+   ],
+   "en": [
+    "Paris"
+   ],
+   "domestic": false,
+   "parent": "FR",
+   "verified": false
+  },
+  {
+   "key": "C:New York",
+   "level": "city",
+   "ar": [
+    "نيويورك"
+   ],
+   "en": [
+    "New York"
+   ],
+   "domestic": false,
+   "parent": "US",
+   "verified": false
+  },
+  {
+   "key": "C:Washington",
+   "level": "city",
+   "ar": [
+    "واشنطن"
+   ],
+   "en": [
+    "Washington"
+   ],
+   "domestic": false,
+   "parent": "US",
+   "verified": false
+  },
+  {
+   "key": "C:Berlin",
+   "level": "city",
+   "ar": [
+    "برلين"
+   ],
+   "en": [
+    "Berlin"
+   ],
+   "domestic": false,
+   "parent": "DE",
+   "verified": false
+  },
+  {
+   "key": "C:New Delhi",
+   "level": "city",
+   "ar": [
+    "نيودلهي"
+   ],
+   "en": [
+    "New Delhi"
+   ],
+   "domestic": false,
+   "parent": "IN",
+   "verified": false
+  },
+  {
+   "key": "C:Mumbai",
+   "level": "city",
+   "ar": [
+    "مومباي"
+   ],
+   "en": [
+    "Mumbai"
+   ],
+   "domestic": false,
+   "parent": "IN",
+   "verified": false
+  },
+  {
+   "key": "C:Beijing",
+   "level": "city",
+   "ar": [
+    "بكين"
+   ],
+   "en": [
+    "Beijing"
+   ],
+   "domestic": false,
+   "parent": "CN",
+   "verified": false
+  },
+  {
+   "key": "C:Tokyo",
+   "level": "city",
+   "ar": [
+    "طوكيو"
+   ],
+   "en": [
+    "Tokyo"
+   ],
+   "domestic": false,
+   "parent": "JP",
+   "verified": false
+  },
+  {
+   "key": "C:Singapore",
+   "level": "city",
+   "ar": [
+    "سنغافورة"
+   ],
+   "en": [
+    "Singapore"
+   ],
+   "domestic": false,
+   "parent": "SG",
+   "verified": false
   }
  ]
 }
