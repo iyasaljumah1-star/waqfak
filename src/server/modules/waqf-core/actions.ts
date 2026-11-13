@@ -4,7 +4,7 @@ import { and, count, eq, gt, isNull, ne, or, sql } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { withSystem, type Tx } from "../../db";
-import { delegations, invitations, requestEvents, serviceRequests, users, waqfKeys, waqfMemberships, waqfs, waqfTimelineEvents } from "../../db/schema";
+import { delegations, invitations, requestEvents, serviceRequests, waqfKeys, waqfMemberships, waqfs, waqfTimelineEvents } from "../../db/schema";
 import { normalizeSaudiMobile, maskPhone } from "../../auth/otp";
 import { requireAuth } from "../../authz/context";
 import { roleName } from "../../authz/catalog";

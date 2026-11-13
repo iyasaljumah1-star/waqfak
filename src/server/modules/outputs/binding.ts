@@ -27,16 +27,23 @@ export function bindingInput(b: Pick<SpecialistBlock, "text" | "runId" | "writer
 export const specialistBinding = (b: Parameters<typeof bindingInput>[0]) => createHash("sha256").update(bindingInput(b), "utf8").digest("hex");
 
 /**
- * The fingerprint of a text for the engine-block registry (stage 11, N10-16): the sha256 of the text with all
- * whitespace removed, so that a copy re-spaced or re-wrapped is still recognised as the engine's. The database computes
- * the same (security.sql block_text_sha(): the same character class, listed explicitly so that no locale changes it).
+ * The fingerprint of a text for the engine-block registry (stage 11, N10-16, S11-8): the sha256 of its letters and digits
+ * only — Arabic letters without diacritics or tatweel, Arabic-Indic and Latin digits, Latin letters lower-cased — so that
+ * a copy re-spaced, re-punctuated or salted with invisible marks (RLM, ALM, soft hyphen, joiners) is still the engine's.
+ * The database computes the same (security.sql block_text_sha()). A copy with a word changed is not recognised: it is
+ * a person's text, and an exact fingerprint cannot tell otherwise.
  */
-export const blockTextSha = (text: string) => createHash("sha256").update(text.replace(/[\t\n\v\f\r \u00a0\u1680\u2000-\u200d\u2028\u2029\u202f\u205f\u2060\u3000\ufeff]+/gu, ""), "utf8").digest("hex");
+export const blockTextSha = (text: string) =>
+  createHash("sha256").update(text.toLowerCase().replace(/[^0-9a-z\u0621-\u063A\u0641-\u064A\u0660-\u0669\u06F0-\u06F9\u0671-\u06D3]+/gu, ""), "utf8").digest("hex");
 
-const ARABIC_DIGITS: Record<string, string> = Object.fromEntries([..."٠١٢٣٤٥٦٧٨٩"].map((d, i) => [d, String(i)]).concat([..."۰۱۲۳۴۵۶۷۸۹"].map((d, i) => [d, String(i)])));
-/** The citation numbers in a text: «[3]», «[٣]» and «[۳]» are the same citation (N10-15). */
+/** Citation marks in one form: Arabic-Indic, Persian and full-width digits, full-width brackets. */
+export const citeForm = (t: string) =>
+  t.replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x660)).replace(/[۰-۹]/g, (d) => String(d.charCodeAt(0) - 0x6f0)).replace(/[０-９]/g, (d) => String(d.charCodeAt(0) - 0xff10)).replace(/［/g, "[").replace(/］/g, "]");
+/** The citation numbers in a text: «[3]», «[٣]», «[ 3 ]», «[３]», «[3، 4]» (N10-15, S11-11). */
 export function citedNumbers(text: string): Set<number> {
-  return new Set([...text.matchAll(/\[([0-9\u0660-\u0669\u06f0-\u06f9]{1,3})\]/gu)].map((m) => Number([...m[1]].map((c) => ARABIC_DIGITS[c] ?? c).join(""))));
+  const out = new Set<number>();
+  for (const m of citeForm(text).matchAll(/\[\s*(\d{1,3}(?:\s*[,،]\s*\d{1,3})*)\s*\]/g)) for (const k of m[1]!.split(/\s*[,،]\s*/)) out.add(Number(k));
+  return out;
 }
 
 /** What is wrong with an engine-written block's binding to its references (empty: nothing). */

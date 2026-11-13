@@ -112,13 +112,20 @@ export function frameOf(question: string): Frame {
   const reading = readPlaces(raw);
   const named = reading.places;
   const unresolved = [...reading.unresolved];
+  const factual = (a: AnswerType) => a === "quantity" || a === "rate" || a === "date" || a === "period" || a === "penalty";
   const places = normative ? named.filter((p) => !p.domestic) : named;
   if (normative && places.length < named.length) why.push(`مكان في المملكة في سؤال حكم: سياق لا قيد (${named.filter((p) => p.domestic).map((p) => p.ar[0]).join("، ")})`);
   if (places.length) why.push(`المكان: ${places.map((p) => p.ar[0]).join("، ")}`);
-  const years = [...new Set(raw.match(/(?<!\d)(1[34]\d\d|20\d\d|19\d\d)(?!\d)/g) ?? [])];
+  // a four-digit number followed by a currency or a unit, or after «مبلغ», is an amount, not a year (FR11-14)
+  const years = [...new Set([...raw.matchAll(/(?<![\d,.])(1[34]\d\d|20\d\d|19\d\d)(?![\d,.])(?!\s*(?:ريال|ر\.?\s*س|﷼|SAR|riyals?|دولار|USD|\$|%|٪|متر|م2|م²|كم|كيلو|سهم|وحده|وحدة|نسمه|نسمة|شخص|مستفيد))/gi)]
+    .filter((m) => !/(?:مبلغ|بمبلغ|قيمته|قدره|amount of)\s*$/i.test(raw.slice(0, m.index))).map((m) => m[1]!))];
   if (years.length) why.push(`السنوات: ${years.map((y) => `${y}${isHijri(y) ? "هـ" : "م"}`).join("، ")}`);
-  const relEn = raw.match(/\b(?:last|this|next|previous|current|past)\s+(?:year|month|quarter|week)\b|\b\d+\s+(?:years?|months?)\s+ago\b|\b(?:now|today|currently|nowadays)\b/i);
-  const rel = relEn ?? q.match(/(?:العام|السنه|الربع|الشهر|الاسبوع)\s+(?:الماضي|السابق|المنصرم|الماضيه|السابقه|الحالي|الحاليه|الجاري|الجاريه|القادم|المقبل|القادمه|المقبله)|(?:هذا|هذه)\s+(?:العام|السنه|الربع|الشهر)|(?:العام|السنه)\s+(?:هذا|هذه)|قبل\s+(?:\S+\s+)?(?:سنه|سنوات|سنتين|اعوام|عام|اشهر|شهر)|(?:الان|حاليا|اليوم)(?![ء-ي])/);
+  const relEn = raw.match(/\b(?:last|this|next|previous|current|past|latest|most recent)\s+(?:year|month|quarter|week|census|survey|report)\b|\b(?:\d+|two|three|four|five|ten|a few|several)\s+(?:years?|months?)\s+ago\b|\b(?:now|today|currently|nowadays|recently|lately)\b/i);
+  // FR11-13: «العام الفائت»، «منذ عامين»، «آخر إحصاء»، «مؤخرًا»
+  const relAr2 = q.match(/(?:العام|السنه|الشهر|الربع)\s+(?:الفائت|الفايت|المنقضي|المنصرم)|منذ\s+(?:\S+\s+)?(?:عام|عامين|اعوام|سنه|سنتين|سنوات|شهر|شهرين|اشهر)|(?:اخر|احدث)\s+(?:احصاء|احصاءيه|تعداد|تقرير|نشره|مسح)|(?:^|\s)(?:مؤخرا|موخرا|حديثا|حاليا)(?=\s|$)/);
+  const rel = relEn ?? relAr2 ?? q.match(/(?:العام|السنه|الربع|الشهر|الاسبوع)\s+(?:الماضي|السابق|المنصرم|الماضيه|السابقه|الحالي|الحاليه|الجاري|الجاريه|القادم|المقبل|القادمه|المقبله)|(?:هذا|هذه)\s+(?:العام|السنه|الربع|الشهر)|(?:العام|السنه)\s+(?:هذا|هذه)|قبل\s+(?:\S+\s+)?(?:سنه|سنوات|سنتين|اعوام|عام|اشهر|شهر)|(?:الان|حاليا|اليوم)(?![ء-ي])/);
+  // a common word in a place's position: said only where the place would limit the answer (a factual question)
+  if (factual(answer)) unresolved.push(...reading.soft);
   if (rel) {
     why.push(`تاريخ نسبي «${rel[0]}»`);
     // a date relative to «now» in a question about a number or a date cannot be matched without guessing the year
@@ -128,8 +135,10 @@ export function frameOf(question: string): Frame {
   for (const x of raw.matchAll(/\b(FAS|IFRS|IAS|IPSAS|GS|SS|ISA)\s*[-–]?\s*(\d{1,3})\b/gi)) identifiers.push({ kind: x[1]!.toUpperCase(), number: x[2]! });
   for (const x of q.matchAll(/(?:المعيار|معيار)\s+(?:رقم\s+)?\(?(\d{1,3})\)?/g)) identifiers.push({ kind: "المعيار", number: x[1]! });
   // legal instruments by number: a royal decree («م/43»), a resolution or a circular («قرار رقم 123»)
-  for (const x of raw.matchAll(/(?:^|[\s(])م\s*\/\s*(\d{1,4})(?!\d)/g)) identifiers.push({ kind: "مرسوم ملكي", number: `م/${x[1]}` });
-  for (const x of q.matchAll(/(?:قرار|تعميم)(?:\s+(?:مجلس الوزراء|الهيئه|الوزير|المجلس))?\s+رقم\s+\(?(\d{1,6})\)?/g)) identifiers.push({ kind: "قرار", number: x[1]! });
+  for (const x of raw.matchAll(/(?:^|[\s(])([مأا])\s*\/\s*(\d{1,4})(?!\d)/g)) identifiers.push({ kind: x[1] === "م" ? "مرسوم ملكي" : "أمر ملكي", number: `${x[1] === "م" ? "م" : "أ"}/${x[2]}` });
+  for (const x of raw.matchAll(/\broyal\s+(?:decree|order)\s+(?:no\.?\s*)?\(?([MA])\s*\/\s*(\d{1,4})\)?/gi)) identifiers.push({ kind: x[1]!.toUpperCase() === "M" ? "مرسوم ملكي" : "أمر ملكي", number: `${x[1]!.toUpperCase() === "M" ? "م" : "أ"}/${x[2]}` });
+  for (const x of q.matchAll(/(?:قرار|تعميم)(?:\s+(?:مجلس الوزراء|الهيئه|الوزير|المجلس|وزاري|الوزاري|معالي الوزير))?\s+(?:رقم|ذي الرقم)\s+\(?(\d{1,6})\)?/g)) identifiers.push({ kind: "قرار", number: x[1]! });
+  for (const x of raw.matchAll(/\b(?:cabinet|council of ministers|ministerial)\s+(?:resolution|decision)\s+(?:no\.?|number)\s*\(?(\d{1,6})\)?/gi)) identifiers.push({ kind: "قرار", number: x[1]! });
   if (identifiers.length) why.push(`المعرّف: ${identifiers.map((i) => `${i.kind} ${i.number}`).join("، ")}`);
   if (unresolved.length) why.push(`غير محدد: ${unresolved.join("؛ ")}`);
   // a long request text (a client's matter) names places and times as its context, not as what it asks about
@@ -182,9 +191,11 @@ export function judge(f: Frame, text: string, opts: { scope?: string; hasWord?: 
   for (const p of f.places) if (p.key !== "KSA" && !pp.some((x) => x.key === p.key)) lacking.push(`المكان «${p.ar[0]}»`);
   // identifiers
   for (const id of f.identifiers) {
-    if (id.kind === "مرسوم ملكي" || id.kind === "قرار") {
-      const n = id.number.replace(/^م\//, "");
-      const re = id.kind === "مرسوم ملكي" ? new RegExp(`م\\s*\\/\\s*${n}(?!\\d)`) : new RegExp(`رقم\\s*\\(?${n}\\)?(?!\\d)`);
+    if (id.kind === "مرسوم ملكي" || id.kind === "أمر ملكي" || id.kind === "قرار") {
+      const n = id.number.replace(/^[مأ]\//, "");
+      // the same instrument: the same letter and number; a resolution's number after «قرار … رقم», never any «رقم 12»
+      const re = id.kind === "مرسوم ملكي" ? new RegExp(`(?:م|M)\\s*\\/\\s*${n}(?!\\d)`) : id.kind === "أمر ملكي" ? new RegExp(`(?:أ|ا|A)\\s*\\/\\s*${n}(?!\\d)`)
+        : new RegExp(`(?:قرار|تعميم|resolution|decision)[^.؛\\n]{0,40}(?:رقم|No\\.?|number)\\s*\\(?${n}\\)?(?!\\d)`, "i");
       if (!re.test(raw) && !re.test(t)) lacking.push(`${id.kind} ${id.number}`);
       continue;
     }

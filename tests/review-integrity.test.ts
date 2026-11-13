@@ -274,12 +274,14 @@ describe.skipIf(!enabled)("review integrity (dedicated test database)", () => {
       expect(units.n).toBe(2);
       const c8 = (await retrieve(tx, { ...Q8, refCodes: [...Q8.refCodes] })).citable.filter((h) => h.hit.articleNo === 8).length;
       const c16 = (await retrieve(tx, { ...Q16, refCodes: [...Q16.refCodes] })).citable.filter((h) => h.hit.articleNo === 16).length;
-      const db = (await tx.execute(sql`select registry_unit_reviewed('NZR', 8) as a8, registry_unit_reviewed('NZR', 16) as a16, registry_unit_reviewed('NZR', null) as anull`)).rows[0];
+      // S11-3: the instrument named is the one checked — another registry code, or none, is never opened by NZR's review
+      const db = (await tx.execute(sql`select registry_unit_reviewed('NZR', 8) as a8, registry_unit_reviewed('NZR', 16) as a16, registry_unit_reviewed('NZR', null) as anull,
+        registry_unit_reviewed('GAA-LAW', 8) as other, registry_unit_reviewed('NO-SUCH-INSTRUMENT', 8) as none`)).rows[0];
       return { c8, c16, db };
     });
     expect(out.c8).toBeGreaterThan(0);
     expect(out.c16).toBe(0);
-    expect(out.db).toEqual({ a8: true, a16: false, anull: false });
+    expect(out.db).toEqual({ a8: true, a16: false, anull: false, other: false, none: false });
   }, 90_000);
 
   it("R8-10: a registry rejection counts only when sealed — an unsealed row naming a current legal holder withdraws nothing; a genuine one does", async () => {

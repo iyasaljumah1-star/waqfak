@@ -64,7 +64,7 @@ const AMBIGUOUS: Record<string, "word" | "name"> = Object.fromEntries([
   ...["الوجه", "تربة", "الكامل", "الخبر", "مرات", "العديد", "الحريق", "البدع", "القرى", "حقل", "الطوال", "الحرث", "الريث", "هروب", "الحجرة", "المهد", "البدائع", "الغزالة",
     "البرك", "الدائر", "العارضة", "الدرب", "الحائط", "ثار", "رماح", "العقيق", "الشرقية", "المجمعة"].map((n) => [n, "word" as const]),
   ...["جدة", "حائل", "بدر", "الخرج", "شقراء", "عفيف", "السليل", "الليث", "بارق", "طريف", "الرس", "العلا", "بحرة", "قلوة", "الغاط", "الدلم", "العيص", "خليص", "رنية", "ميسان",
-    "أضم", "ضمد"].map((n) => [n, "name" as const]),
+    "أضم", "ضمد", "فرسان", "المذنب", "الجوف", "الباحة"].map((n) => [n, "name" as const]),
 ]);
 
 /** Arabic forms people use for countries besides the CLDR name. */
@@ -76,7 +76,7 @@ const COUNTRY_ALIASES: Record<string, string[]> = {
 };
 const COUNTRY_EN_ALIASES: Record<string, string[]> = { US: ["USA", "America", "United States"], GB: ["UK", "Britain", "United Kingdom"], AE: ["UAE", "Emirates"], SA: ["Saudi", "KSA", "Saudi Arabia", "Kingdom"], TR: ["Turkey", "Türkiye"] };
 /** Countries whose Arabic name is also a common word («مالي»: financial). */
-const COUNTRY_AMBIGUOUS = new Set(["ML"]);
+const COUNTRY_AMBIGUOUS: Record<string, "word" | "name"> = { ML: "word", BJ: "word", MA: "name", QA: "name", TD: "name" };
 /** Places abroad whose names are homographs of another entry (after normalisation: «عُمان» = «عمّان»). */
 const HOMOGRAPHS: Entry[] = [{ key: "JO-AMM", level: "city", ar: ["عمان", "عمّان", "عمان الأردنية", "عمّان الأردنية", "العاصمة الأردنية"], en: ["Amman"], domestic: false, parent: "JO", verified: true }];
 
@@ -94,7 +94,7 @@ function countries(): Entry[] {
     if (!e || e === code) continue;
     const arName = ar.of(code)!;
     out.push({
-      ...(COUNTRY_AMBIGUOUS.has(code) ? { ambiguous: "word" as const } : {}), key: code, level: "country", ar: [...new Set([arName, ...(COUNTRY_ALIASES[code] ?? [])])], en: [...new Set([e, ...(COUNTRY_EN_ALIASES[code] ?? [])])], domestic: code === "SA", verified: true,
+      ...(COUNTRY_AMBIGUOUS[code] ? { ambiguous: COUNTRY_AMBIGUOUS[code] } : {}), key: code, level: "country", ar: [...new Set([arName, ...(COUNTRY_ALIASES[code] ?? [])])], en: [...new Set([e, ...(COUNTRY_EN_ALIASES[code] ?? [])])], domestic: code === "SA", verified: true,
     });
   }
   return out;

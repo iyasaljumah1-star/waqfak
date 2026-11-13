@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { contracts, invoices, notificationTemplates, paymentSchedule, payments, quotes, serviceRequests, users, waqfs } from "@/server/db/schema";
 import { closeFinanceTask } from "./schedule";
@@ -304,7 +304,7 @@ async function applyPayment(c: Ctx, inv: typeof invoices.$inferSelect, paymentId
   const { total, paid } = invoiceBalance(inv, pays);
   const status = statusAfterPayment(total, paid);
   const receipt = await nextNumber(c.tx, "RCT");
-  await c.tx.update(payments).set({ receiptNumber: receipt }).where(eq(payments.id, paymentId));
+  await c.tx.execute(sql`select app_payment_receipt(${paymentId}::uuid, ${receipt})`);
   await c.tx.update(invoices).set({ status, paidOn: status === "paid" ? paidOn : null, updatedBy: c.auth.user.id }).where(eq(invoices.id, inv.id));
   if (inv.requestId) {
     const [req] = await c.tx.select().from(serviceRequests).where(eq(serviceRequests.id, inv.requestId));
@@ -343,11 +343,12 @@ export async function confirmSandboxPayment(_: ActionState, fd: FormData): Promi
     const provider = paymentProvider(false);
     const v = await provider.verify({ providerRef: p.providerRef ?? "", amount: p.amount, testCard: { number: d.card, expiry: d.expiry, cvc: d.cvc } });
     if (v.status !== "paid") {
-      await c.tx.update(payments).set({ status: "failed", raw: v.raw ?? null }).where(eq(payments.id, p.id));
+      await c.tx.execute(sql`select app_sandbox_settle(${p.id}::uuid, 'failed', null, ${JSON.stringify(v.raw ?? null)}::jsonb)`);
       await audit(c.tx, { actorUserId: c.auth.user.id, action: "billing.payment_failed", entityType: "payment", entityId: p.id, waqfId: inv.waqfId, ip: c.ip, userAgent: c.userAgent });
       return { error: "رُفضت البطاقة التجريبية. استخدم إحدى البطاقات المعروضة في الصفحة ثم ابدأ عملية جديدة." };
     }
-    await c.tx.update(payments).set({ status: "paid", paidAt: new Date(), method: v.method, raw: v.raw ?? null }).where(eq(payments.id, p.id));
+    // the outcome is recorded by the database function (stage 11, S11-18): the client's own row stays «initiated» otherwise
+    await c.tx.execute(sql`select app_sandbox_settle(${p.id}::uuid, 'paid', ${v.method ?? null}, ${JSON.stringify(v.raw ?? null)}::jsonb)`);
     const out = await applyPayment(c, inv, p.id, todayISO(), `سُدد ${fmtSAR(p.amount)} إلكترونيًا (بيئة تجريبية)`);
     await audit(c.tx, { actorUserId: c.auth.user.id, action: "billing.payment", entityType: "invoice", entityId: inv.id, waqfId: inv.waqfId, ip: c.ip, userAgent: c.userAgent, before: { status: inv.status }, after: { status: out.status, provider: "sandbox", paymentId: p.id, amount: p.amount, receipt: out.receipt } });
     ok = true;

@@ -123,6 +123,20 @@ describe.skipIf(!enabled)("stage 11: authentication, system and application role
     }
   });
 
+  it("S11-6: the authentication login keeps the sign-in columns (failure count, lock, verification, second factor) — and nothing else", async () => {
+    await auth.query("begin");
+    try {
+      const ok = await tryQ(auth, `update users set failed_login_count = failed_login_count + 1, locked_until = now() + interval '30 minutes', phone_verified_at = now(), mfa_enabled = mfa_enabled where id = $1`, [ID]);
+      expect(ok.ok, ok.ok ? "" : ok.err).toBe(true);
+      const bad = await tryQ(auth, `update users set full_name = 'اسم آخر' where id = $1`, [ID]);
+      expect(bad.ok ? "" : bad.err).toMatch(/only the sign-in columns/);
+      const staff = await tryQ(auth, `update users set is_staff = true where id = $1`, [ID]);
+      expect(staff.ok ? "" : staff.err).toMatch(/only the sign-in columns/);
+    } finally {
+      await auth.query("rollback");
+    }
+  });
+
   it("asSystem refuses on the application's connection (no step believes itself elevated)", async () => {
     const { asSystem } = await import("../src/server/db/as-system");
     const schema = await import("../src/server/db/schema");

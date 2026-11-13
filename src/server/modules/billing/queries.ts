@@ -1,7 +1,7 @@
 import "server-only";
 import { and, desc, eq, gte, inArray, lte, or, type SQL } from "drizzle-orm";
 import QRCode from "qrcode";
-import { invoices, payments, serviceRequests, users, waqfs } from "@/server/db/schema";
+import { invoices, payments, serviceRequests, waqfs } from "@/server/db/schema";
 import type { Auth } from "@/server/authz/context";
 import { read } from "@/server/modules/_shared";
 import { todayISO } from "@/server/engines/dates";

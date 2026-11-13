@@ -1129,19 +1129,32 @@ CREATE TRIGGER review_db_time BEFORE INSERT ON fiqh_reviews FOR EACH ROW EXECUTE
 -- connection only) with the same run and text; and a block not labelled as the engine's whose text is an engine text
 -- (relabelled «template» or «person», or re-spaced) is refused — the gate does not take the label's word for it.
 CREATE OR REPLACE FUNCTION block_text_sha(t text) RETURNS text LANGUAGE sql IMMUTABLE SET search_path = pg_catalog, public, pg_temp AS $$
-  SELECT encode(sha256(convert_to(regexp_replace(coalesce(t, ''), E'[\\t\\n\\u000b\\f\\r \\u00a0\\u1680\\u2000-\\u200d\\u2028\\u2029\\u202f\\u205f\\u2060\\u3000\\ufeff]+', '', 'g'), 'UTF8')), 'hex')
+  -- stage 11, S11-8: letters and digits only (Arabic letters without diacritics or tatweel, Arabic-Indic and Latin digits,
+  -- Latin letters lower-cased): spacing, punctuation, invisible format marks (RLM, ALM, soft hyphen, joiners) and
+  -- diacritics do not hide a copy. A copy with a word changed is a person's text — an exact fingerprint cannot know it.
+  SELECT encode(sha256(convert_to(regexp_replace(lower(coalesce(t, '')), E'[^0-9a-z\\u0621-\\u063A\\u0641-\\u064A\\u0660-\\u0669\\u06F0-\\u06F9\\u0671-\\u06D3]+', '', 'g'), 'UTF8')), 'hex')
 $$;
 CREATE OR REPLACE FUNCTION ascii_digits(t text) RETURNS text LANGUAGE sql IMMUTABLE SET search_path = pg_catalog, public, pg_temp AS $$
   SELECT translate(t, '٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹', '01234567890123456789')
+$$;
+CREATE OR REPLACE FUNCTION cite_form(t text) RETURNS text LANGUAGE sql IMMUTABLE SET search_path = pg_catalog, public, pg_temp AS $$
+  SELECT translate(t, '٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹０１２３４５６７８９［］', '012345678901234567890123456789[]')
 $$;
 CREATE OR REPLACE FUNCTION specialist_block_errors(secs jsonb) RETURNS integer LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
 DECLARE b jsonb; n integer := 0; refs text; basis text; want text; bad boolean; tsha text;
 BEGIN
   IF secs IS NULL THEN RETURN 0; END IF;
+  -- stage 11, S11-8: an engine text moved into another block (a paragraph, a clause, a list item) under no label at all
+  n := n + (SELECT count(*) FROM (
+    SELECT x->>'text' AS t FROM jsonb_path_query(secs, '$[*] ? (!(exists(@.removed)) || @.removed != true).blocks[*] ? (@.type == "para" || @.type == "clause")') x
+    UNION ALL SELECT i->>'text' FROM jsonb_path_query(secs, '$[*] ? (!(exists(@.removed)) || @.removed != true).blocks[*] ? (@.type == "list").items[*]') i
+  ) o WHERE btrim(coalesce(o.t, '')) <> '' AND EXISTS (SELECT 1 FROM engine_blocks e WHERE e.text_sha256 = block_text_sha(o.t)))::int;
   FOR b IN SELECT x FROM jsonb_path_query(secs, '$[*] ? (!(exists(@.removed)) || @.removed != true).blocks[*] ? (@.type == "specialist")') x LOOP
-    -- a text that cites [n] (in any digits) carries the references it cites, whoever wrote it
-    IF EXISTS (SELECT 1 FROM regexp_matches(coalesce(b->>'text', ''), '\[([0-9٠-٩۰-۹]{1,3})\]', 'g') m
-               WHERE NOT EXISTS (SELECT 1 FROM jsonb_array_elements(coalesce(b->'refs', '[]'::jsonb)) r WHERE (r->>'n') = ascii_digits(m[1])::int::text)) THEN
+    -- a text that cites [n] carries the references it cites, whoever wrote it: in any digits (٣، ۳، ３), with spaces,
+    -- full-width brackets, or a list «[3، 4]» (stage 11, N10-15, S11-11)
+    IF EXISTS (SELECT 1 FROM regexp_matches(cite_form(coalesce(b->>'text', '')), '\[\s*([0-9]{1,3}(?:\s*[,،]\s*[0-9]{1,3})*)\s*\]', 'g') m,
+                    LATERAL regexp_split_to_table(m[1], '\s*[,،]\s*') k
+               WHERE NOT EXISTS (SELECT 1 FROM jsonb_array_elements(coalesce(b->'refs', '[]'::jsonb)) r WHERE (r->>'n') = k::int::text)) THEN
       n := n + 1; CONTINUE;
     END IF;
     CONTINUE WHEN btrim(coalesce(b->>'text', '')) = '';
@@ -1912,13 +1925,19 @@ CREATE TRIGGER ref_review_unit BEFORE INSERT ON ref_match_reviews FOR EACH ROW E
 -- The final gate: a passage of a registry instrument is citable only when ITS article was compared as identical or
 -- editorially identical, and that unit's latest review is an acceptance by an active holder of the legal field, in
 -- their session, of the article text stored now. Nothing else in the run, and nothing in another run, counts.
-CREATE OR REPLACE FUNCTION registry_unit_reviewed(code text, art integer) RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+DROP FUNCTION IF EXISTS registry_unit_reviewed(text, integer);
+-- S11-3 / FR11-16: the registry gate compares the instrument it is given (the parameter, not the column of the same
+-- name) and the version in force today — an article accepted in an earlier text does not open a later one.
+CREATE OR REPLACE FUNCTION registry_unit_reviewed(ref_code text, art integer) RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
   SELECT art IS NOT NULL AND EXISTS (
-    SELECT 1 FROM ref_sources rs JOIN ref_versions rv ON rv.source_id = rs.id JOIN ref_match_runs mr ON mr.version_id = rv.id
+    SELECT 1 FROM ref_sources rs
+    JOIN LATERAL (SELECT v.id FROM ref_versions v WHERE v.source_id = rs.id AND v.effective_from IS NOT NULL AND v.effective_from <= current_date
+                  ORDER BY v.effective_from DESC, v.created_at DESC LIMIT 1) rv ON true
+    JOIN ref_match_runs mr ON mr.version_id = rv.id
     JOIN ref_match_units mu ON mu.run_id = mr.id AND mu.article = art
     JOIN ref_match_reviews mv ON mv.unit_id = mu.id AND mv.run_id = mr.id
     JOIN users u ON u.id = mv.reviewer_user_id AND u.status = 'active' AND (u.locked_until IS NULL OR u.locked_until < now())
-    WHERE rs.code = code AND mu.outcome IN ('identical', 'editorial_only') AND mv.decision = 'accepted' AND mv.session_id IS NOT NULL
+    WHERE rs.code = registry_unit_reviewed.ref_code AND mu.outcome IN ('identical', 'editorial_only') AND mv.decision = 'accepted' AND mv.session_id IS NOT NULL
       AND mu.text_sha256 = ref_article_sha(rv.id, art)
       AND EXISTS (SELECT 1 FROM user_roles ur JOIN role_permissions rp ON rp.role_id = ur.role_id JOIN permissions p ON p.id = rp.permission_id
                   WHERE ur.user_id = u.id AND p.key = 'knowledge.review.legal')
@@ -1926,6 +1945,168 @@ CREATE OR REPLACE FUNCTION registry_unit_reviewed(code text, art integer) RETURN
 $$;
 REVOKE ALL ON FUNCTION registry_unit_reviewed(text, integer) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION registry_unit_reviewed(text, integer) TO waqfak_app;
+
+-- ═════════════ Stage 11, H: findings of the independent AI reviews (security S11-*, fiqh/retrieval FR11-*) ═════════════
+-- S11-6: the authentication login keeps the sign-in columns it owns (failure count and lock, phone and e-mail
+-- verification, the second factor, the password, last sign-in) — nothing else of an account, and never its standing
+-- (status, staff flag) or identity (phone, e-mail, name). The guard of round 7 knew only the system and the person.
+CREATE OR REPLACE FUNCTION users_standing_guard() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
+DECLARE auth_cols text[] := ARRAY['updated_at', 'updated_by', 'last_login_at', 'failed_login_count', 'locked_until', 'phone_verified_at', 'email_verified_at', 'mfa_enabled', 'password_hash'];
+BEGIN
+  IF session_user = 'waqfak_auth' THEN
+    IF (to_jsonb(NEW) - auth_cols) IS DISTINCT FROM (to_jsonb(OLD) - auth_cols)
+       -- the e-mail is set once, with the password, by its owner (auth.actions setPassword)
+       AND NOT ((to_jsonb(NEW) - auth_cols - 'email') = (to_jsonb(OLD) - auth_cols - 'email') AND OLD.email IS NULL) THEN
+      RAISE EXCEPTION 'users: the sign-in path changes only the sign-in columns' USING ERRCODE = 'insufficient_privilege';
+    END IF;
+    RETURN NEW;
+  END IF;
+  IF NOT app_is_system() AND app_current_user() IS DISTINCT FROM OLD.id
+     AND (to_jsonb(NEW) - 'updated_at' - 'updated_by' - 'last_login_at') IS DISTINCT FROM (to_jsonb(OLD) - 'updated_at' - 'updated_by' - 'last_login_at')
+     AND NOT (app_holds('admin.users') OR app_holds('admin.notifications')) THEN
+    RAISE EXCEPTION 'users: another account is changed only by admin.users' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  RETURN NEW;
+END $$;
+
+-- S11-14: the reviewers' authority is read from accounts the application role no longer reads in full (the lock): the
+-- check runs as its owner. It names the reviewer from the bound identity (app_current_user), never from current_user.
+ALTER FUNCTION kb_review_authority() SECURITY DEFINER;
+ALTER FUNCTION kb_review_authority() SET search_path = pg_catalog, public, pg_temp;
+ALTER FUNCTION ref_review_authority() SECURITY DEFINER;
+ALTER FUNCTION ref_review_authority() SET search_path = pg_catalog, public, pg_temp;
+
+
+
+-- S11-1: a membership is changed only by who may manage the waqf's members (its waqf and person never change; its
+-- role only by a manager); a waqf does not go back to establishment once documented;
+-- an invitation is issued by a manager and is never created already accepted.
+DROP POLICY IF EXISTS wm_manage_update ON waqf_memberships;
+CREATE POLICY wm_manage_update ON waqf_memberships AS RESTRICTIVE FOR UPDATE TO waqfak_app
+  USING (app_is_system() OR app_can_manage_members(waqf_id) OR user_id = app_current_user())
+  WITH CHECK (app_is_system() OR app_can_manage_members(waqf_id) OR user_id = app_current_user());
+CREATE OR REPLACE FUNCTION wm_fixed() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
+BEGIN
+  IF current_user NOT IN ('waqfak_app', 'waqfak_system') THEN RETURN NEW; END IF;
+  IF NEW.waqf_id IS DISTINCT FROM OLD.waqf_id OR NEW.user_id IS DISTINCT FROM OLD.user_id THEN
+    RAISE EXCEPTION 'waqf_memberships: the waqf and the person of a membership do not change (end it and add another)' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  -- a role is changed by who manages the waqf's members, never by the member
+  IF NEW.role_key IS DISTINCT FROM OLD.role_key AND NOT (app_is_system() OR app_can_manage_members(OLD.waqf_id)) THEN
+    RAISE EXCEPTION 'waqf_memberships: a role is changed only by who manages the members' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  -- one's own membership: only ended by oneself (leaving), never extended or revived
+  IF NOT app_is_system() AND NOT app_can_manage_members(OLD.waqf_id) AND OLD.user_id = app_current_user()
+     AND (NEW.status IS DISTINCT FROM OLD.status AND NEW.status <> 'ended' OR (OLD.ends_at IS NOT NULL AND NEW.ends_at IS DISTINCT FROM OLD.ends_at AND (NEW.ends_at IS NULL OR NEW.ends_at > OLD.ends_at))) THEN
+    RAISE EXCEPTION 'waqf_memberships: a member does not change their own standing' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS wm_fixed ON waqf_memberships;
+CREATE TRIGGER wm_fixed BEFORE UPDATE ON waqf_memberships FOR EACH ROW EXECUTE FUNCTION wm_fixed();
+
+CREATE OR REPLACE FUNCTION waqf_status_guard() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
+BEGIN
+  IF current_user NOT IN ('waqfak_app', 'waqfak_system') OR app_is_system() THEN RETURN NEW; END IF;
+  IF OLD.status NOT IN ('idea', 'draft') AND NEW.status IN ('idea', 'draft') AND NOT app_is_staff() THEN
+    RAISE EXCEPTION 'waqfs: a waqf past establishment does not return to it' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS waqf_status_guard ON waqfs;
+CREATE TRIGGER waqf_status_guard BEFORE UPDATE ON waqfs FOR EACH ROW EXECUTE FUNCTION waqf_status_guard();
+
+CREATE OR REPLACE FUNCTION inv_accept_guard() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
+BEGIN
+  -- an invitation is accepted on the system path that checks its token (waqf-core acceptInvitation), never by an update
+  -- from a person's session
+  IF current_user IN ('waqfak_app', 'waqfak_system') AND NOT app_is_system()
+     AND (NEW.accepted_by IS DISTINCT FROM OLD.accepted_by OR NEW.accepted_at IS DISTINCT FROM OLD.accepted_at) THEN
+    RAISE EXCEPTION 'invitations: an invitation is accepted only through its link' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS inv_accept_guard ON invitations;
+CREATE TRIGGER inv_accept_guard BEFORE UPDATE ON invitations FOR EACH ROW EXECUTE FUNCTION inv_accept_guard();
+DROP POLICY IF EXISTS inv_issue ON invitations;
+CREATE POLICY inv_issue ON invitations AS RESTRICTIVE FOR INSERT TO waqfak_app
+  WITH CHECK (app_is_system() OR ((app_can_manage_members(waqf_id) OR app_is_staff()) AND accepted_by IS NULL));
+
+-- S11-4: the tables whose rows may have no waqf (personal or request-only) and had no owner check for them: such a row
+-- is seen and written only where its parent is (an assessment, a document, a request, a conversation, a task, a
+-- report) or by its own author — RLS of the parent decides; the system and global-access staff as before.
+DO $$
+DECLARE p record;
+BEGIN
+  FOR p IN SELECT * FROM (VALUES
+    ('action_plans',        'EXISTS (SELECT 1 FROM assessments a WHERE a.id = action_plans.assessment_id)'),
+    ('assessment_answers',  'EXISTS (SELECT 1 FROM assessments a WHERE a.id = assessment_answers.assessment_id)'),
+    ('assessment_results',  'EXISTS (SELECT 1 FROM assessments a WHERE a.id = assessment_results.assessment_id)'),
+    ('axis_scores',         'EXISTS (SELECT 1 FROM assessments a WHERE a.id = axis_scores.assessment_id)'),
+    ('critical_flags',      'EXISTS (SELECT 1 FROM assessments a WHERE a.id = critical_flags.assessment_id)'),
+    ('recommendations',     'EXISTS (SELECT 1 FROM assessments a WHERE a.id = recommendations.assessment_id)'),
+    ('conversations',       'created_by = app_current_user() OR EXISTS (SELECT 1 FROM service_requests r WHERE r.id = conversations.request_id)'),
+    ('messages',            'EXISTS (SELECT 1 FROM conversations c WHERE c.id = messages.conversation_id)'),
+    ('document_access_log', 'user_id = app_current_user() OR EXISTS (SELECT 1 FROM documents d WHERE d.id = document_access_log.document_id)'),
+    ('document_links',      'EXISTS (SELECT 1 FROM documents d WHERE d.id = document_links.document_id)'),
+    ('document_shares',     'EXISTS (SELECT 1 FROM documents d WHERE d.id = document_shares.document_id)'),
+    ('document_versions',   'EXISTS (SELECT 1 FROM documents d WHERE d.id = document_versions.document_id)'),
+    ('extracted_fields',    'EXISTS (SELECT 1 FROM documents d WHERE d.id = extracted_fields.document_id)'),
+    ('reports',             'generated_by = app_current_user() OR EXISTS (SELECT 1 FROM assessments a WHERE a.id = reports.assessment_id) OR EXISTS (SELECT 1 FROM documents d WHERE d.id = reports.document_id)'),
+    ('report_shares',       'EXISTS (SELECT 1 FROM reports r WHERE r.id = report_shares.report_id)'),
+    ('task_comments',       'EXISTS (SELECT 1 FROM tasks t WHERE t.id = task_comments.task_id)'),
+    ('audit_logs',          'actor_user_id = app_current_user()')
+  ) AS x(tbl, own) LOOP
+    EXECUTE format('DROP POLICY IF EXISTS nullwaqf_owner ON %I', p.tbl);
+    EXECUTE format(
+      'CREATE POLICY nullwaqf_owner ON %I AS RESTRICTIVE FOR ALL TO waqfak_app USING (waqf_id IS NOT NULL OR app_is_system() OR app_has_global_access() OR %s) WITH CHECK (waqf_id IS NOT NULL OR app_is_system() OR app_has_global_access() OR %s)',
+      p.tbl, p.own, p.own);
+  END LOOP;
+END $$;
+-- document versions are written by their uploader with the document (the vault), never re-pointed: the storage, the
+-- key material and the fingerprint of a stored version do not change (S11-5)
+CREATE OR REPLACE FUNCTION dv_fixed() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
+BEGIN
+  IF current_user NOT IN ('waqfak_app', 'waqfak_system') THEN RETURN NEW; END IF;
+  IF NEW.document_id IS DISTINCT FROM OLD.document_id OR NEW.version IS DISTINCT FROM OLD.version OR NEW.storage_key IS DISTINCT FROM OLD.storage_key
+     OR NEW.iv IS DISTINCT FROM OLD.iv OR NEW.auth_tag IS DISTINCT FROM OLD.auth_tag OR NEW.sha256 IS DISTINCT FROM OLD.sha256
+     OR NEW.encrypted IS DISTINCT FROM OLD.encrypted OR NEW.waqf_id IS DISTINCT FROM OLD.waqf_id THEN
+    RAISE EXCEPTION 'document_versions: a stored version is not re-pointed (upload a new version)' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS dv_fixed ON document_versions;
+CREATE TRIGGER dv_fixed BEFORE UPDATE ON document_versions FOR EACH ROW EXECUTE FUNCTION dv_fixed();
+
+-- S11-18: a client's own checkout row stays «initiated» under the client's policy; its outcome (paid or failed) after
+-- the provider's verification (the sandbox card check in billing/actions.ts) and its receipt number are written by
+-- these two functions only — never a free update of the amount, the invoice or the reference.
+CREATE OR REPLACE FUNCTION app_sandbox_settle(pid uuid, outcome text, meth text, rawj jsonb) RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+BEGIN
+  IF outcome NOT IN ('paid', 'failed') THEN RAISE EXCEPTION 'payments: outcome is paid or failed' USING ERRCODE = 'check_violation'; END IF;
+  UPDATE payments SET status = outcome, paid_at = CASE WHEN outcome = 'paid' THEN now() END, method = coalesce(meth, method), raw = rawj, updated_at = now()
+   WHERE id = pid AND provider = 'sandbox' AND status = 'initiated' AND (user_id = app_current_user() OR app_is_staff());
+  IF NOT FOUND THEN RAISE EXCEPTION 'payments: no initiated sandbox payment of yours' USING ERRCODE = 'insufficient_privilege'; END IF;
+END $$;
+CREATE OR REPLACE FUNCTION app_payment_receipt(pid uuid, receipt text) RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+BEGIN
+  UPDATE payments SET receipt_number = receipt, updated_at = now()
+   WHERE id = pid AND status = 'paid' AND receipt_number IS NULL AND (user_id = app_current_user() OR app_is_staff() OR app_is_system());
+  IF NOT FOUND THEN RAISE EXCEPTION 'payments: a receipt is numbered once, for a paid payment of yours' USING ERRCODE = 'insufficient_privilege'; END IF;
+END $$;
+CREATE OR REPLACE FUNCTION payment_client_guard() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
+BEGIN
+  IF current_user NOT IN ('waqfak_app', 'waqfak_system') OR app_is_system() OR app_is_staff() THEN RETURN NEW; END IF;
+  -- a client changes on their own checkout only the provider's reference, while it is initiated
+  IF (to_jsonb(NEW) - 'provider_ref' - 'updated_at' - 'updated_by') IS DISTINCT FROM (to_jsonb(OLD) - 'provider_ref' - 'updated_at' - 'updated_by') THEN
+    RAISE EXCEPTION 'payments: a client sets only the provider reference of their checkout' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS payment_client_guard ON payments;
+CREATE TRIGGER payment_client_guard BEFORE UPDATE ON payments FOR EACH ROW EXECUTE FUNCTION payment_client_guard();
+REVOKE ALL ON FUNCTION app_sandbox_settle(uuid, text, text, jsonb), app_payment_receipt(uuid, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION app_sandbox_settle(uuid, text, text, jsonb), app_payment_receipt(uuid, text) TO waqfak_app;
 
 -- ═════════════ Phase 10 (owner's order of 2026-11-09), N9-1: no function resolves a name the caller can shadow ═════════════
 -- A function body names tables and functions without a schema; PostgreSQL resolves them by search_path at each call,

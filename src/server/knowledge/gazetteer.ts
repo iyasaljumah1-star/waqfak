@@ -60,38 +60,52 @@ for (const n of NAMES) {
   const head = n.en ? n.words[0]! : n.words[0]!.replace(/^ال/, "");
   BY_HEAD.set(head, [...(BY_HEAD.get(head) ?? []), n]);
 }
-/** The heads a token may carry, the clitics Arabic attaches to a name's first word removed (و، ف، ب، ل، لل، ك، ال). */
-function headsOf(tok: string): string[] {
-  const out = new Set<string>([tok]);
+/**
+ * The heads a token may carry, the clitics Arabic attaches to a name's first word removed (و، ف، ب، ل، لل، ك، ال), each
+ * with whether the token had the article — a name written with «ال» is a name only with it («رياض الأطفال» is not
+ * «الرياض»: FR11-11).
+ */
+function headsOf(tok: string): { head: string; al: boolean }[] {
+  const out = new Map<string, boolean>([[tok, false]]);
   for (const a of ["", "و", "ف"]) {
     if (a && !tok.startsWith(a)) continue;
     const t1 = tok.slice(a.length);
-    for (const b of ["", "ب", "ل", "لل", "ك"]) {
+    for (const b of ["", "ب", "ل", "ك"]) {
       if (b && !t1.startsWith(b)) continue;
       const t2 = t1.slice(b.length);
-      out.add(t2);
-      if (t2.startsWith("ال")) out.add(t2.slice(2));
-      if (b === "لل") out.add(t2);
+      if (!out.has(t2)) out.set(t2, false);
+      if (t2.startsWith("ال")) out.set(t2.slice(2), true);
+      // «لل» = «ل» + «ال»
+      if (b === "ل" && t2.startsWith("ل")) out.set(t2.slice(1), true);
     }
   }
-  return [...out].filter(Boolean);
+  return [...out].filter(([h]) => h).map(([head, al]) => ({ head, al }));
 }
 
-export type PlaceReading = { places: Place[]; unresolved: string[] };
+export type PlaceReading = { places: Place[]; unresolved: string[]; soft: string[] };
 
 /** The places a text names, and the names it gives that cannot be resolved with certainty. */
 export function readPlaces(text: string): PlaceReading {
   const toks = tokensOf(text);
   const found: Place[] = [];
   const unresolved: string[] = [];
+  const soft: string[] = [];
   const used = new Set<number>();
   for (let i = 0; i < toks.length; i++) {
     if (used.has(i)) continue;
     const cued = i > 0 && PLACE_WORD.test(toks[i - 1]!);
     // «في»، «من»، «إلى» before the name, or «ب» on it: a weaker sign of a place
-    const weak = (i > 0 && /^(?:في|من|الي|داخل|سكان|اهالي|اهل|ابناء|امير|امانه|بلديه)$/.test(toks[i - 1]!)) || /^[وف]?ب/.test(toks[i]!);
+    const prep = i > 0 && /^(?:في|من|الي|داخل|سكان|اهالي|اهل|ابناء|امير|امانه|بلديه)$/.test(toks[i - 1]!);
+    const weak = prep || /^[وف]?ب/.test(toks[i]!);
     // every name that starts here, longest first
-    const at = headsOf(toks[i]!).flatMap((h) => BY_HEAD.get(h) ?? []).filter((n) => n.words.slice(1).every((w, k) => toks[i + 1 + k] === w))
+    const at = headsOf(toks[i]!).flatMap(({ head, al }) => (BY_HEAD.get(head) ?? []).filter((n) => n.en || al === n.words[0]!.startsWith("ال") || (!al && head === n.words[0])))
+      .filter((n) => n.words.slice(1).every((w, k) => toks[i + 1 + k] === w))
+      // an English name only as a proper noun, capitalised in the text («china», «jordan shoes»: FR11-11)
+      .filter((n) => {
+        if (!n.en || n.words[0]!.length <= 3) return true;
+        const m = text.match(new RegExp(`\\b${n.words.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("[\\s-]+")}`, "i"));
+        return !!m && m[0][0] === m[0][0]!.toUpperCase();
+      })
       .sort((a, b) => b.words.length - a.words.length);
     if (!at.length) {
       // a place word followed by a name the gazetteer does not hold: unresolved, never guessed
@@ -105,7 +119,9 @@ export function readPlaces(text: string): PlaceReading {
     const usable = longest.filter((n) => !n.ambiguous || cued || n.words.length > 1 || (n.ambiguous === "name" && weak));
     if (!usable.length) {
       // a common word in a place's position («في الخبر»): it may be either — said, not guessed
-      if (weak && longest.some((n) => n.ambiguous === "word")) unresolved.push(`«${toks.slice(i, i + len).join(" ")}» قد يكون اسم مكان (${longest[0]!.place.ar[0]}) أو كلمة عادية: يُحدَّد المقصود`);
+      // only after a preposition, not followed by «من» («في العديد من»), and never for «بالكامل»: said for a factual
+      // question only (frame.ts) — in a normative one the word is read as a word (FR11-10)
+      if (prep && toks[i + len] !== "من" && longest.some((n) => n.ambiguous === "word")) soft.push(`«${toks.slice(i, i + len).join(" ")}» قد يكون اسم مكان (${longest[0]!.place.ar[0]}) أو كلمة عادية: يُحدَّد المقصود`);
       continue;
     }
     const keys = [...new Set(usable.map((n) => n.place.key))];
@@ -118,7 +134,7 @@ export function readPlaces(text: string): PlaceReading {
   }
   // a homograph named elsewhere in full resolves it («سلطنة عمان … عمان»): drop the unresolved note for it
   const resolved = unresolved.filter((u) => !(u.includes("يحتمل") && found.some((p) => u.includes(`(${p.ar[0]}`) || u.includes(`، ${p.ar[0]}`))));
-  return { places: found, unresolved: [...new Set(resolved)] };
+  return { places: found, unresolved: [...new Set(resolved)], soft: [...new Set(soft)] };
 }
 
 export const placesInText = (text: string) => readPlaces(text).places;

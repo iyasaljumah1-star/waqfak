@@ -106,11 +106,15 @@ export function namedArticle(question: string): { article: number; paragraph: nu
     if (!unitLike && !numberAfter) return { article: Number(m[1]), paragraph: m[2] ? Number(m[2]) : null };
   }
   // stage 11: «Article 8», «Art. 8(2)» in an English question
+  const EN_ORD: Record<string, number> = { one: 1, first: 1, two: 2, second: 2, three: 3, third: 3, four: 4, fourth: 4, five: 5, fifth: 5, six: 6, sixth: 6, seven: 7, seventh: 7, eight: 8, eighth: 8, nine: 9, ninth: 9, ten: 10, tenth: 10, eleven: 11, eleventh: 11, twelve: 12, twelfth: 12 };
+  const enw = q.match(/\barticle\s+(one|first|two|second|three|third|four|fourth|five|fifth|six|sixth|seven|seventh|eight|eighth|nine|ninth|ten|tenth|eleven|eleventh|twelve|twelfth)\b/i);
+  if (enw) return { article: EN_ORD[enw[1]!.toLowerCase()]!, paragraph: null };
   const en = q.match(/\bart(?:icle|\.)?\s*(\d{1,3})(?!\d)(?:\s*\(\s*(\d{1,2})\s*\)|[^\d]{0,14}paragraph\s*(\d{1,2})(?!\d))?/i);
   if (en) return { article: Number(en[1]), paragraph: en[2] ? Number(en[2]) : en[3] ? Number(en[3]) : null };
   const a = q.match(/المادة\s*\(?\s*(\d{1,3})(?!\d)\s*\)?(?:[^\d]{0,12}الفقرة\s*\(?\s*(\d{1,2})(?!\d))?/);
   if (a) return { article: Number(a[1]), paragraph: a[2] ? Number(a[2]) : null };
-  const w = q.match(/المادة\s+((?:ال[ء-ي]+)(?:\s+و?ال[ء-ي]+){0,3}(?:\s+بعد\s+ال[ء-ي]+)?)/);
+  // «الثانية عشرة»: the units' «عشرة/عشر» has no article (stage 11, FR11-9: 11–19 were read as 1–9)
+  const w = q.match(/المادة\s+((?:ال[ء-ي]+)(?:\s+(?:و?ال[ء-ي]+|عشرة|عشر)(?![ء-ي])){0,3}(?:\s+بعد\s+ال[ء-ي]+)?)/);
   if (w) {
     const n = articleNumber(`المادة ${w[1]}`);
     const p = q.match(/الفقرة\s*\(?\s*(\d{1,2})\s*\)?/);

@@ -1,6 +1,6 @@
 {
  "version": "sa-admin/1",
- "builtAt": "2026-11-12",
+ "builtAt": "2026-11-13",
  "sources": [
   {
    "part": "regions",
@@ -316,6 +316,7 @@
    "verified": true
   },
   {
+   "ambiguous": "word",
    "key": "BJ",
    "level": "country",
    "ar": [
@@ -1687,6 +1688,7 @@
    "verified": true
   },
   {
+   "ambiguous": "name",
    "key": "MA",
    "level": "country",
    "ar": [
@@ -2303,6 +2305,7 @@
    "verified": true
   },
   {
+   "ambiguous": "name",
    "key": "QA",
    "level": "country",
    "ar": [
@@ -2657,6 +2660,7 @@
    "verified": true
   },
   {
+   "ambiguous": "name",
    "key": "TD",
    "level": "country",
    "ar": [
@@ -3269,6 +3273,7 @@
    ],
    "domestic": true,
    "parent": "SA",
+   "ambiguous": "name",
    "verified": true
   },
   {
@@ -3284,6 +3289,7 @@
    ],
    "domestic": true,
    "parent": "SA",
+   "ambiguous": "name",
    "verified": true
   },
   {
@@ -3984,6 +3990,7 @@
    ],
    "domestic": true,
    "parent": "R:القصيم",
+   "ambiguous": "name",
    "verified": false
   },
   {
@@ -4911,6 +4918,7 @@
    ],
    "domestic": true,
    "parent": "R:جازان",
+   "ambiguous": "name",
    "verified": false
   },
   {
@@ -5097,6 +5105,7 @@
    ],
    "domestic": true,
    "parent": "R:الباحة",
+   "ambiguous": "name",
    "verified": false
   },
   {
