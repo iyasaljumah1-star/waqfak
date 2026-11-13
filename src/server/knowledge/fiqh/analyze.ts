@@ -236,7 +236,7 @@ const CONTRARY: [Polarity, Polarity][] = [["permit", "prohibit"], ["oblige", "no
 /** Two polarities that cannot both hold of one act («يجوز» and «لا يجوز»), unlike «يجوز ولا يجب». */
 export const contrary = (a: Polarity, b: Polarity) => CONTRARY.some(([x, y]) => (a === x && b === y) || (a === y && b === x));
 /** All the rulings a clause states, in order. */
-function polaritiesIn(t: string): { p: Polarity; i: number; m: string }[] {
+export function polaritiesIn(t: string): { p: Polarity; i: number; m: string }[] {
   const tests: [Polarity, RegExp][] = [
     ["not_obliged", /(?:لا|لم|ليس)\s+(?:يجب|يلزم|يلزمه|يتعين|بواجب|بلازم)|عدم (?:ال)?وجوب|عدم (?:ال)?لزوم/g],
     ["prohibit", /(?:لم|لا)\s+(?:يصح|يجز|يجوز|تجوز|تصح|يستبدل|يبيع|يباع|يحل|يحق)|عدم (?:ال)?جواز|عدم (?:ال)?صح|يحرم|ليس له|ليس لل[ء-ي]+|ليس من حق|يمنع|لا يملك/g],

@@ -133,3 +133,25 @@ describe("the frame shown to the user, and the controls", () => {
     }
   });
 });
+
+describe("stage 11.1: the three wrong firm rulings of the Stage 11 review, and new variants of each (synthetic test texts)", () => {
+  it.each([
+    ["C19 a derived form whose subject is the ground", "وتعطل المنافع مجوز لبيعه."],
+    ["V1 derived, other root", "وخراب الوقف مبيح لبيعه."],
+    ["V2 derived", "وتعطل المنفعة مجيز للاستبدال."],
+    ["V3 derived obligation", "وتعطل منافعه موجب لبيعه."],
+    ["C4/V5 «بعد» + noun", "ويجوز بيعه بعد خرابه."],
+    ["V7 «بعدما» (joined ما)", "ويجوز بيعه بعدما تتعطل منافعه."],
+    ["Q5/V8 «فما بال»", "فما بال من منع بيعه وقد تعطلت منافعه؟"],
+    ["V9 «وما بال» without a question mark", "وما بال الناظر يمنع بيعه إذا خرب"],
+    ["V10 «فكيف يجوز» (joined conjunction)", "فكيف يجوز بيعه وهو وقف"],
+  ])("%s: «%s» → no firm ruling", (_, text) => {
+    expect(firm(run([text], present))).toBeNull();
+  });
+  it("controls: a plain «ويجوز بيعه» keeps its preliminary result; «ولو» stays the analysis's own reading", () => {
+    expect(firm(run(["ويجوز بيعه."], present))).toBe("permit");
+    expect(firm(run(["ويجوز بيعه إذا تعطلت منافعه ولو كان مسجدًا على الصحيح من المذهب."], lost))).toBe("permit");
+    // «وعند أحمد» with the conjunction is still an attribution, not a condition
+    expect(firm(run(["وعند أحمد يجوز بيعه إذا تعطلت منافعه."], lost))).toBe("permit");
+  });
+});

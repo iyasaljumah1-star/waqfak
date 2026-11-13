@@ -18,7 +18,7 @@
  * established or not mentioned, the facts the ruling depends on, the texts relied upon with their author, book and
  * school, and whether the result is preliminary (always: a specialist reviews it) or needs the facts completed.
  */
-import { bare as bareAr, compare, evaluate, weigh } from "./analyze";
+import { bare as bareAr, compare, evaluate, polaritiesIn, weigh } from "./analyze";
 
 /**
  * The spelling every pattern below is written in: analyze.ts bare() (no diacritics, one alif, «ى» as «ي») and «ة» as
@@ -58,13 +58,15 @@ export function factHedge(f: Fact): string | null {
 }
 
 /** Clause words the lexical analysis does not parse as a condition or an exception (bare spelling). */
-const UNREAD_CLAUSE = /(?:^|\s)(?:عند|في حال|في حاله|حال|لو|فلو|ما لم|ما دام|مادام|طالما|سوي|عدا|خلا|ما عدا|ما خلا|بشرط|شريطه|شرط ان|بعد(?=\s+(?!ذلك|هذا|هذه|ه))|متي|متي ما|حين|حينما|حينئذ|عندما|لدي|علي ان|اذا ما|اثر|عقب|كلما|باستثناء|استثناء|بخلاف|حاشا|غير ان|(?:غير|دون|سوي)(?=\s+(?:ال|اذا|ان|ما)))(?=\s)/g;
+// stage 11.1: the same words with the conjunction joined to them («فعند»، «وبعد») and with the joined «ما» («بعدما»،
+// «حالما») — the forms of the words already here, not new words (V7 of the stage 11.1 probes: «بعدما» was not read)
+const UNREAD_CLAUSE = /(?:^|\s)(?:[وف])?(عند|في حال|في حاله|حال|لو|فلو|ما لم|ما دام|مادام|طالما|سوي|عدا|خلا|ما عدا|ما خلا|بشرط|شريطه|شرط ان|بعدما|بعد(?=\s+(?!ذلك|هذا|هذه|ه))|متي|متي ما|حين|حينما|حينئذ|عندما|لدي|علي ان|اذا ما|اثر|عقب|كلما|باستثناء|استثناء|بخلاف|حاشا|غير ان|(?:غير|دون|سوي)(?=\s+(?:ال|اذا|ان|ما)))(?:ما)?(?=\s)/g;
 /** Names after «عند» that attribute a view, not a condition («عند أحمد»). */
 const ATTRIBUTIVE_AFTER = /^(?:احمد|الامام|اصحاب|الاصحاب|الحنابل|الشافع|الحنف|المالك|الجمهور|اهل|بعض|اكثر|المتاخرين|المتقدمين|الشيخ|ابن|القاضي|ابي|ابو|الموفق|المجد|الشيخين|المصنف|المولف|المؤلف|صاحب|شيخ|العلماء|الفقهاء|جماهير|جمهور|عامه|نا|هم|ه)/;
 /** «على كل حال», «بكل حال»: «in any case», not a condition. */
 const ANY_CASE = /(?:علي|ب)\s*كل\s+حال/;
 /** Questions the analysis does not recognise: «أفيجوز»، «أوَيجوز»، «ترى»، «يا ترى هل» (bare spelling, after «و»/«ف»). */
-const QUESTION = /^(?:[وف])?ا(?:[وف])?(?:يجوز|يصح|يلزم|يجب|تجوز|تصح|يحل|يحق|يباع|تباع|يستبدل|يملك|يشترط|ليس|لا|فلا)(?=\s|$)|(?:^|\s)(?:يا\s+)?تري(?:\s|$)|(?:^|\s)هل(?:\s|$)|(?:^|\s)[وف]?ما\s+بال(?:\s|$)|(?:^|\s)(?:كيف|لماذا|فلماذا)\s+(?:لا|يجوز|يصح|لا يجوز)(?=\s|$)|(?:^|\s)[وف]?لم\s+لا(?=\s|$)|^(?:[وف])?(?:اليس|اوليس|افليس|الا يجوز|افلا)(?=\s|$)|^مساله\s*[:：]|[؟?]/;
+const QUESTION = /^(?:[وف])?ا(?:[وف])?(?:يجوز|يصح|يلزم|يجب|تجوز|تصح|يحل|يحق|يباع|تباع|يستبدل|يملك|يشترط|ليس|لا|فلا)(?=\s|$)|(?:^|\s)(?:يا\s+)?تري(?:\s|$)|(?:^|\s)[وف]?هل(?:\s|$)|(?:^|\s)[وف]?ما\s+بال(?:\s|$)|(?:^|\s)[وف]?(?:كيف|لماذا)\s+(?:لا|يجوز|يصح|لا يجوز)(?=\s|$)|(?:^|\s)[وف]?لم\s+لا(?=\s|$)|^(?:[وف])?(?:اليس|اوليس|افليس|الا يجوز|افلا)(?=\s|$)|^مساله\s*[:：]|[؟?]/;
 /** Another school named anywhere in the statement (bare spelling). «مالك» only as the imam, never as an owner. */
 const OTHER_SCHOOL_ANY =
   /(?:^|\s)(?:و|ف)?(?:ال)?(?:شافعي|شافعيه|حنفي|حنفيه|احناف|مالكي|مالكيه|ظاهري|ظاهريه|اماميه|جعفريه|زيديه|اباضيه|جمهور|الجمهور)(?=\s|$|[،.:])|اصحاب (?:الشافعي|ابي حنيفه|مالك)|(?:ابو|ابي|ابا) حنيفه|(?:الامام|قال|مذهب|عند|قول) مالك(?=\s|$|[،.:])|(?:^|\s)عندهم(?=\s|$|[،.:])|(?:^|\s)(?:الثوري|الاوزاعي|داود الظاهري|ابن حزم|النووي|الرافعي|الغزالي|الجويني|الماوردي|ابن عابدين|الكاساني|السرخسي|المرغيناني|صاحب الهدايه|ابن نجيم|الحطاب|الدسوقي|الخرشي|خليل|ابن رشد|القرافي|الشربيني|الرملي|ابن حجر الهيتمي)(?=\s|$|[،.:])|(?:^|\s)(?:في|كتاب)\s+(?:المنهاج|الهدايه|المدونه|الام|المجموع|روضه الطالبين|البحر الرائق|رد المحتار|مختصر خليل|بدائع الصنائع|المبسوط|نهايه المحتاج|مغني المحتاج|تحفه المحتاج)(?=\s|$|[،.:])/;
@@ -181,13 +183,27 @@ export function conservative(issue: Issue, statements: Statement[]): Result {
     // 3. a clause in words the analysis does not read: the statement's ruling is limited by something not matched
     if (s.polarity !== "unknown" && !s.unclear) {
       for (const m of t.matchAll(UNREAD_CLAUSE)) {
-        const at = (m.index ?? 0) + (m[0].startsWith(" ") ? 1 : 0);
-        const word = m[0].trim();
+        const word = m[1]!.trim();
+        const at = (m.index ?? 0) + m[0].indexOf(m[1]!);
+        if (m[0].trim() === "ولو") continue; // «ولو» is read by the analysis itself (a condition before the ruling, a concession after it)
         if (word === "عند" && ATTRIBUTIVE_AFTER.test(t.slice(at + 4))) continue;
         if ((word === "حال" || word === "حاله") && ANY_CASE.test(t.slice(Math.max(0, at - 8), at + 6))) continue;
         s = { ...s, effective: "unknown", applies: "unknown", unclear: `قيد أو استثناء بصيغة («${word}») لا يقرؤها التحليل: لا يُبنى عليه حكم في الواقعة (معالجة تحفظية)` };
         changes.push(`${s.id}: قيد بصيغة غير مقروءة («${word}»)`);
         break;
+      }
+    }
+    // 3b. stage 11.1 (C19): the ruling read only from inside a longer word — a derived form whose own subject is the
+    // ground of the ruling («وتعطلُ المنافع مجوِّزٌ لبيعه»: the permission holds on the loss, not as such). A structural
+    // rule, not a list: every ruling the lexical reading found sits inside a word (letters before it other than a
+    // conjunction, a preposition or the article), so the sentence's subject and its role are not read
+    if (s.polarity !== "unknown" && !s.unclear) {
+      const ta = bareAr(s.text);
+      const cues = polaritiesIn(ta);
+      const inside = (i: number) => { const before = ta.slice(0, i).match(/[ء-ي]*$/)![0]; return before !== "" && !/^(?:و|ف)?(?:ب|ل|ك)?(?:ال)?$/.test(before); };
+      if (cues.length && cues.every((c) => inside(c.i))) {
+        s = { ...s, effective: "unknown", applies: "unknown", unclear: "الحكم مقروء من داخل كلمة مشتقة (صيغة اسمية): ما يتعلق به الحكم وسببه لا يقرؤهما التحليل (معالجة تحفظية)" };
+        changes.push(`${s.id}: الحكم من صيغة مشتقة لا يُقرأ متعلقها`);
       }
     }
     // 4. a condition matched to a fact that is not plain: unknown, neither met nor unmet
