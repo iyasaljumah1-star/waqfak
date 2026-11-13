@@ -49,6 +49,7 @@ describe.skipIf(!enabled)("stage 11 C — database (development)", () => {
     }
   };
   const reports: string[] = [];
+  const invitationsMade: string[] = [];
   beforeAll(async () => {
     app = new Client({ connectionString: APP }); sys = new Client({ connectionString: SYS }); owner = new Client({ connectionString: OWNER });
     await Promise.all([app.connect(), sys.connect(), owner.connect()]);
@@ -58,6 +59,7 @@ describe.skipIf(!enabled)("stage 11 C — database (development)", () => {
   afterAll(async () => {
     await Promise.all([app?.query("rollback").catch(() => null), sys?.query("rollback").catch(() => null)]);
     if (reports.length) await owner.query(`delete from reports where id = any($1::uuid[])`, [reports]).catch(() => null);
+    if (invitationsMade.length) await owner.query(`delete from invitations where id = any($1::uuid[])`, [invitationsMade]).catch(() => null);
     await Promise.all([app?.end(), sys?.end(), owner?.end()]);
   });
 
@@ -109,6 +111,27 @@ describe.skipIf(!enabled)("stage 11 C — database (development)", () => {
     // a citation in Arabic-Indic digits without its reference, by anyone
     expect(await errs([{ type: "specialist", text: "رأي المختص [٢]", by: "person", refs: [], prompt: "" }])).toBe(1);
     expect(await errs([{ type: "specialist", text: "رأي المختص [٢]", by: "person", refs: [{ n: 2, chunkId: "c" }], prompt: "" }])).toBe(0);
+  });
+
+  it("stage 11.1, S11-2: an invitation is accepted only by the holder of the invited phone, once, and never after it is revoked", async () => {
+    const people = (await owner.query(`select id, phone from users where phone is not null and status = 'active' order by created_at limit 2`)).rows as { id: string; phone: string }[];
+    const [w] = (await owner.query(`select id from waqfs limit 1`)).rows as { id: string }[];
+    expect(people.length).toBe(2);
+    const mk = async (phone: string, revoked = false) => (await owner.query(
+      `insert into invitations (waqf_id, phone, role_key, invited_by, expires_at, token_hash, revoked_at) values ($1, $2, 'beneficiary', $3, now() + interval '1 day', md5(random()::text), $4) returning id`,
+      [w!.id, phone, people[0]!.id, revoked ? new Date() : null])).rows[0].id as string;
+    const accept = (inv: string, by: string) => tryQ(sys, `update invitations set accepted_by = $2, accepted_at = now() where id = $1`, [inv, by]);
+    const a = await mk(people[0]!.phone);
+    expect((await accept(a, people[1]!.id)).err).toMatch(/holder of the invited phone/);
+    expect((await accept(a, people[0]!.id)).ok).toBe(true);
+    expect((await accept(a, people[1]!.id)).err).toMatch(/not reused, moved or undone|acceptance is not undone/); // the earlier capability guard answers first
+    const r = await mk(people[0]!.phone, true);
+    expect((await accept(r, people[0]!.id)).err).toMatch(/revoked or expired/);
+    // the application role cannot accept one at all
+    const b = await mk(people[0]!.phone);
+    await tryQ(app, `update invitations set accepted_by = $2, accepted_at = now() where id = $1`, [b, people[0]!.id]);
+    expect((await owner.query(`select accepted_by from invitations where id = $1`, [b])).rows[0].accepted_by).toBeNull();
+    invitationsMade.push(a, r, b); // removed after the transactions end (afterAll): the system's update holds row a
   });
 
   it("an issued report does not change; a draft is approved once and the approval stays", async () => {

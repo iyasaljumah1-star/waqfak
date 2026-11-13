@@ -313,20 +313,17 @@ export async function inviteMember(_: ActionState, fd: FormData): Promise<Action
     d.waqfId,
     "waqf.members.manage",
     async ({ auth, access, tx, ip, userAgent }) => {
-      const holder = await userByPhone(tx, phone); // stage 11: the phone is not the application's column
-      const [already] = holder
-        ? await tx.select({ id: waqfMemberships.id }).from(waqfMemberships)
-          .where(and(eq(waqfMemberships.waqfId, d.waqfId), eq(waqfMemberships.userId, holder.id), eq(waqfMemberships.roleKey, d.roleKey), activeNow())).limit(1)
-        : [];
-      if (already) throw new UserError(`صاحب هذا الرقم عضو في الوقف بدور «${roleName(d.roleKey)}» مسبقًا.`);
+      // stage 11.1: an existing member is told on acceptance, not here — the answer to the inviter is the same whatever
+      // the phone (no account, no membership disclosed)
       const inv = await createInvitation(tx, { waqfId: d.waqfId, waqfName: access.waqf.name, phone, roleKey: d.roleKey, invitedBy: auth.user.id, note: d.note });
       await audit(tx, {
         actorUserId: auth.user.id, action: "waqf.invitation.created", entityType: "invitation", entityId: inv.id, waqfId: d.waqfId, ip, userAgent,
-        after: { phone: maskPhone(phone), roleKey: d.roleKey, existingUser: inv.existingUser },
+        after: { phone: maskPhone(phone), roleKey: d.roleKey },
       });
       return {
         ok: true,
-        message: inv.existingUser ? "أُرسلت الدعوة برسالة نصية وإشعار داخل المنصة." : "أُرسلت الدعوة برسالة نصية. صلاحية الرابط 7 أيام.",
+        // stage 11.1 (S11-2): the same answer whether or not the phone has an account
+        message: "أُرسلت الدعوة إلى صاحب الرقم. تبدأ العضوية عند قبوله من حسابه الموثق، وصلاحية الرابط 7 أيام.",
         data: showOtpOnScreen ? { link: inv.link } : undefined,
       };
     },
@@ -383,29 +380,20 @@ export async function createDelegation(_: ActionState, fd: FormData): Promise<Ac
     d.waqfId,
     "waqf.members.manage",
     async ({ auth, access, tx, ip, userAgent }) => {
-      const found = await userByPhone(tx, phone); // stage 11: id and name only, through the database
-      const agent = found ? { id: found.id, name: found.fullName } : undefined;
-      if (agent?.id === auth.user.id) throw new UserError("لا يمكنك توكيل نفسك.");
+      // stage 11.1 (S11-2): a delegation starts only when the agent accepts it from their own verified account — always an
+      // invitation, whether or not the phone has an account; nothing about the holder (account, name) is told back
+      if (phone === auth.user.phone) throw new UserError("لا يمكنك توكيل نفسك.");
       const terms = { permissions: scope, validFrom: d.validFrom, validTo: d.validTo, poaNo: d.poaNo, notes: d.notes, principalName: auth.user.fullName };
-      if (!agent) {
-        const inv = await createInvitation(tx, { waqfId: d.waqfId, waqfName: access.waqf.name, phone, roleKey: "agent", invitedBy: auth.user.id, scope: terms, note: d.notes });
-        await audit(tx, {
-          actorUserId: auth.user.id, action: "waqf.delegation.invited", entityType: "invitation", entityId: inv.id, waqfId: d.waqfId, ip, userAgent,
-          after: { phone: maskPhone(phone), ...terms },
-        });
-        return {
-          ok: true,
-          message: "صاحب الرقم ليس مسجّلًا بعد؛ أرسلنا إليه دعوة، وتبدأ الوكالة عند قبوله.",
-          data: showOtpOnScreen ? { link: inv.link } : undefined,
-        };
-      }
-      const delegationId = await activateDelegation(tx, { waqfId: d.waqfId, agentUserId: agent.id, principalUserId: auth.user.id, ...terms });
-      await notify(agent.id, "invitation", { waqf: access.waqf.name, role: roleName("agent") }, { link: `/app/w/${d.waqfId}`, tx });
+      const inv = await createInvitation(tx, { waqfId: d.waqfId, waqfName: access.waqf.name, phone, roleKey: "agent", invitedBy: auth.user.id, scope: terms, note: d.notes });
       await audit(tx, {
-        actorUserId: auth.user.id, action: "waqf.delegation.created", entityType: "delegation", entityId: delegationId, waqfId: d.waqfId, ip, userAgent,
-        after: { agentUserId: agent.id, ...terms },
+        actorUserId: auth.user.id, action: "waqf.delegation.invited", entityType: "invitation", entityId: inv.id, waqfId: d.waqfId, ip, userAgent,
+        after: { phone: maskPhone(phone), ...terms },
       });
-      return { ok: true, message: `سُجّلت الوكالة لـ${agent.name ?? "الوكيل"} وتعمل ضمن النطاق والمدة المحددين.` };
+      return {
+        ok: true,
+        message: "أرسلنا دعوة الوكالة إلى صاحب الرقم. تبدأ الوكالة عند قبوله من حسابه الموثق، وتظهر في الإعدادات بعد قبولها.",
+        data: showOtpOnScreen ? { link: inv.link } : undefined,
+      };
     },
     `/app/w/${d.waqfId}/settings`,
   );

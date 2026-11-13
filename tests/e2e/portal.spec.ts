@@ -154,7 +154,8 @@ test.describe.serial("portal shell & core", () => {
     await founder.locator("#invite select#roleKey").selectOption("board_member");
     await founder.getByLabel("رسالة قصيرة (اختياري)").fill("ننتظر انضمامك (تجريبي)");
     await founder.getByRole("button", { name: "أرسل الدعوة" }).click();
-    await expect(founder.getByText("أُرسلت الدعوة برسالة نصية وإشعار داخل المنصة.")).toBeVisible();
+    // stage 11.1 (S11-2): the same answer whether or not the phone has an account — nothing about the holder is told
+    await expect(founder.getByText("أُرسلت الدعوة إلى صاحب الرقم. تبدأ العضوية عند قبوله من حسابه الموثق، وصلاحية الرابط 7 أيام.")).toBeVisible();
     await expect(founder.getByText("دعوات بانتظار القبول")).toBeVisible();
     await founder.screenshot({ path: `${shots}/portal-settings-${info.project.name}.png`, fullPage: true });
 

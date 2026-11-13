@@ -147,7 +147,7 @@ export default async function WaqfSettings({ params }: { params: Promise<{ id: s
         ) : (
           <div className="mb-6"><EmptyState icon={ScrollText} title="لا وكالات مسجّلة">سجّل وكالة لمن يتابع شؤون الوقف نيابة عنك، كالمحامي أو المعقّب.</EmptyState></div>
         )}
-        <h3 className="mb-3 text-[15px] font-semibold">تسجيل وكالة جديدة</h3>
+        <h3 className="mb-3 text-[15px] font-semibold">دعوة وكيل جديد</h3>
         <DelegationForm waqfId={id} perms={permOpts} today={today} />
       </Panel>
 

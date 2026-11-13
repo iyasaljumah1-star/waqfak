@@ -2113,6 +2113,57 @@ CREATE TRIGGER payment_client_guard BEFORE UPDATE ON payments FOR EACH ROW EXECU
 REVOKE ALL ON FUNCTION app_sandbox_settle(uuid, text, text, jsonb), app_payment_receipt(uuid, text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION app_sandbox_settle(uuid, text, text, jsonb), app_payment_receipt(uuid, text) TO waqfak_app;
 
+-- ═════════════ Stage 11.1 (owner's decision of 2026-11-14) ═════════════
+-- S11-2: no one is made a member or an agent of a waqf by another person. A membership or a delegation for another
+-- person exists only after that person accepts an invitation from their own verified account (the system path that
+-- checks the token and the phone, waqf-core acceptInvitation), or when staff record it. A person adds only their own
+-- roles (the founder at registration, the founder-nazir in the wizard).
+DROP POLICY IF EXISTS wm_consent ON waqf_memberships;
+CREATE POLICY wm_consent ON waqf_memberships AS RESTRICTIVE FOR INSERT TO waqfak_app
+  WITH CHECK (app_is_system() OR app_is_staff() OR user_id = app_current_user());
+-- an upsert that revives another person's ended membership is an insert in effect: same rule on UPDATE of the status
+DROP POLICY IF EXISTS dl_consent ON delegations;
+CREATE POLICY dl_consent ON delegations AS RESTRICTIVE FOR INSERT TO waqfak_app
+  WITH CHECK (app_is_system() OR app_is_staff());
+-- the invitation is accepted by the holder of the phone it was sent to, once; an acceptance is never moved or undone
+CREATE OR REPLACE FUNCTION inv_accept_guard() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
+BEGIN
+  IF OLD.accepted_by IS NOT NULL AND (NEW.accepted_by IS DISTINCT FROM OLD.accepted_by OR NEW.accepted_at IS DISTINCT FROM OLD.accepted_at)
+     AND current_user IN ('waqfak_app', 'waqfak_system') THEN
+    RAISE EXCEPTION 'invitations: an accepted invitation is not reused, moved or undone' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  IF current_user IN ('waqfak_app', 'waqfak_system') AND NOT app_is_system()
+     AND (NEW.accepted_by IS DISTINCT FROM OLD.accepted_by OR NEW.accepted_at IS DISTINCT FROM OLD.accepted_at) THEN
+    RAISE EXCEPTION 'invitations: an invitation is accepted only through its link' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  IF NEW.accepted_by IS NOT NULL AND OLD.accepted_by IS NULL AND current_user IN ('waqfak_app', 'waqfak_system')
+     AND NOT app_invitee_matches(NEW.accepted_by, NEW.phone) THEN
+    RAISE EXCEPTION 'invitations: accepted only by the holder of the invited phone' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  IF NEW.accepted_by IS NOT NULL AND (NEW.revoked_at IS NOT NULL OR OLD.revoked_at IS NOT NULL OR OLD.expires_at < now()) AND OLD.accepted_by IS NULL
+     AND current_user IN ('waqfak_app', 'waqfak_system') THEN
+    RAISE EXCEPTION 'invitations: a revoked or expired invitation is not accepted' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  RETURN NEW;
+END $$;
+CREATE OR REPLACE FUNCTION app_invitee_matches(u uuid, ph text) RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+  SELECT EXISTS (SELECT 1 FROM users x WHERE x.id = u AND x.phone = ph AND x.status = 'active')
+$$;
+REVOKE ALL ON FUNCTION app_invitee_matches(uuid, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION app_invitee_matches(uuid, text) TO waqfak_app;
+-- the decision of the invitee (accepted, declined) and the inviter's revocation are recorded once each (audit_logs is
+-- append-only and chained): the invitation row keeps its outcome, never rewritten afterwards
+CREATE OR REPLACE FUNCTION inv_outcome_fixed() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
+BEGIN
+  IF current_user NOT IN ('waqfak_app', 'waqfak_system') THEN RETURN NEW; END IF;
+  IF OLD.revoked_at IS NOT NULL AND NEW.revoked_at IS DISTINCT FROM OLD.revoked_at THEN
+    RAISE EXCEPTION 'invitations: a revoked or declined invitation stays so' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS inv_outcome_fixed ON invitations;
+CREATE TRIGGER inv_outcome_fixed BEFORE UPDATE ON invitations FOR EACH ROW EXECUTE FUNCTION inv_outcome_fixed();
+
 -- ═════════════ Phase 10 (owner's order of 2026-11-09), N9-1: no function resolves a name the caller can shadow ═════════════
 -- A function body names tables and functions without a schema; PostgreSQL resolves them by search_path at each call,
 -- and pg_temp — the caller's own temporary schema — is searched FIRST unless it is named. A definer function with

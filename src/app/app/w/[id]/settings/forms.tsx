@@ -123,7 +123,7 @@ export function DelegationForm({ waqfId, perms, today }: { waqfId: string; perms
     <form key={s.error ? JSON.stringify(v) : s.ok ? "ok" : "f"} action={a} className="space-y-4">
       <input type="hidden" name="waqfId" value={waqfId} />
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="رقم جوال الوكيل" name="dl-phone" required hint="إن لم يكن مسجّلًا نرسل إليه دعوة، وتبدأ الوكالة عند قبوله." error={fe.phone}>
+        <Field label="رقم جوال الوكيل" name="dl-phone" required hint="نرسل إليه دعوة، وتبدأ الوكالة عند قبوله من حسابه الموثق." error={fe.phone}>
           <Input name="phone" id="dl-phone" aria-describedby={fe.phone ? "dl-phone-error" : "dl-phone-hint"} type="tel" inputMode="tel" dir="ltr" placeholder="05XXXXXXXX" className="text-start" required defaultValue={v.phone as string} error={fe.phone} />
         </Field>
         <Field label="رقم الوكالة" name="poaNo" required hint="كما في صك الوكالة الصادر من الجهة المختصة." error={fe.poaNo}>
@@ -151,7 +151,7 @@ export function DelegationForm({ waqfId, perms, today }: { waqfId: string; perms
       </Field>
       <FormMessage state={s} />
       {link ? <DemoLink link={link} /> : null}
-      <SubmitButton pendingText="جارٍ الحفظ…">سجّل الوكالة</SubmitButton>
+      <SubmitButton pendingText="جارٍ الإرسال…">أرسل دعوة الوكالة</SubmitButton>
     </form>
   );
 }
