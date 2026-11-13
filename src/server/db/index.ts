@@ -87,7 +87,9 @@ async function runAfterCommit(hooks: (() => Promise<unknown>)[]) {
  * A system step that follows a request's own transaction once it COMMITTED (stage 11): bookkeeping the row-level
  * policy reserves to staff, triggered by a client's authorized act (e.g. an installment that becomes due when the
  * client approves the work). It runs on the system login — never on the application's — and must be idempotent: a
- * failure is logged and the step is repeated by its own sweep. Outside a request transaction it runs at once.
+ * failure is logged and the step is repeated by its own sweep (stage 11.1, S11-19: the installments' is
+ * billing/schedule.ts dueInstallmentsSweep, a step of the daily job). Outside a request or system transaction it runs
+ * at once.
  */
 export function afterCommit(tx: Tx, step: () => Promise<unknown>): void {
   const hooks = afterCommitHooks.get(tx);
@@ -96,11 +98,16 @@ export function afterCommit(tx: Tx, step: () => Promise<unknown>): void {
 }
 
 /** System context — background jobs, public catalog reads, link pages — on the system role's own login. */
-export function withSystem<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
-  return systemDb.transaction(async (tx) => {
+export async function withSystem<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
+  // stage 11.1 (S11-19): a step deferred from a system transaction also waits for its commit
+  const hooks: (() => Promise<unknown>)[] = [];
+  const out = await systemDb.transaction(async (tx) => {
+    afterCommitHooks.set(tx, hooks);
     await tx.execute(sql`select set_config('app.user_id', '', true), set_config('app.global_access', 'on', true), set_config('app.actor_roles', '', true)`);
     return fn(tx);
   });
+  await runAfterCommit(hooks);
+  return out;
 }
 
 /**

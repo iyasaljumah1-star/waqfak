@@ -32,7 +32,11 @@ const U = {
   other: "00000000-0000-4000-8000-0000000e0a04", // member of WAQF_B only
   victim: "00000000-0000-4000-8000-0000000e0a05", // a person with contact data, member of WAQF_B
   mlro: "00000000-0000-4000-8000-0000000e0a06", // holds mlro, second factor
+  sysadmin: "00000000-0000-4000-8000-0000000e0a07", // stage 11.1: system_admin (not super_admin), second factor
+  employee: "00000000-0000-4000-8000-0000000e0a08", // stage 11.1: employee, no admin.pii.view, second factor
 };
+// stage 11.1: a request of the nazir of WAQF_B with an open data item (S11-7)
+const REQ = { b: "00000000-0000-4000-8000-0000000e0e01", item: "00000000-0000-4000-8000-0000000e0e02" };
 const W = { a: "00000000-0000-4000-8000-0000000e0b01", b: "00000000-0000-4000-8000-0000000e0b02", empty: "00000000-0000-4000-8000-0000000e0b03", reg: "00000000-0000-4000-8000-0000000e0b04", draft: "00000000-0000-4000-8000-0000000e0b05" };
 const INV = { client: "00000000-0000-4000-8000-0000000e0d01", other: "00000000-0000-4000-8000-0000000e0d02" };
 const REP = { issued: "00000000-0000-4000-8000-0000000e0c01", draft: "00000000-0000-4000-8000-0000000e0c02" };
@@ -47,10 +51,11 @@ async function fixtures(db: string) {
       [U.admin, "0500e0a001", "مدير اختبار", true], [U.adminNoMfa, "0500e0a002", "مدير اختبار بلا عامل ثانٍ", true],
       [U.client, "0500e0a003", "عميل اختبار", false], [U.other, "0500e0a004", "عميل اختبار آخر", false],
       [U.victim, "0500e0a005", "شخص اختبار", false], [U.mlro, "0500e0a006", "مسؤول امتثال اختبار", true],
+      [U.sysadmin, "0500e0a007", "مسؤول نظام اختبار", true], [U.employee, "0500e0a008", "موظف اختبار", true],
     ];
     for (const [id, phone, name, staff] of users)
       await c.query(`insert into users (id, phone, email, full_name, is_staff, status, birth_date) values ($1, $2, $3, $4, $5, 'active', '1990-01-01') on conflict (id) do nothing`, [id, phone, `${phone}@example.test`, name, staff]);
-    for (const [u, r] of [[U.admin, "super_admin"], [U.adminNoMfa, "super_admin"], [U.mlro, "mlro"]])
+    for (const [u, r] of [[U.admin, "super_admin"], [U.adminNoMfa, "super_admin"], [U.mlro, "mlro"], [U.sysadmin, "system_admin"], [U.employee, "employee"]])
       await c.query(`insert into user_roles (user_id, role_id) select $1, id from roles where key = $2 on conflict do nothing`, [u, r]);
     for (const [k, id] of Object.entries(U) as [keyof typeof U, string][])
       await c.query(`insert into sessions (user_id, token_hash, mfa_verified, idle_expires_at, absolute_expires_at) values ($1, $2, $3, now() + interval '1 hour', now() + interval '1 hour')`, [id, sessionHash(TOK[k]), k !== "adminNoMfa"]);
@@ -73,6 +78,9 @@ async function fixtures(db: string) {
     // an issued report and a draft awaiting approval (for C3, P8)
     for (const [id, st] of [[REP.issued, "final"], [REP.draft, "draft"]])
       await c.query(`insert into reports (id, number, waqf_id, kind, title, status, verification_code, snapshot) values ($1, $2, $3, 'nazara_periodic', 'تقرير اختبار', $4, $5, '{"v":1}') on conflict (id) do nothing`, [id, `T-REP-${id.slice(-4)}`, W.a, st, `vc${id.slice(-8)}`]);
+    // stage 11.1 (S11-7): the nazir's request in WAQF_B, one open client data item about a form field
+    await c.query(`insert into service_requests (id, number, service_id, requester_user_id, waqf_id, status, intake) select $1, 'T-REQ-0e01', id, $2, $3, 'awaiting_client', '{"answers":{"x":"قديم"}}'::jsonb from services order by code limit 1 on conflict (id) do nothing`, [REQ.b, U.other, W.b]);
+    await c.query(`insert into request_items (id, request_id, waqf_id, seq, kind, title, field_key, visibility, status) values ($1, $2, $3, 1, 'data', 'استكمال', 'x', 'client', 'open') on conflict (id) do nothing`, [REQ.item, REQ.b, W.b]);
     await c.query("commit");
   } finally {
     await c.end();
@@ -177,11 +185,43 @@ const ATTACKS: Attack[] = [
   { id: "C2", finding: "ref-data", what: "bound administrator (global access): retire every knowledge source (the engine then cites nothing)", run: async (x) => { await bind(x, "admin"); const a = (await x.q(`update kb_sources set superseded_at = now() where superseded_at is null`)).rowCount ?? 0; return a > 0; } },
   { id: "C3", finding: "reports", what: "bound administrator: rewrite an issued report's title and snapshot (its link and code stay)", run: async (x) => { await bind(x, "admin"); return ((await x.q(`update reports set title = 'عنوان مزور', snapshot = '{"v":2}' where id = $1`, [REP.issued])).rowCount ?? 0) > 0; } },
   { id: "C4", finding: "reports", what: "bound administrator: withdraw an approval (approved → draft) on an approved report", run: async (x) => { await bind(x, "admin"); await x.q(`update reports set status = 'approved', approved_by = $1, approved_at = now() where id = $2`, [U.admin, REP.draft]); return ((await x.q(`update reports set status = 'draft', approved_by = null, approved_at = null where id = $1`, [REP.draft])).rowCount ?? 0) > 0; } },
+  // ── stage 11.1: the remaining findings (S11-7, S11-9, S11-10, S11-12, S11-13, S11-15, S11-16, S11-17) ──
+  { id: "Q1", finding: "S11-7", what: "bound as a beneficiary of the waqf (not the requester): rewrite an answer of the nazir's request through the completion function, back-dated", run: async (x) => {
+    await bind(x, "victim");
+    try { await x.q(`select app_client_completion($1::uuid, '"100% للمستفيد"'::jsonb)`, [REQ.item]); return true; }
+    catch { await x.q("rollback"); await x.q("begin"); await bind(x, "victim"); await x.q(`select app_client_completion($1::uuid, 'x', '"100% للمستفيد"'::jsonb, 'r', 'n', '2020-01-01Z')`, [REQ.b]); return true; }
+  } },
+  { id: "Q2", finding: "S11-7", what: "bound as the requester, with no reply given: write a field's value through the completion function", run: async (x) => {
+    await bind(x, "other");
+    try { await x.q(`select app_client_completion($1::uuid, '"قيمة"'::jsonb)`, [REQ.item]); return true; }
+    catch { await x.q("rollback"); await x.q("begin"); await bind(x, "other"); await x.q(`select app_client_completion($1::uuid, 'y', '"قيمة"'::jsonb, 'r', 'n', now())`, [REQ.b]); return true; }
+  } },
+  { id: "Q3", finding: "S11-7", what: "bound as a member of the waqf: accept or delete a request's item, or plant one (the team's)", run: async (x) => { await bind(x, "victim"); const a = (await x.q(`update request_items set status = 'accepted' where id = $1`, [REQ.item])).rowCount ?? 0; return a > 0; } },
+  { id: "Q4", finding: "S11-9", what: "bound as a client: put a «critical» notification with an outside link in another person's inbox", run: async (x) => { await bind(x, "client"); return ((await x.q(`insert into notifications (user_id, waqf_id, type, severity, title_ar, body_ar, link) values ($1, null, 'request.status', 'critical', 'إجراء مطلوب: تحقق من حسابك', 'x', 'https://evil.example/login')`, [U.victim])).rowCount ?? 0) > 0; } },
+  { id: "Q5", finding: "S11-9", what: "bound as a client: notify an unrelated person through app_notify", run: async (x) => { await bind(x, "client"); return (await x.q(`select * from app_notify($1::uuid, 'request.status', '{"number":"x","status":"y"}'::jsonb, null, '/app')`, [U.victim])).rows.length > 0; } },
+  { id: "Q6", finding: "S11-10", what: "bound system_admin with the second factor: grant oneself super_admin", run: async (x) => { await bind(x, "sysadmin"); return (await x.q(`select admin_grant_role($1, 'super_admin') as ok`, [U.sysadmin])).rows[0]?.ok === true; } },
+  { id: "Q7", finding: "S11-10", what: "bound system_admin: lock a super_admin and wipe their second factor", run: async (x) => { await bind(x, "sysadmin"); await x.q(`select admin_set_standing($1, 'locked', null, true)`, [U.admin]); return true; } },
+  { id: "Q8", finding: "S11-10", what: "bound system_admin: change a super_admin's phone", run: async (x) => { await bind(x, "sysadmin"); await x.q(`select admin_update_profile($1, '{"phone":"0599990000"}'::jsonb)`, [U.admin]); return true; } },
+  { id: "Q9", finding: "S11-12", what: "unbound application connection: read the account directory (names, staff flag) and who holds which role", run: async (x) => { const a = n(await x.q(`select count(*) from users`)); let b = 0; try { await x.q("savepoint u"); b = n(await x.q(`select count(*) from user_roles`)); await x.q("release savepoint u"); } catch { await x.q("rollback to savepoint u"); } return a > 0 || b > 0; } },
+  { id: "Q10", finding: "S11-12", what: "bound as a client: list who holds which team role (the administrators)", run: async (x) => { await bind(x, "client"); return n(await x.q(`select count(*) from user_roles where user_id <> $1`, [U.client])) > 0; } },
+  { id: "Q11", finding: "S11-13", what: "bound as a client: a phone number to an account's id and name (app_user_by_phone)", run: async (x) => { await bind(x, "client"); return (await x.q(`select * from app_user_by_phone('0500e0a005')`)).rows.length > 0; } },
+  { id: "Q12", finding: "S11-13", what: "bound employee without admin.pii.view: recover a phone by search (app_user_search on digits)", run: async (x) => { await bind(x, "employee"); return (await x.q(`select id from app_user_search('0500e0a005')`)).rows.some((r: Record<string, unknown>) => r.id === U.victim); } },
+  { id: "Q13", finding: "S11-15", what: "unbound application connection: create a waqf", run: async (x) => ((await x.q(`insert into waqfs (internal_number, name) values ('T-Q13-' || substr(md5(random()::text), 1, 6), 'وقف بلا صاحب')`)).rowCount ?? 0) > 0 },
+  { id: "Q14", finding: "S11-15", what: "bound as a client: create a waqf in another person's name (created_by)", run: async (x) => { await bind(x, "client"); return ((await x.q(`insert into waqfs (internal_number, name, created_by) values ('T-Q14-' || substr(md5(random()::text), 1, 6), 'وقف باسم غيري', $1)`, [U.victim])).rowCount ?? 0) > 0; } },
+  { id: "Q15", finding: "S11-15", what: "unbound application connection: an actor-less administrative entry that continues the audit chain", run: async (x) => { await x.q(`select pg_advisory_xact_lock(724501)`); await x.q(`insert into audit_logs (actor_user_id, action, entity_type, prev_hash, hash) values (null, 'admin.user.role_granted', 'user', app_audit_last_hash(), md5(random()::text))`); return true; } },
+  { id: "Q16", finding: "S11-16", what: "bound as a person: turn one's declined consent into granted, or back-date a new one", run: async (x) => { await bind(x, "victim"); let a = 0; await x.q("savepoint c"); try { a = (await x.q(`update consents set granted = true, version = 'v9' where user_id = $1`, [U.victim])).rowCount ?? 0; await x.q("release savepoint c"); } catch { await x.q("rollback to savepoint c"); } const at = (await x.q(`insert into consents (user_id, kind, version, granted, at) values ($1, 'marketing', 'v1', true, '2020-01-01Z') returning at`, [U.victim])).rows[0]!.at as Date; return a > 0 || new Date(at).getUTCFullYear() === 2020; } },
+  { id: "Q17", finding: "S11-16", what: "bound as a person: restate one's data-subject request as completed", run: async (x) => { await bind(x, "victim"); return ((await x.q(`update data_subject_requests set status = 'completed', kind = 'access', completed_at = now() where user_id = $1`, [U.victim])).rowCount ?? 0) > 0; } },
+  { id: "Q18", finding: "S11-17", what: "bound as a client: move or delete the numbering counters (invoices, receipts)", run: async (x) => { await bind(x, "client"); let k = 0; for (const t of [`update sequences set value = value + 1000`, `delete from sequences`, `insert into sequences (key, value) values ('INV', 999999) on conflict (key) do update set value = 999999`]) { await x.q("savepoint s"); try { k += (await x.q(t)).rowCount ?? 0; await x.q("release savepoint s"); } catch { await x.q("rollback to savepoint s"); } } return k > 0; } },
   { id: "T5", finding: "no-RLS", what: "bound as a client: plant a contact message or a notification template", run: async (x) => { await bind(x, "client"); await x.q(`update notification_templates set title_ar = title_ar where true`).then((r) => { if ((r.rowCount ?? 0) === 0) throw new Error("no rows"); }); return true; } },
 ];
 
 /** Must work on the new layer: the legitimate paths still open. */
 const CONTROLS: Attack[] = [
+  { id: "P12", finding: "S11-7", what: "the requester answers the open data item and the reply becomes the field's value (once, now)", run: async (x) => { await bind(x, "other"); const a = (await x.q(`update request_items set status = 'answered', response_text = 'جديد', answered_by = $1, answered_at = now() where id = $2`, [U.other, REQ.item])).rowCount; await x.q(`select app_client_completion($1::uuid, '"جديد"'::jsonb)`, [REQ.item]); const v = (await x.q(`select intake->'answers'->>'x' as v from service_requests where id = $1`, [REQ.b])).rows[0]?.v; return a === 1 && v === "جديد"; } },
+  { id: "P13", finding: "S11-9", what: "the waqf's nazir notifies a member of the same waqf (template, link inside the platform)", run: async (x) => { await bind(x, "other"); const r = (await x.q(`select * from app_notify($1::uuid, 'request.status', '{"number":"T-1","status":"جاهز"}'::jsonb, $2::uuid, '/app')`, [U.victim, W.b])).rows; return r.length === 1; } },
+  { id: "P14", finding: "S11-10", what: "the system_admin grants a role whose every permission they hold (system_admin); a super_admin locks the system_admin", run: async (x) => { await bind(x, "sysadmin"); const g = (await x.q(`select admin_grant_role($1, 'system_admin') as ok`, [U.employee])).rows[0]?.ok; await x.q("rollback"); await x.q("begin"); await bind(x, "admin"); await x.q(`select admin_set_standing($1, 'locked', null, false)`, [U.sysadmin]); return g === true; } },
+  { id: "P15", finding: "S11-16", what: "a person records a new consent and withdraws their own pending data-subject request", run: async (x) => { await bind(x, "victim"); const a = (await x.q(`insert into consents (user_id, kind, version, granted) values ($1, 'marketing', 'v2', false)`, [U.victim])).rowCount; const b = (await x.q(`update data_subject_requests set status = 'cancelled', completed_at = now() where user_id = $1 and status = 'received'`, [U.victim])).rowCount; return a === 1 && (b ?? 0) > 0; } },
+  { id: "P16", finding: "S11-17", what: "a bound client takes the next number of a counter", run: async (x) => { await bind(x, "client"); return Number((await x.q(`select app_next_number('TST') as v`)).rows[0]?.v) > 0; } },
   { id: "P11", finding: "—", what: "a bound nazir invites a phone to the waqf (the invitation, not a membership)", run: async (x) => { await bind(x, "other"); return ((await x.q(`insert into invitations (waqf_id, phone, role_key, invited_by, expires_at, token_hash) values ($1, '0500e0b011', 'beneficiary', $2, now() + interval '7 days', md5(random()::text))`, [W.b, U.other])).rowCount ?? 0) > 0; } },
   { id: "P10", finding: "—", what: "the founder of a waqf being established names themselves its nazir (the establishment wizard)", run: async (x) => { await bind(x, "client"); return ((await x.q(`insert into waqf_memberships (waqf_id, user_id, role_key, status) values ($1, $2, 'nazir', 'active')`, [W.draft, U.client])).rowCount ?? 0) > 0; } },
   { id: "P9", finding: "—", what: "a bound client starts the checkout of their own invoice (an «initiated» payment) and sets its provider reference", run: async (x) => { await bind(x, "client"); const id = (await x.q(`insert into payments (invoice_id, user_id, provider, amount, status) values ($1, $2, 'mock', 115, 'initiated') returning id`, [INV.client, U.client])).rows[0]!.id; return ((await x.q(`update payments set provider_ref = 'ref-1' where id = $1`, [id])).rowCount ?? 0) > 0; } },
@@ -218,11 +258,14 @@ async function battery(db: string, set: Attack[]) {
 async function main() {
   const keep = process.argv.includes("--keep");
   const base = execFileSync("git", ["show", "stage11-base:src/server/db/sql/security.sql"]).toString();
-  const dbs = { new: "waqfak_roles_new", control: "waqfak_roles_control" };
+  // stage 11.1: a second control, the layer as the Stage 11 review attacked it (the stage-11 branch's last commit,
+  // migrated into STAGE11_TEMPLATE beforehand: scripts/security/README or the report) — the S11-x findings exist there
+  const s11 = process.env.STAGE11_TEMPLATE;
+  const dbs: Record<string, string> = { new: "waqfak_roles_new", control: "waqfak_roles_control", ...(s11 ? { stage11: "waqfak_roles_s11" } : {}) };
   // the control is built from a copy taken BEFORE the stage's layer was applied (CONTROL_TEMPLATE, default
   // waqfak_e2ebase), so none of the new functions, triggers or revocations linger in it
-  const tpl = { new: "waqfak_dev", control: process.env.CONTROL_TEMPLATE ?? "waqfak_e2ebase" };
-  for (const [k, d] of Object.entries(dbs) as [keyof typeof dbs, string][]) {
+  const tpl: Record<string, string> = { new: "waqfak_dev", control: process.env.CONTROL_TEMPLATE ?? "waqfak_e2ebase", ...(s11 ? { stage11: s11 } : {}) };
+  for (const [k, d] of Object.entries(dbs)) {
     su(`drop database if exists ${d} with (force)`);
     su(`create database ${d} template ${tpl[k]} owner waqfak_owner`);
     su(`grant connect on database ${d} to waqfak_app, waqfak_auth, waqfak_system`, d);
@@ -235,16 +278,17 @@ async function main() {
   const results: Record<string, Awaited<ReturnType<typeof battery>>> = {};
   for (const [k, d] of Object.entries(dbs)) results[k] = await battery(d, ATTACKS);
   const controls = await battery(dbs.new, CONTROLS);
-  console.log("id   | finding   | control (stage11-base) | new layer | attack");
+  console.log(`id   | finding   | control (stage11-base) |${s11 ? " stage-11 (c75736f) |" : ""} new layer | attack`);
   for (const a of ATTACKS) {
-    const c = results.control.find((r) => r.id === a.id)!; const nw = results.new.find((r) => r.id === a.id)!;
-    console.log(`${a.id.padEnd(4)} | ${a.finding.padEnd(9)} | ${c.result.padEnd(22)} | ${nw.result.padEnd(9)} | ${a.what}${nw.detail ? `  [${nw.detail}]` : ""}`);
+    const c = results.control.find((r) => r.id === a.id)!; const nw = results.new.find((r) => r.id === a.id)!; const m = results.stage11?.find((r) => r.id === a.id);
+    console.log(`${a.id.padEnd(4)} | ${a.finding.padEnd(9)} | ${c.result.padEnd(22)} |${m ? ` ${m.result.padEnd(18)} |` : ""} ${nw.result.padEnd(9)} | ${a.what}${nw.detail ? `  [${nw.detail}]` : ""}`);
   }
   console.log("\nlegitimate paths on the new layer:");
   for (const r of controls) console.log(`${r.id.padEnd(4)} | ${r.result.padEnd(7)} | ${r.what}${r.detail ? `  [${r.detail}]` : ""}`);
   const breachedNew = results.new.filter((r) => r.result === "BREACHED");
   const breachedCtl = results.control.filter((r) => r.result === "BREACHED");
-  console.log(`\ncontrol: ${breachedCtl.length} of ${ATTACKS.length} attacks breached; new layer: ${breachedNew.length} breached; legitimate paths: ${controls.filter((r) => r.result === "worked").length} of ${controls.length} worked`);
+  if (results.stage11) console.log(`\nstage-11 layer (c75736f): ${results.stage11.filter((r) => r.result === "BREACHED").length} of ${ATTACKS.length} attacks breached`);
+  console.log(`control: ${breachedCtl.length} of ${ATTACKS.length} attacks breached; new layer: ${breachedNew.length} breached; legitimate paths: ${controls.filter((r) => r.result === "worked").length} of ${controls.length} worked`);
   if (!keep) for (const d of Object.values(dbs)) su(`drop database if exists ${d} with (force)`);
   process.exit(breachedNew.length || controls.some((r) => r.result !== "worked") ? 1 : 0);
 }

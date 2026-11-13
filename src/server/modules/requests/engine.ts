@@ -134,12 +134,14 @@ export async function logEvent(tx: Tx, r: { id: string; waqfId: string | null },
 }
 
 export async function opsManagerIds(tx: Tx): Promise<string[]> {
-  const rows = await tx
+  // stage 11.1 (S11-12): who holds a team role is read on the system login (a client's act routes work to the team)
+  void tx;
+  const rows = await withSystem((stx) => stx
     .select({ id: userRoles.userId })
     .from(userRoles)
     .innerJoin(roles, eq(roles.id, userRoles.roleId))
     .innerJoin(users, eq(users.id, userRoles.userId))
-    .where(and(eq(roles.key, "ops_manager"), eq(users.status, "active")));
+    .where(and(eq(roles.key, "ops_manager"), eq(users.status, "active"))));
   return [...new Set(rows.map((r) => r.id))];
 }
 

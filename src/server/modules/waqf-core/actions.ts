@@ -3,7 +3,7 @@
 import { and, count, eq, gt, isNull, ne, or, sql } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { withSystem, type Tx } from "../../db";
+import { afterCommit, withSystem, type Tx } from "../../db";
 import { delegations, invitations, requestEvents, serviceRequests, waqfKeys, waqfMemberships, waqfs, waqfTimelineEvents } from "../../db/schema";
 import { normalizeSaudiMobile, maskPhone } from "../../auth/otp";
 import { requireAuth } from "../../authz/context";
@@ -286,14 +286,16 @@ async function createInvitation(
     })
     .returning({ id: invitations.id });
   const link = `/app/invitations/${token}`;
-  const existing = await userByPhone(tx, o.phone); // stage 11: id and name only, through the database
-  if (existing) {
+  // stage 11.1 (S11-13): whether the phone has an account is the system's to know, not the inviter's — looked up on the
+  // system login once the invitation committed, and the invitee is told in their inbox or by SMS
+  const smsText = `وقفك: دُعيت إلى «${o.waqfName}» بصفة ${roleName(o.roleKey)}. افتح الرابط وسجّل بهذا الرقم للقبول (صالح 7 أيام): ${env.APP_URL}${link}`;
+  afterCommit(tx, () => withSystem(async (stx) => {
+    const existing = await userByPhone(stx, o.phone);
     // waqfId stays null on purpose: the invitee cannot see this waqf's rows (RLS) until they accept.
-    await notify(existing.id, "invitation", { waqf: o.waqfName, role: roleName(o.roleKey) }, { link, tx });
-  } else {
-    await sendSms(o.phone, `وقفك: دُعيت إلى «${o.waqfName}» بصفة ${roleName(o.roleKey)}. افتح الرابط وسجّل بهذا الرقم للقبول (صالح 7 أيام): ${env.APP_URL}${link}`);
-  }
-  return { id: inv.id, link, existingUser: !!existing };
+    if (existing) await notify(existing.id, "invitation", { waqf: o.waqfName, role: roleName(o.roleKey) }, { link, tx: stx });
+    else await sendSms(o.phone, smsText);
+  }));
+  return { id: inv.id, link };
 }
 
 const inviteSchema = z.object({

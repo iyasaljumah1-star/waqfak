@@ -1,7 +1,7 @@
 import "server-only";
 import { sql } from "drizzle-orm";
 import type { Tx } from "../db";
-import { auditLogs, sequences } from "../db/schema";
+import { auditLogs } from "../db/schema";
 import { sha256 } from "./crypto";
 
 export type AuditEntry = {
@@ -77,10 +77,8 @@ export async function audit(tx: Tx, e: AuditEntry) {
 
 /** Human-friendly sequential numbers (WQ-2026-000123). Uses a row lock for gap-free increments. */
 export async function nextNumber(tx: Tx, prefix: string, pad = 6): Promise<string> {
-  const rows = await tx
-    .insert(sequences)
-    .values({ key: prefix, value: 1 })
-    .onConflictDoUpdate({ target: sequences.key, set: { value: sql`${sequences.value} + 1` } })
-    .returning({ value: sequences.value });
-  return `${prefix}-${String(rows[0].value).padStart(pad, "0")}`;
+  // stage 11.1 (S11-17): the counter advances only through the database's function (the application role does not
+  // write the counters)
+  const r = await tx.execute<{ v: string | number }>(sql`select app_next_number(${prefix}) as v`);
+  return `${prefix}-${String(r.rows[0].v).padStart(pad, "0")}`;
 }

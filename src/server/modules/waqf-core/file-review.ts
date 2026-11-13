@@ -1,6 +1,6 @@
 import "server-only";
 import { and, desc, eq, gt, inArray, isNull, sql } from "drizzle-orm";
-import type { Tx } from "@/server/db";
+import { withSystem, type Tx } from "@/server/db";
 import { auditLogs, roles, tasks, userRoles, users } from "@/server/db/schema";
 import { rolePermissionMap } from "@/server/authz/context";
 import type { Auth, WaqfAccess } from "@/server/authz/context";
@@ -41,8 +41,10 @@ export async function reviewerIds(tx: Tx) {
   const map = await rolePermissionMap();
   const keys = [...map.entries()].filter(([, p]) => p.has("admin.waqfs.edit")).map(([k]) => k);
   if (!keys.length) return [];
-  const rows = await tx.select({ id: userRoles.userId }).from(userRoles).innerJoin(roles, eq(roles.id, userRoles.roleId)).innerJoin(users, eq(users.id, userRoles.userId))
-    .where(and(inArray(roles.key, keys), eq(users.status, "active")));
+  // stage 11.1 (S11-12): who holds a team role is read on the system login (a client's act routes work to the team)
+  void tx;
+  const rows = await withSystem((stx) => stx.select({ id: userRoles.userId }).from(userRoles).innerJoin(roles, eq(roles.id, userRoles.roleId)).innerJoin(users, eq(users.id, userRoles.userId))
+    .where(and(inArray(roles.key, keys), eq(users.status, "active"))));
   return [...new Set(rows.map((r) => r.id))];
 }
 

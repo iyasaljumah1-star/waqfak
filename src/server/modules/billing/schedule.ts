@@ -1,6 +1,6 @@
 import "server-only";
 import { and, asc, eq, inArray, isNotNull } from "drizzle-orm";
-import type { Tx } from "@/server/db";
+import { withSystem, type Tx } from "@/server/db";
 import { contracts, paymentSchedule, quotes, roles, serviceRequests, settings, tasks, userRoles, users } from "@/server/db/schema";
 import { taskEvent } from "@/server/modules/operations/exec";
 import type { PaymentTerm } from "@/server/db/schema/commerce";
@@ -69,8 +69,10 @@ export async function financeUserIds(tx: Tx) {
   const map = await rolePermissionMap();
   const keys = [...map.entries()].filter(([, p]) => p.has("admin.finance")).map(([k]) => k);
   if (!keys.length) return [];
-  const rows = await tx.select({ id: userRoles.userId }).from(userRoles).innerJoin(roles, eq(roles.id, userRoles.roleId)).innerJoin(users, eq(users.id, userRoles.userId))
-    .where(and(inArray(roles.key, keys), eq(users.status, "active")));
+  // stage 11.1 (S11-12): who holds a team role is read on the system login (a client's act routes work to the team)
+  void tx;
+  const rows = await withSystem((stx) => stx.select({ id: userRoles.userId }).from(userRoles).innerJoin(roles, eq(roles.id, userRoles.roleId)).innerJoin(users, eq(users.id, userRoles.userId))
+    .where(and(inArray(roles.key, keys), eq(users.status, "active"))));
   return [...new Set(rows.map((r) => r.id))];
 }
 
@@ -84,6 +86,23 @@ export async function materializeAll(tx: Tx, actorId: string | null) {
   let created = 0;
   for (const s of signed) created += await materializeSchedule(tx, s.id!, actorId);
   return created;
+}
+
+/**
+ * Stage 11.1 (S11-19): the sweep of the step a client's approval defers to after its commit (engine.ts `due`): every
+ * request that reached delivery or completion has its due installments' dates and finance tasks, whatever happened to
+ * the deferred step. Idempotent (installmentsDueOn sets a missing date only and adds a task only once). Daily job.
+ */
+export async function dueInstallmentsSweep(tx: Tx) {
+  const reqs = await tx.selectDistinct({ id: serviceRequests.id, waqfId: serviceRequests.waqfId, number: serviceRequests.number, assignedToUserId: serviceRequests.assignedToUserId, status: serviceRequests.status })
+    .from(serviceRequests).innerJoin(paymentSchedule, eq(paymentSchedule.requestId, serviceRequests.id))
+    .where(inArray(serviceRequests.status, ["awaiting_client_approval", "completed"]));
+  let tasksMade = 0;
+  for (const r of reqs) {
+    tasksMade += (await installmentsDueOn(tx, r, "delivery", null)).tasksMade;
+    if (r.status === "completed") tasksMade += (await installmentsDueOn(tx, r, "completion", null)).tasksMade;
+  }
+  return { requests: reqs.length, tasksMade };
 }
 
 export async function paymentDueAlerts(tx: Tx) {

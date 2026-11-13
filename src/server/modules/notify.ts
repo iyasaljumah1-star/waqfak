@@ -1,13 +1,9 @@
 import "server-only";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type { Tx } from "../db";
 import { withSystem } from "../db";
-import { notificationPreferences, notifications, notificationTemplates, users } from "../db/schema";
+import { notificationPreferences, users } from "../db/schema";
 import { sendEmail, sendSms } from "../adapters/messaging";
-
-function fill(t: string, vars: Record<string, string | number | null | undefined>) {
-  return t.replace(/\{(\w+)\}/g, (_, k) => String(vars[k] ?? ""));
-}
 
 /**
  * Sends a templated notification to a user through the channels configured for the template,
@@ -15,18 +11,19 @@ function fill(t: string, vars: Record<string, string | number | null | undefined
  * SMS/email never carry sensitive data: only the title and a link to the platform.
  */
 export async function notify(userId: string, key: string, vars: Record<string, string | number | null | undefined>, opts: { waqfId?: string | null; link?: string; tx?: Tx } = {}) {
+  // stage 11.1 (S11-9): through the database's app_notify — the template's own title, text and severity, a link inside
+  // the platform, a recipient related to the sender (oneself, the team, a person of the same waqf); anything else is
+  // not written (and the application role cannot write another person's notification directly)
   const run = async (tx: Tx) => {
-    const [tpl] = await tx.select().from(notificationTemplates).where(eq(notificationTemplates.key, key)).limit(1);
-    if (!tpl) {
-      console.warn(`[notify] template "${key}" not found — notification skipped`);
+    const r = await tx.execute<{ title: string; channels: string[] | null; locked: boolean }>(
+      sql`select * from app_notify(${userId}::uuid, ${key}, ${JSON.stringify(Object.fromEntries(Object.entries(vars).map(([k, v]) => [k, v == null ? "" : String(v)])))}::jsonb, ${opts.waqfId ?? null}::uuid, ${opts.link || null})`,
+    );
+    const row = r.rows[0];
+    if (!row) {
+      console.warn(`[notify] "${key}" not written (no template, or the recipient is not related to the sender)`);
       return null;
     }
-    const title = fill(tpl.titleAr, vars);
-    const body = fill(tpl.bodyAr ?? "", vars);
-    const severity = tpl?.severity ?? "info";
-    const channels = new Set(tpl?.channels ?? ["in_app"]);
-    await tx.insert(notifications).values({ userId, waqfId: opts.waqfId ?? null, type: key, severity, titleAr: title, bodyAr: body, link: opts.link ?? null });
-    return { title, channels, locked: !!tpl?.locked };
+    return { title: row.title, channels: new Set(row.channels ?? ["in_app"]), locked: !!row.locked };
   };
   const res = opts.tx ? await run(opts.tx) : await withSystem(run);
   if (!res) return;

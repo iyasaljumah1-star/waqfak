@@ -141,7 +141,7 @@ export async function answerItem(_: ActionState, fd: FormData): Promise<ActionSt
     if (rc.req.assignedToUserId) await notify(rc.req.assignedToUserId, "request.status", { number: rc.req.number, status: `أجاب العميل على البند ${item.seq}` }, { waqfId: rc.req.waqfId, link: `/admin/requests/${rc.req.id}#items`, tx: c.tx });
     // a data item about a form field: a valid answer becomes the field's value (recorded as the client's completion, to
     // be reviewed by the team); anything else stays a reply for the team to apply
-    const applied = item.kind === "data" && item.fieldKey && d.response ? await applyCompletion(c, rc, item.fieldKey, d.response, item.seq) : null;
+    const applied = item.kind === "data" && item.fieldKey && d.response ? await applyCompletion(c, rc, item.id, item.fieldKey, d.response, item.seq) : null;
     const released = await releaseIfAnswered(c, item.requestId);
     const appliedLine = applied === true ? " حُدّث الحقل في طلبك بردك، ويراجعه الفريق." : applied ? ` ${applied}` : "";
     return { ok: true, message: (released ? "أُرسل ردك. اكتملت النواقص المطلوبة وعاد الطلب إلى الفريق." : "أُرسل ردك إلى الفريق للمراجعة.") + appliedLine };
@@ -159,7 +159,7 @@ export async function answerItem(_: ActionState, fd: FormData): Promise<ActionSt
  * value is kept in a revision («client_completion»), and the field goes to the team's review. Returns true when
  * applied, a message when the reply could not be used as the value, null when the field does not take replies.
  */
-async function applyCompletion(c: ActCtx, rc: RequestCtx, fieldKey: string, response: string, seq: number): Promise<true | string | null> {
+async function applyCompletion(c: ActCtx, rc: RequestCtx, itemId: string, fieldKey: string, response: string, seq: number): Promise<true | string | null> {
   const form = serviceForm(rc.service);
   const intake = intakeOf(rc.req);
   if (!intake.formVersion) return null;
@@ -178,7 +178,8 @@ async function applyCompletion(c: ActCtx, rc: RequestCtx, fieldKey: string, resp
   // the client may answer; the bookkeeping rows are team records, written after this check with the system context
   // stage 11: the three writes go through one function that checks the caller is a party to the request and changes
   // this one field only (no system context on the application's connection)
-  await c.tx.execute(sql`select app_client_completion(${rc.req.id}::uuid, ${f.key}, ${JSON.stringify(next[f.key] ?? null)}::jsonb, ${`رد العميل على طلب الاستكمال #${seq}`}, ${`استكمال العميل (#${seq})`}, now())`);
+  // stage 11.1 (S11-7): bound to the item the caller has just answered — its field, its request, this moment
+  await c.tx.execute(sql`select app_client_completion(${itemId}::uuid, ${JSON.stringify(next[f.key] ?? null)}::jsonb)`);
   await audit(c.tx, { actorUserId: c.auth.user.id, action: "requests.client_completion", entityType: "service_request", entityId: rc.req.id, waqfId: rc.req.waqfId, ip: c.ip, userAgent: c.userAgent, after: { field: f.key, item: seq } });
   return true;
 }
