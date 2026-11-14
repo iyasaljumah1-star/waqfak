@@ -36,7 +36,9 @@ export function DocumentPreview({ src, kind, title }: { src: string; kind: "pdf"
   if (state.error) return <p role="alert" className="px-4 py-10 text-center text-critical">{state.error}</p>;
   if (!state.url && state.text === undefined)
     return (
-      <div role="status" className="flex h-64 items-center justify-center gap-2 text-muted">
+      // the placeholder takes the frame's own height (PDF, HTML): the page below does not move when the preview arrives
+      // (stage 11.1 — on a phone the shift moved the upload button under a tap: the vault's e2e on mobile)
+      <div role="status" className={`flex items-center justify-center gap-2 text-muted ${kind === "pdf" || kind === "html" ? "h-[60vh] lg:h-[72vh]" : "h-64"}`}>
         <Loader2 aria-hidden className="size-5 animate-spin" /> جارٍ تحميل المعاينة…
       </div>
     );
